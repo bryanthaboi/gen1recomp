@@ -319,6 +319,23 @@ local function build_trainer(st, opts)
   return steps
 end
 
+function IntroSeq.multiTrainerPics(st, playerGender)
+  if not (st and st.multi and st.linkGenders) then return nil end
+  local LB = require("src.core.game3.link.battle")
+  local own = tonumber(st.linkOwn) or 0
+  local g = st.linkGenders
+  local function front(gender) return (gender == 1) and LB.TRAINER_PIC_LEAF or LB.TRAINER_PIC_RED end
+  return {
+    -- pokefirered/src/battle_controller_link_opponent.c:1133
+    enemyPic = front(g[1]), enemyX = 200,
+    enemyPic2 = front(g[3]), enemyX2 = 152,
+    -- pokefirered/src/battle_controller_player.c:2171
+    gender = g[own] or playerGender or 0, x = (own == 2) and 90 or 32,
+    -- pokefirered/src/battle_controller_link_partner.c:1106
+    partnerGender = g[(own + 2) % 4] or 0, partnerX = (own == 2) and 32 or 90,
+  }
+end
+
 --- Begin intro. Returns false when headless (caller pushes strings).
 function IntroSeq.begin(st, opts)
   opts = opts or {}
@@ -375,6 +392,15 @@ function IntroSeq.begin(st, opts)
     s.trainer.enemy.visible = true
     s.trainer.enemy.picId = opts.trainerPicId or st.trainerPicId
     s.trainer.enemy.ox = -240
+    s.trainer.enemy.x, s.trainer.enemy.pic2, s.trainer.enemy.x2 = nil, nil, nil
+    s.trainer.player.x, s.trainer.player.gender2, s.trainer.player.x2 = nil, nil, nil
+    local pics = IntroSeq.multiTrainerPics(st, playerGender)
+    if pics then
+      s.trainer.enemy.picId, s.trainer.enemy.x = pics.enemyPic, pics.enemyX
+      s.trainer.enemy.pic2, s.trainer.enemy.x2 = pics.enemyPic2, pics.enemyX2
+      s.trainer.player.gender, s.trainer.player.x = pics.gender, pics.x
+      s.trainer.player.gender2, s.trainer.player.x2 = pics.partnerGender, pics.partnerX
+    end
     IntroSeq._steps = build_trainer(st, opts)
   end
   IntroSeq._i = 1

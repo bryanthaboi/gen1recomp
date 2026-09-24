@@ -164,6 +164,35 @@ function Schema.repairOwnMons(session)
   end
 end
 
+-- pokefirered/src/union_room_chat.c:1430
+local function registered_texts_restore(v)
+  if type(v) ~= "table" then return nil end
+  local Chat = require("src.core.game3.link.chat")
+  local out = {}
+  for i = 1, Chat.KB_ROWS do
+    local s = v[i]
+    if s ~= nil and type(s) ~= "string" then return nil end
+    local tokens = Chat.tokens(s or "")
+    while #tokens > Chat.REGISTER_CHARS do table.remove(tokens) end
+    out[i] = table.concat(tokens)
+  end
+  return out
+end
+
+-- pokefirered/src/link_rfu_3.c:1178
+local function trainer_name_records_restore(v)
+  if type(v) ~= "table" then return nil end
+  local Chat = require("src.core.game3.link.chat")
+  local out = {}
+  for _, r in ipairs(v) do
+    if #out >= 20 then break end
+    if type(r) == "table" and type(r.name) == "string" then
+      out[#out + 1] = { name = Chat.cleanName(r.name), trainerId = (math.floor(tonumber(r.trainerId) or 0)) % 65536 }
+    end
+  end
+  return out
+end
+
 --- Factory for a pristine New Game after Oak intro finishes.
 function Schema.newGame(opts)
   opts = opts or {}
@@ -269,6 +298,13 @@ function Schema.toSaveTable(session)
     coins = session.coins,
     -- include/global.h:354, src/berry_powder.c:50
     berryPowder = session.berryPowder or 0,
+    berryCrushPressingSpeeds = session.berryCrushPressingSpeeds,
+    pokemonJumpRecords = session.pokemonJumpRecords,
+    dodrioBerryPickingRecords = session.dodrioBerryPickingRecords,
+    -- pokefirered/src/union_room_chat.c:1182
+    registeredTexts = session.registeredTexts,
+    -- pokefirered/src/link_rfu_3.c:1122
+    trainerNameRecords = session.trainerNameRecords,
     party = session.party,
     bag = session.bag,
     inventory = session.bag, -- SaveData compatibility alias
@@ -379,6 +415,11 @@ function Schema.fromSaveTable(save)
     money = save.money or 0,
     coins = save.coins or 0,
     berryPowder = tonumber(save.berryPowder) or 0,
+    berryCrushPressingSpeeds = type(save.berryCrushPressingSpeeds) == "table" and save.berryCrushPressingSpeeds or nil,
+    pokemonJumpRecords = type(save.pokemonJumpRecords) == "table" and save.pokemonJumpRecords or nil,
+    dodrioBerryPickingRecords = type(save.dodrioBerryPickingRecords) == "table" and save.dodrioBerryPickingRecords or nil,
+    registeredTexts = registered_texts_restore(save.registeredTexts),
+    trainerNameRecords = trainer_name_records_restore(save.trainerNameRecords),
     name = save.name or "RED",
     rivalName = save.rivalName or "BLUE",
     gender = save.gender or 0,

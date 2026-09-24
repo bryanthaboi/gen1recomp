@@ -38,6 +38,7 @@ Link.VAR_0x8006 = 0x8006
 -- pokefirered/src/union_room.c:1863 CreateTrainerCardInBuffer
 Link.MSG = { CARD = "game3_link_card" }
 Link.peerCard = nil
+Link.peerCards = {}
 
 local MAP_DYNAMIC_NUM = 0x7F
 local WARP_ID_NONE = 0xFF
@@ -320,53 +321,43 @@ function Link.exitLinkRoom(ctx, adapters)
   return false
 end
 
+local function leaveLink(link)
+  if type(link) == "table" and type(link.leave) == "function" then
+    pcall(link.leave, link)
+  end
+end
+
 function Link.attach(link)
   Link.link = link
   Link._cardSent = false
   Link.peerCard = nil
+  Link.peerCards = {}
   link.onClosed = function(reason)
     Link.link = nil
     Link._pump = nil
     Link._cardSent = false
+    Link.lastCloseReason = reason
     if Link._localClose then return end
+    leaveLink(link)
+    local Union = package.loaded["src.core.game3.link.union_room"]
+    if Union and Union.isActive() and Union.onUnionRoomMap() then return end
     if Link.inLinkRoom() then Link.doLinkRoomExit() end
   end
   Link.startPump()
   return link
 end
 
--- pokefirered/src/link.c:386 OpenLink binds the port; the hello only goes out once the
-function Link.dial(opts)
-  opts = opts or {}
-  local Net = require("src.link.Net")
-  local transport = Net.new()
-  local address = opts.address
-  local ok
-  if type(address) == "string" and address ~= "" then
-    ok = transport:join(address)
-  else
-    ok = transport:host(opts.port)
-  end
-  if not ok then
-    local detail = transport.error or "no_transport"
-    pcall(function() transport:close() end)
-    return nil, detail
-  end
-  return transport
-end
-
 -- pokefirered/src/link.c:386 OpenLink
 function Link.open(opts)
   opts = opts or {}
-  Link.closeLink("reopen")
   local transport = opts.transport
-  if not (opts.link or transport) then
-    local dialed, why = Link.dial(opts)
-    if not dialed then return nil, why end
-    transport = dialed
-  end
+  if not (opts.link or transport) then return nil, "no_transport" end
+  Link.closeLink("reopen")
   local link = opts.link or Game3Link.attach(transport, {
-    role = opts.role or (opts.address and "guest") or "host",
+    role = opts.role,
+    seat = opts.seat,
+    seats = opts.seats,
+    hello = opts.hello,
     linkType = opts.linkType,
     game = opts.game or Link.game(),
     timeout = opts.timeout,
@@ -375,14 +366,46 @@ function Link.open(opts)
   return Link.attach(link)
 end
 
+function Link.client()
+  local loaded = package.loaded["src.online.Client"]
+  if loaded then return loaded end
+  local ok, Client = pcall(require, "src.online.Client")
+  return ok and Client or nil
+end
+
+function Link.clientCall(name, ...)
+  local C = Link.client()
+  local fn = C and C[name]
+  if type(fn) ~= "function" then return nil end
+  local ok, a, b = pcall(fn, ...)
+  if not ok then return nil end
+  return a, b
+end
+
+-- pokefirered/src/link.c:386
+function Link.openRelay(opts)
+  opts = opts or {}
+  local rs = opts.session or Link.clientCall("roomSession")
+  if not rs then return nil, "no_room" end
+  local RelayTransport = require("src.core.game3.link.relay_transport")
+  local transport = RelayTransport.new(rs, { client = opts.client })
+  local seat = transport:seat()
+  if seat == nil then return nil, "spectator" end
+  return Link.open({
+    transport = transport,
+    seat = seat,
+    seats = transport:seats(),
+    hello = opts.hello,
+    linkType = opts.linkType,
+    game = opts.game,
+    timeout = opts.timeout,
+    onReady = opts.onReady,
+  })
+end
+
 -- pokefirered/src/cable_club.c:222 CreateLinkupTask waits for the other machine
-function Link.beginConnect(opts)
-  if Link.link then return true end
-  local okM, LinkMenu = pcall(require, "src.ui.game3.link_menu")
-  if not (okM and type(LinkMenu) == "table" and LinkMenu.showConnect) then return false end
-  if not (type(love) == "table" and love.graphics) then return false end
-  if LinkMenu.isOpen() then return true end
-  return LinkMenu.showConnect(opts)
+function Link.beginConnect(_opts)
+  return Link.link ~= nil
 end
 
 -- pokefirered/src/link.c:419 CloseLink
@@ -394,6 +417,7 @@ function Link.closeLink(reason)
   if not link then return false end
   Link._localClose = true
   local ok = pcall(function() link:close(reason or "close_link") end)
+  leaveLink(link)
   Link._localClose = false
   return ok
 end
@@ -424,6 +448,8 @@ function Link.update(dt)
       local card = link:take(Link.MSG.CARD)
       while card do
         Link.peerCard = card.card
+        local seat = tonumber(card.seat)
+        if seat and seat >= 0 then Link.peerCards[seat] = card.card end
         card = link:take(Link.MSG.CARD)
       end
     end
@@ -432,11 +458,29 @@ function Link.update(dt)
     local live = Link.link
     if not (live and live:isOpen()) then
       Link.exitQueued = false
+      Link._exits = nil
       Link.doLinkRoomExit()
-    elseif live:take("game3_exit_link_room") then
-      Link.exitQueued = false
-      Link.closeLink("exit_link_room")
-      Link.doLinkRoomExit()
+    else
+      local ex = Link._exits or { seats = {}, n = 0 }
+      Link._exits = ex
+      local exit = live:take("game3_exit_link_room")
+      while exit do
+        local seat = tonumber(exit.seat)
+        if seat == nil then
+          ex.n = ex.n + 1
+        elseif not ex.seats[seat] then
+          ex.seats[seat] = true
+          ex.n = ex.n + 1
+        end
+        exit = live:take("game3_exit_link_room")
+      end
+      local need = math.max(1, (tonumber(live.nseats) or 2) - 1)
+      if ex.n >= need then
+        Link.exitQueued = false
+        Link._exits = nil
+        Link.closeLink("exit_link_room")
+        Link.doLinkRoomExit()
+      end
     end
   end
   local Union = package.loaded["src.core.game3.link.union_room"]
@@ -485,10 +529,276 @@ function Link.askSaveTheGame(ctx, adapters)
   end)
 end
 
+Link.ADAPTER_RULESET = "g3_link"
+Link._live = nil
+
+function Link.version()
+  local ok, GameVersion = pcall(require, "src.core.GameVersion")
+  local v = ok and GameVersion.get and GameVersion.get() or nil
+  if v == "leafgreen" then return "leafgreen" end
+  return "firered"
+end
+
+function Link.liveProfile(rulesetId)
+  rulesetId = rulesetId or Link.ADAPTER_RULESET
+  local game = Link.game()
+  local memo = Link._live
+  if memo and memo.game == game and memo.rulesetId == rulesetId then
+    return memo.profile, memo.why
+  end
+  local ok, ArenaData = pcall(require, "src.online.ArenaData")
+  if not (ok and type(ArenaData) == "table" and type(ArenaData.liveProfile3) == "function") then
+    return nil, "unavailable"
+  end
+  local okP, profile, why = pcall(ArenaData.liveProfile3, game, rulesetId)
+  if not okP then return nil, tostring(profile) end
+  if profile == nil and why == nil then why = "profile" end
+  Link._live = { game = game, rulesetId = rulesetId, profile = profile, why = why }
+  return profile, why
+end
+
+local function sameSurface(a, b)
+  return type(a) == "table" and type(b) == "table" and tonumber(a.engine) == 3
+    and a.fingerprint ~= nil and a.fingerprint == b.fingerprint
+    and a.engineVersion == b.engineVersion
+end
+
+function Link.online()
+  local C = Link.client()
+  return C ~= nil and type(C.state) == "function" and C.state() == "online"
+end
+
+function Link.adapterConnected()
+  if not Link.online() then return false end
+  local live = Link.liveProfile()
+  if not live then return false end
+  for _, p in ipairs(Link.clientCall("profiles") or {}) do
+    if sameSurface(p, live) then return true end
+  end
+  return false
+end
+
+function Link.avatar()
+  local s = Link.session() or {}
+  return {
+    name = tostring(s.name or s.playerName or ""):sub(1, 7),
+    trainerId = (tonumber(s.trainerId or s.id) or 0) % 65536,
+    gender = (s.gender == 1 or s.gender == "female") and 1 or 0,
+    version = Link.version(),
+  }
+end
+
+function Link.connectOptions(live)
+  local s = Link.session() or {}
+  local version = Link.version()
+  return {
+    source = "game",
+    version = version,
+    trainerName = s.name or s.playerName,
+    profiles = { live },
+    presence = { where = "game", status = "busy", version = version },
+  }
+end
+
+local function connectModule()
+  local loaded = package.loaded["src.online.Connect"]
+  if loaded then return loaded end
+  local ok, Connect = pcall(require, "src.online.Connect")
+  return ok and type(Connect) == "table" and Connect or nil
+end
+
+function Link.connect()
+  local live, why = Link.liveProfile()
+  if not live then return false, why end
+  local Connect = connectModule()
+  if not (Connect and Connect.start) then return false, "unavailable" end
+  local okS, ok, err = pcall(Connect.start, Link.connectOptions(live))
+  if not okS then return false, tostring(ok) end
+  return ok and true or false, err
+end
+
+function Link.connectState()
+  local Connect = connectModule()
+  if Connect and Connect.state then
+    local ok, s = pcall(Connect.state)
+    if ok and s then return s end
+  end
+  local C = Link.client()
+  return C and C.state and C.state() or "offline"
+end
+
+function Link.connectError()
+  local Connect = connectModule()
+  local err = Connect and Connect.error and Connect.error()
+  if err == nil then err = Link.clientCall("error") end
+  return err
+end
+
+function Link.reasonText(why)
+  local Strings = require("src.core.Strings")
+  if why == "mods" then
+    return Strings("Mods that change link play are on, so this game can't go online.")
+  end
+  if why == "unavailable" then
+    return Strings("Online play isn't available in this build.")
+  end
+  local Connect = connectModule()
+  local upgrade = Connect and Connect.upgradeText and Connect.upgradeText()
+  if type(upgrade) == "string" and upgrade ~= "" then return upgrade end
+  if type(why) == "string" and why ~= "" then
+    return Strings("The connection failed: %s.", (why:gsub("%.$", "")))
+  end
+  return Strings("The connection failed.")
+end
+
+function Link.setStatus(status)
+  if not Link.online() then return false end
+  Link.clientCall("setStatus", status)
+  return true
+end
+
+local function inputPressed(key)
+  local game = Link.game()
+  local input = game and game.input
+  return input and input.wasPressed and input:wasPressed(key) and true or false
+end
+
+Link.inputPressed = inputPressed
+
 -- pokefirered/src/link.c:243 IsWirelessAdapterConnected
-function Link.isWirelessAdapterConnected(ctx)
+function Link.isWirelessAdapterConnected(ctx, adapters)
+  if Link.adapterConnected() then
+    Link.setResult(ctx, 1)
+    return false, 1
+  end
+  if Link.online() and Link.liveProfile() then
+    Link.connect()
+    if Link.adapterConnected() then
+      Link.setResult(ctx, 1)
+      return false, 1
+    end
+  end
   Link.setResult(ctx, 0)
-  return false, 0
+  if not (type(love) == "table" and love.graphics) then return false, 0 end
+  local okM, Message = pcall(require, "src.ui.game3.message")
+  local okC, Choice = pcall(require, "src.ui.game3.choice")
+  if not (okM and okC and Message.show and Choice.yesNo) then return false, 0 end
+  local Strings = require("src.core.Strings")
+  local Natives = require("src.core.game3.scripting.natives")
+  local stage = "ask"
+  local finished = false
+  local function finish(value)
+    Link.setResult(ctx, value)
+    finished = true
+  end
+  local function fail(why)
+    stage = "reason"
+    Message.show(Link.reasonText(why), function() finish(0) end)
+  end
+  Natives.yieldHost(ctx, adapters, function() end)
+  Message.show(Strings("Connect to the Wireless Club?"), { stay = true })
+  Link.connectPrompt = { stage = function() return stage end }
+  ctx.nativePoll = function()
+    if finished then
+      Link.connectPrompt = nil
+      return true
+    end
+    if stage == "ask" then
+      if Message.isWaiting() then
+        stage = "choice"
+        Choice.yesNo(function(yes)
+          if not yes then
+            Message.close()
+            finish(0)
+            return
+          end
+          local ok, err = Link.connect()
+          if not ok then
+            fail(err)
+            return
+          end
+          stage = "connecting"
+          Message.show(Strings("Connecting..."), { stay = true })
+        end, { left = 20, top = 8 })
+      end
+    elseif stage == "connecting" then
+      if Link.adapterConnected() then
+        Message.close()
+        finish(1)
+      else
+        local state = Link.connectState()
+        if state == "error" or state == "offline" then
+          fail(Link.connectError() or state)
+        elseif inputPressed("b") then
+          local Connect = connectModule()
+          if Connect and Connect.disconnect then pcall(Connect.disconnect) end
+          Message.close()
+          finish(0)
+        end
+      end
+    end
+    if finished then
+      Link.connectPrompt = nil
+      return true
+    end
+    return false
+  end
+  return true
+end
+
+local function dexCaught(dex, sp)
+  local okD, Dex = pcall(require, "src.core.game3.dex")
+  if okD and Dex and Dex.isCaught then
+    local ok, v = pcall(Dex.isCaught, dex, sp)
+    if ok then return v == true end
+  end
+  return type(dex.caught) == "table" and dex.caught[sp] == true
+end
+
+-- pokefirered/src/trainer_card.c:858
+function Link.cardStars(s)
+  local stars = 0
+  if (tonumber(s.hofDebutHours) or 0) ~= 0 or (tonumber(s.hofDebutMinutes) or 0) ~= 0
+      or (tonumber(s.hofDebutSeconds) or 0) ~= 0 then
+    stars = 1
+  end
+  local dex = type(s.dex) == "table" and s.dex or nil
+  if dex then
+    local kanto = true
+    for sp = 1, 150 do
+      if not dexCaught(dex, sp) then
+        kanto = false
+        break
+      end
+    end
+    if kanto then
+      stars = stars + 1
+      local all = true
+      for sp = 152, 384 do
+        if (sp <= 248 or sp >= 252) and not dexCaught(dex, sp) then
+          all = false
+          break
+        end
+      end
+      if all then stars = stars + 1 end
+    end
+  end
+  if (tonumber(s.berriesPicked) or 0) >= 200 and (tonumber(s.jumpsInRow) or 0) >= 200 then stars = stars + 1 end
+  return math.min(4, stars)
+end
+
+-- pokefirered/src/trainer_card.c:818
+function Link.cardCaught(s)
+  local dex = type(s.dex) == "table" and s.dex or nil
+  if not dex then return 0 end
+  local okD, Dex = pcall(require, "src.core.game3.dex")
+  if okD and Dex and Dex.countCaught then
+    -- pokefirered/include/constants/flags.h:1398
+    local okF, national = pcall(flags().getFlag, Link.store(), nil, 0x840)
+    local ok, n = pcall(Dex.countCaught, dex, okF and national and "national" or "kanto")
+    if ok and n then return n end
+  end
+  return 0
 end
 
 -- pokefirered/src/trainer_card.c:858 TrainerCard_GenerateCardForLinkPlayer
@@ -498,6 +808,9 @@ function Link.localTrainerCard()
   local stats = type(s.gameStats) == "table" and s.gameStats or {}
   local card = type(s.trainerCard) == "table" and s.trainerCard or {}
   return {
+    stars = Link.cardStars(s),
+    caughtMonsCount = Link.cardCaught(s),
+    easyChatProfile = type(s.easyChatProfile) == "table" and s.easyChatProfile or nil,
     name = s.name or s.playerName,
     gender = s.gender,
     trainerId = s.trainerId or s.id,
@@ -532,10 +845,11 @@ end
 -- pokefirered/src/cable_club.c:980 Script_ShowLinkTrainerCard
 function Link.showLinkTrainerCard(ctx, adapters)
   local index = Link.getVar(ctx, Link.VAR_0x8006)
-  local card = Link.peerCard
+  local card = Link.peerCards[index]
   local link = Link.link
-  if link and link.role == "host" and index == 0 then card = Link.localTrainerCard() end
-  if link and link.role == "guest" and index == 1 then card = Link.localTrainerCard() end
+  if card == nil and (tonumber(link and link.nseats) or 2) <= 2 then card = Link.peerCard end
+  local mySeat = link and (tonumber(link.seat) or (link.role == "guest" and 1 or 0)) or nil
+  if mySeat ~= nil and index == mySeat then card = Link.localTrainerCard() end
   card = card or Link.localTrainerCard()
   local okC, TrainerCard = pcall(require, "src.ui.game3.trainer_card")
   if not (okC and type(TrainerCard) == "table" and TrainerCard.show
@@ -596,6 +910,10 @@ function Link.reset()
   Link._pump = nil
   Link._cardSent = false
   Link.peerCard = nil
+  Link.peerCards = {}
+  Link._exits = nil
+  Link._live = nil
+  Link.connectPrompt = nil
 end
 
 package.loaded["src.core.game3.link"] = Link

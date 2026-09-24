@@ -38,14 +38,17 @@ local function fakeLobby(count, myProfile)
       profile.kind = "cart"
       profile.cart = { id = "kanto", version = "1.0.0", hash = "abc" }
     end
+    local tour = i % 11 == 0
     rows[i] = {
       id = "e" .. i,
       open = true,
       spectators = i % 4,
-      code = ("L%05d"):format(i),
+      room = not tour and ("r%016x"):format(i) or nil,
+      tour = tour and ("t%016x"):format(i) or nil,
+      locked = not tour and i % 8 == 0 or nil,
       name = NAMES[((i - 1) % #NAMES) + 1] .. "#" .. (100 + i),
       verified = i % 3 == 0,
-      intent = (i % 11 == 0) and "tournament" or "battle",
+      intent = tour and "tournament" or "battle",
       note = (i % 4 == 0) and "first to three" or nil,
       profile = profile,
       stage = (i % 6 == 0) and "battling" or "waiting",
@@ -97,7 +100,7 @@ local function goOnline(OnlinePanel, imp, count)
 end
 
 local ROOM = {
-  code = "AB2CD3", host = "me", stage = "waiting", intent = "battle",
+  room = ("r%016x"):format(0xab2cd3), host = "me", stage = "waiting", intent = "battle",
   profile = PROFILE,
   players = {
     { id = "me", name = "RED#417", verified = true, ready = false },
@@ -108,7 +111,7 @@ local ROOM = {
 }
 
 local TOUR = {
-  code = "TRN234", creator = "me", stage = "running", round = 2, shotClock = 6,
+  tour = ("t%016x"):format(0x234), code = "TRN234", creator = "me", stage = "running", round = 2, shotClock = 6,
   players = {
     { id = "me", name = "RED#417", verified = true, online = true },
     { id = "p2", name = "BLUE#221", online = true },
@@ -145,6 +148,7 @@ local function scriptedLink(party)
   local Protocol = require("src.link.Protocol")
   local inbox = {}
   return {
+    seat = function() return 0 end,
     send = function(_, msg)
       if type(msg) ~= "table" then return end
       if msg.type == "party" then
@@ -175,7 +179,7 @@ local function remoteShot(OnlinePanel, imp, rows)
   local Trade = require("src.online.Trade")
   local handle = Trade.openSlot(entry.version, entry.slotId, entry.cartId)
   if not handle then return end
-  local remote = Trade.remote(handle, scriptedLink(peerParty(rows[2])),
+  local remote = Trade.remote(handle, scriptedLink(peerParty(rows[2] or rows[1])),
     { peerName = "BLUE" })
   if not remote then return end
   tr.remote, tr.peerName = remote, "BLUE"
@@ -348,7 +352,7 @@ STATES["join-summary"] = function(OnlinePanel, imp)
   ready(OnlinePanel, imp, 3)
   OnlinePanel.home(imp)
   OnlinePanel.go(imp, "play")
-  OnlinePanel.startJoin(imp, "AB2CD3", { partySize = 3 })
+  OnlinePanel.startJoin(imp, { room = ROOM.room }, { partySize = 3 })
   OnlinePanel.refresh(imp)
 end
 
@@ -412,7 +416,7 @@ end
 STATES["room-trade"] = function(OnlinePanel, imp)
   local client = goOnline(OnlinePanel, imp, 4)
   client.room = function()
-    return { code = "TR9ZQ2", host = "me", stage = "waiting",
+    return { room = ("r%016x"):format(0x7292), host = "me", stage = "waiting",
              intent = "trade", profile = PROFILE,
              players = { { id = "me", name = "RED#417", verified = true } },
              spectators = {} }

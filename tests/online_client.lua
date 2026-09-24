@@ -60,6 +60,12 @@ local PROFILE = {
   kind = "vanilla", rule = { partySize = 1 },
 }
 
+local function rid(n) return ("r%016x"):format(n) end
+local function tid(n) return ("t%016x"):format(n) end
+
+local ROOM1 = rid(0xabc234)
+local TOUR1 = tid(0x234)
+
 local Relay = {}
 Relay.__index = Relay
 
@@ -96,20 +102,22 @@ end
 function Relay:roomStateMsg()
   local room = self.room
   local players = {}
-  for _, p in ipairs(room.players) do
+  for i, p in ipairs(room.players) do
     table.insert(players, { id = p.id, name = p.name, verified = true,
-                            ready = p.ready or false, online = true })
+                            ready = p.ready or false, online = true,
+                            seat = i - 1 })
   end
   local spectators = {}
   for _, sp in ipairs(room.spectators) do
     table.insert(spectators, { id = sp.id, name = sp.name, verified = false })
   end
-  return { type = "room_state", code = room.code, players = players,
+  return { type = "room_state", room = room.room, players = players,
            spectators = spectators, stage = room.stage,
            profile = room.profile, host = room.host, seed = room.seed,
            rule = room.profile and room.profile.rule or nil,
            intent = "battle", maxSpectators = 8, match = room.match,
-           deadlines = {} }
+           engine = 1, seats = 2, locked = false, listed = true,
+           origin = room.origin or "create", deadlines = {} }
 end
 
 function Relay:broadcast(msg)
@@ -128,7 +136,7 @@ end
 function Relay:startMatch(token)
   local room = self.room
   room.matchNo = (room.matchNo or 0) + 1
-  room.match = token or (room.code .. "-m" .. room.matchNo)
+  room.match = token or (room.room .. "-m" .. room.matchNo)
   room.seed = 4242
   room.log = {}
   room.seq = 0
@@ -139,16 +147,18 @@ function Relay:startMatch(token)
                  rule = room.profile.rule, hostName = host.name,
                  guestName = guest.name, hostParty = host.party,
                  guestParty = guest.party, match = room.match,
-                 code = room.code }
+                 room = room.room, seats = 2, engine = 1,
+                 players = { { id = host.id, name = host.name, seat = 0 },
+                             { id = guest.id, name = guest.name, seat = 1 } } }
   local function start(seat, extra)
     local msg = {}
     for k, v in pairs(base) do msg[k] = v end
     for k, v in pairs(extra) do msg[k] = v end
     self:to(seat, msg)
   end
-  start(self.seats[host.id], { type = "match_start", role = "host",
+  start(self.seats[host.id], { type = "match_start", role = "host", seat = 0,
                                peerName = guest.name, theirParty = guest.party })
-  start(self.seats[guest.id], { type = "match_start", role = "guest",
+  start(self.seats[guest.id], { type = "match_start", role = "guest", seat = 1,
                                 peerName = host.name, theirParty = host.party })
   for _, sp in ipairs(room.spectators) do
     start(self.seats[sp.id], { type = "match_start_spectate",
@@ -159,9 +169,11 @@ end
 function Relay:resolve(how, winnerSide)
   local room = self.room
   local winner = winnerSide and room.players[winnerSide == "host" and 1 or 2]
-  self:broadcast({ type = "room_result", match = room.match,
+  self:broadcast({ type = "room_result", match = room.match, room = room.room,
                    winner = winner and winner.name or nil,
-                   winnerId = winner and winner.id or nil, how = how })
+                   winnerId = winner and winner.id or nil, how = how,
+                   winnerSide = winnerSide and (winnerSide == "host" and 0 or 1) or nil,
+                   winners = winner and { winner.id } or {} })
   for _, p in ipairs(room.players) do p.ready = false end
   room.seed = nil
   room.reports = {}
@@ -194,19 +206,21 @@ function Relay:fanout(fromId, clientSeq, inner)
   end
   if clientSeq then room.clientSeq[fromId] = clientSeq end
   room.seq = room.seq + 1
+  local seat = side == "host" and 0 or 1
   local entry = { seq = room.seq, clientSeq = clientSeq, side = side,
-                  msg = copy(inner) }
+                  seat = seat, msg = copy(inner) }
   table.insert(room.log, entry)
   for _, p in ipairs(room.players) do
     if p.id ~= fromId then
       self:to(self.seats[p.id], { type = "room_msg", seq = entry.seq,
-                                  clientSeq = clientSeq, msg = copy(inner) })
+                                  clientSeq = clientSeq, seat = seat,
+                                  msg = copy(inner) })
     end
   end
   for _, sp in ipairs(room.spectators) do
     self:to(self.seats[sp.id], { type = "room_msg", seq = entry.seq,
                                  clientSeq = clientSeq, side = side,
-                                 msg = copy(inner) })
+                                 seat = seat, msg = copy(inner) })
   end
   if inner.type == "forfeit" then
     room.reports[side] = "lose"
@@ -221,9 +235,10 @@ function Relay:replay(seat, from)
   for _, e in ipairs(room.log or {}) do
     if e.seq > from and not (side and e.side == side) then
       table.insert(msgs, side
-        and { seq = e.seq, clientSeq = e.clientSeq, msg = copy(e.msg) }
+        and { seq = e.seq, clientSeq = e.clientSeq, seat = e.seat,
+              msg = copy(e.msg) }
         or { seq = e.seq, clientSeq = e.clientSeq, side = e.side,
-             msg = copy(e.msg) })
+             seat = e.seat, msg = copy(e.msg) })
     end
   end
   self:to(seat, { type = "room_replay", from = from, msgs = msgs,
@@ -233,8 +248,8 @@ end
 
 -- ------------------------------------------------------------- tournaments
 
-local CHILD_CODES = { "CHA234", "CHB234", "CHC234", "CHD234", "CHE234",
-                      "CHF234", "CHG234", "CHJ234" }
+local CHILD_ROOMS = { rid(0xc1), rid(0xc2), rid(0xc3), rid(0xc4), rid(0xc5),
+                      rid(0xc6), rid(0xc7), rid(0xc8) }
 
 function Relay:tourSeats()
   local out = {}
@@ -276,7 +291,7 @@ function Relay:tourStateMsg()
     end
     bracket[#bracket + 1] = { round = round.round, matches = matches }
   end
-  return { type = "tour_state", code = t.code, creator = t.creator,
+  return { type = "tour_state", tour = t.tour, code = t.code, creator = t.creator,
            stage = t.stage, players = players, spectators = spectators,
            profile = t.profile, rule = t.profile and t.profile.rule or nil,
            shotClock = t.shotClock, round = t.round, bracket = bracket,
@@ -295,7 +310,7 @@ function Relay:tourStartMatch(entry, roundNo)
   t.live = entry.match
   t.liveEntry = entry
   t.childNo = (t.childNo or 0) + 1
-  local code = CHILD_CODES[t.childNo]
+  local child = CHILD_ROOMS[t.childNo]
   local function playerRec(id)
     for _, p in ipairs(t.players) do
       if p.id == id then
@@ -313,18 +328,18 @@ function Relay:tourStartMatch(entry, roundNo)
   for _, sp in ipairs(t.spectators) do
     spectators[#spectators + 1] = { id = sp.id, name = sp.name }
   end
-  self.room = { code = code, players = { a, b }, spectators = spectators,
+  self.room = { room = child, players = { a, b }, spectators = spectators,
                 stage = "waiting", profile = t.profile, host = t.creator,
                 seed = nil, log = {}, seq = 0, reports = {}, matchNo = 0,
-                match = nil }
+                match = nil, origin = "tour" }
   self:to(self.seats[entry.a], { type = "tour_match", match = entry.match,
-                                 round = roundNo, code = code })
+                                 round = roundNo, room = child })
   self:to(self.seats[entry.b], { type = "tour_match", match = entry.match,
-                                 round = roundNo, code = code })
+                                 round = roundNo, room = child })
   for _, sp in ipairs(spectators) do
     self:to(self.seats[sp.id], { type = "tour_match_spectate",
                                  match = entry.match, round = roundNo,
-                                 code = code })
+                                 room = child })
   end
   self:tourState()
   self:to(self.seats[entry.a], { type = "tour_deadline", kind = "shot",
@@ -358,7 +373,7 @@ function Relay:tourAdvance()
     t.stage = "finished"
     t.champion = winners[1]
     self:tourState()
-    self:tourBroadcast({ type = "tour_over", code = t.code,
+    self:tourBroadcast({ type = "tour_over", tour = t.tour,
                          championId = winners[1],
                          champion = self:tourNameOf(winners[1]) })
     return
@@ -368,7 +383,7 @@ function Relay:tourAdvance()
   for i = 1, #winners, 2 do
     local a, b = winners[i], winners[i + 1]
     matches[#matches + 1] = {
-      match = ("%s-r%d-m%d"):format(t.code, t.round, math.ceil(i / 2)),
+      match = ("%s-r%d-m%d"):format(t.tour, t.round, math.ceil(i / 2)),
       a = a, b = b, state = b and "pending" or "bye" }
   end
   t.bracket[#t.bracket + 1] = { round = t.round, matches = matches }
@@ -380,7 +395,8 @@ function Relay:tourHandle(seat, msg)
   local kind = msg.type
   local t = self.tour
   if kind == "tour_create" then
-    self.tour = { code = "TRN234", creator = seat.id, stage = "registering",
+    self.tour = { tour = TOUR1, code = msg.public == false and "TRN234" or nil,
+                  creator = seat.id, stage = "registering",
                   players = {}, spectators = {}, profile = msg.profile,
                   shotClock = msg.shotClock, round = 0, bracket = {},
                   live = nil, champion = nil, childNo = 0 }
@@ -407,7 +423,13 @@ function Relay:tourHandle(seat, msg)
     return true
   end
   if kind == "tour_join" then
-    if msg.code ~= t.code then
+    local byId = msg.tour ~= nil and msg.tour == t.tour
+    local byCode = msg.code ~= nil and t.code ~= nil and msg.code == t.code
+    if byId and t.code ~= nil then
+      self:to(seat, { type = "join_error", reason = "tour_private" })
+      return true
+    end
+    if not byId and not byCode then
       self:to(seat, { type = "join_error", reason = "tour_not_found" })
       return true
     end
@@ -438,7 +460,7 @@ function Relay:tourHandle(seat, msg)
     for i = 1, #t.players, 2 do
       local a, b = t.players[i], t.players[i + 1]
       matches[#matches + 1] = {
-        match = ("%s-r1-m%d"):format(t.code, math.ceil(i / 2)),
+        match = ("%s-r1-m%d"):format(t.tour, math.ceil(i / 2)),
         a = a.id, b = b and b.id or nil,
         state = b and "pending" or "bye" }
     end
@@ -451,7 +473,7 @@ function Relay:tourHandle(seat, msg)
       return true
     end
     self.tourKicked = msg.id
-    self:to(self.seats[msg.id], { type = "tour_closed", code = t.code,
+    self:to(self.seats[msg.id], { type = "tour_closed", tour = t.tour,
                                   reason = "kicked" })
     for i = #t.players, 1, -1 do
       if t.players[i].id == msg.id then table.remove(t.players, i) end
@@ -463,7 +485,7 @@ function Relay:tourHandle(seat, msg)
       return true
     end
     self.tourClosedBy = seat.id
-    self:tourBroadcast({ type = "tour_closed", code = t.code,
+    self:tourBroadcast({ type = "tour_closed", tour = t.tour,
                          reason = "closed" })
     self.tour = nil
   elseif kind == "tour_leave" then
@@ -500,19 +522,18 @@ function Relay:handle(seat, msg)
   elseif kind == "room_close" then
     self.closedBy = seat.id
     if room then self:broadcast({ type = "room_closed", reason = "closed",
-                                  code = room.code }) end
+                                  room = room.room }) end
     self.room = nil
   elseif kind == "room_create" then
-    self.room = { code = "ABC234", players = {}, spectators = {},
+    self.room = { room = ROOM1, players = {}, spectators = {},
                   stage = "waiting", profile = msg.profile,
                   host = seat.id, seed = nil, log = {}, seq = 0,
                   reports = {}, matchNo = 0, match = nil }
     table.insert(self.room.players, { id = seat.id, name = seat.name })
     self:roomState("waiting")
   elseif kind == "room_join" then
-    if not room or msg.code ~= room.code then
-      self:to(seat, { type = "join_error", reason = "not_found",
-                      detail = tostring(msg.code) })
+    if not room or msg.room ~= room.room then
+      self:to(seat, { type = "join_error", reason = "not_found" })
       return
     end
     if not msg.profile then
@@ -606,14 +627,22 @@ do
   eq(#hello.name, 16, "a display name is bounded to 16 characters")
   eq(hello.profiles[1].rulesetId, "gen1_faithful", "the profile rides along")
   eq(hello.profiles[1].rule.partySize, 1, "the party rule rides along")
+  eq(hello.protocol, 3, "lobby_hello announces protocol 3")
 
-  local join = Protocol2.roomJoin("abc234", "spectator")
-  eq(join.code, "ABC234", "a room code is upper-cased")
+  local join = Protocol2.roomJoin(ROOM1:upper(), "spectator")
+  eq(join.room, ROOM1, "a room id is lower-cased")
   eq(join.as, "spectator", "join carries the seat kind")
-  eq(Protocol2.roomJoin("ABC01I", "player").code, nil,
-     "a code outside CodeEntry.CHARSET is refused")
-  eq(Protocol2.roomJoin("ABC23", "player").code, nil,
-     "a short code is refused")
+  eq(join.code, nil, "room_join never carries a code")
+  eq(Protocol2.roomJoin("ABC234", "player").room, nil,
+     "a code-shaped room reference is refused")
+  eq(Protocol2.roomJoin("r123", "player").room, nil,
+     "a short room id is refused")
+  eq(Protocol2.roomJoin(ROOM1, "player", PROFILE, "0042").pin, "0042",
+     "a four-digit PIN rides along")
+  eq(Protocol2.roomJoin(ROOM1, "player", PROFILE, "42").pin, nil,
+     "a short PIN is refused")
+  eq(Protocol2.roomJoin(ROOM1, "player", PROFILE, 1234).pin, nil,
+     "a numeric PIN is refused (it must be a string)")
 
   local wrapped = Protocol2.roomMsg(3, { type = "action", kind = "move",
                                          slot = 2 })
@@ -636,7 +665,7 @@ do
     end)() })
   eq(#replay.msgs, 512, "a replay is bounded to 512 messages")
 
-  local state = Wire.sanitize({ type = "room_state", code = "ABC234",
+  local state = Wire.sanitize({ type = "room_state", room = ROOM1,
     players = {}, spectators = (function()
       local out = {}
       for i = 1, 200 do out[i] = { id = "s" .. i, name = "S" } end
@@ -645,7 +674,10 @@ do
   eq(#state.spectators, 64, "spectators are bounded to 64")
 
   eq(select(2, Protocol2.validate({ type = "room_state", players = {} })),
-     "room_state without a code", "a codeless room_state fails validation")
+     "room_state without a room id", "an id-less room_state fails validation")
+  eq(select(2, Protocol2.validate({ type = "room_state", code = "ABC234",
+                                    players = {} })),
+     "room_state without a room id", "a room code is no room id")
   eq(select(2, Protocol2.validate({ type = "join_error" })),
      "join_error without a reason", "a reasonless join_error fails validation")
   eq(Protocol2.validate({ type = "action", kind = "move", slot = 1 }).kind,
@@ -653,12 +685,17 @@ do
 
   local created = Protocol2.roomCreate({ intent = "battle", profile = PROFILE,
                                         playing = true, maxSpectators = 4,
-                                        public = false,
+                                        private = true, pin = "0000",
                                         note = string.rep("z", 90) })
-  eq(created.public, false, "roomCreate carries a private flag")
+  eq(created.private, true, "roomCreate carries a private flag")
+  eq(created.pin, "0000", "and the host's PIN")
+  eq(created.public, nil, "the legacy public flag is gone")
+  eq(created.seats, 2, "a room is two seats unless the caller says otherwise")
   eq(#created.note, 40, "a room note is bounded to 40 characters")
-  eq(Protocol2.roomCreate({ profile = PROFILE }).public, true,
-     "a room is public unless the caller says otherwise")
+  eq(Protocol2.roomCreate({ profile = PROFILE }).private, false,
+     "a room is open unless the caller says otherwise")
+  eq(Protocol2.roomCreate({ profile = PROFILE, pin = "1234" }).pin, nil,
+     "an open room never carries a PIN")
   eq(Protocol2.roomCreate({ profile = PROFILE }).note, nil,
      "a room without a note sends none")
 
@@ -666,6 +703,7 @@ do
     { id = "p9", name = "N", since = 1, code = "abc234", open = "yes",
       stage = "battling", players = 900, spectators = 200,
       maxSpectators = 200 } } }).added[1]
+  eq(shaped.code, nil, "a lobby entry never carries a code")
   eq(shaped.open, nil, "a non-boolean open is dropped from a lobby entry")
   eq(shaped.stage, "battling", "a lobby entry carries the room stage")
   eq(shaped.players, 64, "the entry player count is bounded")
@@ -695,9 +733,15 @@ do
 
   local tj = Protocol2.tourJoin("trn234", "player", PROFILE,
                                 { { species = "PIKACHU", level = 5 } }, "dg")
-  eq(tj.code, "TRN234", "tour_join upper-cases its code")
+  eq(tj.code, "TRN234", "tour_join upper-cases a private tournament code")
+  eq(tj.tour, nil, "and sends no id with it")
   eq(tj.party[1].species, "PIKACHU", "tour_join carries the team")
   eq(tj.partyDigest, "dg", "tour_join carries the digest")
+  local tjId = Protocol2.tourJoin({ tour = TOUR1, as = "spectator",
+                                    profile = PROFILE })
+  eq(tjId.tour, TOUR1, "the table form joins a public tournament by id")
+  eq(tjId.code, nil, "without a code")
+  eq(tjId.as, "spectator", "and keeps the seat kind")
   eq(Protocol2.tourKick("p9").id, "p9", "tour_kick names its target")
   eq(Protocol2.tourStart().type, "tour_start", "tour_start builds its type")
   eq(Protocol2.tourClose().type, "tour_close", "tour_close builds its type")
@@ -709,7 +753,7 @@ do
     return out
   end
   local big = Wire.sanitize({
-    type = "tour_state", code = "TRN234", creator = "p1", stage = "running",
+    type = "tour_state", tour = TOUR1, creator = "p1", stage = "running",
     players = fill(200, function(i)
       return { id = "p" .. i, name = "N" .. i, eliminated = false }
     end),
@@ -739,20 +783,24 @@ do
      "tour_match without a match token",
      "a tokenless tour_match fails validation")
   eq(select(2, Protocol2.validate({ type = "tour_match", match = "m1" })),
-     "tour_match without a child room code",
-     "a codeless tour_match fails validation")
+     "tour_match without a child room id",
+     "an id-less tour_match fails validation")
+  eq(select(2, Protocol2.validate({ type = "tour_match", match = "m1",
+                                    code = "CHA234" })),
+     "tour_match without a child room id",
+     "a child room code is no child room id")
   eq(select(2, Protocol2.validate({ type = "tour_deadline", kind = "shot" })),
      "tour_deadline without a time", "a timeless tour_deadline fails")
   eq(select(2, Protocol2.validate({ type = "tour_over" })),
-     "tour_over without a code", "a codeless tour_over fails")
+     "tour_over without a tournament id", "an id-less tour_over fails")
   eq(Protocol2.validate({ type = "tour_match", match = "m1",
-                          code = "cha234" }).code, "CHA234",
-     "a child room code is upper-cased on the way in")
-  eq(select(2, Protocol2.validate({ type = "tour_closed", code = "TRN234" })),
+                          room = rid(0xc1):upper() }).room, rid(0xc1),
+     "a child room id is lower-cased on the way in")
+  eq(select(2, Protocol2.validate({ type = "tour_closed", tour = TOUR1 })),
      "tour_closed without a reason", "a reasonless tour_closed fails")
-  eq(Protocol2.validate({ type = "tour_closed", code = "trn234",
-                          reason = "idle" }).code, "TRN234",
-     "tour_closed carries its tournament code")
+  eq(Protocol2.validate({ type = "tour_closed", tour = TOUR1,
+                          reason = "idle" }).tour, TOUR1,
+     "tour_closed carries its tournament id")
   eq(Protocol2.tourCreate({ profile = PROFILE, party = {
        { species = "PIKACHU", level = 5 } }, partyDigest = "dd" }).party[1]
      .species, "PIKACHU", "tour_create carries the creator's team")
@@ -800,13 +848,14 @@ eq(lobbyEvents, 1, "a lobby list emits one lobby event")
 
 relay:to(seatA, { type = "lobby_delta",
                   added = { { id = "p0", name = "GOLD", since = 5,
-                              code = "abc234" } },
+                              room = ROOM1:upper(), locked = true } },
                   removed = { "p2" }, changed = {} })
 ClientA.update(0)
 eq(#ClientA.lobby(), 3, "a delta adds and removes")
 eq(ClientA.lobby()[1].name, "GOLD", "a delta keeps the ordering stable")
-eq(ClientA.lobby()[1].code, "ABC234",
-   "a lobby entry carries the advertiser's room code")
+eq(ClientA.lobby()[1].room, ROOM1,
+   "a lobby entry carries the advertiser's room id")
+eq(ClientA.lobby()[1].locked, true, "and whether it is PIN-locked")
 local names = {}
 for _, e in ipairs(ClientA.lobby()) do table.insert(names, e.name) end
 eq(table.concat(names, ","), "GOLD,BLUE,GREEN", "the whole order is stable")
@@ -829,32 +878,33 @@ eq(ClientA.lobby()[2].note, "still here",
 
 relay:to(seatA, { type = "lobby_list", online = 9, entries = {
   { id = "a1", name = "RED", since = 5, intent = "battle", profile = PROFILE,
-    code = "aaa234", open = true, stage = "waiting", players = 1,
+    room = rid(0xa), open = true, stage = "waiting", players = 1,
     spectators = 0, maxSpectators = 4 },
   { id = "p1", name = "BLUE", since = 10, intent = "battle", profile = PROFILE,
-    code = "bbb234", open = true, stage = "waiting", players = 1,
+    room = rid(0xb), open = true, stage = "waiting", players = 1,
     spectators = 0, maxSpectators = 4 },
   { id = "p2", name = "LEAF", since = 20, intent = "battle", profile = PROFILE,
-    code = "ccc234", open = false, stage = "battling", players = 2,
+    room = rid(0xc), open = false, stage = "battling", players = 2,
     spectators = 1, maxSpectators = 4 },
   { id = "p3", name = "GREEN", since = 30, intent = "battle", profile = PROFILE,
-    code = "ddd234", open = false, stage = "battling", players = 2,
+    room = rid(0xd), open = false, stage = "battling", players = 2,
     spectators = 4, maxSpectators = 4 },
   { id = "p4", name = "GOLD", since = 40, intent = "battle", profile = PROFILE,
     note = "looking for a battle" },
   { id = "p5", name = "SILVER", since = 50, intent = "tournament",
-    profile = PROFILE, code = "eee234", open = false, stage = "registering",
+    profile = PROFILE, tour = tid(0xe), open = false, stage = "registering",
     players = 3, spectators = 0, maxSpectators = 8 },
   { id = "p6", name = "CRYS", since = 60, intent = "battle", profile = PROFILE,
-    code = "fff234", open = true, stage = "waiting", players = 1,
-    spectators = 0, maxSpectators = 0 },
+    room = rid(0xf), open = true, stage = "waiting", players = 1,
+    spectators = 0, maxSpectators = 0, locked = true },
 } })
 ClientA.update(0)
 
 local openRooms = ClientA.openRooms()
-eq(#openRooms, 2, "openRooms keeps only the open, coded entries")
-eq(openRooms[1].code, "BBB234", "openRooms sorts by since")
-eq(openRooms[2].code, "FFF234", "...and the later room comes second")
+eq(#openRooms, 2, "openRooms keeps only the open entries with a room")
+eq(openRooms[1].room, rid(0xb), "openRooms sorts by since")
+eq(openRooms[2].room, rid(0xf), "...and the later room comes second")
+eq(openRooms[2].locked, true, "a locked room is still listed, with its lock")
 local sawSelf = false
 for _, e in ipairs(openRooms) do
   if e.id == ClientA.you().id then sawSelf = true end
@@ -865,11 +915,11 @@ eq(openRooms[1].maxSpectators, 4, "...and its spectator ceiling")
 
 local watchable = ClientA.watchable()
 eq(#watchable, 2, "watchable keeps live rooms with a free spectator seat")
-eq(watchable[1].code, "CCC234", "a battling room with room to spectate is watchable")
-eq(watchable[2].code, "EEE234", "a tournament is watchable too")
+eq(watchable[1].room, rid(0xc), "a battling room with room to spectate is watchable")
+eq(watchable[2].tour, tid(0xe), "a tournament is watchable too")
 local sawFull = false
 for _, e in ipairs(watchable) do
-  if e.code == "DDD234" then sawFull = true end
+  if e.room == rid(0xd) then sawFull = true end
 end
 check(not sawFull, "a room with every spectator seat taken is not watchable")
 
@@ -879,7 +929,7 @@ eq(counts.openRooms, 2, "counts reports the open room total")
 
 relay:to(seatA, { type = "lobby_list", entries = {
   { id = "p1", name = "BLUE", since = 10, intent = "battle", profile = PROFILE,
-    code = "bbb234", open = true, stage = "waiting", players = 1,
+    room = rid(0xb), open = true, stage = "waiting", players = 1,
     spectators = 0, maxSpectators = 4 },
   { id = "p4", name = "GOLD", since = 40, intent = "battle", profile = PROFILE },
 } })
@@ -890,17 +940,43 @@ eq(fallback.openRooms, 1, "and still counts the open rooms")
 eq(#ClientA.watchable(), 0, "nothing is watchable in a quiet lobby")
 
 relay:to(seatA, { type = "lobby_list", entries = {
+  { id = "p1", name = "BLUE", since = 10, intent = "battle", profile = PROFILE,
+    room = rid(0xb), open = true, stage = "waiting", players = 1,
+    spectators = 0, maxSpectators = 4, online = false },
+  { id = "p2", name = "LEAF", since = 20, intent = "battle", profile = PROFILE,
+    room = rid(0xc), open = true, stage = "waiting", players = 2,
+    spectators = 0, maxSpectators = 4, online = true },
+  { id = "p3", name = "GREEN", since = 30, intent = "battle", profile = PROFILE,
+    room = rid(0xc), open = false, stage = "waiting", online = false },
+  { id = "p6", name = "CRYS", since = 60, intent = "battle", profile = PROFILE,
+    room = rid(0xf), open = true, stage = "waiting", players = 1,
+    spectators = 0, maxSpectators = 0, online = true },
+} })
+ClientA.update(0)
+local liveRooms = ClientA.openRooms()
+eq(#liveRooms, 1, "openRooms hides rooms with an offline host or seated player")
+eq(liveRooms[1] and liveRooms[1].room, rid(0xf), "only the live room stays listed")
+eq(ClientA.counts().openRooms, 1, "counts skips the offline rooms too")
+relay:to(seatA, { type = "lobby_delta", changed = {
+  { id = "p1", name = "BLUE", since = 10, intent = "battle", profile = PROFILE,
+    room = rid(0xb), open = true, stage = "waiting", players = 1,
+    spectators = 0, maxSpectators = 4, online = true },
+} })
+ClientA.update(0)
+eq(#ClientA.openRooms(), 2, "a host that resumes lists its room again")
+
+relay:to(seatA, { type = "lobby_list", entries = {
   { id = "a1", name = "RED", since = 5, intent = "tournament",
-    profile = PROFILE, code = "ggg234", open = true, stage = "registering",
+    profile = PROFILE, tour = tid(0x1), open = true, stage = "registering",
     players = 8, spectators = 0, maxSpectators = 8 },
   { id = "p7", name = "IVY", since = 6, intent = "tournament",
-    profile = PROFILE, code = "hhh234", open = true, stage = "registering",
+    profile = PROFILE, tour = tid(0x2), open = true, stage = "registering",
     players = 5, spectators = 0, maxSpectators = 8 },
 } })
 ClientA.update(0)
 local watchMine = ClientA.watchable()
 eq(#watchMine, 1, "watchable drops the caller's own entry")
-eq(watchMine[1].code, "HHH234", "only another trainer's tournament is watchable")
+eq(watchMine[1].tour, tid(0x2), "only another trainer's tournament is watchable")
 eq(watchMine[1].players, 5,
    "a tournament entry keeps a player count above the room ceiling")
 
@@ -923,20 +999,24 @@ local roomEvents = 0
 ClientA.on("room", function() roomEvents = roomEvents + 1 end)
 local pending = ClientA.createRoom({ intent = "battle", profile = PROFILE,
                                      playing = true, maxSpectators = 8,
-                                     public = true, note = "come and get it" })
+                                     private = false, note = "come and get it" })
 local createSent
 for _, m in ipairs(seatA.transport.outbox) do
   if m.type == "room_create" then createSent = m end
 end
 check(createSent ~= nil, "createRoom sends a room_create")
-eq(createSent and createSent.public, true, "createRoom sends the public flag")
+eq(createSent and createSent.private, false, "createRoom sends the private flag")
 eq(createSent and createSent.note, "come and get it",
    "createRoom sends the note")
 relay:pump()
 ClientA.update(0)
 check(pending.done, "createRoom's promise completes")
-eq(pending.code, "ABC234", "createRoom yields a room code")
-eq(ClientA.room().code, "ABC234", "the room model holds the code")
+eq(pending.id, ROOM1, "createRoom yields a room id")
+eq(pending.code, nil, "and no code")
+eq(ClientA.room().room, ROOM1, "the room model holds the id")
+eq(ClientA.room().seats, 2, "the room model holds its seat count")
+eq(ClientA.room().engine, 1, "and its engine")
+eq(ClientA.seat(), 0, "the creator sits in seat 0")
 eq(ClientA.room().stage, "waiting", "a fresh room is waiting")
 eq(#ClientA.room().players, 1, "the creator is the only player")
 eq(roomEvents, 1, "room_state emits a room event")
@@ -947,18 +1027,21 @@ connectTo(ClientB, seatB, "BLUE")
 relay:pump()
 ClientB.update(0)
 eq(ClientB.state(), "online", "the second client comes online")
-local joinPending = ClientB.joinRoom("ABC234", "player")
+local joinPending = ClientB.joinRoom(ROOM1, "player")
 local joinMsg
 for _, m in ipairs(seatB.transport.outbox) do
   if m.type == "room_join" then joinMsg = m end
 end
 eq(joinMsg and joinMsg.profile and joinMsg.profile.fingerprint, "abc123",
    "room_join carries the joiner's profile")
+eq(joinMsg and joinMsg.room, ROOM1, "room_join names the room by id")
 relay:pump()
 ClientA.update(0)
 ClientB.update(0)
 check(joinPending.done, "joinRoom's promise completes")
-eq(ClientB.room().code, "ABC234", "the guest sees the room")
+eq(joinPending.id, ROOM1, "the join promise names the room")
+eq(ClientB.room().room, ROOM1, "the guest sees the room")
+eq(ClientB.seat(), 1, "the joiner sits in seat 1")
 eq(#ClientA.room().players, 2, "the host sees both players")
 
 local seatC = relay:seat("c1", "GREEN")
@@ -966,7 +1049,7 @@ local ClientC = newClientModule()
 connectTo(ClientC, seatC, "GREEN")
 relay:pump()
 ClientC.update(0)
-ClientC.joinRoom("ABC234", "spectator")
+ClientC.joinRoom(ROOM1, "spectator")
 local specJoin
 for _, m in ipairs(seatC.transport.outbox) do
   if m.type == "room_join" then specJoin = m end
@@ -979,10 +1062,15 @@ ClientA.update(0); ClientB.update(0); ClientC.update(0)
 eq(#ClientC.room().spectators, 1, "a spectator lands in the room")
 eq(#ClientC.room().players, 2, "a spectator sees both players")
 
-local badJoin = ClientC.joinRoom("ZZZZZZ", "player")
+local sentBefore = #seatC.transport.outbox
+local codeJoin = ClientC.joinRoom("ZZZZZZ", "player")
+check(codeJoin.done and codeJoin.reason == "bad_room",
+      "a code-shaped room reference fails locally as bad_room")
+eq(#seatC.transport.outbox, sentBefore, "and nothing reaches the relay")
+local badJoin = ClientC.joinRoom(rid(0xdead), "player")
 relay:pump()
 ClientC.update(0)
-check(badJoin.done and badJoin.error ~= nil, "a bad code answers join_error")
+check(badJoin.done and badJoin.error ~= nil, "an unknown room answers join_error")
 eq(badJoin.reason, "not_found", "the join error keeps its reason")
 
 -- ---------------------------------------------------------------- match_start
@@ -1003,8 +1091,14 @@ ClientA.update(0); ClientB.update(0); ClientC.update(0)
 
 check(startA ~= nil and startB ~= nil, "both players get match_start")
 eq(ClientA.room().stage, "battling", "a started room reads as battling")
-eq(startA.match, "ABC234-m1", "match_start carries the match token")
-eq(ClientA.match(), "ABC234-m1", "the client holds the match token")
+eq(startA.match, ROOM1 .. "-m1", "match_start carries the match token")
+eq(ClientA.match(), ROOM1 .. "-m1", "the client holds the match token")
+eq(startA.room, ROOM1, "match_start names the room")
+eq(startA.seat, 0, "match_start carries the host's seat")
+eq(startB.seat, 1, "and the guest's seat")
+eq(startA.seats, 2, "and the seat count")
+eq(startC and startC.seat, nil, "a spectator has no seat")
+eq(startA.players and #startA.players, 2, "match_start lists the seated players")
 eq(ClientA.role(), "host", "the client knows its role")
 eq(ClientC.role(), "spectator", "a spectator knows its role")
 eq(startA.role, "host", "the creator is the host")
@@ -1046,6 +1140,14 @@ local got = sessB:poll()
 eq(#got, 2, "poll unwraps both inner messages")
 eq(got[1].type, "action", "poll keeps seq order (first)")
 eq(got[2].type, "hash", "poll keeps seq order (second)")
+eq(got[1].seat, nil, "an engine 1 seat gets the bare inner message, untagged")
+eq(sessB:seat(), 1, "the room session knows its seat")
+eq(sessB:seats(), 2, "and the seat count")
+eq(sessB:role(), "guest", "and its role")
+eq(sessB:engine(), 1, "and the engine")
+eq(sessB:peerOnline(0), true, "the host seat reads as online")
+eq(sessB.target, ROOM1, "the session targets the room id")
+eq(sessB.code, nil, "and carries no code")
 local ackSeq
 for _, m in ipairs(seatB.transport.outbox) do
   if m.type == "room_ack" then ackSeq = m.seq end
@@ -1182,7 +1284,7 @@ for _, m in ipairs(seatA.transport.outbox) do
   if m.type == "room_report" then reportMsg = m end
 end
 check(reportMsg ~= nil, "report sends room_report")
-eq(reportMsg.match, "ABC234-m1", "room_report carries the live match token")
+eq(reportMsg.match, ROOM1 .. "-m1", "room_report carries the live match token")
 eq(reportMsg.result, "win", "room_report carries the result")
 
 ClientB.report("lose")
@@ -1191,7 +1293,7 @@ ClientA.update(0); ClientB.update(0); ClientC.update(0)
 
 check(endA ~= nil and endB ~= nil, "both players get match_end")
 eq(endA.how, "agreed", "match_end carries how the relay resolved it")
-eq(endA.match, "ABC234-m1", "match_end carries the match token")
+eq(endA.match, ROOM1 .. "-m1", "match_end carries the match token")
 eq(endA.winnerId, "a1", "match_end carries the winner's seat id")
 eq(endA.youWon, true, "the winner is told it won")
 eq(endB.youWon, false, "the loser is told it did not")
@@ -1202,7 +1304,7 @@ ClientA.ready(partyRed, "digestA")
 ClientB.ready(partyBlue, "digestB")
 relay:pump()
 ClientA.update(0); ClientB.update(0)
-eq(ClientA.match(), "ABC234-m2", "a rematch takes a fresh match token")
+eq(ClientA.match(), ROOM1 .. "-m2", "a rematch takes a fresh match token")
 
 endA, endB = nil, nil
 ClientB.forfeit()
@@ -1211,7 +1313,7 @@ for _, m in ipairs(seatB.transport.outbox) do
   if m.type == "forfeit" then forfeitMsg = m end
 end
 check(forfeitMsg ~= nil, "forfeit sends a top-level forfeit")
-eq(forfeitMsg.match, "ABC234-m2", "forfeit carries the live match token")
+eq(forfeitMsg.match, ROOM1 .. "-m2", "forfeit carries the live match token")
 relay:pump()
 ClientA.update(0); ClientB.update(0)
 eq(endA and endA.how, "forfeit", "a forfeit resolves as a forfeit")
@@ -1222,7 +1324,7 @@ ClientB.ready(partyBlue, "digestB")
 relay:pump()
 ClientA.update(0); ClientB.update(0)
 local thirdMatch = ClientA.match()
-eq(thirdMatch, "ABC234-m3", "a third match takes another token")
+eq(thirdMatch, ROOM1 .. "-m3", "a third match takes another token")
 endA, endB = nil, nil
 ClientA.report("error")
 local errForfeit
@@ -1248,7 +1350,7 @@ ClientA.kick("b1")
 relay:pump()
 eq(relay.kicked, "b1", "kick sends room_kick with the target id")
 
-relay:to(seatA, { type = "room_closed", reason = "closed", code = "ABC234" })
+relay:to(seatA, { type = "room_closed", reason = "closed", room = ROOM1 })
 local closedErr
 ClientA.on("error", function(e) closedErr = e end)
 ClientA.update(0)
@@ -1277,7 +1379,7 @@ do
   rr:pump(); CH.update(0); CG.update(0)
   CH.createRoom({ intent = "battle", profile = PROFILE })
   rr:pump(); CH.update(0)
-  CG.joinRoom("ABC234", "player")
+  CG.joinRoom(ROOM1, "player")
   rr:pump(); CH.update(0); CG.update(0)
   eq(#CH.room().players, 2, "host and guest share the room")
   local function types(seat)
@@ -1296,6 +1398,51 @@ do
   rr:pump()
   eq(rr.closedBy, "h1", "so the relay tears the room down for everyone")
   eq(CH.room(), nil, "and the host's room model is gone")
+
+  local lateErr
+  CH.on("error", function(e) if e.scope == "room" then lateErr = e end end)
+  local made = CH.createTournament({ profile = PROFILE, playing = true,
+                                     shotClock = 6, maxSpectators = 8,
+                                     party = { { species = "CHARIZARD",
+                                                 level = 50, hp = 10 } },
+                                     partyDigest = "dh" })
+  CH.update(0)
+  check(not made.done,
+        "a late room_closed for the room just left does not fail the next request")
+  eq(lateErr, nil, "and raises no room error")
+  rr:pump(); CH.update(0)
+  check(made.done and made.error == nil, "the tournament create still resolves")
+  eq(CH.tournament() and CH.tournament().tour, TOUR1,
+     "and the host holds the tournament")
+end
+
+do
+  local rr = newRelay()
+  local sh = rr:seat("h1", "HOST")
+  local CH = newClientModule()
+  connectTo(CH, sh, "HOST")
+  rr:pump(); CH.update(0)
+  local lateErr
+  CH.on("error", function(e) if e.scope == "room" then lateErr = e end end)
+  CH.createRoom({ intent = "battle", profile = PROFILE })
+  rr:pump(); CH.update(0)
+  eq(CH.room() and CH.room().room, ROOM1, "the host opens a room")
+  rr:to(sh, { type = "room_closed", reason = "closed", room = rid(0x77) })
+  CH.update(0)
+  eq(CH.room() and CH.room().room, ROOM1,
+     "a room_closed naming another room leaves the current room alone")
+  eq(lateErr, nil, "and raises no room error either")
+  rr:to(sh, { type = "room_closed", reason = "closed", room = ROOM1 })
+  CH.update(0)
+  eq(CH.room(), nil, "a room_closed for the current room still clears it")
+  eq(lateErr and lateErr.room, ROOM1, "and surfaces the room error")
+
+  lateErr = nil
+  local joining = CH.joinRoom(rid(0x99), "player")
+  rr:to(sh, { type = "room_closed", reason = "closed", room = rid(0x99) })
+  CH.update(0)
+  check(joining.done and joining.error ~= nil,
+        "a room_closed for the room a join is waiting on fails that join")
 end
 
 -- ------------------------------------------------- reports across a drop
@@ -1335,13 +1482,13 @@ do
                     moves = { { id = "TACKLE", pp = 35 } } } }
   CH.createRoom({ profile = PROFILE })
   pump()
-  CG.joinRoom("ABC234", "player", PROFILE)
+  CG.joinRoom(ROOM1, "player", PROFILE)
   pump()
   CH.ready(party, "dh")
   CG.ready(party, "dg")
   pump()
   local m1 = CH.match()
-  eq(m1, "ABC234-m1", "the drop scenario opens on a live match")
+  eq(m1, ROOM1 .. "-m1", "the drop scenario opens on a live match")
 
   local endH
   CH.on("match_end", function(p) endH = p end)
@@ -1388,12 +1535,12 @@ do
      "a room_result that arrives first cancels the queued report")
   eq(CH.pendingReport(), nil, "and clears the queue")
   eq(endH and endH.match, m2, "the client still reports the match as ended")
-  eq(endH and endH.code, "ABC234", "room_result carries the room code")
+  eq(endH and endH.room, ROOM1, "room_result carries the room id")
   endH = nil
-  rr:to(sh, { type = "room_result", match = m2, code = "ZZZ234",
+  rr:to(sh, { type = "room_result", match = m2, room = rid(0x777),
               winnerId = "g1", how = "stall" })
   CH.update(0)
-  eq(endH and endH.code, "ZZZ234", "a room_result with a code uses that code")
+  eq(endH and endH.room, rid(0x777), "a room_result with a room id uses that id")
 
   CH.ready(party, "dh")
   CG.ready(party, "dg")
@@ -1524,8 +1671,9 @@ do
      "a playing creator sends its team with tour_create")
   eq(createMsg and createMsg.partyDigest, "d1", "and its digest")
   pump()
-  check(made.done and made.code == "TRN234", "createTournament yields a code")
-  eq(C1.tournament().code, "TRN234", "the tournament model holds the code")
+  check(made.done and made.id == TOUR1, "createTournament yields a tournament id")
+  eq(C1.tournament().tour, TOUR1, "the tournament model holds the id")
+  eq(C1.tournament().code, nil, "a public tournament has no code")
   eq(C1.tournament().stage, "registering", "a fresh tournament is registering")
   eq(C1.tournament().creator, "t1", "the creator is named")
   eq(#C1.tournament().players, 1, "the playing creator is a player")
@@ -1535,24 +1683,29 @@ do
                      moves = { { id = "TACKLE", pp = 35 } } } }
   local party3 = { { species = "VENUSAUR", level = 50, hp = 10,
                      moves = { { id = "TACKLE", pp = 35 } } } }
-  C2.joinTournament("TRN234", "player", party2, "d2")
+  C2.joinTournament({ tour = TOUR1, as = "player", party = party2,
+                      partyDigest = "d2" })
   local joinMsg2 = outbox(C2, "tour_join")
-  eq(joinMsg2 and joinMsg2.code, "TRN234", "tour_join carries the code")
+  eq(joinMsg2 and joinMsg2.tour, TOUR1, "tour_join carries the tournament id")
+  eq(joinMsg2 and joinMsg2.code, nil, "and no code")
   eq(joinMsg2 and joinMsg2.as, "player", "tour_join names the seat kind")
   eq(joinMsg2 and joinMsg2.party[1].species, "BLASTOISE",
      "a player sends its team up front")
   eq(joinMsg2 and joinMsg2.partyDigest, "d2", "and its digest")
-  C3.joinTournament("TRN234", "player", party3, "d3")
-  C4.joinTournament("TRN234", "spectator")
+  C3.joinTournament(TOUR1, "player", party3, "d3")
+  C4.joinTournament({ tour = TOUR1, as = "spectator" })
   pump()
   eq(#C1.tournament().players, 3, "three players are registered")
   eq(#C1.tournament().spectators, 1, "the outside spectator is registered")
-  eq(C4.tournament().code, "TRN234", "a spectator holds the same model")
+  eq(C4.tournament().tour, TOUR1, "a spectator holds the same model")
 
   local refused = C2.joinTournament("ZZZZZZ", "player", party2, "d2")
   pump()
   check(refused.done and refused.reason == "tour_not_found",
         "a bad tournament code answers join_error")
+  local malformed = C2.joinTournament("zz", "player", party2, "d2")
+  check(malformed.done and malformed.reason == "bad_room",
+        "a malformed tournament reference fails locally")
   eq(Protocol2.joinErrorText({ reason = "tour_started" }),
      "That tournament has already started.",
      "the new join_error reasons have human text")
@@ -1569,27 +1722,28 @@ do
   eq(#tour.bracket, 1, "the first round is drawn")
   eq(#tour.bracket[1].matches, 2, "three players make two first-round matches")
   eq(tour.bracket[1].matches[2].state, "bye", "the odd player gets a bye")
-  check(byeSeen ~= nil and byeSeen.match == "TRN234-r1-m2",
+  check(byeSeen ~= nil and byeSeen.match == TOUR1 .. "-r1-m2",
         "the walkover player is told about its bye")
 
+  local CHA, CHB = rid(0xc1), rid(0xc2)
   check(playNext ~= nil, "the paired player gets tour_match")
-  eq(playNext.code, "CHA234", "tour_match names the child room")
-  eq(playNext.match, "TRN234-r1-m1", "tour_match names the bracket match")
+  eq(playNext.room, CHA, "tour_match names the child room")
+  eq(playNext.match, TOUR1 .. "-r1-m1", "tour_match names the bracket match")
   check(watchNext ~= nil, "the outside spectator gets tour_match_spectate")
-  eq(watchNext.code, "CHA234", "the spectator gets the same child room")
+  eq(watchNext.room, CHA, "the spectator gets the same child room")
 
-  eq(C1.room().code, "CHA234", "the client switches to the child room")
-  eq(C1.roomSession().code, "CHA234", "roomSession binds to the child code")
-  eq(C1.match(), "TRN234-r1-m1", "the match token is the bracket match")
+  eq(C1.room().room, CHA, "the client switches to the child room")
+  eq(C1.roomSession().target, CHA, "roomSession binds to the child room")
+  eq(C1.match(), TOUR1 .. "-r1-m1", "the match token is the bracket match")
   check(startedC1 ~= nil, "the child room fires match_start")
-  eq(startedC1.match, "TRN234-r1-m1", "match_start carries the match")
+  eq(startedC1.match, TOUR1 .. "-r1-m1", "match_start carries the match")
   eq(startedC1.role, "host", "the first seat hosts the child room")
-  eq(startedC1.code, "CHA234", "match_start names the child room")
+  eq(startedC1.room, CHA, "match_start names the child room")
   check(startedC4 ~= nil, "the spectator boots too")
   eq(startedC4.role, "spectator", "and does so as a spectator")
-  eq(C4.roomSession().code, "CHA234",
+  eq(C4.roomSession().target, CHA,
      "the spectator's session binds to the child room")
-  eq(C3.room() and C3.room().code, "CHA234",
+  eq(C3.room() and C3.room().room, CHA,
      "the waiting player watches the live match")
 
   eq(C1.tournament().deadlines.shot, 7000,
@@ -1606,17 +1760,17 @@ do
   C1.report("win")
   C2.report("lose")
   pump()
-  eq(C1.tournament().code, "TRN234", "the client stays in the tournament")
+  eq(C1.tournament().tour, TOUR1, "the client stays in the tournament")
   local advanced = C1.tournament()
   eq(advanced.bracket[1].matches[1].state, "done", "the bracket advances")
   eq(advanced.bracket[1].matches[1].winner, "t1", "and records the winner")
   eq(advanced.bracket[1].matches[1].how, "agreed", "and how it was decided")
   eq(#advanced.bracket, 2, "the second round is drawn")
   eq(advanced.round, 2, "the tournament is on round 2")
-  check(playNext ~= nil and playNext.code == "CHB234",
+  check(playNext ~= nil and playNext.room == CHB,
         "the next match uses a fresh child room")
-  eq(C1.room().code, "CHB234", "the client follows to the next child room")
-  eq(C1.roomSession().code, "CHB234", "and rebinds its session")
+  eq(C1.room().room, CHB, "the client follows to the next child room")
+  eq(C1.roomSession().target, CHB, "and rebinds its session")
 
   local eliminated
   for _, p in ipairs(advanced.players) do
@@ -1627,7 +1781,7 @@ do
   C3.report("error")
   local tourForfeit = outbox(C3, "forfeit")
   check(tourForfeit ~= nil, "a non-result in a tournament match forfeits")
-  eq(tourForfeit and tourForfeit.match, "TRN234-r2-m1",
+  eq(tourForfeit and tourForfeit.match, TOUR1 .. "-r2-m1",
      "the forfeit names the bracket match")
   pump()
   check(overSeen ~= nil, "tour_over reaches the finalists")
@@ -1664,11 +1818,16 @@ do
   local party = { { species = "CHARIZARD", level = 50, hp = 10,
                     moves = { { id = "TACKLE", pp = 35 } } } }
   CA.createTournament({ profile = PROFILE, playing = true, shotClock = 3,
-                        party = party, partyDigest = "d1" })
+                        party = party, partyDigest = "d1", public = false })
   pump()
-  CB.joinTournament("TRN234", "player", party, "d2")
+  eq(CA.tournament().code, "TRN234", "a private tournament shows its code")
+  local byId = CB.joinTournament({ tour = TOUR1, as = "player", party = party,
+                                   partyDigest = "d2" })
   pump()
-  eq(#CA.tournament().players, 2, "two players are registered")
+  eq(byId.reason, "tour_private", "a private tournament refuses a bare id")
+  CB.joinTournament("trn234", "player", party, "d2")
+  pump()
+  eq(#CA.tournament().players, 2, "two players are registered by code")
 
   local closedB
   CB.on("error", function(e) closedB = e end)
@@ -1816,7 +1975,7 @@ else
   lockRelay:pump(); Host.update(0); Guest.update(0)
   Host.createRoom({ intent = "battle", profile = PROFILE })
   lockRelay:pump(); Host.update(0)
-  Guest.joinRoom("ABC234", "player")
+  Guest.joinRoom(ROOM1, "player")
   lockRelay:pump(); Host.update(0); Guest.update(0)
 
   local gameH = makeGame("RED", "CHARIZARD")
@@ -1890,13 +2049,21 @@ local nodeCheck = os.execute("command -v node >/dev/null 2>&1")
 local hasNode = nodeCheck == true or nodeCheck == 0
 local serverFile = io.open("../pokeserver/server.js", "r")
 if serverFile then serverFile:close() end
+local relaySource = io.open("../pokeserver/relay.js", "r")
+local relayV3 = false
+if relaySource then
+  relayV3 = (relaySource:read("*a") or ""):find("upgrade_required", 1, true) ~= nil
+  relaySource:close()
+end
 
 if not hasSocket then
-  print("skip real relay v2 (luasocket not available under this interpreter)")
+  print("skip real relay v3 (luasocket not available under this interpreter)")
 elseif not hasNode then
-  print("skip real relay v2 (node not on PATH to spawn pokeserver)")
+  print("skip real relay v3 (node not on PATH to spawn pokeserver)")
 elseif not serverFile then
-  print("skip real relay v2 (../pokeserver/server.js is not checked out)")
+  print("skip real relay v3 (../pokeserver/server.js is not checked out)")
+elseif not relayV3 then
+  print("skip real relay v3 (../pokeserver predates protocol 3)")
 else
   local PORT = 17780
   local pidFile = os.tmpname()
@@ -1950,16 +2117,16 @@ else
     if not waitFor(function()
           return Live.state() == "online" and Peer.state() == "online"
         end, 3) then
-      print("skip real relay v2 (the server did not answer lobby_hello in 3 s: "
+      print("skip real relay v3 (the server did not answer lobby_hello in 3 s: "
             .. tostring(Live.state()) .. " " .. tostring(Live.error()) .. ")")
     else
-      check(Live.you() ~= nil, "the real relay welcomes a v2 client")
+      check(Live.you() ~= nil, "the real relay welcomes a v3 client")
       local room = Live.createRoom({ intent = "battle", profile = PROFILE })
       waitFor(function() return room.done end, 3)
-      check(room.done and room.code ~= nil,
-            "the real relay creates a v2 room: " .. tostring(room.error))
-      if room.code then
-        local joined = Peer.joinRoom(room.code, "player", PROFILE)
+      check(room.done and room.id ~= nil,
+            "the real relay creates a v3 room: " .. tostring(room.error))
+      if room.id then
+        local joined = Peer.joinRoom(room.id, "player", PROFILE)
         waitFor(function() return joined.done end, 3)
         check(joined.done and joined.error == nil,
               "the real relay admits a matching profile: " .. tostring(joined.error))
@@ -1974,7 +2141,7 @@ else
         while os.clock() < badDeadline do
           badPeer.update(1 / 60)
           if badPeer.state() == "online" and not refused then
-            refused = badPeer.joinRoom(room.code, "spectator", badProfile)
+            refused = badPeer.joinRoom(room.id, "spectator", badProfile)
           end
           if refused and refused.done then break end
         end
@@ -2044,12 +2211,14 @@ else
         print("skip real relay tournaments (no tour_create support yet: "
               .. tostring(made.reason or made.error or "no reply") .. ")")
       else
-        check(mine.code ~= nil, "the real relay creates a tournament")
-        local code = mine.code
+        check(mine.tour ~= nil, "the real relay creates a tournament")
+        eq(mine.code, nil, "a public tournament carries no code")
+        local tourId = mine.tour
         local tourParty = { { species = "CHARIZARD", level = 50, hp = 10,
                               moves = { { id = "TACKLE", pp = 35 } } } }
-        Peer.joinTournament(code, "player", tourParty, "dp")
-        Third.joinTournament(code, "spectator")
+        Peer.joinTournament({ tour = tourId, as = "player", party = tourParty,
+                              partyDigest = "dp" })
+        Third.joinTournament({ tour = tourId, as = "spectator" })
         waitAll(function()
           local t = Live.tournament()
           return t ~= nil and #t.players >= 2 and #t.spectators >= 1
@@ -2072,7 +2241,7 @@ else
         if liveStart and peerStart then
           eq(liveStart.match, peerStart.match,
              "both finalists share the bracket match token")
-          check(Live.room() ~= nil and Live.room().code == liveStart.code,
+          check(Live.room() ~= nil and Live.room().room == liveStart.room,
                 "the client follows the relay into the child room")
           check(specStart == nil or specStart.role == "spectator",
                 "an outside spectator boots as a spectator")

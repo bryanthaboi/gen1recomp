@@ -16,13 +16,10 @@
 -- same API so the protocol/battle logic stays testable offline.
 --
 -- A second backend, alongside the ENet one above, talks plain TCP to a
--- pokeserver relay instead of direct peer-to-peer: both sides dial out
--- to a public server (works through NAT with no hole-punching), the host
--- gets a 6-character room code instead of an IP, and the server forwards
--- messages between them. Same newline-delimited JSON on the wire, same
--- Net API (host/join/send/update/poll/.paired/.closed/.error) -- see
--- Net:hostOnline/Net:joinOnline below. LinkState/LinkBattle/Protocol don't
--- know or care which backend is in play.
+-- pokeserver relay instead of direct peer-to-peer: the online Client
+-- dials out to a public server (works through NAT with no hole-punching)
+-- over Net:connectTCP. Same newline-delimited JSON on the wire, same
+-- Net API (send/update/poll/.closed/.error).
 
 local Json = require("src.link.Json")
 local Logger = require("src.core.Logger")
@@ -102,7 +99,6 @@ function Net.new()
     tcpSocket = nil, -- relay backend: the luasocket TCP connection
     rxBuf = "",      -- relay backend: bytes read but not yet a full line
     txBuf = "",      -- relay backend: bytes queued but not yet written
-    code = nil,      -- relay backend, hosting: the room/tournament code
     connecting = false, -- relay backend: TCP connect still in flight
     selectable = true,
     lastSendAt = nil,
@@ -174,11 +170,10 @@ end
 -- opens a TCP connection to a pokeserver relay. The connect is
 -- non-blocking: connectTCP returns true once the socket is dialing and
 -- updateTCP polls writability until the 5 s deadline. Callers send
--- whatever control message starts their session ({type="host"},
--- {type="join",...}, {type="host_tournament",...}, ...) straight away; it
--- waits in txBuf until the connection lands. Every reply that isn't one
--- of the generic ones below reaches the normal inbox for the caller
--- (LinkState, or the launcher online client) to interpret.
+-- whatever control message starts their session ({type="lobby_hello"},
+-- {type="resume",...}) straight away; it waits in txBuf until the
+-- connection lands. Every reply that isn't one of the generic ones below
+-- reaches the normal inbox for the online client to interpret.
 local function connectPending(err)
   err = tostring(err or "")
   return err == "timeout" or err:find("in progress", 1, true) ~= nil
@@ -258,21 +253,6 @@ function Net:pollConnectTCP()
   return false
 end
 
-function Net:hostOnline(addr)
-  if not self:connectTCP(addr or Net.defaultRelayAddress()) then return false end
-  self.mode = "onlineHosting"
-  self:send({ type = "host" })
-  return true
-end
-
-function Net:joinOnline(addr, code)
-  if not self:connectTCP(addr or Net.defaultRelayAddress()) then return false end
-  self.mode = "onlineJoining"
-  self.target = code
-  self:send({ type = "join", code = code })
-  return true
-end
-
 function Net:send(msg)
   if self.closed then return end
   if self.tcpSocket then
@@ -300,33 +280,8 @@ function Net:send(msg)
   end
 end
 
--- one control message recognized on every relay connection, regardless of
--- what it's being used for (a 1v1 room or a tournament): "peer_gone" only
--- ever fires for a paired 1v1 room (tournaments signal disconnects through
--- bracket_update/tournament_over instead), so it's unambiguous here.
 local function handleGenericRelayControl(self, msg)
-  if msg.type == "hosted" then
-    self.code = msg.code
-    return true
-  elseif msg.type == "paired" then
-    self.paired = true
-    return true
-  elseif msg.type == "join_error" then
-    if self.v2 then return false end
-    self.error = Strings(({
-      not_found = Strings.source("That code wasn't\nfound."),
-      full = Strings.source("That game already\nhas two players."),
-      expired = Strings.source("That code has\nexpired."),
-    })[msg.reason] or "")
-    if self.error == "" then
-      self.error = Strings("Couldn't join:\n%s", tostring(msg.reason))
-    end
-    self.closed = true
-    return true
-  elseif msg.type == "peer_gone" then
-    self.closed = true
-    return true
-  elseif msg.type == "ping" then
+  if msg.type == "ping" then
     self:send({ type = "pong", t = msg.t })
     return true
   elseif msg.type == "pong" then

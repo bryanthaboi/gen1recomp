@@ -211,7 +211,7 @@ function Pokedex.show(dex, opts)
     Pokedex.page = "list"
   end
 
-  Stack.push("pokedex", Pokedex, { hideBelow = true })
+  Stack.push("pokedex", Pokedex, { hideBelow = true, fullscreen = true })
   se("SE_PIN")
 end
 
@@ -263,7 +263,7 @@ function Pokedex.showRegistration(speciesId, opts)
     Pokedex.subScreenPrev = "mode_select"
   end
 
-  Stack.push("pokedex", Pokedex, { hideBelow = true })
+  Stack.push("pokedex", Pokedex, { hideBelow = true, fullscreen = true })
   play_cry(Pokedex._regSpecies)
 end
 

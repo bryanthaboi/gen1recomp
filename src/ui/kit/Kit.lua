@@ -605,6 +605,26 @@ function Kit.blur()
 end
 
 -- -------------------------------------------------------------- hit testing
+local occluderBox = { x = 0, y = 0, w = 0, h = 0 }
+Kit._occluder = nil
+Kit._overlay = false
+
+function Kit.occlude(x, y, w, h)
+  if x == nil then
+    Kit._occluder = nil
+    return
+  end
+  occluderBox.x, occluderBox.y, occluderBox.w, occluderBox.h = x, y, w, h
+  Kit._occluder = occluderBox
+end
+
+function Kit.occluded()
+  local o = Kit._occluder
+  if not o or Kit._overlay then return false end
+  return Kit.mouseX >= o.x and Kit.mouseX <= o.x + o.w
+    and Kit.mouseY >= o.y and Kit.mouseY <= o.y + o.h
+end
+
 -- A widget inside a clip region can sit at coordinates outside the visible
 -- rect, so the active clip bounds the hit: what the user cannot see cannot
 -- take the tap.
@@ -614,6 +634,7 @@ function Kit.hit(x, y, w, h)
       and Kit.mouseY >= c.y and Kit.mouseY <= c.y + c.h) then
     return false
   end
+  if Kit._occluder and Kit.occluded() then return false end
   return Kit.mouseX >= x and Kit.mouseX <= x + w
      and Kit.mouseY >= y and Kit.mouseY <= y + h
 end
@@ -888,6 +909,73 @@ function Kit.tag(x, y, w, h, label, color, opts)
   else
     Kit.textCenter("micro", label, x, ty, w, ink)
   end
+end
+
+local TOAST_ACCEPT = { kind = "primary", font = "small" }
+local TOAST_DECLINE = { kind = "ghost", font = "small" }
+
+function Kit.toastRect(W, text, top, slide)
+  local s = Kit.scale
+  local margin = math.floor(16 * s)
+  local w = math.floor(math.min(360 * s, (W or 0) - 2 * margin))
+  local pad = math.floor(12 * s)
+  local gap = math.floor(8 * s)
+  local icon = math.floor(22 * s)
+  local btnH = math.max(Kit.tapMin(), math.floor(30 * s))
+  local barH = math.max(2, math.floor(3 * s))
+  local textW = w - 2 * pad - icon - gap
+  local textH = Kit.wrapHeight("small", text or "", textW, 2)
+  local h = pad + math.max(icon, textH) + gap + btnH + gap + barH + pad
+  local x = (W or 0) - w - margin
+  x = x + math.floor((1 - (slide or 1)) * (w + margin))
+  return x, top or margin, w, h
+end
+
+function Kit.toast(opts)
+  opts = opts or NO_OPTS
+  local s = Kit.scale
+  local x, y, w, h = Kit.toastRect(opts.W, opts.text, opts.top, opts.slide)
+  local pad = math.floor(12 * s)
+  local gap = math.floor(8 * s)
+  local icon = math.floor(22 * s)
+  local btnH = math.max(Kit.tapMin(), math.floor(30 * s))
+  local barH = math.max(2, math.floor(3 * s))
+  local wasOverlay, wasBlock = Kit._overlay, Kit.blockClicks
+  Kit._overlay = true
+  Kit.blockClicks = opts.blocked == true
+  local action = nil
+  if G then
+    Kit.card(x, y, w, h, true)
+    Theme.strokeRounded(x, y, w, h, PAL.lineStrong, Theme.A.focus, 1)
+    Icons.draw(opts.icon or "mail", x + pad, y + pad, icon, PAL.heading, 1)
+  end
+  local tx = x + pad + icon + gap
+  Kit.textWrapped("small", opts.text or "", tx, y + pad, w - 2 * pad - icon - gap,
+    PAL.heading, 2)
+  local by = y + h - pad - barH - gap - btnH
+  local half = math.floor((w - 2 * pad - gap) / 2)
+  local id = opts.id or "toast"
+  TOAST_DECLINE.id = id .. "-decline"
+  TOAST_ACCEPT.id = id .. "-accept"
+  if Kit.button(x + pad, by, half, btnH, opts.decline or "Decline",
+      TOAST_DECLINE) then
+    action = "decline"
+  end
+  if Kit.button(x + pad + half + gap, by, w - 2 * pad - half - gap, btnH,
+      opts.accept or "Accept", TOAST_ACCEPT) then
+    action = "accept"
+  end
+  if G then
+    local bw = w - 2 * pad
+    local left = math.max(0, math.min(1, opts.progress or 1))
+    Theme.fillRounded(x + pad, y + h - pad - barH, bw, barH, PAL.line, 0.5, barH / 2)
+    if left > 0 then
+      Theme.fillRounded(x + pad, y + h - pad - barH, math.max(barH, bw * left), barH,
+        left < 0.25 and PAL.red or PAL.green, 1, barH / 2)
+    end
+  end
+  Kit._overlay, Kit.blockClicks = wasOverlay, wasBlock
+  return action, x, y, w, h
 end
 
 -- Checkbox row.  Returns (newChecked, changed).

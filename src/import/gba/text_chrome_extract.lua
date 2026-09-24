@@ -1,7 +1,7 @@
 -- Pure ROM extractor for GBA FireRed font glyphs, widths, and text window chrome.
 -- Extracts:
 --   1) latin_normal font (512 glyphs @ 0x1FF300, widths @ 0x207300) -> 256x512 FG/Shadow
---   2) latin_small font (288 glyphs @ 0x1EAF00, widths @ 0x1EEF00) -> 256x288 FG/Shadow
+--   2) latin_small font (512 glyphs @ 0x1EAF00, widths @ 0x1EEF00) -> 256x512 FG/Shadow
 --   2b) japanese_normal (512 glyphs @ 0x207500, widths @ 0x20F500) and
 --       japanese_small (512 glyphs @ 0x1EF100) -> 256x512 FG/Shadow each
 --   3) down_arrows prompt icon (8 frames 16x16 @ 0x1EA14C) -> 128x16 FG
@@ -130,14 +130,15 @@ function TextChromeExtract.extractLatinNormal(rom)
   }
 end
 
---- Decode latin_small font: 288 glyphs (each is two 8x8 2bpp tiles in 8x16 layout)
+--- Decode latin_small font: 512 glyphs (each is two 8x8 2bpp tiles in 8x16 layout)
 function TextChromeExtract.extractLatinSmall(rom)
   local baseGfx = Versions.address(0x1EAF00)
   local baseWidths = Versions.address(0x1EEF00)
-  local glyphCount = 288 -- 0x120
+  -- pokefirered/src/text.c:1380
+  local glyphCount = 512
   local cols = 16
-  local rows = math.floor((glyphCount + cols - 1) / cols) -- 18
-  local sheetW, sheetH = cols * 16, rows * 16 -- 256x288
+  local rows = math.floor((glyphCount + cols - 1) / cols)
+  local sheetW, sheetH = cols * 16, rows * 16
 
   local fgPixels = {}
   local shPixels = {}
@@ -659,13 +660,16 @@ function TextChromeExtract.run(rom, cache, opts)
     write_cache(cache, cDir .. "/user_frame_" .. i .. ".rgba", user.rgba)
   end
 
+  local OnlineUi = require("src.import.gba.online_ui_extract")
+  local listRows = OnlineUi.listChrome(rom, function(path, data) write_cache(cache, path, data) end, cDir)
+
   -- 3) Manifest
   local manifestContent = table.concat({
     "return {",
     "  formatVersion = 1,",
     "  fonts = {",
     "    latin_normal = { width = 256, height = 512, glyphs = 512 },",
-    "    latin_small = { width = 256, height = 288, glyphs = 288 },",
+    "    latin_small = { width = 256, height = 512, glyphs = 512 },",
     "    japanese_normal = { width = 256, height = 512, glyphs = 512 },",
     "    japanese_small = { width = 256, height = 512, glyphs = 512 },",
     "    down_arrows = { width = 128, height = 16, frames = 8 },",
@@ -675,6 +679,7 @@ function TextChromeExtract.run(rom, cache, opts)
     "    std = { width = 24, height = 24, tilesW = 3, tilesH = 3 },",
     "    signpost = { width = 40, height = 32, tilesW = 5, tilesH = 4 },",
     "  },",
+    OnlineUi.manifestRows(listRows),
     "}",
     "",
   }, "\n")

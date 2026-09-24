@@ -206,46 +206,40 @@ check(not MysteryGift.isNewsSameAsSaved(newsSession, { id = 4, titleText = "NEWS
   "a different news record does not match the saved one")
 check(MysteryGift.isNewsSameAsSaved(newsSession, newsRecord), "the same news record matches")
 
-print("[test] 8. The drop-in card file")
-local parsed = MysteryGift.parse([[
-# a dropped in Wonder Card
-[card]
-flagId = 1003
-type = 0
-bgType = 1
-sendType = 0
-maxStamps = 0
-iconSpecies = 25
-title = SURPRISE
-subtitle = FROM A FRIEND
-body = Line one.
-body = Line two.
-gift.kind = item
-gift.item = 13
-gift.quantity = 2
-gift.setflag = 0x84A
-
-[news]
-id = 12
-sendType = 1
-bgType = 0
-title = NEWS FILE
-body = Something happened.
-]])
-check(parsed ~= nil, "the drop-in file parses")
-eq(parsed and parsed.card and parsed.card.flagId, 1003, "the parsed card keeps its flagId")
-eq(parsed and parsed.card and parsed.card.titleText, "SURPRISE", "the parsed card keeps its title")
-eq(parsed and parsed.card and parsed.card.bodyText[2], "Line two.", "the parsed card keeps its body lines")
-eq(parsed and parsed.card and parsed.card.gift.item, 13, "the parsed card keeps its gift item")
-eq(parsed and parsed.card and parsed.card.gift.setFlags[1], 0x84A, "the parsed card keeps its gift flag")
-eq(parsed and parsed.news and parsed.news.id, 12, "the parsed news keeps its id")
-local dropped = newSession()
-check(MysteryGift.receiveCard(dropped, parsed.card), "the parsed card saves")
-eq(MysteryGift.deliverGift(dropped), MysteryGift.DELIVER_GIVEN, "the parsed card hands its item over")
-eq(Bag.get(dropped.bag, 13), 2, "both POTIONs arrived")
-local bad, err = MysteryGift.parse("[card]\nflagId = 0\ntype = 0\n")
-check(bad == nil, "a card with no flagId is refused by the parser")
-check(err ~= nil, "the parser says why, got " .. tostring(err))
+print("[test] 8. Feed cards hand their gifts over")
+local feed = MysteryGift.parseFeed(table.concat({
+  '{"cards":[',
+  '{"bgType":1,"bodyText":["Line one.","Line two.","",""],"flagId":1003,',
+  '"footerLine1Text":"","footerLine2Text":"","gift":{"item":13,"kind":"item","quantity":2,',
+  '"setFlags":[2122]},"iconSpecies":25,"idNumber":30,"key":"potions","maxStamps":0,',
+  '"sendType":0,"subtitleText":"FROM THE CLUB","titleText":"SURPRISE","type":0},',
+  '{"bgType":7,"bodyText":["","","",""],"flagId":1008,"footerLine1Text":"","footerLine2Text":"",',
+  '"gift":{"heldItem":139,"kind":"mon","level":10,"moves":{"1":1},"otId":20078,"otName":"AURA",',
+  '"species":151},"iconSpecies":151,"idNumber":31,"key":"mew","maxStamps":0,"sendType":0,',
+  '"subtitleText":"","titleText":"MEW","type":0}',
+  '],"issued":5,"news":[],"v":1}',
+}))
+check(feed ~= nil and #feed.cards == 2, "the feed payload parses into two cards")
+local potions = feed and feed.cards[1].card
+eq(potions and potions.titleText, "SURPRISE", "the feed card keeps its title")
+eq(potions and potions.bodyText[2], "Line two.", "the feed card keeps its body lines")
+eq(potions and potions.gift.setFlags[1], 0x84A, "the feed card keeps its gift flag")
+local fed = newSession()
+check(MysteryGift.receiveCard(fed, potions), "the feed card saves")
+eq(MysteryGift.deliverGift(fed), MysteryGift.DELIVER_GIVEN, "the feed card hands its item over")
+eq(Bag.get(fed.bag, 13), 2, "both POTIONs arrived")
+local mewCard = feed and feed.cards[2].card
+eq(mewCard and mewCard.gift.heldItem, 139, "the mon gift keeps its held item")
+local mewSession = newSession()
+check(MysteryGift.receiveCard(mewSession, mewCard), "the MEW card saves")
+check(MysteryGift.validateSavedCard(mewSession), "the held item is inside the card checksum")
+eq(MysteryGift.deliverGift(mewSession), MysteryGift.DELIVER_GIVEN, "the MEW card hands the mon over")
+local mew = mewSession.party[#mewSession.party]
+eq(mew and mew.species, 151, "MEW joined the party")
+eq(mew and mew.heldItem, 139, "holding the item from the card")
+eq(mew and mew.otName, "AURA", "with the event OT")
+MysteryGift.getSavedCard(mewSession).gift.heldItem = 1
+check(not MysteryGift.validateSavedCard(mewSession), "a changed held item breaks the checksum")
 
 print("[test] 9. The script specials")
 local fakeRuntime = { getSession = function() return nil end }

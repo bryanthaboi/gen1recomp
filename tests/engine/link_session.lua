@@ -304,8 +304,9 @@ end
 
 do
   local transport = Net.new()
-  transport:handleTCPLine(Json.encode({ type = "hosted", code = "ABCDEF" }))
-  T.eq(transport.code, "ABCDEF", "valid relay controls stay transport-owned")
+  transport.tcpSocket = true
+  transport:handleTCPLine(Json.encode({ type = "ping", t = 7 }))
+  T.eq(#transport.inbox, 0, "valid relay controls stay transport-owned")
   transport:handleTCPLine(Json.encode({ type = "hello", name = "RED" }))
   T.eq(transport:poll()[1].name, "RED", "valid application packet stays intact")
 end

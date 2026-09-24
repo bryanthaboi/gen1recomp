@@ -199,12 +199,20 @@ do
   T.eq(why, "Those two games can't trade.", "FireRed and Red can't trade")
 
   local remote, rwhy = Trade.remote(handle("firered", "s", two), { send = function() end })
-  T.eq(remote, nil, "no internet trade for a FireRed save")
-  T.eq(rwhy, Trade.GEN3_LOCAL_ONLY, "and it says why")
+  T.eq(remote, nil, "an internet trade needs a seated room session")
+  T.eq(rwhy, "no seat", "and it says why")
+  local seated = Trade.remote(handle("firered", "s", two),
+    { send = function() end, seat = function() return 0 end })
+  T.check(seated ~= nil and seated:stage() == "handshake",
+    "a FireRed save opens an internet trade")
 
-  local packed, pwhy = TeamPick.pack({ party = two.party, generation = 3 }, { 1 }, 3)
-  T.eq(packed, nil, "a FireRed team can't be packed for a room")
-  T.eq(pwhy, TeamPick.GEN3_OFFLINE, "and it says why")
+  local packed = TeamPick.pack({ party = two.party, generation = 3 }, { 2, 1 }, 3)
+  T.eq(packed and #packed, 2, "a FireRed team packs for a room")
+  T.eq(packed and packed[1].species, two.party[2].species, "in pick order")
+  T.eq(packed and packed[1].item, 0, "with the item always present")
+  local cpacked, cwhy = TeamPick.packConverted({}, { 1 }, 3)
+  T.eq(cpacked, nil, "Gen 3 never converts across generations")
+  T.eq(cwhy, TeamPick.NO_TIME_CAPSULE, "there is no Time Capsule")
 end
 
 do

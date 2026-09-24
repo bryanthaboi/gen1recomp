@@ -90,7 +90,7 @@ function Diploma.show(opts)
   Diploma._bodyX = 120 - math.floor(FrlgFont.measure(Diploma._body) / 2)
   Diploma.open = true
   Diploma._phase = "in"
-  Stack.push(Diploma.ID, Diploma, { hideBelow = true })
+  Stack.push(Diploma.ID, Diploma, { hideBelow = true, fullscreen = true })
   local Fade = fade()
   -- pokefirered/src/diploma.c:150
   Fade.begin(Fade.MODE.FROM_BLACK, 1, function()

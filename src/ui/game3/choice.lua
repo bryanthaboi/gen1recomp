@@ -50,9 +50,9 @@ function Choice.yesNo(cb, layout)
   end
   Choice.cursor = 1
   Choice.done = cb
-  -- pret WIN_INTRO_YESNO at tiles (2,2); field default near dialogue right.
-  Choice.left = tonumber(layout.left) or (Display.COLS - 8)
-  Choice.top = tonumber(layout.top) or 8
+  -- pokefirered/src/new_menu_helpers.c:48
+  Choice.left = tonumber(layout.left) or 21
+  Choice.top = tonumber(layout.top) or 9
   Choice.maxRight = nil
   Choice.cols = 1
   Choice.ignoreBPress = layout.ignoreBPress or false
@@ -181,6 +181,18 @@ function Choice.draw()
       if i == Choice.cursor then Window.cursorPx(L * 8, rowPx) end
       -- pokefirered/src/battle_message.c:2574
       Window.printPx(lab, (L + 1) * 8, rowPx + 2)
+    end
+    return
+  end
+
+  if Choice.kind == "yesno" then
+    -- pokefirered/src/menu.c:531
+    local L, Tp = Choice.left, Choice.top
+    Window.stdFrame(Window.template(L, Tp, 6, 4))
+    for i, lab in ipairs(Choice.options) do
+      local rowPx = Tp * 8 + 2 + (i - 1) * 14
+      if i == Choice.cursor then Window.cursorPx(L * 8, rowPx) end
+      Window.printPx(lab, L * 8 + 8, rowPx)
     end
     return
   end

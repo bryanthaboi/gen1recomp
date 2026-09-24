@@ -81,6 +81,22 @@ function Adapter.fill(st, extra)
       -- src/battle_message.c:2058
       f.trainer1Name = st.peerName
     end
+    if st.multi and st.linkNames then
+      -- pokefirered/src/battle_message.c:1910
+      local own = tonumber(st.linkOwn) or 0
+      local names = st.linkNames
+      local seat = st.linkSeatOf and st.linkSeatOf[own]
+      local opp = seat and st.linkLocalOf and st.linkLocalOf[State.OPPOSITE(seat)] or State.OPPOSITE(own)
+      f.multi = true
+      f.linkPlayerName = names[own] or st.playerName
+      f.linkPartnerName = names[(own + 2) % 4]
+      f.linkOpponent1Name = names[opp]
+      f.linkOpponent2Name = names[(opp + 2) % 4]
+      f.linkPlayerMon1 = State.battler(st, own)
+      f.linkPlayerMon2 = State.battler(st, (own + 2) % 4)
+      f.linkOpponentMon1 = State.battler(st, opp)
+      f.linkOpponentMon2 = State.battler(st, (opp + 2) % 4)
+    end
   end
   for k, v in pairs(extra or {}) do f[k] = v end
   return f
@@ -186,7 +202,9 @@ function Adapter.new(battleState, sayFn)
 
   function a:rollSleepTurns()
     local ok, v = pcall(self:rng(), 0, 3)
-    if not (ok and type(v) == "number") then v = math.random(0, 3) end
+    if not (ok and type(v) == "number") then
+      v = require("src.core.game3.battle.link_guard").fallback("adapter.sleep", 0, 3)
+    end
     return (math.floor(v) % 4) + 2
   end
 
@@ -323,11 +341,13 @@ function Adapter.new(battleState, sayFn)
   end
   -- src/battle_message.c:336
   function a:sayFail() self:sayText("STRINGID_BUTITFAILED") end
-  function a:rng() return self._st.rng or math.random end
+  function a:rng()
+    return self._st.rng or require("src.core.game3.battle.link_guard").source("adapter.rng", math.random)
+  end
   function a:roll(lo, hi)
     local ok, v = pcall(self:rng(), lo, hi)
     if ok and type(v) == "number" then return v end
-    return math.random(lo, hi)
+    return require("src.core.game3.battle.link_guard").fallback("adapter.roll", lo, hi)
   end
   function a:activeBattlers() return State.present(self._st) end
   function a:foeOf(battler)

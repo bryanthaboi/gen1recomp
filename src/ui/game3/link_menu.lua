@@ -1,7 +1,6 @@
 local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local FrlgFont = require("src.ui.game3.frlg_font")
-local Strings = require("src.core.Strings")
 local Status = require("src.core.game3.link.status")
 
 local LinkMenu = {}
@@ -22,16 +21,11 @@ LinkMenu.COUNT_TEMPLATE = Window.template(25, 4, 2, 15)
 
 LinkMenu.open = false
 LinkMenu.mode = nil
-LinkMenu.stage = nil
-LinkMenu.index = 1
-LinkMenu.status = ""
 LinkMenu.rows = {}
 LinkMenu.palIdx = 0
 LinkMenu._counter = 0
 LinkMenu._rowsWait = 0
-LinkMenu._addr = nil
-LinkMenu._transport = nil
-LinkMenu._role = nil
+LinkMenu._plaza = false
 LinkMenu._art = nil
 LinkMenu._artTried = false
 LinkMenu._variants = {}
@@ -116,9 +110,12 @@ function LinkMenu.loadArt()
   local pals = manifest.palettes or {}
   local banks = tonumber(pals.banks) or 16
   local raw = read_bytes(LinkMenu.CACHE_DIR .. "/palettes.pal")
+  local index = read_bytes(LinkMenu.CACHE_DIR .. "/" .. (bg.index or "bg_index.bin"))
+  if not index or #index ~= w * h then return nil end
   LinkMenu._art = {
     image = image,
     data = imageData,
+    index = index,
     width = w,
     height = h,
     banks = raw and palette_banks(raw, banks) or nil,
@@ -133,28 +130,32 @@ function LinkMenu.variant(index)
   local art = LinkMenu._art
   if not (art and art.banks) then return art and art.image or nil end
   index = math.floor(tonumber(index) or 0)
-  if index <= 0 then return art.image end
+  if index < 0 then return art.image end
   local cached = LinkMenu._variants[index]
   if cached then return cached end
-  local base = art.banks[0]
-  local anim = art.banks[(art.animFirst + index - 1)]
-  if not (base and anim) then return art.image end
-  local map = {}
-  for c = 0, LinkMenu.CYCLE_COLORS - 1 do
-    local from, to = base[c], anim[c]
-    if from and to then
-      map[from[1] * 65536 + from[2] * 256 + from[3]] = to
+  local anim = art.banks[art.animFirst + index]
+  if not (anim and art.index) then return art.image end
+  if not art.cycling then
+    local list = {}
+    local plane, w = art.index, art.width
+    for i = 1, #plane do
+      local v = plane:byte(i)
+      if v >= 1 and v < LinkMenu.CYCLE_COLORS then
+        list[#list + 1] = { (i - 1) % w, math.floor((i - 1) / w), v }
+      end
     end
+    art.cycling = list
+  end
+  if #art.cycling == 0 then
+    LinkMenu._variants[index] = art.image
+    return art.image
   end
   local okC, data = pcall(art.data.clone, art.data)
   if not (okC and data) then return art.image end
-  data:mapPixel(function(_x, _y, r, g, b, a)
-    local key = math.floor(r * 255 + 0.5) * 65536 + math.floor(g * 255 + 0.5) * 256
-      + math.floor(b * 255 + 0.5)
-    local to = map[key]
-    if not to then return r, g, b, a end
-    return to[1] / 255, to[2] / 255, to[3] / 255, a
-  end)
+  for _, px in ipairs(art.cycling) do
+    local to = anim[px[3]]
+    data:setPixel(px[1], px[2], to[1] / 255, to[2] / 255, to[3] / 255, 1)
+  end
   local okI, image = pcall(love.graphics.newImage, data)
   if not okI then return art.image end
   LinkMenu._variants[index] = image
@@ -165,148 +166,8 @@ function LinkMenu.isOpen()
   return LinkMenu.open and true or false
 end
 
--- pokefirered/src/cable_club.c:222 the counter waits until the other machine is on the cable
-LinkMenu.CONNECT_TEMPLATE = Window.template(2, 2, 26, 12)
-LinkMenu.ADDR_LENGTH = 15
-LinkMenu.ADDR_CHARSET = "0123456789. "
-
-local function addr_state(seed)
-  local CodeEntry = require("src.link.CodeEntry")
-  if type(seed) ~= "string" or not seed:match("^%d+%.%d+%.%d+%.%d+$") then
-    seed = "192.168.0.1"
-  end
-  local state = CodeEntry.fromText(seed, {
-    length = LinkMenu.ADDR_LENGTH, charset = LinkMenu.ADDR_CHARSET,
-  })
-  state.pos = math.max(1, math.min(LinkMenu.ADDR_LENGTH, #seed))
-  return state
-end
-
-function LinkMenu.addrText(state)
-  local CodeEntry = require("src.link.CodeEntry")
-  local text = (CodeEntry.text(state):gsub(" ", ""))
-  local octets = { text:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$") }
-  if #octets ~= 4 then return nil end
-  for _, o in ipairs(octets) do
-    if #o > 3 or tonumber(o) > 255 then return nil end
-  end
-  return text
-end
-
-function LinkMenu.showConnect(opts)
-  opts = opts or {}
-  LinkMenu.open = true
-  LinkMenu.mode = "connect"
-  LinkMenu.stage = "menu"
-  LinkMenu.index = 1
-  LinkMenu.status = ""
-  LinkMenu.rows = {}
-  LinkMenu._onClose = opts.onClose
-  LinkMenu._linkType = opts.linkType
-  LinkMenu._addr = addr_state(nil)
-  Stack.push("wireless_status", LinkMenu, { hideBelow = true })
-  return true
-end
-
-local function connect(role, address)
-  local Link = require("src.core.game3.link")
-  local transport, why = Link.dial({ role = role, address = address })
-  if not transport then
-    LinkMenu.stage = "menu"
-    LinkMenu.status = Strings("Link error: %s", tostring(why or "?"):sub(1, 28))
-    return nil
-  end
-  LinkMenu._transport = transport
-  LinkMenu._role = role
-  return transport
-end
-
-LinkMenu.connect = connect
-
-local function dropTransport(message)
-  local transport = LinkMenu._transport
-  LinkMenu._transport = nil
-  if transport then pcall(function() transport:close() end) end
-  require("src.core.game3.link").closeLink("connect_canceled")
-  LinkMenu.stage = "menu"
-  LinkMenu.status = message or ""
-end
-
-LinkMenu.dropTransport = dropTransport
-
--- pokefirered/src/cable_club.c:222 CreateLinkupTask
-function LinkMenu.updateConnect()
-  local Link = require("src.core.game3.link")
-  local live = Link.link
-  if live and live.isReady and live:isReady() then
-    LinkMenu._transport = nil
-    LinkMenu.close()
-    return
-  end
-  if live and live.isOpen and not live:isOpen() then
-    dropTransport(Strings("The link was broken."))
-    return
-  end
-  local transport = LinkMenu._transport
-  if not transport or live then return end
-  transport:update()
-  if transport.error then
-    dropTransport(Strings("Link error: %s", tostring(transport.error):sub(1, 28)))
-    return
-  end
-  if transport.closed then
-    dropTransport(Strings("The link was broken."))
-    return
-  end
-  if transport.paired then
-    -- pokefirered/src/link.c:386 OpenLink
-    LinkMenu._transport = nil
-    Link.open({ transport = transport, role = LinkMenu._role,
-      linkType = LinkMenu._linkType })
-  end
-end
-
-function LinkMenu.connectInput(input)
-  local CodeEntry = require("src.link.CodeEntry")
-  if LinkMenu.stage == "menu" then
-    if input:wasPressed("up") or input:wasPressed("down") then
-      LinkMenu.index = LinkMenu.index == 1 and 2 or 1
-    elseif input:wasPressed("b") then
-      LinkMenu.close()
-    elseif input:wasPressed("a") then
-      LinkMenu.status = ""
-      if LinkMenu.index == 1 then
-        if connect("host", nil) then LinkMenu.stage = "hosting" end
-      else
-        LinkMenu.stage = "address"
-      end
-    end
-    return
-  end
-  if LinkMenu.stage == "address" then
-    if input:wasPressed("b") then
-      LinkMenu.stage = "menu"
-    elseif input:wasPressed("up") then CodeEntry.up(LinkMenu._addr)
-    elseif input:wasPressed("down") then CodeEntry.down(LinkMenu._addr)
-    elseif input:wasPressed("left") then CodeEntry.left(LinkMenu._addr)
-    elseif input:wasPressed("right") then CodeEntry.right(LinkMenu._addr)
-    elseif input:wasPressed("a") then
-      local address = LinkMenu.addrText(LinkMenu._addr)
-      if not address then
-        LinkMenu.status = Strings("Not an IP address.")
-        return
-      end
-      LinkMenu.status = ""
-      local Net = require("src.link.Net")
-      if connect("guest", address .. ":" .. tostring(Net.defaultPort())) then
-        LinkMenu.stage = "joining"
-      end
-    end
-    return
-  end
-  if input:wasPressed("b") then
-    dropTransport("")
-  end
+local function linkMod()
+  return require("src.core.game3.link")
 end
 
 -- pokefirered/src/wireless_communication_status_screen.c:195 ShowWirelessCommunicationScreen
@@ -318,15 +179,28 @@ function LinkMenu.show(opts)
   LinkMenu._counter = 0
   LinkMenu._rowsWait = LinkMenu.ROWS_FRAMES
   LinkMenu._onClose = opts.onClose
+  LinkMenu._plaza = false
+  local L = linkMod()
+  if L.adapterConnected() then
+    L.clientCall("joinPlaza", "wireless", L.liveProfile(), L.avatar())
+    LinkMenu._plaza = true
+  end
   LinkMenu.rows = Status.rows()
   if love and love.graphics then LinkMenu.loadArt() end
-  Stack.push("wireless_status", LinkMenu, { hideBelow = true })
+  Stack.push("wireless_status", LinkMenu, { hideBelow = true, fullscreen = true })
   return true
+end
+
+local function leavePlaza()
+  if not LinkMenu._plaza then return end
+  LinkMenu._plaza = false
+  linkMod().clientCall("leavePlaza", "wireless")
 end
 
 function LinkMenu.close()
   if not LinkMenu.open then return false end
   LinkMenu.open = false
+  leavePlaza()
   Stack.pop("wireless_status")
   local cb = LinkMenu._onClose
   LinkMenu._onClose = nil
@@ -335,17 +209,13 @@ function LinkMenu.close()
 end
 
 function LinkMenu.reset()
+  leavePlaza()
   LinkMenu.open = false
   LinkMenu.mode = nil
-  LinkMenu.stage = nil
-  LinkMenu.status = ""
   LinkMenu.rows = {}
   LinkMenu.palIdx = 0
   LinkMenu._counter = 0
   LinkMenu._rowsWait = 0
-  LinkMenu._addr = nil
-  LinkMenu._transport = nil
-  LinkMenu._role = nil
   LinkMenu._onClose = nil
   LinkMenu._variants = {}
   LinkMenu._art = nil
@@ -360,7 +230,6 @@ LinkMenu.ROWS_FRAMES = 30
 -- pokefirered/src/wireless_communication_status_screen.c:292 Task_WirelessCommunicationScreen
 function LinkMenu.update(_dt)
   if not LinkMenu.open then return end
-  if LinkMenu.mode == "connect" then return LinkMenu.updateConnect() end
   local wait = (LinkMenu._rowsWait or 0) - 1
   if wait > 0 then
     LinkMenu._rowsWait = wait
@@ -378,7 +247,6 @@ end
 
 function LinkMenu.handleInput(input)
   if not (input and LinkMenu.open) then return end
-  if LinkMenu.mode == "connect" then return LinkMenu.connectInput(input) end
   if input:wasPressed("a") or input:wasPressed("b") then
     local okA, Audio = pcall(require, "src.core.game3.audio")
     local okS, SE = pcall(require, "src.core.game3.se_ids")
@@ -396,45 +264,8 @@ end
 LinkMenu.countText = count_text
 
 -- pokefirered/src/wireless_communication_status_screen.c:264 PrintHeaderTexts
--- pokefirered/src/cable_club.c:222 CreateLinkupTask
-function LinkMenu.drawConnect()
-  local tpl = LinkMenu.CONNECT_TEMPLATE
-  Window.stdFrame(tpl)
-  local Link = require("src.core.game3.link")
-  local live = Link.link
-  local tx, ty = Window.labelTx(tpl.left), tpl.top
-  if LinkMenu.stage == "menu" then
-    Window.print(Strings("LINK CABLE"), tx, ty)
-    Window.print(Strings("HOST A GAME"), tx + 2, ty + 3)
-    Window.print(Strings("JOIN A GAME"), tx + 2, ty + 5)
-    Window.cursor(tpl.left, LinkMenu.index == 1 and ty + 3 or ty + 5)
-  elseif LinkMenu.stage == "hosting" then
-    Window.print(Strings("HOSTING"), tx, ty)
-    Window.print(Strings("Friend joins at:"), tx, ty + 3)
-    Window.print(tostring(LinkMenu._transport and LinkMenu._transport.address or "?"), tx, ty + 5)
-    Window.print(Strings("Waiting..."), tx, ty + 8)
-  elseif LinkMenu.stage == "address" then
-    local CodeEntry = require("src.link.CodeEntry")
-    Window.print(Strings("HOST ADDRESS"), tx, ty)
-    local text = {}
-    for i = 1, LinkMenu.ADDR_LENGTH do
-      local ch = CodeEntry.charAt(LinkMenu._addr, i)
-      text[i] = (i == LinkMenu._addr.pos and ch == " ") and "_" or ch
-    end
-    Window.print(table.concat(text), tx, ty + 3)
-    Window.print(string.rep(" ", LinkMenu._addr.pos - 1) .. "^", tx, ty + 4)
-  else
-    Window.print(Strings("JOINING..."), tx, ty)
-    Window.print(Strings("Waiting..."), tx, ty + 3)
-  end
-  if LinkMenu.status and LinkMenu.status ~= "" then
-    Window.print(LinkMenu.status, tx, ty + 10)
-  end
-end
-
 function LinkMenu.draw()
   if not (LinkMenu.open and love and love.graphics) then return end
-  if LinkMenu.mode == "connect" then return LinkMenu.drawConnect() end
   local art = LinkMenu._art
   if art then
     local image = LinkMenu.variant(LinkMenu.palIdx)
@@ -457,6 +288,350 @@ function LinkMenu.draw()
     Window.printPx(row.label, 24, y, opt)
     Window.printPx(count_text(row.count), 204, y, opt)
   end
+end
+
+local Direct = {}
+LinkMenu.Direct = Direct
+
+Direct.ID = "direct_corner"
+-- pokefirered/src/data/union_room.h:165
+Direct.MODES_TEMPLATE = Window.template(20, 6, 8, 7)
+-- pokefirered/src/data/union_room.h:27
+Direct.BAR_TEMPLATE = Window.template(0, 0, 30, 2)
+-- pokefirered/src/data/union_room.h:105
+Direct.LIST_TEMPLATE = Window.template(1, 3, 17, 10)
+-- pokefirered/src/data/union_room.h:115
+Direct.NAME_TEMPLATE = Window.template(20, 3, 7, 4)
+-- pokefirered/src/cable_club.c:59
+Direct.COUNT_TEMPLATE = Window.template(16, 11, 11, 2)
+-- pokefirered/src/data/union_room.h:125
+Direct.SLOTS = 16
+-- pokefirered/src/union_room.c:1656
+Direct.NEW_FRAMES = 64
+Direct.REFRESH_FRAMES = 10
+Direct.MODES = { "auto", "choose", "pin", "exit" }
+
+-- pokefirered/src/union_room.c:4079
+Direct.BAR_COLORS = { fg = FrlgFont.STDPAL[1], shadow = FrlgFont.STDPAL[3], bg = FrlgFont.STDPAL[0] }
+Direct.BAR_FILL = FrlgFont.STDPAL[2]
+
+Direct.open = false
+Direct.view = nil
+Direct.opts = {}
+Direct.frozen = false
+Direct.onLeave = nil
+Direct.notice = false
+Direct.count = 0
+Direct.slots = {}
+Direct.fresh = {}
+Direct.rows = {}
+Direct.modes = nil
+Direct.list = nil
+Direct._refresh = 0
+
+local function RomText() return require("src.core.game3.rom_text") end
+local function ListMenu() return require("src.ui.game3.list_menu") end
+local function Message() return require("src.ui.game3.message") end
+local function Choice() return require("src.ui.game3.choice") end
+
+function Direct.modeLabel(key)
+  local Strings = require("src.core.Strings")
+  if key == "auto" then return Strings("AUTO") end
+  if key == "choose" then return Strings("CHOOSE") end
+  if key == "pin" then return Strings("SET PIN") end
+  -- pokefirered/src/data/union_room.h:179
+  return RomText().plain("gText_UR_Exit")
+end
+
+function Direct.isOpen()
+  return Direct.open and true or false
+end
+
+function Direct.show(opts)
+  Direct.opts = opts or {}
+  Direct.open = true
+  Direct.frozen = false
+  Direct.onLeave = nil
+  Direct.notice = false
+  Stack.push(Direct.ID, Direct, { hideBelow = false, drawUnder = true })
+  return true
+end
+
+function Direct.close()
+  if not Direct.open then return false end
+  Direct.open = false
+  Direct.view = nil
+  Direct.modes = nil
+  Direct.list = nil
+  Direct.frozen = false
+  Direct.onLeave = nil
+  Direct.notice = false
+  Direct.count = 0
+  Stack.pop(Direct.ID)
+  return true
+end
+
+function Direct.reset()
+  Direct.close()
+  Direct.opts = {}
+  Direct.slots = {}
+  Direct.fresh = {}
+  Direct.rows = {}
+  Direct._refresh = 0
+end
+
+-- pokefirered/src/data/union_room.h:182
+function Direct.showModes(opts)
+  opts = opts or {}
+  local LM = ListMenu()
+  local items = {}
+  for _, key in ipairs(Direct.MODES) do
+    items[#items + 1] = { label = Direct.modeLabel(key), id = key }
+  end
+  Direct.view = "modes"
+  Direct.frozen = false
+  Direct.modes = LM.new({
+    template = Direct.MODES_TEMPLATE, frame = "std", items = items, maxShowed = #items,
+    itemX = 8, cursorX = 0, upTextY = 0, rowHeight = FrlgFont.GLYPH_HEIGHT, letterSpacing = 1,
+    arrows = false,
+    onSelect = function(item)
+      LM.playSe("SE_SELECT")
+      if opts.onChoose then opts.onChoose(item.id) end
+    end,
+    onCancel = function()
+      LM.playSe("SE_SELECT")
+      if opts.onCancel then opts.onCancel() end
+    end,
+  })
+  if opts.cursor then Direct.modes:setSelected(opts.cursor) end
+  return Direct.modes
+end
+
+local function rowColors(row)
+  local LM = ListMenu()
+  if row.locked or row.disabled then return LM.COLOR_WHITE, LM.COLOR_WHITE end
+  if (Direct.fresh[row.key] or 0) > 0 then return FrlgFont.COLOR.GREEN, FrlgFont.COLOR.GREEN end
+  local name = row.gender == 1 and FrlgFont.COLOR.FEMALE_NPC or FrlgFont.COLOR.MALE_NPC
+  return name, FrlgFont.COLOR.NORMAL
+end
+
+Direct.rowColors = rowColors
+
+-- pokefirered/src/union_room.c:4215
+function Direct.printRow(item, px, py, _selected, index)
+  local RT = RomText()
+  FrlgFont.draw(("%02d"):format(index) .. RT.plain("gText_UR_Colon"), px, py,
+    { small = true, colors = FrlgFont.COLOR.NORMAL })
+  local row = item.row
+  if not row then return end
+  local nameColors, idColors = rowColors(row)
+  local x = px + 18
+  if row.locked then
+    ListMenu().drawLock(x, py + 3)
+    x = x + ListMenu().LOCK_W
+  end
+  FrlgFont.draw(tostring(row.name or ""), x, py, { colors = nameColors })
+  local id = ("%05d"):format(math.floor(tonumber(row.trainerId) or 0) % 65536)
+  FrlgFont.draw(RT.plain("gText_UR_ID") .. id, px + 95, py, { small = true, colors = idColors })
+end
+
+function Direct.buildItems()
+  local items = {}
+  local last = Direct.SLOTS
+  for slot in pairs(Direct.slots) do
+    if slot > last then last = slot end
+  end
+  for i = 1, last do
+    local key = Direct.slots[i]
+    local row = key and Direct.rows[key] or nil
+    items[i] = { id = i, row = row, disabled = row == nil or row.disabled == true, print = Direct.printRow }
+  end
+  return items
+end
+
+-- pokefirered/src/union_room.c:1637
+function Direct.refresh(entries)
+  local present, order = {}, {}
+  for _, row in ipairs(entries or {}) do
+    if type(row) == "table" and row.key ~= nil and not present[row.key] then
+      present[row.key] = row
+      order[#order + 1] = row
+    end
+  end
+  local placed = {}
+  for slot, key in pairs(Direct.slots) do
+    if present[key] then
+      placed[key] = slot
+    else
+      Direct.slots[slot] = nil
+      Direct.fresh[key] = nil
+    end
+  end
+  local arrived = false
+  for _, row in ipairs(order) do
+    if not placed[row.key] then
+      local slot = 1
+      while Direct.slots[slot] ~= nil do slot = slot + 1 end
+      Direct.slots[slot] = row.key
+      placed[row.key] = slot
+      Direct.fresh[row.key] = Direct.NEW_FRAMES
+      arrived = true
+    end
+  end
+  Direct.rows = present
+  if Direct.list then Direct.list:setItems(Direct.buildItems(), true) end
+  return arrived
+end
+
+-- pokefirered/src/union_room.c:1146
+function Direct.showChoose(opts)
+  opts = opts or {}
+  local LM = ListMenu()
+  Direct.view = "choose"
+  Direct.frozen = false
+  Direct.onLeave = nil
+  Direct.me = opts.me or Direct.me
+  Direct.source = opts.rows
+  Direct.slots, Direct.fresh, Direct.rows = {}, {}, {}
+  Direct.list = LM.new({
+    template = Direct.LIST_TEMPLATE, frame = "std", items = {}, maxShowed = 5,
+    itemX = 8, cursorX = 0, upTextY = 0, rowHeight = FrlgFont.GLYPH_HEIGHT + 2,
+    scrollMultiple = "dpad", arrows = true,
+    onSelect = function(item)
+      if Direct.frozen then return end
+      if opts.onPick then opts.onPick(item.row, item.id) end
+    end,
+    onCancel = function()
+      if Direct.frozen then return end
+      if opts.onCancel then opts.onCancel() end
+    end,
+  })
+  if type(Direct.source) == "function" then Direct.refresh(Direct.source()) end
+  Direct.list:setItems(Direct.buildItems(), false)
+  Direct._refresh = Direct.REFRESH_FRAMES
+  return Direct.list
+end
+
+function Direct.setFrozen(frozen)
+  Direct.frozen = frozen and true or false
+  if not Direct.frozen then Direct.onLeave = nil end
+end
+
+-- pokefirered/src/union_room.c:1332
+function Direct.setLeave(cb)
+  Direct.onLeave = cb
+end
+
+function Direct.showWait(opts)
+  opts = opts or {}
+  Direct.view = "wait"
+  Direct.frozen = false
+  Direct.onWaitCancel = opts.onCancel
+  Direct.count = tonumber(opts.count) or 0
+end
+
+function Direct.setCount(n)
+  Direct.count = tonumber(n) or 0
+end
+
+function Direct.setNotice(on)
+  Direct.notice = on and true or false
+end
+
+local function forwardChoice(input)
+  local C = Choice()
+  if input:wasPressed("up") then C.move(-1, 0)
+  elseif input:wasPressed("down") then C.move(1, 0)
+  elseif input:wasPressed("left") then C.move(0, -1)
+  elseif input:wasPressed("right") then C.move(0, 1)
+  elseif input:wasPressed("a") then C.confirm()
+  elseif input:wasPressed("b") then C.cancel()
+  end
+end
+
+function Direct.handleInput(input)
+  if not (input and Direct.open) then return end
+  if Choice().isOpen() then return forwardChoice(input) end
+  local M = Message()
+  if Direct.notice then
+    if M.isOpen() and (input:wasPressed("a") or input:wasPressed("b")) then
+      if M.isWaiting() then M.advance() else M.skipReveal() end
+    end
+    return
+  end
+  if Direct.view == "modes" and Direct.modes then
+    Direct.modes:handleInput(input)
+  elseif Direct.view == "choose" and Direct.list then
+    if Direct.frozen then
+      if Direct.onLeave and input:wasPressed("b") then Direct.onLeave() end
+      return
+    end
+    Direct.list:handleInput(input)
+  elseif Direct.view == "wait" then
+    if input:wasPressed("b") and Direct.onWaitCancel then Direct.onWaitCancel() end
+  end
+end
+
+function Direct.update(dt)
+  if not Direct.open then return end
+  local M = Message()
+  if M.isOpen() then M.tick() end
+  if Direct.modes then Direct.modes:update(dt) end
+  if Direct.list then
+    Direct.list:update(dt)
+    for key, n in pairs(Direct.fresh) do
+      if n > 0 then Direct.fresh[key] = n - 1 end
+    end
+    Direct._refresh = Direct._refresh - 1
+    if Direct._refresh <= 0 and type(Direct.source) == "function" then
+      Direct._refresh = Direct.REFRESH_FRAMES
+      -- pokefirered/src/union_room.c:1204
+      if Direct.refresh(Direct.source()) then ListMenu().playSe("SE_PC_LOGIN") end
+    end
+  end
+  local cb = Direct.opts.onUpdate
+  if cb then cb(dt) end
+end
+
+-- pokefirered/src/union_room.c:346
+local function drawNameAndId()
+  local tpl = Direct.NAME_TEMPLATE
+  Window.stdFrame(tpl)
+  local me = Direct.me or {}
+  local x, y = tpl.left * 8, tpl.top * 8
+  FrlgFont.draw(tostring(me.name or ""), x, y + 2, { colors = FrlgFont.COLOR.NORMAL })
+  local id = ("%05d"):format(math.floor(tonumber(me.trainerId) or 0) % 65536)
+  FrlgFont.draw(RomText().plain("gText_UR_ID") .. id, x, y + 16, { small = true, colors = FrlgFont.COLOR.NORMAL })
+end
+
+-- pokefirered/src/union_room.c:1181
+local function drawCancelBar()
+  local tpl = Direct.BAR_TEMPLATE
+  love.graphics.setColor(Direct.BAR_FILL)
+  love.graphics.rectangle("fill", tpl.left * 8, tpl.top * 8, tpl.w * 8, tpl.h * 8)
+  love.graphics.setColor(1, 1, 1, 1)
+  FrlgFont.draw(RomText().plain("gText_UR_ChooseJoinCancel"), tpl.left * 8 + 8, tpl.top * 8 + 2,
+    { small = true, colors = Direct.BAR_COLORS })
+end
+
+-- pokefirered/src/cable_club.c:87
+local function drawPlayerCount()
+  local tpl = Direct.COUNT_TEMPLATE
+  Window.stdFrame(tpl)
+  FrlgFont.draw(RomText().plain("gText_NumPlayerLink", { stringVars = { tostring(Direct.count) } }),
+    tpl.left * 8, tpl.top * 8, { colors = FrlgFont.COLOR.NORMAL })
+end
+
+function Direct.draw()
+  if not (Direct.open and love and love.graphics) then return end
+  if Direct.view == "modes" and Direct.modes then
+    Direct.modes:draw()
+  elseif Direct.view == "choose" and Direct.list then
+    drawCancelBar()
+    Direct.list:draw()
+    drawNameAndId()
+  end
+  if Direct.count >= 2 then drawPlayerCount() end
 end
 
 return LinkMenu

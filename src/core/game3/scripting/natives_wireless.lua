@@ -7,6 +7,8 @@ local Wireless = {}
 
 local VAR_RESULT = 0x800D -- pokefirered/include/constants/vars.h:328
 local VAR_0x8004 = 0x8004 -- pokefirered/include/constants/vars.h:319
+local VAR_0x8005 = 0x8005 -- pokefirered/include/constants/vars.h:320
+local SE_FAILURE = 26 -- pokefirered/include/constants/songs.h:30
 local VAR_OBJ_GFX_ID_0 = 0x4010 -- pokefirered/include/constants/vars.h:28
 local OBJ_EVENT_GFX_YOUNGSTER = 18 -- pokefirered/include/constants/event_objects.h:24
 local PARTY_SIZE = 6 -- pokefirered/include/constants/pokemon.h
@@ -80,17 +82,112 @@ local function convertSpeech(words)
   return require("src.core.game3.easy_chat_text").phrase(words, 3, 2)
 end
 
+local function minigames()
+  return require("src.core.game3.minigames.common")
+end
+
+local function closeMessage()
+  local okM, Message = pcall(require, "src.ui.game3.message")
+  if okM and Message and Message.isOpen and Message.isOpen() and Message.close then
+    Message.close()
+  end
+end
+
+-- pokefirered/src/party_menu.c:1817
+function Wireless.chooseMonForMinigame(ctx)
+  local MG = minigames()
+  MG.partySlot = nil
+  local kind = varGet(ctx, VAR_0x8005)
+  local session = sessionOf(ctx)
+  local party = session and session.party
+  local okUi, PartyMenu = pcall(require, "src.ui.game3.party_menu")
+  local RomText = require("src.core.game3.rom_text")
+  local done = false
+  local function finish(slot0)
+    varSet(ctx, VAR_0x8004, slot0)
+    if slot0 < PARTY_SIZE then MG.partySlot = slot0 end
+    done = true
+  end
+  if not (type(party) == "table" and party[1] and okUi and type(PartyMenu) == "table" and PartyMenu.show) then
+    finish(PARTY_SIZE)
+    return false
+  end
+  closeMessage()
+  local picked, cancelled = nil, false
+  local show
+  local function eligible(slot, mon)
+    return MG.eligible(mon or party[slot], kind)
+  end
+  local menuOpts = {
+    mode = "choose",
+    session = session,
+    minigameEligible = eligible,
+    validate = function(slot)
+      local mon = party[slot]
+      if MG.eligible(mon, kind) then return nil end
+      pcall(function() require("src.core.game3.audio").playSe(SE_FAILURE) end)
+      return RomText.box("gText_PkmnCantParticipate", { maxWidth = 216 })
+    end,
+    onSelect = function(slot)
+      picked = slot and ((tonumber(slot) or 1) - 1) or nil
+    end,
+  }
+  local closed = false
+  menuOpts.onClose = function() closed = true end
+  show = function()
+    PartyMenu.show(party, nil, menuOpts)
+  end
+  local function settle()
+    if done then return true end
+    if not closed then return false end
+    closed = false
+    if picked ~= nil then
+      finish(picked)
+      return true
+    end
+    if cancelled then
+      finish(PARTY_SIZE)
+      return true
+    end
+    local cursor = PartyMenu.cursor
+    show()
+    PartyMenu.cursor = cursor or 1
+    PartyMenu.showYesNo(RomText.box("gText_CancelParticipation", { maxWidth = 216 }), function(yes)
+      if yes then
+        cancelled = true
+        PartyMenu.close()
+      else
+        PartyMenu.mode = "choose"
+      end
+    end)
+    return false
+  end
+  show()
+  require("src.core.game3.scripting.natives").awaitState(ctx, settle)
+  return false
+end
+
 Wireless.HANDLERS = {
   -- pokefirered/src/party_menu.c:5818, data/scripts/cable_club.inc:1181
   [Std.SPECIAL.ChooseMonForWirelessMinigame] = function(ctx)
-    varSet(ctx, VAR_0x8004, PARTY_SIZE)
-    return false
+    return Wireless.chooseMonForMinigame(ctx)
   end,
 
   -- pokefirered/src/pokemon_jump.c:2687, data/scripts/cable_club.inc:1177, pokemon_jump.c:766
   [Std.SPECIAL.IsPokemonJumpSpeciesInParty] = function(ctx)
-    setResult(ctx, 0)
-    return false, 0
+    local session = sessionOf(ctx)
+    local party = session and session.party or {}
+    local MG = minigames()
+    local found = 0
+    for i = 1, PARTY_SIZE do
+      local mon = party[i]
+      if MG.speciesOf(mon) ~= 0 and MG.isJumpSpecies(MG.speciesOrEgg(mon)) then
+        found = 1
+        break
+      end
+    end
+    setResult(ctx, found)
+    return false, found
   end,
 
   -- pokefirered/src/pokemon_jump.c:4487, data/scripts/cable_club.inc:1278

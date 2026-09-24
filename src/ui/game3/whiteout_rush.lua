@@ -37,7 +37,7 @@ function Rush.start(game, session, opts)
   if Field and Field.lock then Field.lock() end
   -- pokefirered/src/overworld.c:1552
   stopMusic()
-  Stack.push(Rush.ID, Rush, { hideBelow = true })
+  Stack.push(Rush.ID, Rush, { hideBelow = true, fullscreen = true })
 end
 
 function Rush.isActive()

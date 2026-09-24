@@ -40,8 +40,7 @@ local state = {
   pid = nil,
   loggedAbsent = false, -- one quiet note when Discord isn't running
   game = nil,          -- kept for the "friend clicked join" -> push a screen path
-  joinCode = nil,       -- the online-match/tournament code to advertise as a join secret, if any
-  joinKind = "match",   -- "match" (LinkState online) or "tournament"
+  joinSecret = nil,
   partySize = 1,        -- current headcount for the party.size Discord shows
   partyMax = 2,
   subscribedJoin = false, -- SUBSCRIBE ACTIVITY_JOIN sent on this connection?
@@ -408,8 +407,35 @@ local function connect()
   return result and true or false
 end
 
-local function locationName(game, mapId)
+local function isGen3(game)
+  if type(game) ~= "table" then return false end
+  if tonumber(game.generation) == 3 then return true end
+  local data = rawget(game, "data")
+  if type(data) == "table" and tonumber(data.generation) == 3 then return true end
+  local ok, GameVersion = pcall(require, "src.core.GameVersion")
+  return ok and GameVersion.generation() == 3 and game.stack == nil
+end
+
+local function gen3LocationName(mapId, def)
+  local ok, Sections = pcall(require, "src.import.gba.map_sections_extract")
+  if ok and type(def) == "table" then
+    local sec = def.regionMapSectionId or def.region_map_section_id or def.mapsec
+    local got, info = pcall(Sections.getInfo, sec, mapId, 0)
+    if got and type(info) == "table" and info.resolved ~= false
+        and type(info.name) == "string" and info.name ~= "" then
+      local name = info.name:lower():gsub("(%a)([%w']*)", function(a, b)
+        return a:upper() .. b
+      end)
+      return name
+    end
+  end
+  local s = tostring(mapId):gsub("^MAP_", ""):gsub("_", " "):lower()
+  return (s:gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
+end
+
+local function locationName(game, mapId, def)
   if not mapId then return nil end
+  if isGen3(game) then return gen3LocationName(mapId, def) end
   local world = game and game.world
   if world and world.landmarkName then
     local ok, name = pcall(world.landmarkName, world)
@@ -441,7 +467,11 @@ end
 
 local function buildActivity()
   local details, activityState
-  if state.activity == "battle" then
+  if state.activity == "launcher" then
+    details = Strings("In the launcher")
+    activityState = state.joinSecret and Strings("Waiting in a lobby")
+      or Strings("Browsing the online lobby")
+  elseif state.activity == "battle" then
     details = state.battleLabel or Strings("In battle")
     activityState = state.location and (state.location) or "Kanto"
   elseif state.activity == "exploring" and state.location then
@@ -461,16 +491,10 @@ local function buildActivity()
       large_text = "Pokemon Gen1Recomp",
     },
   }
-  -- a party/join-secret pair is what makes Discord show "Ask to Join" on
-  -- the profile card; the secret carries our own room/tournament code plus
-  -- a one-letter kind tag ("m"/"t") so the click handler on the other end
-  -- knows which screen to jump into -- Discord only echoes the string
-  -- back, so the kind has to ride inside it
-  if state.joinCode then
-    local kindTag = state.joinKind == "tournament" and "t" or "m"
-    activity.party = { id = "pokeport-" .. state.joinCode,
+  if state.joinSecret then
+    activity.party = { id = "pokeport-" .. state.joinSecret:sub(1, 16),
                        size = { state.partySize, state.partyMax } }
-    activity.secrets = { join = "join:" .. kindTag .. ":" .. state.joinCode }
+    activity.secrets = { join = "join:i:" .. state.joinSecret }
   end
   return activity
 end
@@ -548,7 +572,7 @@ local function subscribe(game)
     local mapId = ev and ev.mapId
     setPresence({
       mapId = mapId,
-      location = locationName(game, mapId),
+      location = locationName(game, mapId, ev and ev.map),
       activity = "exploring",
       clearBattle = true,
     })
@@ -607,23 +631,27 @@ local function subscribe(game)
   end)
 end
 
--- Advertise (or clear, with code=nil) a room code as a Discord join
--- secret. The launcher's ONLINE tab calls this once the relay has given it
--- a real code, and clears it again once the room fills or closes (an invite
--- that's already full or gone is worse than no invite). kind is "match"
--- (default) or "tournament"; size/max are the party.size Discord shows
--- (default 1/2, a plain 1v1 room) -- a tournament passes its live roster
--- count and a generous cap instead, and should call this again whenever the
--- roster changes, not just once.
-function DiscordPresence.setJoinCode(code, kind, size, max)
+local function tokenOf(value)
+  if type(value) ~= "string" then return nil end
+  value = value:lower()
+  if #value == 32 and value:match("^%x+$") then return value end
+  return nil
+end
+
+DiscordPresence.tokenOf = tokenOf
+
+function DiscordPresence.setJoinSecret(token, size, max)
   pcall(function()
-    state.joinCode = code
-    state.joinKind = kind or "match"
+    state.joinSecret = tokenOf(token)
     state.partySize = size or 1
     state.partyMax = max or 2
     state.dirty = true
     flush(false)
   end)
+end
+
+function DiscordPresence.setJoinCode(code)
+  if code == nil then DiscordPresence.setJoinSecret(nil) end
 end
 
 -- A friend clicked "Ask to Join" on our profile and Discord delivered the
@@ -637,22 +665,36 @@ local function handleJoinRequest(secret)
   if not secret or secret == "" then return end
   if state.activity == "battle" then return end
   local game = state.game
-  local top = game and game.stack and game.stack:top()
+  local top = game and type(game.stack) == "table"
+    and type(game.stack.top) == "function" and game.stack:top()
   if top and top.stage and top.net then return end -- already in a link session
+  if game and tonumber(game.generation) == 3 then
+    local link = package.loaded["src.core.game3.link"]
+    if type(link) == "table" and link.link ~= nil then return end
+  end
   local kindTag, code = secret:match("^(%a):(.+)$")
-  if not kindTag then kindTag, code = "m", secret end -- older/plain secret: assume match
-  Runtime.emit("discord.join_requested", { code = code, kind = kindTag })
-  if game and not game.returnToLauncher then
-    print("[discord] no launcher to return to; ignoring join code " .. tostring(code))
+  if not kindTag then kindTag, code = "i", secret end
+  local token = kindTag == "i" and tokenOf(code) or nil
+  Runtime.emit("discord.join_requested",
+    { code = code, kind = kindTag, invite = token })
+  if not token then
+    print("[discord] not an invite token; ignoring join secret")
     return
   end
-  local ok, Client = pcall(require, "src.online.Client")
-  if not ok or type(Client) ~= "table" or not Client.joinRoom then
-    print("[discord] online client unavailable; ignoring join code " .. tostring(code))
+  if game then
+    if not game.returnToLauncher then
+      print("[discord] no launcher to return to; ignoring the invite")
+      return
+    end
+    game.returnToLauncher({ tab = "online", invite = token })
     return
   end
-  if game then game.returnToLauncher({ tab = "online", joinCode = code }) end
-  Client.joinRoom(code, "player")
+  local handler = DiscordPresence.joinHandler
+  if type(handler) == "function" then
+    pcall(handler, token)
+    return
+  end
+  print("[discord] online panel unavailable; ignoring the invite")
 end
 
 -- non-blocking peek for an incoming ACTIVITY_JOIN dispatch. Unix (FFI)
@@ -708,8 +750,9 @@ function DiscordPresence.init(game)
     state.location = "Title screen"
     state.mapId = nil
     state.battleLabel = nil
-    state.joinCode = nil
+    state.joinSecret = nil
     state.game = game
+    DiscordPresence.launcherArmed = game == nil
     state.dirty = true
     state.nextReconnectAt = 0
     state.loggedAbsent = false
@@ -782,7 +825,23 @@ function DiscordPresence.shutdown()
   state.connected = false
   state.socket = nil
   state.subscribedJoin = false
-  state.joinCode = nil
+  state.joinSecret = nil
+  DiscordPresence.launcherArmed = false
+end
+
+function DiscordPresence.ensureLauncher()
+  if state.enabled and state.game == nil then return true end
+  if state.enabled then return false end
+  DiscordPresence.init(nil)
+  if state.enabled then
+    state.activity = "launcher"
+    state.dirty = true
+  end
+  return state.enabled
+end
+
+function DiscordPresence.enabled()
+  return state.enabled == true
 end
 
 -- test / debug helpers

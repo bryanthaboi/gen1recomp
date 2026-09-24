@@ -2,8 +2,10 @@
 local Icons = {}
 local names = { "settings", "x", "arrow-left-right", "puzzle", "search",
   "globe", "paintbrush", "download", "pencil", "folder", "upload",
-  "file-pen-line", "trash", "check", "chevron-right" }
+  "file-pen-line", "trash", "check", "chevron-right", "lock", "lock-open",
+  "mail" }
 local atlas, quads
+Icons.NAMES = names
 
 function Icons.draw(name, x, y, size, color, alpha)
   local g = love and love.graphics

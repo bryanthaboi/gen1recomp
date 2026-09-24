@@ -13,7 +13,6 @@ local function Client() return require("src.online.Client") end
 
 function Watch.draw(imp, x, y, w, availH, m)
   local OnlinePanel = OP()
-  local st = OnlinePanel.state(imp)
   local c = OnlinePanel.cache(imp)
   local _, gap, tiny = Ui.pads(m)
   local rowH = math.max(m.rowH, Kit.tapMin())
@@ -23,23 +22,11 @@ function Watch.draw(imp, x, y, w, availH, m)
   local cy = y + Ui.header(imp, x, y, w, m, Strings("Watch"),
     online and "ONLINE" or "OFFLINE", online and PAL.green or PAL.line)
 
-  cy = cy + Ui.label(Strings("Watch by code"), x, cy) + tiny
-  local codeW = math.floor(w * 0.5)
-  Ui.field(imp, x, cy, codeW, btnH, "online-code", st.joinCode,
-    Strings("Six characters"), imp._onlineFocus == "online-code",
-    function(text) st.joinCode = OnlinePanel.sanitizeCode(text) end)
-  LV().btn(imp, x + codeW + gap, cy, w - codeW - gap, btnH,
-    "online-spectate-code", Strings("Spectate"),
-    { kind = "primary", font = "small",
-      enabled = online and #st.joinCode == OnlinePanel.CODE_LEN,
-      action = function() OnlinePanel.spectateByCode(imp, st.joinCode) end })
-  cy = cy + btnH + gap
-
   local rows = c.watch
   cy = cy + Ui.label(Strings("Live now"), x, cy) + tiny
   if #rows == 0 then
     Kit.emptyBox(x, cy, w, rowH * 2, online
-      and Strings("Nothing to watch yet. Paste a code, or check back.")
+      and Strings("Nothing to watch yet. Check back soon.")
       or Strings("Connect to see who is playing."))
     cy = cy + rowH * 2 + gap
   else
@@ -57,20 +44,30 @@ function Watch.draw(imp, x, y, w, availH, m)
         "online-watch-" .. row.id, nil)
       local tx = x + math.floor(10 * m.s)
       local textW = w - watchW - math.floor(24 * m.s)
-      Kit.text("small", Kit.ellipsize("small", row.name, textW), tx,
-        cy + math.floor(5 * m.s), ink or PAL.heading)
-      local tournament = row.intent == "tournament"
+      local nameX = tx
+      if row.locked then
+        local size = math.floor(14 * m.s)
+        Ui.lock(tx, cy + math.floor(5 * m.s)
+          + (Kit.textHeight("small") - size) / 2, size, PAL.yellow)
+        nameX = tx + size + math.floor(6 * m.s)
+      end
+      Kit.text("small", Kit.ellipsize("small", row.name, textW - (nameX - tx)),
+        nameX, cy + math.floor(5 * m.s), ink or PAL.heading)
+      local tournament = row.intent == "tournament" or row.tour ~= nil
       local sub = ("%s  %s  %s  %s"):format(row.game, row.arena, row.rule,
         tournament and Strings("tournament")
           or Strings("%d watching", row.spectators))
+      if row.seatsText then sub = sub .. "  " .. row.seatsText end
+      if row.where then sub = row.where .. "  " .. sub end
       Kit.text("micro", Kit.ellipsize("micro", sub, textW), tx,
         cy + rowH - Kit.textHeight("micro") - math.floor(5 * m.s), PAL.muted)
-      local code = row.code
+      local pick = row
       LV().btn(imp, x + w - watchW - math.floor(6 * m.s),
         cy + (rowH - btnH) / 2, watchW, btnH, "online-watch-go-" .. row.id,
         tournament and Strings("Watch") or Strings("Spectate"),
         { kind = "accent", font = "small", enabled = online,
-          action = function() OnlinePanel.spectateByCode(imp, code) end })
+          icon = row.locked and "lock" or nil,
+          action = function() OnlinePanel.spectate(imp, pick) end })
       cy = cy + rowH + tiny
     end
     if #rows > perPage then

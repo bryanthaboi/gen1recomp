@@ -30,7 +30,7 @@ function AiVm.new(opts)
     ip = 1,
     done = false,
     aiAction = 0,
-    rng = opts.rng or math.random,
+    rng = opts.rng or require("src.core.game3.battle.link_guard").source("ai_vm.rng", math.random),
   }
 
   function vm:jump(name, ip)

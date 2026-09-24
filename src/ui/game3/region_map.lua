@@ -1562,7 +1562,7 @@ function RegionMap.show(opts)
   S.fromField = RegionMap.mode == "normal" and not bagIsOpen()
   RegionMap.open = true
   PokedexChrome.install()
-  Stack.push("region_map", RegionMap, { hideBelow = true })
+  Stack.push("region_map", RegionMap, { hideBelow = true, fullscreen = true })
 end
 
 -- src/region_map.c:1320 FreeRegionMap, :4005 FreeFlyMap

@@ -121,6 +121,9 @@ return {
   -- src/wireless_communication_status_screen.c:226
   cache:write(status .. "/bg.rgba", BgBake.bakeRegionRgba(statusGfx,
     { [0] = statusBanks[0] }, statusMap, SCREEN_W, SCREEN_H, {}))
+  -- src/wireless_communication_status_screen.c:251
+  cache:write(status .. "/bg_index.bin",
+    BgBake.bakeRegionIndices(statusGfx, statusMap, SCREEN_W, SCREEN_H, {}))
 
   local palParts = {}
   for b = 0, STATUS_PAL_BANKS - 1 do
@@ -135,7 +138,7 @@ return {
   cache:write(status .. "/manifest.lua", string.format([[
 return {
   format_version = %d,
-  bg = { width = %d, height = %d },
+  bg = { width = %d, height = %d, index = "bg_index.bin" },
   palettes = { banks = %d, colors = 16, bytes_per_color = 3, anim_first = 2, anim_count = 14 },
 }
 ]], LinkArtExtract.FORMAT_VERSION, SCREEN_W, SCREEN_H, STATUS_PAL_BANKS))
@@ -163,7 +166,9 @@ function LinkArtExtract.ready(cache, cacheRoot)
     return false
   end
   local bg = cache:read(status .. "/bg.rgba")
-  return type(bg) == "string" and #bg == SCREEN_W * SCREEN_H * 4
+  if type(bg) ~= "string" or #bg ~= SCREEN_W * SCREEN_H * 4 then return false end
+  local idx = cache:exists(status .. "/bg_index.bin") and cache:read(status .. "/bg_index.bin")
+  return type(idx) == "string" and #idx == SCREEN_W * SCREEN_H
 end
 
 return LinkArtExtract

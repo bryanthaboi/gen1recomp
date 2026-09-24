@@ -502,6 +502,9 @@ function Extract.run(imports, cache, progressCb)
           detailM.listCount or 0, tostring(detailM.path)))
       end
     end
+    for _, name in ipairs({ "online_ui_extract", "berry_crush_extract", "dodrio_extract", "pokemon_jump_extract" }) do
+      require("src.import.gba." .. name).run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
+    end
     rom2:clearCache()
   end
 

@@ -78,6 +78,9 @@ function MysteryGiftExtract.run(rom, cache, opts)
     end
   end
 
+  local OnlineUi = require("src.import.gba.online_ui_extract")
+  local stampRows = OnlineUi.giftArt(rom, function(path, data) cache:write(path, data) end, root)
+
   cache:write(root .. "/manifest.lua", string.format([[
 return {
   format_version = %d,
@@ -87,8 +90,10 @@ return {
   entries = {
 %s
   },
+%s
 }
-]], MysteryGiftExtract.MANIFEST_VERSION, W, H, count, table.concat(rows, "\n")))
+]], MysteryGiftExtract.MANIFEST_VERSION, W, H, count, table.concat(rows, "\n"),
+    OnlineUi.manifestRows(stampRows)))
 
   print(string.format("[mystery_gift_extract] %d wonder card and %d wonder news backgrounds %dx%d -> %s",
     count, count, W, H, root))

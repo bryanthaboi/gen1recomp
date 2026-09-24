@@ -376,7 +376,7 @@ function LinkTradeMenu.show()
   resetState()
   -- pokefirered/src/trade.c:853
   LinkTradeMenu.message = RomText.plain(MSG.STANDBY)
-  Stack.push("link_trade", LinkTradeMenu, { hideBelow = true })
+  Stack.push("link_trade", LinkTradeMenu, { hideBelow = true, fullscreen = true })
   return true
 end
 
@@ -528,7 +528,11 @@ local function canceledMessage(LT)
 end
 
 local SELECTING = { selected_mons = true, okay_wait = true, confirm_prompt = true }
-local KEEP_OPEN = { menu = true, ready_wait = true, confirm = true, confirm_wait = true, canceled = true }
+local KEEP_OPEN = {
+  menu = true, ready_wait = true, confirm = true, confirm_wait = true, canceled = true,
+  exchange = true, commit_wait = true,
+}
+local TO_SCENE = { committed = true, scene = true }
 
 local function syncLink(LT)
   if LT.state == "confirm" and not SELECTING[LinkTradeMenu.cb] then
@@ -774,7 +778,7 @@ function LinkTradeMenu.update(_dt)
     end
   end
   if not KEEP_OPEN[LT.state] then
-    local toScene = LT.state == "exchange" or LT.state == "scene"
+    local toScene = TO_SCENE[LT.state] == true
     if (toScene or LT.state == "exit") and hasGraphics() then
       exitWithFade(LT, toScene)
     else

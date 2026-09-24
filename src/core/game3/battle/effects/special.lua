@@ -235,6 +235,9 @@ function Special.batonPass(ctx)
   if type(st.batonPassChooser) == "function" then
     local ok, v = pcall(st.batonPassChooser, user.side, candidates)
     if ok then pick = tonumber(v) end
+  elseif st.link and st.interactiveChoices and coroutine.running() then
+    -- pokefirered/src/battle_script_commands.c:4626
+    pick = tonumber(coroutine.yield({ kind = "baton_pass", side = user.side, battler = user.id, candidates = candidates }))
   elseif user.side == "player" and st.interactiveChoices and coroutine.running() then
     -- pokefirered/src/battle_script_commands.c:4626
     pick = tonumber(coroutine.yield({ kind = "baton_pass", side = user.side, battler = user.id, candidates = candidates }))

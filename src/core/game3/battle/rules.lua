@@ -57,11 +57,7 @@ function Rules.shouldHaltBattlerOnFaint(phase)
 end
 
 local function fallback_rng(lo, hi)
-  local okR, Rng = pcall(require, "src.core.game3.rng")
-  if okR and Rng and Rng.compat then
-    return Rng.compat(lo, hi)
-  end
-  return math.random(lo, hi)
+  return require("src.core.game3.battle.link_guard").fallback("rules.roll", lo, hi)
 end
 
 -- Partial trap (Gen3)

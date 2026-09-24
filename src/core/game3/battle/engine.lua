@@ -102,11 +102,7 @@ local function roll(adapter, lo, hi)
       print("[game3/engine] adapter rng failed: " .. tostring(v))
     end
   end
-  local okR, Rng = pcall(require, "src.core.game3.rng")
-  if okR and Rng and Rng.compat then
-    return Rng.compat(lo, hi)
-  end
-  return math.random(lo, hi)
+  return require("src.core.game3.battle.link_guard").fallback("engine.roll", lo, hi)
 end
 Engine.roll = roll
 
@@ -1123,6 +1119,8 @@ function Engine.getMoveTarget(st, ad, attacker, moveId, setTarget)
     else
       for _ = 1, 256 do
         target = roll(ad, 0, count - 1) % count
+        -- pokefirered/src/battle_controllers.c:163
+        if st and st.link then target = State.battlerOrder(st)[target + 1] end
         if target ~= aid and target % 2 ~= aid % 2 and State.isPresent(st, target) then break end
         target = nil
       end
@@ -1367,9 +1365,10 @@ end
 -- pokefirered/src/battle_util.c:1208
 function Engine.afterAction(st, ad)
   if not st or st.over then return end
+  local first = State.battler(st, State.battlerOrder(st)[1]) or st.player
   for _ = 1, 4 do
     local did = Abilities.runIntimidate(ad) or Abilities.runTrace(ad)
-      or HeldItems.normal(ad, st.player, true) or Abilities.forecast(ad)
+      or HeldItems.normal(ad, first, true) or Abilities.forecast(ad)
     if not did then break end
   end
 end
@@ -1574,7 +1573,7 @@ function Engine.forEachTarget(M, body)
     -- pokefirered/src/battle_script_commands.c:8532
     local uid = State.idOf(M.user)
     local ids = {}
-    for id = 0, 3 do
+    for _, id in ipairs(State.battlerOrder(st)) do
       if id ~= uid and State.isPresent(st, id) then ids[#ids + 1] = id end
     end
     if #ids == 0 then return body(M) end
@@ -2165,7 +2164,11 @@ function Engine.switchCandidates(st, side)
   end
   local out = {}
   for i, mon in ipairs(party or {}) do
-    if not excl[i] and mon and (tonumber(mon.hp) or 0) > 0 and not mon.isEgg then out[#out + 1] = i end
+    -- pokefirered/src/battle_script_commands.c:6919
+    if not excl[i] and mon and (tonumber(mon.hp) or 0) > 0 and not mon.isEgg
+        and (id == nil or State.ownsSlot(st, id, i)) then
+      out[#out + 1] = i
+    end
   end
   return out
 end
@@ -2184,7 +2187,7 @@ function Engine.replacementCandidates(st, id)
   local out = {}
   for i, mon in ipairs(party or {}) do
     if not excl[i] and mon and not mon.isEgg and (tonumber(mon.hp) or 0) > 0
-        and (tonumber(mon.species or mon.speciesId) or 0) ~= 0 then
+        and (tonumber(mon.species or mon.speciesId) or 0) ~= 0 and State.ownsSlot(st, id, i) then
       out[#out + 1] = i
     end
   end
@@ -2193,7 +2196,7 @@ end
 
 function Engine.faintedBattlers(st)
   local out = {}
-  for id = 0, 3 do
+  for _, id in ipairs(State.battlerOrder(st)) do
     local b = State.battler(st, id)
     if b and not State.isAbsent(st, id) and State.isFainted(b) then out[#out + 1] = id end
   end
@@ -2211,7 +2214,7 @@ end
 function Engine.refreshAbsent(st)
   local back = {}
   if not (st and st.double and st.absent) then return back end
-  for id = 0, 3 do
+  for _, id in ipairs(State.battlerOrder(st)) do
     if st.absent[id] and State.battler(st, id) and #Engine.replacementCandidates(st, id) > 0 then
       st.absent[id] = nil
       back[#back + 1] = id
@@ -2311,7 +2314,7 @@ function Engine.planTurnActions(st, adapter, chosen)
   local order = {}
   local sortable = 0
   -- pokefirered/src/battle_controllers.c:163 the non-master owns the odd battler ids
-  local ids = link_seat_swap(st) and { 1, 0, 3, 2 } or { 0, 1, 2, 3 }
+  local ids = State.battlerOrder(st)
   if rows[0] and rows[0].kind == "run" then
     order[1] = 0
     for id = 1, 3 do if rows[id] then order[#order + 1] = id end end
@@ -2433,28 +2436,6 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
     st.turnActions = actions
     return actions, playerAct
   end
-  if playerAct.kind == "run" or playerAct.kind == "bag" or playerAct.kind == "switch" then
-    if st.player then st.player.expTurnOrder = 1 end
-    if enemyMeta then
-      -- pokefirered/src/battle_main.c:3586
-      if st.enemy then st.enemy.expTurnOrder = 2 end
-      actions[#actions + 1] = enemy_meta_row()
-    elseif enemyAct.kind == "move" then
-      if st.enemy then st.enemy.expTurnOrder = 2 end
-      actions[#actions + 1] = {
-        user = st.enemy, target = st.player,
-        move = enemyAct.move, slot = enemyAct.slot,
-        battler = 1, kind = "move",
-      }
-    else
-      if st.enemy then st.enemy.expTurnOrder = 2 end
-      actions[#actions + 1] = enemy_meta_row()
-    end
-    st.turnOrder = { 0, 1 }
-    st.turnActions = actions
-    return actions, playerAct
-  end
-
   local function forced(b, mv, slot)
     if not b then return mv, slot end
     if b.expLockedMove then return b.expLockedMove, slot end
@@ -2466,6 +2447,29 @@ function Engine.planTurnFromActions(st, adapter, playerAct, enemyAct)
       if cs and (tonumber(b.mon.pp and b.mon.pp[cs]) or 1) > 0 then return b.mon.moves[cs], cs end
     end
     return mv, slot
+  end
+
+  if playerAct.kind == "run" or playerAct.kind == "bag" or playerAct.kind == "switch" then
+    if st.player then st.player.expTurnOrder = 1 end
+    if enemyMeta then
+      -- pokefirered/src/battle_main.c:3586
+      if st.enemy then st.enemy.expTurnOrder = 2 end
+      actions[#actions + 1] = enemy_meta_row()
+    elseif enemyAct.kind == "move" then
+      if st.enemy then st.enemy.expTurnOrder = 2 end
+      local eMove, eSlot = forced(st.enemy, enemyAct.move, enemyAct.slot)
+      actions[#actions + 1] = {
+        user = st.enemy, target = st.player,
+        move = eMove, slot = eSlot,
+        battler = 1, kind = "move",
+      }
+    else
+      if st.enemy then st.enemy.expTurnOrder = 2 end
+      actions[#actions + 1] = enemy_meta_row()
+    end
+    st.turnOrder = { 0, 1 }
+    st.turnActions = actions
+    return actions, playerAct
   end
 
   local pMove, pSlot = playerAct.move, playerAct.slot
@@ -2611,8 +2615,9 @@ function Engine.checkEnd(st, adapter)
   local playerAlive = Engine.hasLivingMons(st.playerParty)
   if not playerAlive then
     st.over = true
-    st.result = "lose"
-    return "lose"
+    -- pokefirered/src/battle_script_commands.c:3413
+    st.result = (st.link and not Engine.hasLivingMons(st.foeParty)) and "draw" or "lose"
+    return st.result
   end
 
   local foeAlive = Engine.hasLivingMons(st.foeParty)

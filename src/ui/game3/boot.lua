@@ -258,6 +258,7 @@ local function closeMysteryGift(state)
   if state.giftSave then
     Boot.setContinueInfo(state, Boot.continueInfoFromSave(state.giftSave))
   end
+  if state.gift then MysteryGiftUi.close(state.gift) end
   state.gift = nil
   state.giftSave = nil
   state.phase = Boot.PHASE.MENU
@@ -416,6 +417,7 @@ function Boot.update(state, input, dt)
       state.fadeThen = nil
       if pending == "continue" then
         state.fadeT, state.fadeTarget = 0, 0
+        require("src.core.game3.link.trade").resumePending()
         return { action = "continue" }
       elseif pending == "new_game" then
         state.fadeT, state.fadeTarget = 0, 0

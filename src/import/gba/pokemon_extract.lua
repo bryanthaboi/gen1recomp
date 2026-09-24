@@ -444,8 +444,14 @@ local function write_species_meta_lua(meta)
   table.sort(ids)
   for _, id in ipairs(ids) do
     local m = meta[id]
+    local link = ""
+    if type(m.linkStats) == "table" then
+      local ls = m.linkStats
+      link = string.format(", linkStats = { %d, %d, %d, %d, %d, %d }",
+        ls[1], ls[2], ls[3], ls[4], ls[5], ls[6])
+    end
     lines[#lines + 1] = string.format(
-      "  [%d] = { catchRate = %d, expYield = %d, genderRatio = %d, eggCycles = %d, friendship = %d, growthRate = %d, eggGroup1 = %d, eggGroup2 = %d, itemCommon = %d, itemRare = %d, evHp = %d, evAtk = %d, evDef = %d, evSpe = %d, evSpa = %d, evSpd = %d, safariZoneFleeRate = %d },",
+      "  [%d] = { catchRate = %d, expYield = %d, genderRatio = %d, eggCycles = %d, friendship = %d, growthRate = %d, eggGroup1 = %d, eggGroup2 = %d, itemCommon = %d, itemRare = %d, evHp = %d, evAtk = %d, evDef = %d, evSpe = %d, evSpa = %d, evSpd = %d, safariZoneFleeRate = %d%s },",
       id,
       m.catchRate or 0, m.expYield or 0, m.genderRatio or 0,
       m.eggCycles or 0, m.friendship or 0, m.growthRate or 0,
@@ -453,7 +459,7 @@ local function write_species_meta_lua(meta)
       m.itemCommon or 0, m.itemRare or 0,
       m.evHp or 0, m.evAtk or 0, m.evDef or 0,
       m.evSpe or 0, m.evSpa or 0, m.evSpd or 0,
-      m.safariZoneFleeRate or 0)
+      m.safariZoneFleeRate or 0, link)
   end
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
@@ -765,7 +771,11 @@ function PokemonExtract.run(rom, cache, opts)
       spa = rom:get(ioff + 4),
       spd = rom:get(ioff + 5),
     }
+    local linkStats
     if sp == 410 then
+      local r = stats[sp]
+      -- pokefirered/src/pokemon.c:6163
+      linkStats = { r.hp, r.atk, r.def, r.spe, r.spa, r.spd }
       local base = Versions.DEOXYS_BASE_STATS
       for i, key in ipairs({ "hp", "atk", "def", "spe", "spa", "spd" }) do
         stats[sp][key] = rom:u16(base + (i - 1) * 2)
@@ -794,6 +804,7 @@ function PokemonExtract.run(rom, cache, opts)
       eggGroup2 = rom:get(ioff + 0x15),
       -- pokefirered/include/pokemon.h:233
       safariZoneFleeRate = rom:get(ioff + 0x18),
+      linkStats = linkStats,
     }
     -- Table omits SPECIES_NONE; SpeciesToNationalPokedexNum uses [species - 1].
     toNat[sp] = (sp >= 1) and rom:u16(natBase + (sp - 1) * 2) or 0

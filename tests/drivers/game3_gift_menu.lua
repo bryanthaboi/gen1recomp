@@ -133,22 +133,24 @@ return function(game)
   U.tap(game, "a")
   U.wait(12)
   for _ = 1, 300 do
-    if st.state == Ui.STATE.RESULT_MSG or st.state == Ui.STATE.SOURCE_INPUT then break end
+    if st.state == Ui.STATE.SOURCE_INPUT then break end
     U.tap(game, "a")
     U.wait(4)
   end
-  -- pokefirered/src/strings.c:1304 gText_NothingSentOver
-  result(st.state == Ui.STATE.RESULT_MSG,
-    "WONDER NEWS with no news source offers no rows, state=" .. tostring(st.state))
-  print("[driver] news message: " .. tostring(st.msg and st.msg.text))
+  -- pokefirered/src/mystery_gift_menu.c:1176
+  result(st.state == Ui.STATE.SOURCE_INPUT,
+    "WONDER NEWS with no saved news asks where to access it, state=" .. tostring(st.state))
+  print("[driver] news source rows: " .. table.concat(st.rows or {}, " | "))
+  -- pokefirered/src/mystery_gift_menu.c:203
+  result(#(st.rows or {}) == 3, "WIRELESS COMMUNICATION / FRIEND / CANCEL")
   U.wait(30)
-  U.shot(game, DIR .. "/gift_menu_06_no_news_source.png")
+  U.shot(game, DIR .. "/gift_menu_06_news_source_prompt.png")
+  U.tap(game, "b")
   for _ = 1, 300 do
     if st.state == Ui.STATE.MAIN_MENU and not st.msg then break end
-    U.tap(game, "a")
     U.wait(4)
   end
-  result(st.state == Ui.STATE.MAIN_MENU, "and it comes back to the Mystery Gift menu")
+  result(st.state == Ui.STATE.MAIN_MENU, "B comes back to the Mystery Gift menu")
 
   U.tap(game, "a")
   U.wait(12)
@@ -166,14 +168,10 @@ return function(game)
     U.tap(game, "a")
     U.wait(4)
   end
-  result(st.state == Ui.STATE.SOURCE_INPUT, "RECEIVE opens the WONDER CARD source picker")
+  result(st.state == Ui.STATE.SOURCE_INPUT, "RECEIVE asks where the WONDER CARD should be accessed")
   print("[driver] source rows: " .. table.concat(st.rows or {}, " | "))
-  result(#(st.rows or {}) >= 2, "the picker lists the shipped distributions")
-  local cardsOnly = true
-  for _, entry in ipairs(st.sources or {}) do
-    if not entry.card then cardsOnly = false end
-  end
-  result(cardsOnly, "every offered source carries a WONDER CARD")
+  -- pokefirered/src/mystery_gift_menu.c:203
+  result(#(st.rows or {}) == 3, "WIRELESS COMMUNICATION / FRIEND / CANCEL")
   U.wait(10)
   U.shot(game, DIR .. "/gift_menu_07_source_picker.png")
 

@@ -40,11 +40,7 @@ local function roll_rng(rng, lo, hi)
     local ok, v = pcall(rng.random, rng, lo, hi)
     if ok and type(v) == "number" then return v end
   end
-  local okR, Rng = pcall(require, "src.core.game3.rng")
-  if okR and Rng and Rng.compat then
-    return Rng.compat(lo, hi)
-  end
-  return math.random(lo, hi)
+  return require("src.core.game3.battle.link_guard").fallback("catching.roll", lo, hi)
 end
 
 -- pokefirered/src/battle_script_commands.c:9471

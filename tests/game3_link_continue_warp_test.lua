@@ -82,6 +82,10 @@ local LB = require("src.core.game3.link.battle")
 local sent = {}
 Link.link = {
   isOpen = function() return true end,
+  isReady = function() return true end,
+  update = function() end,
+  take = function() return nil end,
+  poll = function() return {} end,
   send = function(_, msg) sent[#sent + 1] = msg end,
 }
 LB.reset()
@@ -95,7 +99,9 @@ check(written and written.specialSaveWarpFlags == 1 and bw.map == CENTER_2F and 
   "post-battle save continues at the dynamic warp")
 
 written = nil
-Link.link = { isOpen = function() return false end, send = function() end }
+Link.link = { isOpen = function() return false end, isReady = function() return false end,
+  update = function() end, take = function() return nil end, poll = function() return {} end,
+  send = function() end }
 LB.reset()
 LB.mode = Link.USING.SINGLE_BATTLE
 LB._started = true

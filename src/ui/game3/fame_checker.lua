@@ -509,7 +509,7 @@ function FameCheckerUi.show(session, opts)
   FameCheckerUi._pages = nil
   clamp_cursor()
   se(199)
-  Stack.push("fame_checker", FameCheckerUi, { hideBelow = true })
+  Stack.push("fame_checker", FameCheckerUi, { hideBelow = true, fullscreen = true })
   return true
 end
 

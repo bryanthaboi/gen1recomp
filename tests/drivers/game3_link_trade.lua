@@ -53,6 +53,8 @@ return function(game)
   local TradeScene = require("src.core.game3.trade_scene")
   local PartyMenu = require("src.ui.game3.party_menu")
   local Game3Link = require("src.link.Game3Link")
+  local Protocol = require("src.link.Protocol")
+  local Wire = require("src.link.Wire")
 
   local session = Runtime.getSession()
   if not result(session ~= nil, "new game reached the game3 field") then return finish() end
@@ -73,13 +75,10 @@ return function(game)
   end
 
   -- pokefirered/src/pokemon.c:1796 the mon on the other GBA
-  local peerMon = {
-    species = 25, level = 14, hp = 40, maxHp = 40,
-    moves = { 84 }, pp = { 30 }, maxPp = { 30 },
-    personality = 175, nickname = "", friendship = 70,
-    otName = "BLUE", otId = 0x2222,
-    item = 13, heldItem = 13,
-  }
+  local peerHolder = { name = "BLUE", trainerId = 0x2222, party = {} }
+  Party.giveMon(peerHolder, 25, 14)
+  local peerMonReal = peerHolder.party[1]
+  peerMonReal.item, peerMonReal.heldItem = 13, 13
 
   local peer, peerSeat, peerParty, peerGot, peerConfirmed = nil, false, false, nil, false
   local function pumpPeer()
@@ -99,13 +98,17 @@ return function(game)
       peer:send({
         type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, gender = 0,
         version = 4, progressFlags = 0,
-        party = { LT.copy(peerMon) },
+        party = Protocol.packParty3({ peerMonReal }, { 1 }),
       })
     end
     local block = peer:take(LT.MSG.MON)
     if block then
       peerGot = block
-      peer:send({ type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222, mon = peerMon })
+      local theirMsg = { type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222,
+        mon = Protocol.packMon3(peerMonReal) }
+      peer:send(theirMsg)
+      peer:send({ type = LT.MSG.CONFIRM,
+        digest = Protocol.tradeDigest(block.mon, Wire.sanitize(theirMsg).mon) })
     end
     local cmd = peer:take(LT.MSG.CMD)
     while cmd do
@@ -152,6 +155,7 @@ return function(game)
   host:update(0)
   peer:update(0)
   Link.attach(host)
+  LT.loopbackCommit = true
   result(host:isReady(), "the other GBA is on the cable")
 
   -- pokefirered/data/scripts/cable_club.inc:373 special TryTradeLinkup
@@ -195,6 +199,7 @@ return function(game)
   result(peerSeat, "sitting down told the other machine this player took a trade seat")
   if not result(LT.state == "menu", "and the trade menu opened over the cable") then
     U.shot(game, DIR .. "/link_trade_99_no_menu.png")
+    LT.loopbackCommit = false
     Link.reset()
     return finish()
   end
@@ -307,6 +312,7 @@ return function(game)
 
   local tradesBefore = tonumber(type(session.gameStats) == "table" and session.gameStats[21]) or 0
   local sentName = require("src.core.game3.pokemon").name(offeredSpecies)
+  local completedBefore = LT.completed
   -- pokefirered/src/trade.c:2008 CB_ProcessConfirmTradeInput
   tap("a")
   result(LT.state ~= "confirm", "the player answers YES")
@@ -347,7 +353,7 @@ return function(game)
   U.still(game, DIR .. "/link_trade_03_cinema_send.png")
   guard = 0
   local shotReceive = false
-  while guard < 6000 and LT.state ~= "done" do
+  while guard < 6000 and LT.completed == completedBefore do
     waitP(1)
     guard = guard + 1
     if not shotReceive and TradeScene.phase() == "after_new_mon_delay" then
@@ -365,7 +371,9 @@ return function(game)
     .. " confirmed=" .. tostring(peerConfirmed)
     .. " party1=" .. tostring(session.party[1] and session.party[1].species)
     .. " party2=" .. tostring(session.party[2] and session.party[2].species))
-  result(LT.state == "done", "the link trade ran to its end")
+  result(LT.completed == completedBefore + 1, "the link trade ran to its end")
+  -- pokefirered/src/trade.c:1322
+  result(LT.state == "menu", "and the trade menu came back up")
   result(peerConfirmed, "and both machines confirmed the finished trade")
   result(TradeScene.isOpen() == false, "the cinema closed")
 
@@ -434,6 +442,7 @@ return function(game)
     waitP(8)
   end
 
+  LT.loopbackCommit = false
   Link.reset()
   finish()
 end

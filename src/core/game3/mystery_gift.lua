@@ -144,7 +144,15 @@ end
 
 local function clampText(text, limit)
   if type(text) ~= "string" then return "" end
-  if #text > limit then return text:sub(1, limit) end
+  if #text <= limit then return text end
+  local count, i = 0, 1
+  while i <= #text do
+    local c = text:byte(i)
+    local len = (c >= 0xF0 and 4) or (c >= 0xE0 and 3) or (c >= 0xC0 and 2) or 1
+    count = count + 1
+    if count > limit then return text:sub(1, i - 1) end
+    i = i + len
+  end
   return text
 end
 
@@ -202,6 +210,7 @@ function MysteryGift.normalizeCard(card)
       personality = tonumber(gift.personality),
       otName = type(gift.otName) == "string" and gift.otName or nil,
       otId = tonumber(gift.otId),
+      heldItem = tonumber(gift.heldItem),
       setFlags = copyFlagList(gift.setFlags),
       haveFlags = copyFlagList(gift.haveFlags),
       doneFlag = tonumber(gift.doneFlag),
@@ -254,6 +263,7 @@ local function cardBytes(card)
   end
   for _, id in ipairs(gift.setFlags or {}) do parts[#parts + 1] = "S" .. tostring(id) end
   for _, id in ipairs(gift.haveFlags or {}) do parts[#parts + 1] = "H" .. tostring(id) end
+  if gift.heldItem then parts[#parts + 1] = "I" .. tostring(gift.heldItem) end
   return table.concat(parts, "\2")
 end
 
@@ -885,6 +895,9 @@ local function createEventMon(session, gift)
     mon.otName = gift.otName
   end
   if gift.otId then mon.otId = num(gift.otId) end
+  if gift.heldItem and num(gift.heldItem) > 0 then
+    mon.item, mon.heldItem = num(gift.heldItem), num(gift.heldItem)
+  end
   -- pokefirered/src/scrcmd.c:2244 ScrCmd_setmonmodernfatefulencounter
   mon.modernFatefulEncounter = true
   -- pokefirered/data/mystery_event_msg.s:72 setmonmetlocation METLOC_FATEFUL_ENCOUNTER
@@ -1171,174 +1184,146 @@ function MysteryGift.builtins()
   }
 end
 
-MysteryGift.DROP_IN_PATH = "mysterygift/wondercard.txt"
+MysteryGift.GIFT_PUBKEY = "2cecc61cc4d4ea70fc6802a66643e659a0f2c344eec6391ccf20b434ab280ffd"
+MysteryGift.FEED_PATH = "/gifts/gen3"
+MysteryGift.FEED_VERSION = 1
+MysteryGift.FETCH_SECONDS = 10
 
-local function parseNumber(text)
-  local hex = text:match("^0[xX](%x+)$")
-  if hex then return tonumber(hex, 16) end
-  return tonumber(text)
+local function readClaims(session)
+  local rec = MysteryGift.ensure(session)
+  rec.claims = type(rec.claims) == "table" and rec.claims or {}
+  rec.claims.cards = type(rec.claims.cards) == "table" and rec.claims.cards or {}
+  rec.claims.news = type(rec.claims.news) == "table" and rec.claims.news or {}
+  return rec.claims, rec
 end
 
-local function assign(target, key, value)
-  local head, rest = key:match("^([%w_]+)%.(.+)$")
-  if head then
-    target[head] = type(target[head]) == "table" and target[head] or {}
-    assign(target[head], rest, value)
-    return
+local function listHas(list, id)
+  for _, v in ipairs(list) do
+    if num(v) == id then return true end
   end
-  if key == "body" then
-    target.bodyText = type(target.bodyText) == "table" and target.bodyText or {}
-    target.bodyText[#target.bodyText + 1] = value
-    return
-  end
-  if key == "setflag" or key == "haveflag" then
-    local field = key == "setflag" and "setFlags" or "haveFlags"
-    target[field] = type(target[field]) == "table" and target[field] or {}
-    target[field][#target[field] + 1] = parseNumber(value) or 0
-    return
-  end
-  if key == "move" then
-    local slot, move = value:match("^(%d+)%s*=%s*(%d+)$")
-    if slot then
-      target.moves = type(target.moves) == "table" and target.moves or {}
-      target.moves[tonumber(slot)] = tonumber(move)
-    end
-    return
-  end
-  local alias = {
-    title = "titleText",
-    subtitle = "subtitleText",
-    footer1 = "footerLine1Text",
-    footer2 = "footerLine2Text",
-  }
-  local field = alias[key] or key
-  local n = parseNumber(value)
-  if value == "true" then
-    target[field] = true
-  elseif value == "false" then
-    target[field] = false
-  elseif n and field ~= "titleText" and field ~= "subtitleText"
-    and field ~= "footerLine1Text" and field ~= "footerLine2Text"
-    and field ~= "nickname" and field ~= "otName" then
-    target[field] = n
-  else
-    target[field] = value
-  end
+  return false
 end
 
-function MysteryGift.parse(text)
-  if type(text) ~= "string" or #text == 0 then return nil, "empty" end
-  local out = { card = nil, news = nil }
-  local section = "card"
-  for line in (text .. "\n"):gmatch("(.-)\r?\n") do
-    local trimmed = line:match("^%s*(.-)%s*$")
-    if trimmed ~= "" and not trimmed:match("^[#;]") then
-      local header = trimmed:match("^%[(%w+)%]$")
-      if header then
-        section = header:lower()
-      else
-        local key, value = trimmed:match("^([%w_%.]+)%s*=%s*(.*)$")
-        if key then
-          out[section] = type(out[section]) == "table" and out[section] or {}
-          assign(out[section], key, value)
-        end
-      end
+function MysteryGift.hasClaimedCard(session, card)
+  local id = num(type(card) == "table" and card.idNumber or card)
+  if id == 0 then return false end
+  local claims, rec = readClaims(session)
+  if listHas(claims.cards, id) then return true end
+  return rec.card ~= nil and num(rec.card.idNumber) == id
+end
+
+function MysteryGift.hasClaimedNews(session, news)
+  local id = num(type(news) == "table" and news.id or news)
+  if id == 0 then return false end
+  local claims, rec = readClaims(session)
+  if listHas(claims.news, id) then return true end
+  return rec.news ~= nil and num(rec.news.id) == id
+end
+
+function MysteryGift.claimCard(session, card)
+  local id = num(type(card) == "table" and card.idNumber or card)
+  if id == 0 then return false end
+  local claims = readClaims(session)
+  if not listHas(claims.cards, id) then claims.cards[#claims.cards + 1] = id end
+  return true
+end
+
+function MysteryGift.claimNews(session, news)
+  local id = num(type(news) == "table" and news.id or news)
+  if id == 0 then return false end
+  local claims = readClaims(session)
+  if not listHas(claims.news, id) then claims.news[#claims.news + 1] = id end
+  return true
+end
+
+function MysteryGift.parseFeed(payload)
+  local Json = require("src.link.Json")
+  local data = Json.decode(payload)
+  if type(data) ~= "table" or data.v ~= MysteryGift.FEED_VERSION then return nil, "bad_feed" end
+  if type(data.cards) ~= "table" or type(data.news) ~= "table" then return nil, "bad_feed" end
+  local out = { issued = num(data.issued), cards = {}, news = {} }
+  for _, raw in ipairs(data.cards) do
+    local card = MysteryGift.normalizeCard(raw)
+    if card and validateCard(card) and isFlagIdInValidRange(card.flagId) and card.idNumber ~= 0 then
+      out.cards[#out.cards + 1] = {
+        key = type(raw.key) == "string" and raw.key or tostring(card.idNumber),
+        label = card.titleText,
+        card = card,
+      }
     end
   end
-  local card = MysteryGift.normalizeCard(out.card)
-  local news = MysteryGift.normalizeNews(out.news)
-  if card and not validateCard(card) then return nil, "invalid card" end
-  if news and not validateNews(news) then news = nil end
-  if not card and not news then return nil, "no card" end
-  return { card = card, news = news }
-end
-
-local function readEnvFile()
-  local path = os.getenv("POKEPORT_GIFT_CARD")
-  if not path or path == "" then return nil end
-  local f = io.open(path, "rb")
-  if not f then return nil end
-  local text = f:read("*a")
-  f:close()
-  return text
-end
-
-local function readLoveFile(rel)
-  if not (love and love.filesystem and love.filesystem.read) then return nil end
-  local ok, text = pcall(love.filesystem.read, rel)
-  if ok and type(text) == "string" then return text end
-  return nil
-end
-
-local function readIdentityFile(rel)
-  local home = os.getenv("HOME")
-  if not home then return nil end
-  local roots = {}
-  local identity = os.getenv("POKEPORT_IDENTITY") or ""
-  if identity ~= "" then
-    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity
-    roots[#roots + 1] = home .. "/.local/share/love/" .. identity
-  end
-  if love and love.filesystem and love.filesystem.getSaveDirectory then
-    local okS, dir = pcall(love.filesystem.getSaveDirectory)
-    if okS and type(dir) == "string" and dir ~= "" then roots[#roots + 1] = dir end
-  end
-  for _, root in ipairs(roots) do
-    local f = io.open(root .. "/" .. rel, "rb")
-    if f then
-      local text = f:read("*a")
-      f:close()
-      if type(text) == "string" and #text > 0 then return text end
+  for _, raw in ipairs(data.news) do
+    local news = MysteryGift.normalizeNews(raw)
+    if news and validateNews(news) then
+      out.news[#out.news + 1] = {
+        key = type(raw.key) == "string" and raw.key or tostring(news.id),
+        label = news.titleText,
+        news = news,
+      }
     end
   end
-  return nil
+  return out
 end
 
-local function readDiskFile(rel)
-  local f = io.open(rel, "rb")
-  if not f then return nil end
-  local text = f:read("*a")
-  f:close()
-  return text
+function MysteryGift.verifyFeed(feed)
+  if type(feed) ~= "table" or type(feed.payload) ~= "string" or type(feed.sig) ~= "string" then
+    return nil, "bad_feed"
+  end
+  local Ed25519 = require("src.core.crypto.ed25519")
+  if not Ed25519.verify(MysteryGift.GIFT_PUBKEY, feed.payload, feed.sig) then
+    return nil, "bad_signature"
+  end
+  return MysteryGift.parseFeed(feed.payload)
 end
 
-function MysteryGift.loadDropIn(rel)
-  rel = rel or MysteryGift.DROP_IN_PATH
-  local readers = { readEnvFile, readLoveFile, readIdentityFile, readDiskFile }
-  for _, reader in ipairs(readers) do
-    local okR, text = pcall(reader, rel)
-    if okR and type(text) == "string" and #text > 0 then
-      local parsed, err = MysteryGift.parse(text)
-      if parsed then return parsed end
-      return nil, err
-    end
+function MysteryGift.fetchOnline(opts)
+  opts = opts or {}
+  local client = opts.client
+  if not client then
+    local okS, SyncClient = pcall(require, "src.sync.SyncClient")
+    if not okS then return { status = "error", reason = "offline" } end
+    local okN, made = pcall(SyncClient.new, { transport = opts.transport })
+    if not okN then return { status = "error", reason = "offline" } end
+    client = made
   end
-  return nil, "no file"
+  local okR, handle = pcall(client.send, client, "GET", MysteryGift.FEED_PATH, nil,
+    { noAuth = true, maxSeconds = MysteryGift.FETCH_SECONDS })
+  if not okR or handle == nil then
+    return { status = "error", reason = "offline", client = client }
+  end
+  return { status = "pending", client = client, handle = handle }
 end
 
-function MysteryGift.sources()
-  local list = {}
-  for _, entry in ipairs(MysteryGift.builtins()) do
-    list[#list + 1] = {
-      key = entry.key,
-      label = entry.label,
-      origin = "builtin",
-      card = entry.card,
-      news = entry.news,
-    }
+function MysteryGift.pollOnline(job)
+  if type(job) ~= "table" then return "error", "offline" end
+  if job.status == "ok" then return "ok", job.result end
+  if job.status == "error" then return "error", job.reason end
+  local ok, res = pcall(job.client.poll, job.client, job.handle)
+  if not ok or type(res) ~= "table" then res = { status = "error" } end
+  if res.status == "pending" then return "pending" end
+  pcall(job.client.release, job.client, job.handle)
+  job.handle = nil
+  if res.status ~= "ok" then
+    job.status = "error"
+    job.reason = (num(res.code) >= 400) and "server" or "offline"
+    return "error", job.reason
   end
-  local dropped = MysteryGift.loadDropIn()
-  if dropped and (dropped.card or dropped.news) then
-    list[#list + 1] = {
-      key = "dropin",
-      label = (dropped.card and dropped.card.titleText ~= "" and dropped.card.titleText)
-        or Strings("WONDER CARD FILE"),
-      origin = "file",
-      card = dropped.card,
-      news = dropped.news,
-    }
+  local list, why = MysteryGift.verifyFeed(res.data)
+  if not list then
+    job.status, job.reason = "error", why
+    return "error", why
   end
-  return list
+  job.status, job.result = "ok", list
+  return "ok", list
+end
+
+function MysteryGift.cancelOnline(job)
+  if type(job) ~= "table" or job.handle == nil then return end
+  local transport = job.client and job.client.transport
+  if transport and transport.cancel then pcall(transport.cancel, transport, job.handle) end
+  pcall(job.client.release, job.client, job.handle)
+  job.handle = nil
+  job.status, job.reason = "error", "canceled"
 end
 
 -- pokefirered/src/main_menu.c:236 IsMysteryGiftEnabled
@@ -1363,13 +1348,6 @@ function MysteryGift.applyToSave(session, save)
   save.modData = type(save.modData) == "table" and save.modData or {}
   save.modData[MysteryGift.SAVE_KEY] = MysteryGift.ensure(session)
   return true
-end
-
-function MysteryGift.sourceByKey(key)
-  for _, entry in ipairs(MysteryGift.sources()) do
-    if entry.key == key then return entry end
-  end
-  return nil
 end
 
 return MysteryGift

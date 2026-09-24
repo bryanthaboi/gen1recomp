@@ -48,6 +48,7 @@ return function(game)
   local Link = require("src.core.game3.link")
   local LB = require("src.core.game3.link.battle")
   local Game3Link = require("src.link.Game3Link")
+  local Protocol = require("src.link.Protocol")
   local Battle = require("src.core.game3.battle")
   local BattleUi = require("src.core.game3.battle.ui")
 
@@ -70,12 +71,13 @@ return function(game)
   end
 
   -- pokefirered/src/pokemon.c:1796 the other GBA's party
-  local peerParty = {
-    { species = 129, level = 5, hp = 20, maxHp = 20, moves = { 150 }, pp = { 40 }, maxPp = { 40 },
-      nickname = "", friendship = 70, personality = 7 },
-    { species = 23, level = 5, hp = 21, maxHp = 21, moves = { 40 }, pp = { 35 }, maxPp = { 35 },
-      nickname = "", friendship = 70, personality = 9 },
-  }
+  local peerHolder = { name = "BLUE", trainerId = 0x2222, party = {} }
+  Party.giveMon(peerHolder, 129, 5)
+  Party.giveMon(peerHolder, 23, 5)
+  local karp, ekans = peerHolder.party[1], peerHolder.party[2]
+  karp.moves, karp.pp, karp.maxPp = { 150 }, { 40 }, { 40 }
+  ekans.moves, ekans.pp, ekans.maxPp = { 40 }, { 35 }, { 35 }
+  local peerParty = Protocol.packParty3(peerHolder.party)
 
   local peer, turnsAnswered, peerSeat, peerSetup = nil, 0, false, false
   local peerSwitches, peerSentSwitch = 0, false
@@ -117,6 +119,16 @@ return function(game)
       U.wait(1)
       pumpPeer()
     end
+  end
+
+  local function printedStill(path)
+    local Message = require("src.ui.game3.message")
+    local n = 0
+    while n < 600 and not (Message.isOpen() and Message.isWaiting()) do
+      waitP(1)
+      n = n + 1
+    end
+    U.still(game, path)
   end
 
   local function mashP(frames)
@@ -215,7 +227,7 @@ return function(game)
   result(st.link == true, "BATTLE_TYPE_LINK is set on the battle state")
   result(st.peerName == "BLUE", "the opponent is the peer, not an NPC trainer")
   waitP(180)
-  U.shot(game, DIR .. "/link_battle_02_battle_start.png")
+  printedStill(DIR .. "/link_battle_02_battle_start.png")
 
   guard = 0
   while guard < 1800 and Battle._phase ~= "command" and Battle._phase ~= "linkwait" do
@@ -263,8 +275,24 @@ return function(game)
     .. " slot=" .. tostring(enemySlot()) .. " phase=" .. tostring(Battle._phase))
   result(peerSentSwitch, "the other machine had to name its own replacement over the cable")
   result(enemySlot() == 2, "and the mon it named is the one that came out")
-  waitP(45)
-  U.shot(game, DIR .. "/link_battle_05_peer_replacement.png")
+  local SwitchSeq = require("src.core.game3.battle.switch_seq")
+  local function switchStep()
+    local steps = SwitchSeq._steps
+    local step = steps and steps[SwitchSeq._i]
+    return step and step.kind
+  end
+  guard = 0
+  while guard < 600 and switchStep() ~= "healthbox" do
+    waitP(1)
+    guard = guard + 1
+  end
+  waitP(19)
+  local foeMon = require("src.core.game3.battle.anim").present("enemy")
+  local M5 = require("src.ui.game3.message")
+  local page5 = (M5.isOpen() and tostring(M5.currentPage() or "")) or ""
+  result(foeMon ~= nil and foeMon.visible and page5:find("sent out", 1, true) ~= nil,
+    "EKANS is on the field under the send-out line with no A press (" .. page5:gsub("\n", " ") .. ")")
+  U.still(game, DIR .. "/link_battle_05_peer_replacement.png")
 
   local PartyMenu = require("src.ui.game3.party_menu")
   local SummaryMenu = require("src.ui.game3.summary_menu")
@@ -274,9 +302,12 @@ return function(game)
   while guard < 6000 and Battle.isActive() do
     -- pokefirered/data/battle_scripts_1.s:2984 BattleScript_LinkBattleWonOrLost
     if not endShot and Battle._phase == "ending" then
-      endShot = true
-      waitP(50)
-      U.shot(game, DIR .. "/link_battle_06_link_battle_end.png")
+      local M = require("src.ui.game3.message")
+      local page = (M.isOpen() and M.isWaiting() and tostring(M.currentPage() or "")) or ""
+      if page:find("defeated", 1, true) or page:find("lost", 1, true) or page:find("draw", 1, true) then
+        endShot = true
+        U.still(game, DIR .. "/link_battle_06_link_battle_end.png")
+      end
     end
     -- pokefirered/src/battle_controller_player.c:1486 ChooseNextMon
     if PartyMenu.isOpen and PartyMenu.isOpen() then

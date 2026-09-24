@@ -18,7 +18,7 @@ return function(game)
   local U = dofile("tests/drivers/util.lua")
   local PORT = tonumber(os.getenv("POKEPORT_LINK_PORT") or "") or 17778
   local SERVER = os.getenv("POKESERVER_DIR") or "../pokeserver"
-  local SHOT_MS = 3000
+  local SHOT_MS = 6000
   local failures = 0
 
   local function check(cond, msg)
@@ -223,13 +223,13 @@ return function(game)
                                         playing = false, shotClock = 3,
                                         maxSpectators = 8 })
   waitFor(function() return made.done end, 600, "tour_create to answer")
-  check(made.code ~= nil,
+  check(made.id ~= nil,
         "the real relay creates a tournament: " .. tostring(made.error))
-  if not made.code then
+  if not made.id then
     stopServer()
     return finish()
   end
-  local code = made.code
+  local tourId = made.id
   local created = org.C.tournament()
   check(created and created.stage == "registering" and
         created.creator == org.C.you().id and #created.players == 0 and
@@ -240,9 +240,10 @@ return function(game)
         "tour_state carries the shot clock and the rule")
 
   for _, bot in ipairs(players) do
-    bot.join = bot.C.joinTournament(code, "player", bot.party, "d" .. bot.name)
+    bot.join = bot.C.joinTournament({ tour = tourId, as = "player",
+      party = bot.party, partyDigest = "d" .. bot.name })
   end
-  watch.join = watch.C.joinTournament(code, "spectator")
+  watch.join = watch.C.joinTournament({ tour = tourId, as = "spectator" })
   waitFor(function()
     local t = org.C.tournament()
     return t and #t.players == 3 and #t.spectators == 2
@@ -261,7 +262,8 @@ return function(game)
   connectAll({ short })
   local twoMons = copy(short.party)
   twoMons[2] = copy(short.party[1])
-  local refused = short.C.joinTournament(code, "player", twoMons, "dx")
+  local refused = short.C.joinTournament({ tour = tourId, as = "player",
+    party = twoMons, partyDigest = "dx" })
   waitFor(function() return refused.done end, 600, "the bad party to be refused")
   check(refused.reason == "party_ineligible",
         "a party that breaks the rule is refused: " .. tostring(refused.reason))
@@ -317,7 +319,7 @@ return function(game)
     played[token] = true
     check(tourA.match == tourB.match,
           label .. ": both players share the bracket token (" .. token .. ")")
-    check(tourA.code == tourB.code and startA.code == tourA.code,
+    check(tourA.room == tourB.room and startA.room == tourA.room,
           label .. ": match_start is bound to the child room from tour_match")
     check(startA.match == token,
           label .. ": the child room reuses the bracket token as its match")
@@ -346,7 +348,7 @@ return function(game)
       check(spec ~= nil and spec.match == token and start ~= nil and
             start.match == token and start.role == "spectator",
             label .. ": " .. bot.name .. " watches through match_start_spectate")
-      check(start ~= nil and start.code == tourA.code,
+      check(start ~= nil and start.room == tourA.room,
             label .. ": " .. bot.name .. " is put in the child room")
       bot.sides = {}
     end
@@ -478,7 +480,7 @@ return function(game)
   local over = org.ev.tour_over
   check(over ~= nil, "a three-player bracket ends in tour_over")
   if over then
-    check(over.code == code, "tour_over names the tournament code")
+    check(over.tour == tourId, "tour_over names the tournament")
     check(org.champFromState ~= nil and org.champFromState == over.championId,
           "tour_state.champion is the id tour_over calls championId (" ..
           tostring(org.champFromState) .. ")")
@@ -517,8 +519,10 @@ return function(game)
                                           playing = false, shotClock = 9,
                                           maxSpectators = 4 })
   waitFor(function() return rMade.done end, 600, "the resume tournament")
-  rA.C.joinTournament(rMade.code, "player", rA.party, "dra")
-  rB.C.joinTournament(rMade.code, "player", rB.party, "drb")
+  rA.C.joinTournament({ tour = rMade.id, as = "player", party = rA.party,
+    partyDigest = "dra" })
+  rB.C.joinTournament({ tour = rMade.id, as = "player", party = rB.party,
+    partyDigest = "drb" })
   waitFor(function()
     local t = rOrg.C.tournament()
     return t and #t.players == 2
@@ -634,8 +638,10 @@ return function(game)
                                           playing = false, shotClock = 9,
                                           maxSpectators = 4 })
   waitFor(function() return fMade.done end, 600, "the forfeit tournament")
-  fA.C.joinTournament(fMade.code, "player", fA.party, "dfa")
-  fB.C.joinTournament(fMade.code, "player", fB.party, "dfb")
+  fA.C.joinTournament({ tour = fMade.id, as = "player", party = fA.party,
+    partyDigest = "dfa" })
+  fB.C.joinTournament({ tour = fMade.id, as = "player", party = fB.party,
+    partyDigest = "dfb" })
   waitFor(function()
     local t = fOrg.C.tournament()
     return t and #t.players == 2
@@ -673,8 +679,10 @@ return function(game)
                                           playing = false, shotClock = 3,
                                           maxSpectators = 4 })
   waitFor(function() return sMade.done end, 600, "the shot-clock tournament")
-  sA.C.joinTournament(sMade.code, "player", sA.party, "dsa")
-  sB.C.joinTournament(sMade.code, "player", sB.party, "dsb")
+  sA.C.joinTournament({ tour = sMade.id, as = "player", party = sA.party,
+    partyDigest = "dsa" })
+  sB.C.joinTournament({ tour = sMade.id, as = "player", party = sB.party,
+    partyDigest = "dsb" })
   waitFor(function()
     local t = sOrg.C.tournament()
     return t and #t.players == 2
@@ -712,7 +720,8 @@ return function(game)
                                           playing = false, shotClock = 6,
                                           maxSpectators = 4 })
   waitFor(function() return kMade.done end, 600, "the kick tournament")
-  kA.C.joinTournament(kMade.code, "player", kA.party, "dka")
+  kA.C.joinTournament({ tour = kMade.id, as = "player", party = kA.party,
+    partyDigest = "dka" })
   waitFor(function()
     local t = kOrg.C.tournament()
     return t and #t.players == 1

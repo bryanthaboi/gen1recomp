@@ -860,6 +860,8 @@ function PartyMenu.show(sessionParty, moveOverlay, opts)
   PartyMenu._giveSource = opts.giveSource
   PartyMenu._activeSlot = opts.activeSlot or 1
   PartyMenu._layout = (opts.layout == "double") and "double" or "single"
+  PartyMenu._multi = type(opts.multi) == "table" and opts.multi or nil
+  PartyMenu._minigameEligible = opts.minigameEligible
   PartyMenu._battle = opts.battle or (opts.mode == "battle_switch" or opts.mode == "battle_faint")
   PartyMenu.cursor = 1
   PartyMenu.mode = opts.mode or "list"
@@ -901,7 +903,7 @@ function PartyMenu.show(sessionParty, moveOverlay, opts)
   if not Pokemon._names then Pokemon.install(nil) end
   PartyChrome.install(nil)
   begin_oak_advice(opts)
-  Stack.push("party", PartyMenu, { hideBelow = true })
+  Stack.push("party", PartyMenu, { hideBelow = true, fullscreen = true })
   sync_all_oam()
 end
 
@@ -2393,6 +2395,10 @@ end
 local MULTI_ORDER_TEXT = { "FIRST", "SECOND", "THIRD" }
 
 local function slot_description(slot, mon)
+  -- pokefirered/src/party_menu.c:839
+  if PartyMenu._minigameEligible then
+    return desc_text(PartyMenu._minigameEligible(slot, mon) and "ABLE" or "NOT_ABLE")
+  end
   -- pokefirered/src/party_menu.c:812 DisplayPartyPokemonDataForChooseMultiple
   if PartyMenu._chooseOrder then
     if not entry_eligible(slot) then return desc_text("NOT_ABLE") end
@@ -2434,7 +2440,9 @@ local function draw_filled_slot(i, mon, selected)
   -- pokefirered/src/party_menu.c:781 DisplayPartyPokemonData: an egg's slot
   -- has no HP frame and shows only its nickname (gText_EggNickname).
   local isEgg = Pokemon.isEgg(mon)
-  PartyChrome.drawSlot(win.kind, win.left, win.top, selected, desc ~= nil or isEgg)
+  -- pokefirered/src/party_menu.c:1040
+  local multiAlt = PartyMenu._multi ~= nil and PartyMenu._multi[i] == true and (tonumber(mon.hp) or 0) > 0
+  PartyChrome.drawSlot(win.kind, win.left, win.top, selected, desc ~= nil or isEgg, multiAlt)
 
   local name = Pokemon.displayName(mon)
   party_print(name, baseX + info.nick[1], baseY + info.nick[2], 56)

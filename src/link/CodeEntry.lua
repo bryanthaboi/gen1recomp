@@ -1,23 +1,25 @@
 -- Shared slot-scrub entry widget: the digit-scrub interaction LinkState
 -- uses for LAN address entry, over the Crockford-32
--- style alphabet pokeserver room/tournament codes are drawn from
+-- style alphabet pokeserver private tournament codes are drawn from
 -- (23456789ABCDEFGHJKMNPQRSTUVWXYZ -- no 0/O/1/I/L, so a code read aloud or
 -- handwritten never has to be checked twice).
 --
 -- The Gen 1 naming grid cannot stand in for this: it has no digits at all
--- (data/text/alphabets.asm is letters and punctuation), so a room code or
--- an address typed there would be unenterable.  That is what this exists
+-- (data/text/alphabets.asm is letters and punctuation), so a tournament code
+-- or an address typed there would be unenterable.  That is what this exists
 -- for.
 --
 -- new() takes an optional {length=, charset=} so the same interaction can
--- carry something other than a room code -- a dotted IP over "0123456789.",
--- say.  Both default to the room-code shape, so existing callers are
--- unaffected and CodeEntry.LENGTH / CodeEntry.CHARSET still describe them.
+-- carry something other than a tournament code -- a dotted IP over
+-- "0123456789.", say.  Both default to the tournament-code shape, so existing
+-- callers are unaffected and CodeEntry.LENGTH / CodeEntry.CHARSET still
+-- describe them.
 
 local CodeEntry = {}
 
 CodeEntry.CHARSET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 CodeEntry.LENGTH = 6
+CodeEntry.PIN = { length = 4, charset = "0123456789" }
 
 -- state carries its own length/charset so a caller holding two widgets of
 -- different shapes cannot have one read the other's alphabet
@@ -35,7 +37,7 @@ end
 -- Slots past the end of the seed -- and any character the charset does not
 -- carry -- land on the charset's blank where it has one, so seeding a
 -- 15-slot address widget with "192.168.1.40" reads back as that address and
--- not as "192.168.1.40000".  A charset with no blank (the room code's) has
+-- not as "192.168.1.40000".  A charset with no blank (the tournament code's) has
 -- nowhere to put one, so those fall back to the first character as before.
 function CodeEntry.fromText(text, opts)
   local state = CodeEntry.new(opts)

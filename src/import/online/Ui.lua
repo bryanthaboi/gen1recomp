@@ -27,7 +27,17 @@ function Ui.label(text, x, y, color)
   return Kit.textHeight("small")
 end
 
-function Ui.field(imp, x, y, w, h, key, text, placeholder, focused, set)
+function Ui.dots(n, x, y, h, color)
+  local r = math.max(2, math.floor(4 * Kit.scale))
+  local step = r * 3
+  for i = 0, n - 1 do
+    Theme.fillRounded(x + i * step, y + (h - 2 * r) / 2, 2 * r, 2 * r,
+      color or PAL.heading, 1, r)
+  end
+  return n * step
+end
+
+function Ui.field(imp, x, y, w, h, key, text, placeholder, focused, set, opts)
   Kit._audit("control", x, y, w, h, key)
   local ring = Kit.focusable(key, x, y, w, h)
   Theme.fill(x, y, w, h, PAL.bg, 1)
@@ -41,8 +51,13 @@ function Ui.field(imp, x, y, w, h, key, text, placeholder, focused, set)
     Kit.text("button", Kit.ellipsize("button", placeholder or "", w - 2 * pad),
       x + pad, ty, PAL.faint)
   else
-    local shown = Kit.ellipsizeLeft("button", text or "", w - 2 * pad)
-    local tw = Kit.text("button", shown, x + pad, ty, PAL.heading)
+    local tw
+    if opts and opts.mask then
+      tw = Ui.dots(#(text or ""), x + pad, y, h, PAL.heading)
+    else
+      local shown = Kit.ellipsizeLeft("button", text or "", w - 2 * pad)
+      tw = Kit.text("button", shown, x + pad, ty, PAL.heading)
+    end
     if focused and ((imp.pulse or 0) * 2 % 1) < 0.5 then
       Theme.fill(x + pad + tw + 2, ty, math.max(1, Kit.scale),
         Kit.textHeight("button"), PAL.ink, 1)
@@ -55,6 +70,8 @@ function Ui.field(imp, x, y, w, h, key, text, placeholder, focused, set)
         text = text or "",
         targetId = key,
         title = placeholder or "Enter Text",
+        digits = opts and opts.digits or nil,
+        maxLen = opts and opts.maxLen or nil,
         onDone = function(newText, confirmed)
           if confirmed then set(newText) end
         end,
@@ -62,6 +79,31 @@ function Ui.field(imp, x, y, w, h, key, text, placeholder, focused, set)
     end
     LV().queueAction(imp, key, function() imp:_focusOnlineField(key) end)
   end
+end
+
+function Ui.lock(x, y, size, color, open)
+  require("src.ui.kit.Icons").draw(open and "lock-open" or "lock", x, y, size,
+    color or PAL.yellow, 1)
+  return size
+end
+
+function Ui.lockTag(x, y, h, label, color)
+  local s = Kit.scale
+  local icon = math.floor(h * 0.7)
+  local pad = math.floor(6 * s)
+  local w = pad + icon + math.floor(4 * s) + Kit.textWidth("micro", label) + pad
+  color = color or PAL.yellow
+  Theme.strokeRounded(x, y, w, h, color, 0.7, 1)
+  Ui.lock(x + pad, y + (h - icon) / 2, icon, color)
+  Kit.text("micro", label, x + pad + icon + math.floor(4 * s),
+    y + (h - Kit.textHeight("micro")) / 2, color)
+  return w
+end
+
+function Ui.lockTagWidth(h, label)
+  local s = Kit.scale
+  return math.floor(6 * s) * 2 + math.floor(h * 0.7) + math.floor(4 * s)
+    + Kit.textWidth("micro", label)
 end
 
 function Ui.chooser(imp, x, y, w, h, key, text, onPrev, onNext)

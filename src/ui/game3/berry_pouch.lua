@@ -61,7 +61,8 @@ end
 
 local function clamp_cursor()
   local rows = BerryPouch.list()
-  local total = #rows + 1 -- berries + CLOSE option
+  -- src/berry_pouch.c:664
+  local total = #rows + (BerryPouch._fromBerryCrush and 0 or 1)
   if total < 1 then total = 1 end
 
   if BerryPouch.cursor > total then BerryPouch.cursor = total end
@@ -131,6 +132,7 @@ function BerryPouch.show(session, bag, opts)
   BerryPouch._bag = bag or opts.bag or (session and session.bag)
   BerryPouch._onClose = opts.onClose
   BerryPouch._sellMode = opts.sell and true or false
+  BerryPouch._fromBerryCrush = opts.fromBerryCrush and true or false
   BerryPouch._sell = nil
   BerryPouch.cursor = opts.cursor or 1
   BerryPouch.scroll = opts.scroll or 0
@@ -141,7 +143,7 @@ function BerryPouch.show(session, bag, opts)
   BerryPouch.messageText = nil
   BerryPouch.wobbleTimer = 0.25 -- Authentically trigger affine wobble on open
   clamp_cursor()
-  Stack.push("berry_pouch", BerryPouch, { hideBelow = true })
+  Stack.push("berry_pouch", BerryPouch, { hideBelow = true, fullscreen = true })
 end
 
 function BerryPouch.close()
@@ -423,7 +425,7 @@ function BerryPouch.draw()
   end
 
   -- 5. Description Box (WIN 1: tilemapLeft=5, tilemapTop=16, width=25, height=4 -> screen (40, 128, 200, 32))
-  if BerryPouch.cursor == total then
+  if BerryPouch.cursor == total and not BerryPouch._fromBerryCrush then
     local closeDesc = RomText.plain("gText_TheBerryPouchWillBePutAway")
     FrlgFont.draw(closeDesc, 40, 130, { colors = FrlgFont.COLOR.LIGHT, linePitch = 14 })
   elseif sel then
@@ -463,7 +465,7 @@ function BerryPouch.draw()
       -- Quantity ×%3d in FONT_SMALL at x = 198
       local qStr = string.format("×%3d", r.qty or 1)
       FrlgFont.draw(qStr, 198, y, { small = true, colors = FrlgFont.COLOR.NORMAL })
-    else
+    elseif not BerryPouch._fromBerryCrush then
       -- CLOSE option in FONT_NORMAL at x = 97
       -- src/berry_pouch.c:661
       FrlgFont.draw(RomText.plain("gText_Close"), 97, y, { colors = FrlgFont.COLOR.NORMAL })

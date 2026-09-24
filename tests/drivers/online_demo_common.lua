@@ -41,15 +41,15 @@ local function readCode()
   local body = f:read("*a")
   f:close()
   body = tostring(body or ""):gsub("%s+", "")
-  if #body ~= 6 then return nil end
+  if not body:match("^r[0-9a-f]+$") or #body ~= 17 then return nil end
   return body
 end
 
-local function writeCode(code)
+local function writeCode(roomId)
   mkdir(SCRATCH)
   local f = io.open(CODE_FILE, "wb")
   if not f then return false end
-  f:write(code)
+  f:write(roomId)
   f:close()
   return true
 end
@@ -182,9 +182,9 @@ function Demo.run(OnlinePanel, imp, opts)
         log("FAIL no room:", tostring(st.status))
         return
       end
-      local code = Client().room().code
-      log("ROOM CODE", code)
-      writeCode(code)
+      local roomId = Client().room().room
+      log("ROOM", roomId)
+      writeCode(roomId)
       wait(60)
       shot("room")
       if not waitFor(function()
@@ -195,17 +195,17 @@ function Demo.run(OnlinePanel, imp, opts)
       end
       log("guest joined")
     else
-      log("waiting for the host's room code at", CODE_FILE)
-      local code
+      log("waiting for the host's room id at", CODE_FILE)
+      local roomId
       if not waitFor(function()
-        code = readCode()
-        return code ~= nil
-      end, 60 * 60 * 4, "the host's room code") then
+        roomId = readCode()
+        return roomId ~= nil
+      end, 60 * 60 * 4, "the host's room id") then
         return
       end
-      log("ROOM CODE", code)
-      if not OnlinePanel.startJoin(imp, code, { partySize = #opts.team },
-          "player") then
+      log("ROOM", roomId)
+      if not OnlinePanel.startJoin(imp, { room = roomId },
+          { partySize = #opts.team }, "player") then
         log("FAIL join wizard refused:", tostring(st.status))
         return
       end
@@ -222,7 +222,7 @@ function Demo.run(OnlinePanel, imp, opts)
         log("FAIL not in a room:", tostring(st.status))
         return
       end
-      log("joined room", tostring(Client().room().code))
+      log("joined room", tostring(Client().room().room))
       wait(60)
       shot("room")
     end

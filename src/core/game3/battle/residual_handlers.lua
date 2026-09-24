@@ -500,7 +500,7 @@ end
 -- pokefirered/src/battle_util.c:1081
 function Handlers.futureSightDoubles(ad)
   local st = ad._st
-  for id = 0, 3 do
+  for _, id in ipairs(require("src.core.game3.battle.state").battlerOrder(st)) do
     local side = (id % 2 == 0) and st.playerSide or st.enemySide
     if side and side.tokens then
       local keep = {}

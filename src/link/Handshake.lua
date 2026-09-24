@@ -172,7 +172,19 @@ end
 -- signals it reads).  A game with no data at all is Gen 1, which is what every
 -- pre-Gold build was.
 function Handshake.generation(game)
+  if type(game) == "table" and tonumber(game.generation) then
+    return tonumber(game.generation)
+  end
   return Fingerprint.generationOf(game and game.data)
+end
+
+local function trainerName(game)
+  local save = game and game.save
+  if type(save) ~= "table" then return nil end
+  local player = save.player
+  if type(player) == "table" and type(player.name) == "string" then return player.name end
+  if type(save.name) == "string" then return save.name end
+  return nil
 end
 
 Handshake.DEFAULT_RULESET = "gen1_faithful"
@@ -198,7 +210,7 @@ function Handshake.hello(game, mode)
   return {
     type = "hello",
     protocol = Handshake.PROTOCOL,
-    name = game and game.save and game.save.player and game.save.player.name,
+    name = trainerName(game),
     mode = mode,
     engineVersion = Version.engine,
     apiVersion = Version.modApi,

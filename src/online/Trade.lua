@@ -1,12 +1,10 @@
+local Fingerprint = require("src.link.Fingerprint")
 local GameVersion = require("src.core.GameVersion")
 local Protocol = require("src.link.Protocol")
 local SaveData = require("src.core.SaveData")
 local TeamPick = require("src.online.TeamPick")
 
 local Trade = {}
-
-Trade.GEN3_LOCAL_ONLY =
-  "FireRed and LeafGreen can only trade on this device for now."
 
 local function disk()
   return SaveData.persistenceFs()
@@ -75,7 +73,7 @@ local function gen3Dataset(version)
   end
   ItemsData.install(nil)
   return { generation = 3, version = version, Pokemon = Pokemon,
-           ItemsData = ItemsData }
+           pokemon = Pokemon, ItemsData = ItemsData }
 end
 
 local function gen3Snapshot()
@@ -166,17 +164,19 @@ function Trade.openSlot(version, slotId, cartId, opts)
   local slot, reason = TeamPick.readSlot(version, slotId, cartId)
   if not slot then return nil, reason end
   local save = slot.save
+  local path = Trade.slotPath(version, slotId, cartId)
   return {
     version = version,
     generation = slot.generation,
     slotId = slotId,
     cartId = cartId,
     save = save,
-    path = Trade.slotPath(version, slotId, cartId),
+    path = path,
     party = slot.party,
     boxes = type(save.boxes) == "table" and save.boxes or nil,
     trainerName = slot.trainerName,
     data = opts.data,
+    pendingSent = Trade.pendingSentAt(path),
   }
 end
 
@@ -210,6 +210,8 @@ function Trade.holdsMail(handle, index)
   return type(party) == "table" and party[ref.index] ~= nil
 end
 
+local PENDING_MON = "that POKéMON's last trade isn't settled yet"
+
 local function pickable(handle, index)
   if type(handle) ~= "table" or type(handle.party) ~= "table" then
     return nil, "that save can't be read"
@@ -232,6 +234,7 @@ local function pickable(handle, index)
     return nil, "an EGG can't be traded"
   end
   if Trade.holdsMail(handle, ref) then return nil, "take the MAIL first" end
+  if Trade.pendingHolds(handle, mon) then return nil, PENDING_MON end
   return mon, nil, ref
 end
 
@@ -380,17 +383,25 @@ local function isEgg3(mon)
   return require("src.core.game3.pokemon").isEgg(mon) == true
 end
 
+local function partnerInfo3(handle)
+  return {
+    version = handle.version == "leafgreen" and VERSION_LEAF_GREEN
+      or VERSION_FIRE_RED,
+    progressFlags = national3(handle.save) and 1 or 0,
+  }
+end
+
 -- pokefirered/src/trade.c:2745
 local function refusal3(handle, ref, partner)
   local NTrade = require("src.core.game3.scripting.natives_trade")
   local party = handle.party or {}
+  partner = type(partner) == "table" and partner or {}
   local code = NTrade.canTradeSelectedMon(party, ref.index - 1, {
     partyCount = #party,
     nationalDex = national3(handle.save),
     partner = {
-      version = partner.version == "leafgreen" and VERSION_LEAF_GREEN
-        or VERSION_FIRE_RED,
-      progressFlags = national3(partner.save) and 1 or 0,
+      version = tonumber(partner.version) or 0,
+      progressFlags = tonumber(partner.progressFlags) or 0,
     },
   })
   if code ~= NTrade.CAN_TRADE_MON then return refusalText3(NTrade, code) end
@@ -495,7 +506,8 @@ local function sideFor3(handle, ref, incoming, partnerMail, warnings, partnerNam
 end
 
 local function plan3(from, to, refA, refB, monA, monB)
-  local why = refusal3(from, refA, to) or refusal3(to, refB, from)
+  local why = refusal3(from, refA, partnerInfo3(to))
+    or refusal3(to, refB, partnerInfo3(from))
   if why then return nil, why end
   local mailA, mailB = mailOf3(from.save, monA), mailOf3(to.save, monB)
   local warnings = {}
@@ -572,9 +584,20 @@ function Trade.planIncoming(req)
   req = type(req) == "table" and req or {}
   local to = req.to
   if type(to) ~= "table" then return nil, "no save" end
-  if to.generation == 3 then return nil, Trade.GEN3_LOCAL_ONLY end
   local mon, reason, ref = pickable(to, req.toIndex)
   if not mon then return nil, reason end
+  if to.generation == 3 then
+    if type(req.record) ~= "table" then return nil, "the other game sent nothing" end
+    local why = refusal3(to, ref, req.partner)
+    if why then return nil, why end
+    local warnings3 = {}
+    local side3, why3 = sideFor3(to, ref, req.record, req.mail, warnings3,
+      req.partnerName)
+    if not side3 then return nil, tostring(why3) end
+    if side3.error then return nil, side3.error end
+    side3.role = "a"
+    return planFrom({ side3 }, warnings3)
+  end
   local warnings = {}
   local side, why = sideFor(to, ref, req.mon, req.record, warnings)
   if not side then return nil, tostring(why) end
@@ -636,13 +659,7 @@ local function buildSave(side)
   return save
 end
 
-function Trade.commit(plan)
-  if type(plan) ~= "table" or type(plan.sides) ~= "table"
-      or #plan.sides == 0 then
-    return false, "no trade to make"
-  end
-  if Trade.gameIsLive() then return false, "close the game first" end
-
+local function buildJobs(plan)
   local jobs = {}
   for _, side in ipairs(plan.sides) do
     local built, why = withData(side.handle, function(data)
@@ -656,10 +673,35 @@ function Trade.commit(plan)
       if not ok then return { error = reason } end
       return { save = save, encoded = encoded }
     end)
-    if not built then return false, tostring(why) end
-    if built.error then return false, built.error end
+    if not built then return nil, tostring(why) end
+    if built.error then return nil, built.error end
     jobs[#jobs + 1] = { side = side, path = side.handle.path,
                         save = built.save, encoded = built.encoded }
+  end
+  return jobs
+end
+
+local function tradeable(plan)
+  return type(plan) == "table" and type(plan.sides) == "table" and #plan.sides > 0
+end
+
+function Trade.prepare(plan)
+  if not tradeable(plan) then return false, "no trade to make" end
+  local jobs, why = buildJobs(plan)
+  if not jobs then return false, why end
+  plan.prepared = jobs
+  return true
+end
+
+function Trade.commit(plan)
+  if not tradeable(plan) then return false, "no trade to make" end
+  if Trade.gameIsLive() then return false, "close the game first" end
+
+  local jobs, why = plan.prepared, nil
+  plan.prepared = nil
+  if not jobs then
+    jobs, why = buildJobs(plan)
+    if not jobs then return false, why end
   end
 
   local fs = disk()
@@ -763,24 +805,383 @@ function Trade.pruneBackups(path, keep)
   return removed
 end
 
+Trade.OUTCOME_RETRY_SECONDS = 5
+Trade.JOURNAL_TTL = 24 * 60 * 60
+Trade._applied = {}
+Trade._journalPaths = {}
+Trade._resolver = nil
+Trade._scanned = false
+
+function Trade.journalPath(savePath)
+  if type(savePath) ~= "string" or savePath == "" then return nil end
+  return (savePath:gsub("%.lua$", "")) .. "_trade.lua"
+end
+
+local function readJournal(file)
+  local fs = disk()
+  if not (fs and file and fs.getInfo(file)) then return {} end
+  local ok, text = pcall(fs.read, file)
+  if not ok or type(text) ~= "string" or text == "" then return {} end
+  local okD, data = pcall(SaveData.decode, text)
+  if not okD or type(data) ~= "table" or type(data.entries) ~= "table" then return {} end
+  return data.entries
+end
+
+local function writeJournal(file, entries)
+  local fs = disk()
+  if not (fs and file) then return false end
+  if #entries == 0 then
+    if not fs.getInfo(file) then return true end
+    local ok, removed = pcall(fs.remove, file)
+    return ok and removed ~= false
+  end
+  local okE, text = pcall(SaveData.encode, { v = 1, entries = entries })
+  if not okE then return false end
+  local ok, wrote = pcall(fs.write, file, text)
+  if not (ok and wrote) then return false end
+  local okR, back = pcall(fs.read, file)
+  return okR and back == text
+end
+
+local function journalAdd(file, entry)
+  local kept = {}
+  for _, e in ipairs(readJournal(file)) do
+    if not (e.room == entry.room and e.digest == entry.digest) then kept[#kept + 1] = e end
+  end
+  kept[#kept + 1] = entry
+  if not writeJournal(file, kept) then return false end
+  Trade._journalPaths[file] = true
+  return true
+end
+
+local function journalDrop(file, room, digest)
+  local list, kept = readJournal(file), {}
+  for _, e in ipairs(list) do
+    if not (e.room == room and e.digest == digest) then kept[#kept + 1] = e end
+  end
+  if #kept == #list then return true end
+  return writeJournal(file, kept)
+end
+
+local function journalFiles()
+  local out, seen = {}, {}
+  local function add(file, scope, slotId)
+    if seen[file] or not (scope and slotId) then return end
+    seen[file] = true
+    out[#out + 1] = { file = file, scope = scope, slotId = slotId }
+  end
+  for file in pairs(Trade._journalPaths) do
+    local scope, slotId = file:match("^saves/([^/]+)/(slot%d+)_trade%.lua$")
+    add(file, scope, slotId)
+  end
+  local fs = disk()
+  if fs and type(fs.getDirectoryItems) == "function" then
+    local ok, dirs = pcall(fs.getDirectoryItems, "saves")
+    for _, dir in ipairs(ok and type(dirs) == "table" and dirs or {}) do
+      local okI, items = pcall(fs.getDirectoryItems, "saves/" .. tostring(dir))
+      for _, name in ipairs(okI and type(items) == "table" and items or {}) do
+        local slotId = type(name) == "string" and name:match("^(slot%d+)_trade%.lua$")
+        if slotId then add("saves/" .. dir .. "/" .. name, dir, slotId) end
+      end
+    end
+  end
+  return out
+end
+
+function Trade.pendingTrades()
+  local out = {}
+  for _, f in ipairs(journalFiles()) do
+    local cart = f.scope:match("^cart_(.+)$")
+    for _, e in ipairs(readJournal(f.file)) do
+      if type(e) == "table" then
+        local version = type(e.version) == "string" and e.version
+          or (not cart and f.scope) or nil
+        if version and not GameVersion.info(version) then version = nil end
+        out[#out + 1] = { file = f.file, entry = e, version = version,
+                          slotId = e.slotId or f.slotId, cartId = e.cartId or cart }
+      end
+    end
+  end
+  return out
+end
+
+local function pendingKey(item)
+  return tostring(item.file) .. ":" .. tostring(item.entry.room) .. ":"
+    .. tostring(item.entry.digest)
+end
+
+local function sameMon3(mon, packed)
+  return type(mon) == "table" and type(packed) == "table"
+    and (tonumber(mon.personality) or 0) == tonumber(packed.personality)
+    and (tonumber(mon.otId) or 0) % 65536 == tonumber(packed.otId)
+end
+
+local function identity12(packed)
+  if type(packed) ~= "table" then return nil end
+  return Protocol.canonical({ species = packed.species, dvs = packed.dvs,
+                              ot = packed.ot, otId = packed.otId })
+end
+
+local function wireIdentity12(generation, mon)
+  if type(mon) ~= "table" then return nil end
+  local ok, packed = pcall(packFor, generation, mon)
+  if not ok then return nil end
+  local clean = require("src.link.Wire").sanitize({ type = "party", mons = { packed } })
+  return identity12(clean and clean.mons and clean.mons[1])
+end
+
+function Trade.pendingSentAt(savePath)
+  local out = {}
+  for _, e in ipairs(readJournal(Trade.journalPath(savePath))) do
+    if type(e) == "table" and type(e.sent) == "table" then out[#out + 1] = e.sent end
+  end
+  return out
+end
+
+function Trade.pendingHolds(handle, mon)
+  local list = type(handle) == "table" and handle.pendingSent or nil
+  if type(list) ~= "table" or #list == 0 or type(mon) ~= "table" then return false end
+  local mine = handle.generation ~= 3 and wireIdentity12(handle.generation, mon) or nil
+  for _, sent in ipairs(list) do
+    if handle.generation == 3 then
+      if sameMon3(mon, sent) then return true end
+    elseif mine ~= nil and identity12(sent) == mine then
+      return true
+    end
+  end
+  return false
+end
+
+local function locateSent(handle, e)
+  if type(e.sent) ~= "table" then return nil end
+  if handle.generation == 3 then
+    for i, mon in ipairs(handle.party or {}) do
+      if sameMon3(mon, e.sent) then return { where = "party", index = i } end
+    end
+    return nil
+  end
+  local want = identity12(e.sent)
+  local ref = refOf(e.ref)
+  if ref and wireIdentity12(handle.generation, TeamPick.monAt(handle, ref)) == want then
+    return ref
+  end
+  for i, mon in ipairs(handle.party or {}) do
+    if wireIdentity12(handle.generation, mon) == want then
+      return { where = "party", index = i }
+    end
+  end
+  for b, box in pairs(handle.boxes or {}) do
+    for i, mon in pairs(type(box) == "table" and box or {}) do
+      if tonumber(b) and tonumber(i) and wireIdentity12(handle.generation, mon) == want then
+        return { where = "box", box = tonumber(b), index = tonumber(i) }
+      end
+    end
+  end
+  return nil
+end
+
+function Trade.applyPending(item)
+  if Trade.gameIsLive() then return false, "close the game first" end
+  local e = item.entry
+  local handle, reason = Trade.openSlot(item.version, item.slotId, item.cartId)
+  if not handle then return false, reason end
+  local ref = locateSent(handle, e)
+  if not ref then return false, "missing" end
+  local result, why = Trade.withDataset(item.version, function(data)
+    handle.data = data
+    local warnings, side, sideWhy = {}, nil, nil
+    if handle.generation == 3 then
+      local record, unpackWhy = Protocol.unpackMon3(data, e.mon, { strict = true })
+      if not record then return { error = unpackWhy or "unknown POKéMON" } end
+      side, sideWhy = sideFor3(handle, ref, record, e.mail, warnings, e.name)
+    else
+      local record = type(e.record) == "table" and deepCopy(e.record) or nil
+      side, sideWhy = sideFor(handle, ref, e.mon, record, warnings)
+    end
+    if not side then return { error = tostring(sideWhy) } end
+    if side.error then return { error = side.error } end
+    side.role = "a"
+    local ok, committed = Trade.commit(planFrom({ side }, warnings))
+    if not ok then return { error = tostring(committed) } end
+    return { ok = true }
+  end)
+  handle.data = nil
+  if not result then return false, why end
+  if result.error then return false, result.error end
+  pcall(Trade.pruneBackups, handle.path, 3)
+  return true
+end
+
+function Trade.settlePending(item, outcome)
+  local e = item.entry
+  if outcome == "abort" then
+    journalDrop(item.file, e.room, e.digest)
+    return "abort"
+  end
+  if outcome ~= "commit" or Trade._applied[pendingKey(item)] then return nil end
+  local ok, why = Trade.applyPending(item)
+  if ok then
+    Trade._applied[pendingKey(item)] = true
+    journalDrop(item.file, e.room, e.digest)
+    return "commit"
+  end
+  if why == "missing" then
+    journalDrop(item.file, e.room, e.digest)
+    return "dropped"
+  end
+  print("[trade] pending trade " .. pendingKey(item) .. " not applied: " .. tostring(why))
+  return nil, why
+end
+
+function Trade.resumePending()
+  Trade._scanned = true
+  if Trade._resolver then return Trade._resolver end
+  if #Trade.pendingTrades() == 0 then return nil end
+  Trade._resolver = { wait = 0, fails = 0, index = 0 }
+  return Trade._resolver
+end
+
+function Trade.pumpPending(dt)
+  local st = Trade._resolver
+  if not st then
+    if Trade._scanned then return false end
+    st = Trade.resumePending()
+    if not st then return false end
+  end
+  if Trade.gameIsLive() or Trade.mounted() then return false end
+  local LT = require("src.core.game3.link.trade")
+  if st.job then
+    local status, outcome = LT.pollOutcome(st.job)
+    if status == "pending" then return false end
+    local item = st.job.item
+    st.job = nil
+    local settled = status == "ok"
+    if settled then
+      local done = Trade.settlePending(item, outcome)
+      settled = done ~= nil or outcome == "open"
+    end
+    st.fails = settled and 0 or math.min((st.fails or 0) + 1, 6)
+    st.wait = Trade.OUTCOME_RETRY_SECONDS * 2 ^ st.fails
+  end
+  if (st.wait or 0) > 0 then
+    st.wait = st.wait - (tonumber(dt) or 0)
+    return false
+  end
+  local now, open = os.time(), {}
+  for _, item in ipairs(Trade.pendingTrades()) do
+    if now - (tonumber(item.entry.at) or 0) > Trade.JOURNAL_TTL then
+      journalDrop(item.file, item.entry.room, item.entry.digest)
+    elseif item.version and not Trade._applied[pendingKey(item)] then
+      open[#open + 1] = item
+    end
+  end
+  if #open == 0 then
+    Trade._resolver = nil
+    return true
+  end
+  st.index = ((st.index or 0) % #open) + 1
+  local job = LT.fetchOutcome(open[st.index].entry)
+  job.item = open[st.index]
+  st.job = job
+  return false
+end
+
+local function roomOf(link)
+  local id = type(link) == "table" and link.target or nil
+  return type(id) == "string" and id ~= "" and id or nil
+end
+
+local function journalOpen(remote, fields)
+  local room = roomOf(remote.link)
+  local handle = remote.handle
+  local file = Trade.journalPath(handle.path)
+  if not (room and file and remote.digest) then return true end
+  local entry = { room = room, digest = remote.digest, at = os.time(),
+    engine = "launcher", version = handle.version, slotId = handle.slotId,
+    cartId = handle.cartId, generation = handle.generation, unionRoom = false }
+  for k, v in pairs(fields) do entry[k] = deepCopy(v) end
+  if not journalAdd(file, entry) then return false end
+  remote._journal = { file = file, room = room, digest = remote.digest }
+  remote._journaled = true
+  return true
+end
+
+local function journalClose(remote)
+  local j = remote._journal
+  remote._journal = nil
+  if j then journalDrop(j.file, j.room, j.digest) end
+end
+
 -- ------- remote
 
 local Remote = {}
 Remote.__index = Remote
 
+local Remote3 = {}
+Remote3.__index = Remote3
+
+local LEFT = "the other trainer left"
+local JOURNAL_FAILED = "the trade couldn't be saved"
+
+local function seatOf(link)
+  if type(link.seat) ~= "function" then return nil end
+  local ok, seat = pcall(link.seat, link)
+  seat = ok and tonumber(seat) or nil
+  if seat == 0 or seat == 1 then return seat end
+  return nil
+end
+
+local function wireField(msg, field)
+  local clean = require("src.link.Wire").sanitize(msg)
+  return clean and clean[field] or nil
+end
+
+local function digestFor(seat, mine, theirs)
+  if seat == 0 then return Protocol.tradeDigest(mine, theirs) end
+  return Protocol.tradeDigest(theirs, mine)
+end
+
+local function commitMatches(msg, digest)
+  local d = type(msg.digests) == "table" and msg.digests or {}
+  return digest ~= nil and d[1] == digest and d[2] == digest
+end
+
+local function withHandleData(remote, fn)
+  local handle = remote.handle
+  local injected = handle.data
+  handle.data = remote.data
+  local ok, a, b, c = pcall(fn)
+  handle.data = injected
+  if not ok then return nil, tostring(a) end
+  return a, b, c
+end
+
 function Trade.remote(handle, link, opts)
   if type(handle) ~= "table" then return nil, "no save" end
-  if handle.generation == 3 then return nil, Trade.GEN3_LOCAL_ONLY end
   if type(link) ~= "table" or type(link.send) ~= "function" then
     return nil, "no room"
   end
   opts = type(opts) == "table" and opts or {}
+  local seat = seatOf(link)
+  if seat == nil then return nil, "no seat" end
   local data, release = handle.data, nil
   if not data then
     if Trade.gameIsLive() then return nil, "close the game first" end
     local mounted, freeOrReason = mountDataset(handle.version)
     if not mounted then return nil, tostring(freeOrReason) end
     data, release = mounted, freeOrReason
+  end
+  if handle.generation == 3 then
+    return setmetatable({
+      handle = handle,
+      link = link,
+      data = data,
+      release = release,
+      seat = seat,
+      opts = opts,
+      phase = "handshake",
+      session = { theirParty = {}, peerName = opts.peerName },
+    }, Remote3)
   end
   local session = Protocol.TradeSession.new(data, handle.party, {
     subset = opts.subset, strict = opts.strict, peerName = opts.peerName,
@@ -791,6 +1192,7 @@ function Trade.remote(handle, link, opts)
     data = data,
     session = session,
     release = release,
+    seat = seat,
     game = { data = data, save = handle.save },
   }, Remote)
 end
@@ -802,7 +1204,71 @@ function Remote:_send(msg)
             mons = packPartyFor(2, self.session.party,
                                 self.session.sendIndices) }
   end
+  if msg.type == "party" then self._sentMons = wireField(msg, "mons") end
   self.link:send(msg)
+end
+
+function Remote:_cancel(why)
+  self.phase = "cancelled"
+  self.session.error = why
+  return self.phase
+end
+
+function Remote:_open()
+  return self.phase ~= "committed" and self.phase ~= "cancelled"
+    and self.session.stage ~= "cancelled"
+end
+
+function Remote:_confirmBarrier()
+  local session = self.session
+  local mine = type(self._sentMons) == "table"
+    and self._sentMons[session:wireIndex(session.myPick)] or nil
+  local theirs = type(self._theirMons) == "table"
+    and self._theirMons[session.theirPick] or nil
+  if type(mine) ~= "table" or type(theirs) ~= "table" then
+    return self:_cancel("the other game sent nothing")
+  end
+  local plan, why = self:plan()
+  if plan then
+    local prepared, prepWhy = withHandleData(self, function() return Trade.prepare(plan) end)
+    if not prepared then plan, why = nil, prepWhy end
+  end
+  if not plan then
+    self.link:send({ type = "bye" })
+    return self:_cancel(why)
+  end
+  self._plan = plan
+  self.digest = digestFor(self.seat, mine, theirs)
+  local journaled = journalOpen(self, {
+    sent = mine, mon = theirs, record = session.theirParty[session.theirPick],
+    ref = refOf(session.myPick), name = session.peerName,
+  })
+  if not journaled then
+    self.link:send({ type = "bye" })
+    return self:_cancel(JOURNAL_FAILED)
+  end
+  self.link:send({ type = "trade_confirm", digest = self.digest })
+  self.phase = "commit_wait"
+  return self.phase
+end
+
+function Remote:_onCommit(msg)
+  if self.phase ~= "commit_wait" then return end
+  if not commitMatches(msg, self.digest) then return self:_cancel("digest") end
+  self._relayCommitted = true
+  local ok, result = self:commit()
+  if ok then
+    journalClose(self)
+    self.phase = "committed"
+  else
+    self:_cancel(tostring(result))
+  end
+end
+
+function Remote:_onAbort(msg)
+  if self.phase ~= "commit_wait" then return end
+  journalClose(self)
+  self:_cancel(tostring(msg.why or "abort"))
 end
 
 function Remote:start()
@@ -829,28 +1295,33 @@ end
 function Remote:update()
   if self.link.update then self.link:update() end
   local session = self.session
-  if (self.link.closed or self.link.paired == false)
-      and session.stage ~= "done" and session.stage ~= "cancelled" then
-    session.stage = "cancelled"
-    session.error = "the other trainer left"
-    return session.stage
-  end
   local messages = self.link:poll() or {}
   for _, msg in ipairs(messages) do
     if type(msg) == "table" and type(msg.type) == "string" then
-      if msg.type == "party" and self.handle.generation == 2 then
-        self:_theirParty(msg)
-      else
-        local reply = self.session:handle(msg)
-        if reply then self:_send(reply) end
+      if msg.type == "trade_commit" then
+        self:_onCommit(msg)
+      elseif msg.type == "trade_abort" then
+        self:_onAbort(msg)
+      elseif not self.phase then
+        if msg.type == "party" then self._theirMons = msg.mons end
+        if msg.type == "party" and self.handle.generation == 2 then
+          self:_theirParty(msg)
+        else
+          local reply = self.session:handle(msg)
+          if reply then self:_send(reply) end
+        end
       end
     end
   end
-  return self.session.stage
+  if not self.phase and session.stage == "done" then self:_confirmBarrier() end
+  if (self.link.closed or self.link.paired == false) and self:_open() then
+    self:_cancel(LEFT)
+  end
+  return self:stage()
 end
 
 function Remote:stage()
-  return self.session.stage
+  return self.phase or self.session.stage
 end
 
 function Remote:canPick(index)
@@ -866,6 +1337,7 @@ end
 
 function Remote:confirm(ok)
   self:_send(self.session:confirm(ok and true or false))
+  if not self.phase and self.session.stage == "done" then self:_confirmBarrier() end
   return true
 end
 
@@ -874,24 +1346,23 @@ function Remote:plan()
   if session.stage ~= "done" then return nil, "the trade isn't finished" end
   local record = session.theirParty[session.theirPick]
   if type(record) ~= "table" then return nil, "the other game sent nothing" end
-  local handle = self.handle
-  local injected = handle.data
-  handle.data = self.data
-  local plan, reason = Trade.planIncoming({
-    to = handle, toIndex = session.myPick, record = record,
-  })
-  handle.data = injected
-  return plan, reason
+  return withHandleData(self, function()
+    return Trade.planIncoming({
+      to = self.handle, toIndex = session.myPick, record = record,
+    })
+  end)
 end
 
 function Remote:commit()
-  local plan, reason = self:plan()
+  if self.commitResult then return unpack(self.commitResult, 1, 3) end
+  if not self._relayCommitted then return false, "the trade isn't committed" end
+  local plan, reason = self._plan, nil
+  if not plan then plan, reason = self:plan() end
   if not plan then return false, reason end
-  local handle = self.handle
-  local injected = handle.data
-  handle.data = self.data
-  local ok, result, backups = Trade.commit(plan)
-  handle.data = injected
+  local ok, result, backups = withHandleData(self, function()
+    return Trade.commit(plan)
+  end)
+  self.commitResult = { ok, result, backups }
   return ok, result, backups
 end
 
@@ -901,6 +1372,482 @@ function Remote:close()
     self.release = nil
   end
   if self.link.close then pcall(function() self.link:close() end) end
+  if self._journaled then
+    self._journal, self._journaled = nil, nil
+    Trade.resumePending()
+  end
+end
+
+local function lt()
+  return require("src.core.game3.link.trade")
+end
+
+local MSG3 = {
+  SEAT = "game3_battle_seat",
+  PARTY = "game3_trade_party",
+  MON = "game3_trade_mon",
+  CMD = "game3_trade_cmd",
+  CONFIRM = "game3_trade_confirm",
+  COMMIT = "trade_commit",
+  ABORT = "trade_abort",
+}
+
+local STATUS = { NONE = 0, READY = 1, CANCEL = 2 }
+
+local function saveName3(save)
+  return type(save) == "table" and type(save.name) == "string" and save.name or "PLAYER"
+end
+
+local function saveGender3(save)
+  local g = type(save) == "table" and save.gender or 0
+  return (g == 1 or g == "female" or g == "F") and 1 or 0
+end
+
+local function saveTrainerId3(save)
+  return tonumber(type(save) == "table" and save.trainerId) or 0
+end
+
+function Remote3:_send(msg)
+  local g3 = self.g3
+  if not g3 then return false end
+  return g3:send(msg)
+end
+
+function Remote3:_cmd(cmd, cursor)
+  return self:_send({ type = MSG3.CMD, cmd = cmd, cursor = cursor or 0 })
+end
+
+function Remote3:_clearStatuses()
+  self.playerSelect, self.partnerSelect = STATUS.NONE, STATUS.NONE
+  self.playerConfirm, self.partnerConfirm = STATUS.NONE, STATUS.NONE
+end
+
+function Remote3:_clearExchange()
+  self._myPacked, self._theirBlock = nil, nil
+  self._plan, self.digest = nil, nil
+end
+
+function Remote3:_cancel(why)
+  self.phase = "cancelled"
+  self.session.error = why
+  return self.phase
+end
+
+local EXCHANGING = { exchange = true, commit_wait = true }
+
+-- pokefirered/src/trade.c:2094
+function Remote3:_resume(result)
+  if self.phase == "committed" or self.phase == "cancelled" then return end
+  if EXCHANGING[self.phase] then self._staleRound = (self._lastRound or 0) + 1 end
+  self.phase = "picking"
+  self.lastResult = result
+  self.session.myPick, self.session.theirPick = nil, nil
+  self.myCursor, self.partnerCursor = nil, nil
+  self:_clearStatuses()
+  self:_clearExchange()
+end
+
+function Remote3:start()
+  if self.g3 then return true end
+  local Game3Link = require("src.link.Game3Link")
+  local Dataset = require("src.core.game3.dataset")
+  local cache = Dataset.cache()
+  local ok, inputs = pcall(Fingerprint.gen3Inputs, function(rel) return cache:read(rel) end)
+  if not ok then
+    self:_cancel(tostring(inputs))
+    return false
+  end
+  local save = self.handle.save
+  local game = { data = { generation = 3, gen3Inputs = inputs },
+                 save = { player = { name = saveName3(save) } } }
+  local player = { name = saveName3(save), trainerId = saveTrainerId3(save),
+                   gender = saveGender3(save) }
+  local hello = Game3Link.hello(game, Game3Link.LINKTYPE.TRADE, player)
+  self.transport = self.opts.transport
+    or require("src.core.game3.link.relay_transport").new(self.link)
+  self.g3 = Game3Link.attach(self.transport, {
+    seat = self.seat, seats = 2, linkType = Game3Link.LINKTYPE.TRADE,
+    hello = hello, game = game, timeout = self.opts.timeout,
+  })
+  self:_clearStatuses()
+  return true
+end
+
+-- pokefirered/src/trade.c:778
+function Remote3:_sendParty()
+  local handle = self.handle
+  self:_send({
+    type = MSG3.PARTY,
+    party = Protocol.packParty3(handle.party),
+    name = saveName3(handle.save),
+    trainerId = saveTrainerId3(handle.save),
+    gender = saveGender3(handle.save),
+    version = partnerInfo3(handle).version,
+    progressFlags = partnerInfo3(handle).progressFlags,
+  })
+end
+
+local PARTY_PHASES = { seat = true, waitParty = true, picking = true, waitPick = true }
+
+function Remote3:_theirParty(msg)
+  if not PARTY_PHASES[self.phase] then return end
+  local list = type(msg.party) == "table" and msg.party or {}
+  local out = {}
+  for i = 1, math.min(#list, 6) do
+    local mon, why = Protocol.unpackMon3(self.data, list[i], { strict = true })
+    if not mon then
+      self:_cmd(lt().LINKCMD.BOTH_CANCEL_TRADE, 0)
+      return self:_cancel(why or "the other game sent an unknown POKéMON")
+    end
+    out[i] = mon
+  end
+  self._theirPacked = list
+  self.session.theirParty = out
+  self.session.peerName = type(msg.name) == "string" and msg.name or self.session.peerName
+  self.partner = {
+    version = tonumber(msg.version) or 0,
+    progressFlags = tonumber(msg.progressFlags) or 0,
+    name = msg.name,
+    trainerId = tonumber(msg.trainerId) or 0,
+  }
+  if self.phase == "waitParty" then self.phase = "picking" end
+end
+
+function Remote3:canPick(index)
+  local mon, _, ref = pickable(self.handle, index)
+  if not mon then return false end
+  if not self.partner then return false end
+  return refusal3(self.handle, ref, self.partner) == nil
+end
+
+function Remote3:pick(index)
+  if self.phase ~= "picking" then return false, "wait for the other trainer" end
+  local mon, reason, ref = pickable(self.handle, index)
+  if not mon then return false, reason end
+  if not self.partner then return false, "wait for the other trainer" end
+  local why = refusal3(self.handle, ref, self.partner)
+  if why then return false, why end
+  self.session.myPick = ref.index
+  self.myCursor = ref.index - 1
+  self.phase = "waitPick"
+  if self.seat == 0 then
+    self.playerSelect = STATUS.READY
+    self:_leaderHandle()
+  else
+    self:_cmd(lt().LINKCMD.READY_TO_TRADE, self.myCursor)
+  end
+  return true
+end
+
+-- pokefirered/src/trade.c:2043
+function Remote3:cancelPick()
+  if self.phase ~= "picking" and self.phase ~= "waitPick" then return false end
+  self.phase = "waitPick"
+  if self.seat == 0 then
+    self.playerSelect = STATUS.CANCEL
+    self:_leaderHandle()
+  else
+    self:_cmd(lt().LINKCMD.REQUEST_CANCEL, 0)
+  end
+  return true
+end
+
+-- pokefirered/src/trade.c:1951
+function Remote3:_partnerMonValid()
+  local mon = self.session.theirParty[self.session.theirPick or 0]
+  if type(mon) ~= "table" then return false end
+  local species = tonumber(mon.species) or 0
+  if (species == 151 or species == 410) and mon.fatefulEncounter == false then
+    return false
+  end
+  return true
+end
+
+-- pokefirered/src/trade.c:1976
+function Remote3:confirm(yes)
+  if self.phase ~= "confirming" then return false end
+  local status = STATUS.CANCEL
+  if yes and self:_partnerMonValid() then status = STATUS.READY end
+  if yes and status ~= STATUS.READY then self.lastResult = "partner_invalid" end
+  self.phase = "waitConfirm"
+  if self.seat == 0 then
+    self.playerConfirm = status
+    self:_leaderHandle()
+  else
+    self:_cmd(status == STATUS.READY and lt().LINKCMD.INIT_BLOCK
+      or lt().LINKCMD.READY_CANCEL_TRADE, 0)
+  end
+  return true
+end
+
+-- pokefirered/src/trade.c:1681
+function Remote3:_leaderHandle()
+  local C = lt().LINKCMD
+  if self.playerSelect ~= STATUS.NONE and self.partnerSelect ~= STATUS.NONE then
+    local player, partner = self.playerSelect, self.partnerSelect
+    if player == STATUS.READY and partner == STATUS.READY then
+      self:_cmd(C.SET_MONS_TO_TRADE, self.myCursor)
+      self.playerSelect, self.partnerSelect = STATUS.NONE, STATUS.NONE
+      self.session.theirPick = (self.partnerCursor or 0) + 1
+      self.phase = "confirming"
+    elseif player == STATUS.READY then
+      self:_cmd(C.PARTNER_CANCEL_TRADE, 0)
+      self:_resume("partner_canceled")
+    elseif partner == STATUS.READY then
+      self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+      self:_resume("player_canceled")
+    else
+      self:_cmd(C.BOTH_CANCEL_TRADE, 0)
+      self:_cancel("both_canceled")
+    end
+  end
+  if self.playerConfirm ~= STATUS.NONE and self.partnerConfirm ~= STATUS.NONE then
+    if self.playerConfirm == STATUS.READY and self.partnerConfirm == STATUS.READY then
+      self:_cmd(C.START_TRADE, 0)
+      self.playerConfirm, self.partnerConfirm = STATUS.NONE, STATUS.NONE
+      self:_beginTrade()
+    else
+      self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+      self:_resume("trade_canceled")
+    end
+  end
+end
+
+-- pokefirered/src/trade.c:1593
+function Remote3:_leaderRead(msg)
+  local C = lt().LINKCMD
+  local cmd = tonumber(msg.cmd)
+  if cmd == C.REQUEST_CANCEL then
+    self.partnerSelect = STATUS.CANCEL
+  elseif cmd == C.READY_TO_TRADE then
+    self.partnerCursor = math.floor(tonumber(msg.cursor) or 0)
+    self.partnerSelect = STATUS.READY
+  elseif cmd == C.INIT_BLOCK then
+    self.partnerConfirm = STATUS.READY
+  elseif cmd == C.READY_CANCEL_TRADE then
+    self.partnerConfirm = STATUS.CANCEL
+  elseif cmd == C.CONFIRM_FINISH_TRADE then
+    self.peerFinished = true
+  elseif cmd == C.PLAYER_CANCEL_TRADE and EXCHANGING[self.phase] then
+    self:_resume("trade_canceled")
+  elseif cmd == C.BOTH_CANCEL_TRADE and self.phase ~= "committed" then
+    self:_cancel("both_canceled")
+  end
+  self:_leaderHandle()
+end
+
+-- pokefirered/src/trade.c:1637
+function Remote3:_followerRead(msg)
+  local C = lt().LINKCMD
+  local cmd = tonumber(msg.cmd)
+  if cmd == C.BOTH_CANCEL_TRADE then
+    if self.phase ~= "committed" then self:_cancel("both_canceled") end
+  elseif cmd == C.PARTNER_CANCEL_TRADE then
+    self:_resume("partner_canceled")
+  elseif cmd == C.SET_MONS_TO_TRADE then
+    self.partnerCursor = math.floor(tonumber(msg.cursor) or 0)
+    self.session.theirPick = self.partnerCursor + 1
+    self.phase = "confirming"
+  elseif cmd == C.START_TRADE then
+    self:_beginTrade()
+  elseif cmd == C.PLAYER_CANCEL_TRADE then
+    self:_resume("trade_canceled")
+  elseif cmd == C.CONFIRM_FINISH_TRADE then
+    self.peerFinished = true
+  end
+end
+
+-- pokefirered/src/trade.c:1302
+function Remote3:_beginTrade()
+  if EXCHANGING[self.phase] or self.phase == "committed" then return end
+  local mon = (self.handle.party or {})[self.session.myPick or 0]
+  if type(mon) ~= "table" then return self:_resume("no_mon") end
+  self._plan, self.digest = nil, nil
+  local block = {
+    type = MSG3.MON,
+    mon = Protocol.packMon3(mon),
+    mail = mailOf3(self.handle.save, mon),
+    name = saveName3(self.handle.save),
+    trainerId = saveTrainerId3(self.handle.save),
+  }
+  self._myPacked = wireField(block, "mon")
+  self.phase = "exchange"
+  self:_send(block)
+  self:_tryConfirm()
+end
+
+function Remote3:_tryConfirm()
+  if self.phase ~= "exchange" then return end
+  local block = self._theirBlock
+  if not (block and self._myPacked) then return end
+  local C = lt().LINKCMD
+  local shown = type(self._theirPacked) == "table"
+    and self._theirPacked[self.session.theirPick or 0] or nil
+  if type(shown) ~= "table" or type(block.mon) ~= "table"
+      or Protocol.canonical(Protocol.wireMon3(shown)) ~= Protocol.canonical(block.mon) then
+    self.lastRefusal = "not the POKéMON that was shown"
+    self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+    return self:_resume("bad_mon")
+  end
+  local record, why = Protocol.unpackMon3(self.data, block.mon, { strict = true })
+  if not record then
+    self.lastRefusal = why
+    self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+    return self:_resume("bad_mon")
+  end
+  local plan, planWhy = withHandleData(self, function()
+    return Trade.planIncoming({
+      to = self.handle, toIndex = self.session.myPick, record = record,
+      mail = block.mail, partner = self.partner,
+      partnerName = block.name or (self.partner and self.partner.name),
+    })
+  end)
+  if not plan then
+    self.lastRefusal = planWhy
+    self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+    return self:_resume("bad_mon")
+  end
+  local prepared, prepWhy = withHandleData(self, function() return Trade.prepare(plan) end)
+  if not prepared then
+    self.lastRefusal = prepWhy
+    self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+    return self:_resume("bad_mon")
+  end
+  self._plan = plan
+  self.received = record
+  self.digest = digestFor(self.seat, self._myPacked, block.mon)
+  local journaled = journalOpen(self, {
+    sent = self._myPacked, mon = block.mon, mail = block.mail,
+    name = block.name or (self.partner and self.partner.name),
+    partner = self.partner,
+  })
+  if not journaled then
+    self.lastRefusal = JOURNAL_FAILED
+    self:_cmd(C.PLAYER_CANCEL_TRADE, 0)
+    return self:_resume("journal")
+  end
+  local g3 = self.g3
+  local drained = g3:take(MSG3.COMMIT) or g3:take(MSG3.ABORT)
+  while drained do
+    self:_noteRound(drained)
+    drained = g3:take(MSG3.COMMIT) or g3:take(MSG3.ABORT)
+  end
+  self.phase = "commit_wait"
+  self:_send({ type = MSG3.CONFIRM, digest = self.digest })
+end
+
+function Remote3:_noteRound(msg)
+  local n = math.floor(tonumber(msg.n) or 0)
+  if n > (self._lastRound or 0) then self._lastRound = n end
+end
+
+function Remote3:_onCommit(msg)
+  if self.phase ~= "commit_wait" then return end
+  if not commitMatches(msg, self.digest) then return self:_cancel("digest") end
+  self._relayCommitted = true
+  local ok, result = self:commit()
+  if not ok then return self:_cancel(tostring(result)) end
+  journalClose(self)
+  self.phase = "committed"
+  self:_cmd(lt().LINKCMD.CONFIRM_FINISH_TRADE, 0)
+end
+
+function Remote3:_onAbort(msg)
+  if self.phase ~= "commit_wait" then return end
+  local n = tonumber(msg.n)
+  if self._staleRound and n and n <= self._staleRound then
+    self._staleRound = nil
+    self:_send({ type = MSG3.CONFIRM, digest = self.digest })
+    return
+  end
+  journalClose(self)
+  self:_cancel(tostring(msg.why or "abort"))
+end
+
+function Remote3:update(dt)
+  local g3 = self.g3
+  if not g3 then return self.phase end
+  g3:update(tonumber(dt) or 0)
+  local commit = g3:take(MSG3.COMMIT)
+  while commit do
+    self:_onCommit(commit)
+    self:_noteRound(commit)
+    commit = g3:take(MSG3.COMMIT)
+  end
+  local abort = g3:take(MSG3.ABORT)
+  while abort do
+    self:_onAbort(abort)
+    self:_noteRound(abort)
+    abort = g3:take(MSG3.ABORT)
+  end
+  if self.phase == "handshake" and g3:isReady() then
+    self.session.peerName = g3:peerName() or self.session.peerName
+    self:_send({ type = MSG3.SEAT, seat = self.seat })
+    self.phase = "seat"
+  end
+  if self.phase == "seat" and g3:take(MSG3.SEAT) then
+    self:_sendParty()
+    self.phase = "waitParty"
+  end
+  if self.phase ~= "handshake" and self.phase ~= "cancelled" then
+    local party = g3:take(MSG3.PARTY)
+    while party do
+      self:_theirParty(party)
+      party = g3:take(MSG3.PARTY)
+    end
+    local block = g3:take(MSG3.MON)
+    while block do
+      if EXCHANGING[self.phase] or self.phase == "waitConfirm" or self.phase == "confirming" then
+        self._theirBlock = block
+      end
+      block = g3:take(MSG3.MON)
+    end
+    local cmd = g3:take(MSG3.CMD)
+    while cmd do
+      if self.seat == 0 then self:_leaderRead(cmd) else self:_followerRead(cmd) end
+      cmd = g3:take(MSG3.CMD)
+    end
+    self:_tryConfirm()
+  end
+  if self.phase ~= "committed" and self.phase ~= "cancelled"
+      and (g3.closed or g3:peerGone()) then
+    self:_cancel(g3.verdict and g3.verdict ~= "full" and tostring(g3.reason or g3.verdict) or LEFT)
+  end
+  return self.phase
+end
+
+function Remote3:stage()
+  return self.phase
+end
+
+function Remote3:commit()
+  if self.commitResult then return unpack(self.commitResult, 1, 3) end
+  if not self._relayCommitted then return false, "the trade isn't committed" end
+  local plan = self._plan
+  if not plan then return false, "the trade isn't finished" end
+  local ok, result, backups = withHandleData(self, function()
+    return Trade.commit(plan)
+  end)
+  self.commitResult = { ok, result, backups }
+  return ok, result, backups
+end
+
+function Remote3:close()
+  local g3, transport = self.g3, self.transport
+  if g3 then pcall(function() g3:close("bye") end) end
+  if transport and type(transport.leave) == "function" then
+    pcall(function() transport:leave() end)
+  elseif self.link.close then
+    pcall(function() self.link:close() end)
+  end
+  if self.release then
+    self.release()
+    self.release = nil
+  end
+  if self._journaled then
+    self._journal, self._journaled = nil, nil
+    Trade.resumePending()
+  end
 end
 
 return Trade

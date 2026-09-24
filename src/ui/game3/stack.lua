@@ -35,6 +35,7 @@ function Stack.push(id, mod, opts)
     mod = mod,
     drawUnder = opts.drawUnder and true or false,
     hideBelow = opts.hideBelow ~= false, -- default hide layers underneath
+    fullscreen = opts.fullscreen,
   }
 end
 
@@ -85,6 +86,15 @@ end
 
 function Stack.busy()
   return #Stack._layers > 0
+end
+
+function Stack.fullscreen()
+  for _, layer in ipairs(Stack.drawOrder()) do
+    local f = layer.fullscreen
+    if type(f) == "function" then f = f() end
+    if f then return true end
+  end
+  return false
 end
 
 return Stack

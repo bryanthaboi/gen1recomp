@@ -1,5 +1,4 @@
 local Handshake = require("src.link.Handshake")
-local Net = require("src.link.Net")
 local Session = require("src.link.Session")
 local Versions = require("src.import.gba.versions")
 
@@ -24,6 +23,7 @@ Game3Link.GENERATION = 3
 Game3Link.HANDSHAKE_SECONDS = 10
 Game3Link.BYE = "game3_bye"
 Game3Link.HELLO = "game3_hello"
+Game3Link.SEAT_ROLES = { [0] = "host", [1] = "guest", [2] = "seat2", [3] = "seat3", [4] = "seat4" }
 
 -- pokefirered/src/link.c:343 InitLocalLinkPlayer
 local function localPlayer(game)
@@ -37,11 +37,21 @@ local function localPlayer(game)
     (s and (s.gender == "female" or s.gender == 1)) and 1 or 0
 end
 
-local function helloFor(game, linkType)
-  local hello = Handshake.hello(game, nil)
+local function handshakeView(game)
+  if type(game) ~= "table" then return nil end
+  return { data = game.data, save = game.save, mods = game.mods }
+end
+
+local function helloFor(game, linkType, player)
+  local hello = Handshake.hello(handshakeView(game), nil)
   hello.generation = Game3Link.GENERATION
   hello.type = Game3Link.HELLO
   local name, trainerId, gender = localPlayer(game)
+  if type(player) == "table" then
+    if player.name ~= nil then name = player.name end
+    if player.trainerId ~= nil then trainerId = tonumber(player.trainerId) or 0 end
+    if player.gender ~= nil then gender = (player.gender == 1 or player.gender == "female") and 1 or 0 end
+  end
   hello.name = name
   hello.game3 = {
     cacheVersion = Versions.CACHE_VERSION,
@@ -55,11 +65,32 @@ end
 
 Game3Link.hello = helloFor
 
+local function transportSeat(transport)
+  if type(transport) == "table" and type(transport.seat) == "function" then
+    local ok, s = pcall(transport.seat, transport)
+    if ok then return tonumber(s) end
+  end
+  return nil
+end
+
+local function transportSeats(transport)
+  if type(transport) == "table" and type(transport.seats) == "function" then
+    local ok, n = pcall(transport.seats, transport)
+    if ok then return tonumber(n) end
+  end
+  return nil
+end
+
 function Game3Link.attach(transport, opts)
   opts = opts or {}
-  local role = opts.role == "guest" and "guest" or "host"
+  local seat = tonumber(opts.seat) or transportSeat(transport)
+  if seat == nil then seat = opts.role == "guest" and 1 or 0 end
+  local seats = tonumber(opts.seats) or transportSeats(transport) or 2
+  local role = seat == 0 and "host" or "guest"
   local self = setmetatable({
     role = role,
+    seat = seat,
+    nseats = seats,
     linkType = tonumber(opts.linkType) or Game3Link.LINKTYPE.BATTLE,
     game = opts.game,
     state = "handshake",
@@ -68,23 +99,41 @@ function Game3Link.attach(transport, opts)
     onReady = opts.onReady,
     onClosed = opts.onClosed,
     timeout = tonumber(opts.timeout) or Game3Link.HANDSHAKE_SECONDS,
+    peerHellos = {},
+    peerHello = nil,
     _transport = transport,
     _session = Session.new(transport, { role = role, kind = "game3" }),
   }, Game3Link)
-  self.myHello = helloFor(opts.game, self.linkType)
+  local hello = opts.hello
+  if type(hello) == "table" then
+    local copy = {}
+    for k, v in pairs(hello) do copy[k] = v end
+    copy.game3 = {}
+    for k, v in pairs(type(hello.game3) == "table" and hello.game3 or {}) do copy.game3[k] = v end
+    hello = copy
+  else
+    hello = helloFor(opts.game, self.linkType)
+  end
+  hello.type = Game3Link.HELLO
+  hello.generation = Game3Link.GENERATION
+  hello.game3 = hello.game3 or {}
+  hello.game3.seat = seat
+  if hello.game3.linkType == nil then hello.game3.linkType = self.linkType end
+  self.myHello = hello
   self._session:send(self.myHello)
   return self
 end
 
 function Game3Link.loopback(opts)
   opts = opts or {}
+  local Net = require("src.link.Net")
   local a, b = Net.loopbackPair()
   local host = Game3Link.attach(a, {
-    role = "host", game = opts.game, linkType = opts.linkType,
+    seat = 0, seats = 2, game = opts.game, linkType = opts.linkType,
     timeout = opts.timeout, onReady = opts.onHostReady, onClosed = opts.onHostClosed,
   })
   local guest = Game3Link.attach(b, {
-    role = "guest", game = opts.game, linkType = opts.linkType,
+    seat = 1, seats = 2, game = opts.game, linkType = opts.linkType,
     timeout = opts.timeout, onReady = opts.onGuestReady, onClosed = opts.onGuestClosed,
   })
   return host, guest
@@ -102,6 +151,14 @@ function Game3Link:getStatus()
   return self.state
 end
 
+function Game3Link:getSeat()
+  return self.seat
+end
+
+function Game3Link:seatCount()
+  return self.nseats
+end
+
 function Game3Link:peerName()
   return self.peerHello and self.peerHello.name or nil
 end
@@ -111,26 +168,25 @@ function Game3Link:peerLinkType()
   return g3 and tonumber(g3.linkType) or nil
 end
 
+local function row(hello, seat, isLocal)
+  local g3 = type(hello) == "table" and type(hello.game3) == "table" and hello.game3 or {}
+  return {
+    name = hello and hello.name,
+    trainerId = tonumber(g3.trainerId) or 0,
+    gender = tonumber(g3.gender) or 0,
+    role = Game3Link.SEAT_ROLES[seat] or "guest",
+    seat = seat,
+    isLocal = isLocal,
+  }
+end
+
 -- pokefirered/src/link.c:1069 GetLinkPlayerCount_2
 function Game3Link:players()
-  local mine = self.myHello and self.myHello.game3 or nil
-  local list = { {
-    name = self.myHello and self.myHello.name,
-    trainerId = mine and mine.trainerId or 0,
-    gender = mine and mine.gender or 0,
-    role = self.role,
-    isLocal = true,
-  } }
-  if self.peerHello then
-    local theirs = self.peerHello.game3 or {}
-    list[2] = {
-      name = self.peerHello.name,
-      trainerId = tonumber(theirs.trainerId) or 0,
-      gender = tonumber(theirs.gender) or 0,
-      role = self.role == "host" and "guest" or "host",
-      isLocal = false,
-    }
+  local list = { row(self.myHello, self.seat, true) }
+  for seat, hello in pairs(self.peerHellos) do
+    list[#list + 1] = row(hello, seat, false)
   end
+  table.sort(list, function(a, b) return a.seat < b.seat end)
   return list
 end
 
@@ -177,13 +233,21 @@ function Game3Link:close(reason)
   return self:_finish("closed", reason or "close_link")
 end
 
-function Game3Link:decide()
-  local peer = self.peerHello
+function Game3Link:leave()
+  local t = self._transport
+  if type(t) == "table" and type(t.leave) == "function" then
+    pcall(t.leave, t)
+    return true
+  end
+  return false
+end
+
+local function decideOne(myHello, peer)
   local g3 = peer and peer.game3
   if type(g3) ~= "table" then
     return "refused", "peer_is_not_firered"
   end
-  local verdict, reason = Handshake.checkCompat(self.myHello, peer)
+  local verdict, reason = Handshake.checkCompat(myHello, peer)
   if verdict ~= "full" then
     return "refused", reason or verdict
   end
@@ -196,6 +260,48 @@ function Game3Link:decide()
   return "full", nil
 end
 
+function Game3Link:decide()
+  if next(self.peerHellos) == nil then
+    return decideOne(self.myHello, self.peerHello)
+  end
+  local seats = {}
+  for seat in pairs(self.peerHellos) do seats[#seats + 1] = seat end
+  table.sort(seats)
+  for _, seat in ipairs(seats) do
+    local verdict, reason = decideOne(self.myHello, self.peerHellos[seat])
+    if verdict ~= "full" then return verdict, reason end
+  end
+  return "full", nil
+end
+
+function Game3Link:_helloSeat(hello)
+  local s = tonumber(hello.seat)
+  if s == nil or s < 0 then
+    local g3 = type(hello.game3) == "table" and hello.game3 or {}
+    s = tonumber(g3.seat)
+  end
+  if s == nil or s < 0 or s == self.seat then
+    if self.nseats <= 2 then return 1 - (self.seat == 1 and 1 or 0) end
+    return nil
+  end
+  return s
+end
+
+function Game3Link:_allHellos()
+  local n = 0
+  for _ in pairs(self.peerHellos) do n = n + 1 end
+  return n >= self.nseats - 1
+end
+
+function Game3Link:_primaryHello()
+  if self.seat ~= 0 and self.peerHellos[0] then return self.peerHellos[0] end
+  local best
+  for seat, hello in pairs(self.peerHellos) do
+    if best == nil or seat < best then best = seat end
+  end
+  return best ~= nil and self.peerHellos[best] or nil
+end
+
 function Game3Link:update(dt)
   if self.closed then return self.state end
   self.elapsed = self.elapsed + (tonumber(dt) or 0)
@@ -206,10 +312,15 @@ function Game3Link:update(dt)
     return self.state
   end
 
-  if not self.peerHello then
+  if self.state == "handshake" then
     local hello = self._session:take(Game3Link.HELLO) or self._session:take("hello")
-    if hello then
-      self.peerHello = hello
+    while hello do
+      local seat = self:_helloSeat(hello)
+      if seat ~= nil then self.peerHellos[seat] = hello end
+      hello = self._session:take(Game3Link.HELLO)
+    end
+    self.peerHello = self:_primaryHello()
+    if self.peerHello and self:_allHellos() then
       local verdict, reason = self:decide()
       self.verdict = verdict
       if verdict == "full" then

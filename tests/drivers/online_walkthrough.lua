@@ -82,7 +82,8 @@ return function()
   end
 
   local up = false
-  for _ = 1, 300 do
+  local bootFrom = love.timer.getTime()
+  while love.timer.getTime() - bootFrom < 20 do
     up = reachable()
     if up then break end
     U.wait(2)
@@ -152,10 +153,12 @@ return function()
     return false
   end
 
-  waitFor(function() return OnlinePanel.myProfile(imp) ~= nil end, 300,
-    "the arena profile to compute")
-  local profile = OnlinePanel.myProfile(imp)
-  check(profile ~= nil, "the panel computes its own arena profile")
+  local profileFrom = love.timer.getTime()
+  while OnlinePanel.myProfile(imp) == nil and love.timer.getTime() - profileFrom < 10 do
+    pump(1)
+  end
+  local profile, why = OnlinePanel.myProfile(imp)
+  check(profile ~= nil, "the panel computes its own arena profile: " .. tostring(why))
   if not profile then return finish() end
 
   OnlinePanel.connect(imp)
@@ -184,24 +187,26 @@ return function()
   waitFor(function() return Host.room() ~= nil end, 900, "the room to open")
   pump(2)
   local room = Host.room()
-  check(room ~= nil and room.code ~= nil, "hosting opens a room")
+  check(room ~= nil and room.room ~= nil, "hosting opens a room")
   if not room then return finish() end
   check(OnlinePanel.screen(imp) == "room",
     "the panel routes itself onto the Room screen: "
     .. tostring(OnlinePanel.screen(imp)))
 
-  check(OnlinePanel.back(imp) and OnlinePanel.screen(imp) == "play",
-    "Back walks out of the Room without leaving it")
+  OnlinePanel.go(imp, "play")
+  check(OnlinePanel.screen(imp) == "play" and Host.room() ~= nil,
+    "Play opens over the Room without leaving it")
   OnlinePanel.refresh(imp)
   local mine = OnlinePanel.cache(imp).mine
-  check(mine ~= nil and mine.code == room.code,
-    "Play shows the player's own lobby as a card, not a joinable row")
+  check(mine ~= nil and mine.room == room.room,
+    "Play shows the player's own lobby as a card, not a joinable row: "
+    .. tostring(mine and mine.room) .. " vs " .. tostring(room.room))
   for _, entry in ipairs(OnlinePanel.cache(imp).rooms) do
-    check(entry.code ~= room.code, "and never as a row you can join")
+    check(entry.room ~= room.room, "and never as a row you can join")
   end
   OnlinePanel.go(imp, "room")
 
-  local joined = Guest.joinRoom(room.code, "player", profile)
+  local joined = Guest.joinRoom(room.room, "player", profile)
   waitFor(function() return joined.done end, 900, "the guest's join to answer")
   check(joined.error == nil, "the second seat joins: " .. tostring(joined.error))
   waitFor(function()

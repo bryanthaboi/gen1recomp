@@ -1565,10 +1565,12 @@ function RomImporter.new(onComplete, opts)
   if type(opts.initialTab) == "string" and opts.initialTab ~= "" then
     self:_switchTab(opts.initialTab)
   end
-  if type(opts.joinCode) == "string" and opts.joinCode ~= "" then
+  if type(opts.invite) == "string" and opts.invite ~= "" then
     self:_switchTab("online")
     local okOnline, OnlinePanel = pcall(require, "src.import.OnlinePanel")
-    if okOnline then pcall(OnlinePanel.deepLink, self, opts.joinCode, "player") end
+    if okOnline then
+      pcall(OnlinePanel.deepLink, self, { invite = opts.invite }, "player")
+    end
   end
   self:_queueBaseRomScan()
   self:_queueLaunchReimports()
@@ -4775,6 +4777,7 @@ function RomImporter:_syncSupported()
 end
 
 function RomImporter:_pumpOnline(dt)
+  pcall(function() require("src.online.Trade").pumpPending(dt) end)
   if not self._online then return end
   local ok, OnlinePanel = pcall(require, "src.import.OnlinePanel")
   if not ok then return end
@@ -5387,21 +5390,14 @@ function RomImporter:keypressed(key)
     local st = OnlinePanel.state(self)
     local field = self._onlineFocus
     if key == "backspace" then
-      if field == "online-name" then
-        st.nameDraft = utf8Back(st.nameDraft or "")
-      elseif field == "online-note" then
-        st.note = utf8Back(st.note or "")
-      elseif field == "online-code" then
-        st.joinCode = utf8Back(st.joinCode or "")
-      elseif field == "online-trade-code" then
-        local tr = OnlinePanel.tradeState(self)
-        tr.code = utf8Back(tr.code or "")
-      elseif field == OnlinePanel.PC_FIELD then
-        local pc = OnlinePanel.pcPicker(self)
-        OnlinePanel.pcQuery(self, utf8Back((pc and pc.query) or ""))
-      end
+      OnlinePanel.fieldBack(self, field)
+    elseif (key == "return" or key == "kpenter")
+        and field == OnlinePanel.PIN_FIELD then
+      OnlinePanel.pinSubmit(self)
     elseif key == "return" or key == "kpenter" then
       self:_commitOnlineField()
+    elseif key == "escape" and field == OnlinePanel.PIN_FIELD then
+      OnlinePanel.pinClose(self)
     elseif key == "escape" then
       self._onlineFocus = nil
       st.nameDraft = nil
@@ -6108,7 +6104,7 @@ function RomImporter:playArena(version, cartId, spec)
 end
 
 function RomImporter:_blurPanelFields()
-  if self._pcPicker then return end
+  if self._pcPicker or self._pinModal then return end
   if self._onlineFocus then
     self:_commitOnlineField()
     return
@@ -6184,19 +6180,11 @@ function RomImporter:textinput(text)
   end
   if self._onlineFocus then
     local OnlinePanel = require("src.import.OnlinePanel")
-    local st = OnlinePanel.state(self)
-    if self._onlineFocus == "online-name" then
-      st.nameDraft = OnlinePanel.sanitizeName((st.nameDraft or "") .. text)
-    elseif self._onlineFocus == "online-note" then
+    if self._onlineFocus == "online-note" then
+      local st = OnlinePanel.state(self)
       st.note = utf8Cap((st.note or "") .. text, OnlinePanel.NOTE_MAX)
-    elseif self._onlineFocus == "online-code" then
-      st.joinCode = OnlinePanel.sanitizeCode((st.joinCode or "") .. text)
-    elseif self._onlineFocus == "online-trade-code" then
-      local tr = OnlinePanel.tradeState(self)
-      tr.code = OnlinePanel.sanitizeCode((tr.code or "") .. text)
-    elseif self._onlineFocus == OnlinePanel.PC_FIELD then
-      local pc = OnlinePanel.pcPicker(self)
-      OnlinePanel.pcQuery(self, ((pc and pc.query) or "") .. text)
+    else
+      OnlinePanel.fieldType(self, self._onlineFocus, text)
     end
     return
   end

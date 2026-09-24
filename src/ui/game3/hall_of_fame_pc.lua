@@ -88,7 +88,7 @@ function HofPc.show(opts)
   HofPc._mon = 1
   HofPc._national = nationalEnabled(session)
   HofPc.open = true
-  Stack.push("hall_of_fame_pc", HofPc, { hideBelow = true })
+  Stack.push("hall_of_fame_pc", HofPc, { hideBelow = true, fullscreen = true })
   if not HofPc._corrupted then cry() end
 end
 

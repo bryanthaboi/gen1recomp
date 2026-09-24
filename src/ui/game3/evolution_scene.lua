@@ -145,7 +145,7 @@ function EvolutionScene.start(mon, postSpecies, opts)
   -- Open message box in battle frame
   if Message.setFrame then Message.setFrame("battle") end
 
-  Stack.push("evolution_scene", EvolutionScene, { hideBelow = true })
+  Stack.push("evolution_scene", EvolutionScene, { hideBelow = true, fullscreen = true })
   return true
 end
 

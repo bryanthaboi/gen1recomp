@@ -5,6 +5,7 @@ local Strings = require("src.core.Strings")
 local Multichoice = {}
 
 Multichoice.LISTS = {}
+Multichoice.OVERRIDES = {}
 Multichoice.CACHE_REL = "data/generated/gba/scripts/multichoice.lua"
 
 Multichoice.COUNTS = {

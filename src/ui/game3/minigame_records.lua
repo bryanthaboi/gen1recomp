@@ -174,6 +174,97 @@ local BUILDERS = {
   dodrio = buildDodrio,
 }
 
+-- pokefirered/src/berry_powder.c:13
+Records.MAX_BERRY_POWDER = 99999
+-- pokefirered/src/pokemon_jump.c:25
+Records.MAX_JUMP_SCORE = 99990
+Records.MAX_JUMPS = 9999
+-- pokefirered/src/dodrio_berry_picking.c:27
+Records.MAX_DODRIO_SCORE = 999990
+Records.MAX_BERRIES = 9999
+
+-- pokefirered/src/berry_powder.c:48
+function Records.giveBerryPowder(session, amount)
+  if type(session) ~= "table" then return false end
+  local total = num(session.berryPowder) + num(amount)
+  if total > Records.MAX_BERRY_POWDER then
+    session.berryPowder = Records.MAX_BERRY_POWDER
+    return false
+  end
+  session.berryPowder = total
+  return true
+end
+
+-- pokefirered/src/berry_crush.c:1061
+function Records.updateBerryCrush(session, playerCount, pressingSpeed)
+  if type(session) ~= "table" then return false end
+  local slot = num(playerCount) - 1
+  if slot < 1 or slot > 4 then return false end
+  local speeds = crushSpeeds(session)
+  local speed = num(pressingSpeed) % 0x10000
+  session.berryCrushPressingSpeeds = speeds
+  if speed > speeds[slot] then
+    speeds[slot] = speed
+    return true
+  end
+  return false
+end
+
+local function jumpTable(session)
+  local r = type(session.pokemonJumpRecords) == "table" and session.pokemonJumpRecords or {}
+  session.pokemonJumpRecords = r
+  r.jumpsInRow = num(r.jumpsInRow)
+  r.bestJumpScore = num(r.bestJumpScore)
+  r.excellentsInRow = num(r.excellentsInRow)
+  r.gamesWithMaxPlayers = num(r.gamesWithMaxPlayers)
+  return r
+end
+
+-- pokefirered/src/pokemon_jump.c:4465
+function Records.updatePokemonJump(session, jumpScore, jumpsInRow, excellentsInRow)
+  if type(session) ~= "table" then return false end
+  local r = jumpTable(session)
+  jumpScore, jumpsInRow, excellentsInRow = num(jumpScore), num(jumpsInRow), num(excellentsInRow)
+  local newRecord = false
+  if r.bestJumpScore < jumpScore and jumpScore <= Records.MAX_JUMP_SCORE then
+    r.bestJumpScore, newRecord = jumpScore, true
+  end
+  if r.jumpsInRow < jumpsInRow and jumpsInRow <= Records.MAX_JUMPS then
+    r.jumpsInRow, newRecord = jumpsInRow, true
+  end
+  if r.excellentsInRow < excellentsInRow and excellentsInRow <= Records.MAX_JUMPS then
+    r.excellentsInRow, newRecord = excellentsInRow, true
+  end
+  return newRecord
+end
+
+-- pokefirered/src/pokemon_jump.c:4480
+function Records.incrementPokemonJumpMaxPlayerGames(session)
+  if type(session) ~= "table" then return end
+  local r = jumpTable(session)
+  if r.gamesWithMaxPlayers < 9999 then r.gamesWithMaxPlayers = r.gamesWithMaxPlayers + 1 end
+end
+
+-- pokefirered/src/dodrio_berry_picking.c:2633
+function Records.updateDodrio(session, score, berriesPicked, berriesPickedInRow)
+  if type(session) ~= "table" then return false end
+  local r = type(session.dodrioBerryPickingRecords) == "table" and session.dodrioBerryPickingRecords or {}
+  session.dodrioBerryPickingRecords = r
+  r.berriesPicked = num(r.berriesPicked)
+  r.bestScore = num(r.bestScore)
+  r.berriesPickedInRow = num(r.berriesPickedInRow)
+  berriesPicked = math.min(num(berriesPicked), Records.MAX_BERRIES)
+  score = math.min(num(score), Records.MAX_DODRIO_SCORE)
+  berriesPickedInRow = num(berriesPickedInRow)
+  local newRecord = false
+  if r.bestScore < score then r.bestScore, newRecord = score, true end
+  if r.berriesPicked < berriesPicked then r.berriesPicked, newRecord = berriesPicked, true end
+  if r.berriesPickedInRow < berriesPickedInRow then
+    r.berriesPickedInRow, newRecord = berriesPickedInRow, true
+  end
+  return newRecord
+end
+
 function Records.lines()
   return Records._lines
 end

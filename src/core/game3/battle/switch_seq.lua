@@ -143,6 +143,7 @@ end
 local function withdraw_text(st, battler)
   return BattleText.get(BattleText.RETURNMON, Adapter.fill(st, {
     side = battler.side, hpScale = hp_thresholds2(st, battler), buff1 = State.displayName(battler),
+    linkScrTrainerName = st and st.linkNames and st.linkNames[State.idOf(battler)] or nil,
   }))
 end
 
@@ -150,6 +151,7 @@ end
 function SwitchSeq.switchInFill(st, battler)
   return Adapter.fill(st, {
     side = battler.side, hpScale = hp_thresholds(st, battler), buff1 = State.displayName(battler),
+    linkScrTrainerName = st and st.linkNames and st.linkNames[State.idOf(battler)] or nil,
   })
 end
 
@@ -539,10 +541,9 @@ local function run_step(step)
   end
 
   if kind == "msg_sendout" then
-    local side = step_side(d)
     local text = switch_in_text(st, step_battler(st, d))
-    if side == "player" and not SwitchSeq._headless then
-      -- pokefirered/src/battle_message.c:399
+    if not SwitchSeq._headless then
+      -- pokefirered/data/battle_scripts_1.s:2879
       require("src.core.game3.battle.ui").pushTimed(text, 0)
     elseif SwitchSeq._pushMsg then
       SwitchSeq._pushMsg(text)

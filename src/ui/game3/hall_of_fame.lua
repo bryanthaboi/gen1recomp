@@ -212,7 +212,7 @@ function HallOfFame.start(opts)
   -- pokefirered/src/hall_of_fame.c:344
   begin_fade(16, 0, 0)
   require("src.ui.game3.fade").clear()
-  Stack.push("hall_of_fame", HallOfFame, { hideBelow = true })
+  Stack.push("hall_of_fame", HallOfFame, { hideBelow = true, fullscreen = true })
 end
 
 -- pokefirered/src/hall_of_fame.c:699 SetWarpsToRollCredits

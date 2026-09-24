@@ -48,6 +48,15 @@ local ROWS_SYM = {
   { { id = "url_https", label = "https://", w = 3 }, { id = "url_http", label = "http://", w = 2 }, { id = "url_json", label = ".json", w = 2 }, { id = "url_zip", label = ".zip", w = 2 }, { id = "clear", label = "Clear", w = 3 } },
 }
 
+local ROWS_DIGITS = {
+  { "1", "2", "3" },
+  { "4", "5", "6" },
+  { "7", "8", "9" },
+  { { id = "back", label = "Bksp" }, "0", { id = "done", label = "Done" } },
+}
+
+VirtualKeyboard.ROWS_DIGITS = ROWS_DIGITS
+
 local function isLinuxHandheld()
   return os.getenv("HANDHELD") == "1"
       or os.getenv("PORTMASTER") == "1"
@@ -73,7 +82,8 @@ function VirtualKeyboard.open(opts)
   VirtualKeyboard.onDone = opts.onDone
   VirtualKeyboard.row = 1
   VirtualKeyboard.col = 1
-  VirtualKeyboard.mode = 1
+  VirtualKeyboard.mode = opts.digits and 4 or 1
+  VirtualKeyboard.maxLen = tonumber(opts.maxLen)
   return true
 end
 
@@ -90,13 +100,18 @@ function VirtualKeyboard.close(confirmed)
 end
 
 local function currentRows()
+  if VirtualKeyboard.mode == 4 then return ROWS_DIGITS end
   if VirtualKeyboard.mode == 2 then return ROWS_UPPER end
   if VirtualKeyboard.mode == 3 then return ROWS_SYM end
   return ROWS_LOWER
 end
 
+VirtualKeyboard.currentRows = currentRows
+
 local function triggerKey(key)
   if type(key) == "string" then
+    local cap = VirtualKeyboard.maxLen
+    if cap and #VirtualKeyboard.text >= cap then return end
     VirtualKeyboard.text = VirtualKeyboard.text .. key
   elseif type(key) == "table" then
     if key.id == "shift" then
@@ -157,9 +172,11 @@ function VirtualKeyboard.gamepadpressed(button)
     VirtualKeyboard.text = VirtualKeyboard.text:sub(1, -2)
     return true
   elseif button == "y" then
+    if VirtualKeyboard.mode == 4 then return true end
     VirtualKeyboard.text = VirtualKeyboard.text .. " "
     return true
   elseif button == "leftshoulder" or button == "rightshoulder" then
+    if VirtualKeyboard.mode == 4 then return true end
     VirtualKeyboard.mode = (VirtualKeyboard.mode % 3) + 1
     local maxC = #currentRows()[VirtualKeyboard.row]
     if VirtualKeyboard.col > maxC then VirtualKeyboard.col = maxC end
@@ -189,7 +206,12 @@ end
 
 function VirtualKeyboard.textinput(text)
   if not VirtualKeyboard.active then return false end
+  if VirtualKeyboard.mode == 4 then text = tostring(text or ""):gsub("%D", "") end
+  local cap = VirtualKeyboard.maxLen
   VirtualKeyboard.text = VirtualKeyboard.text .. text
+  if cap and #VirtualKeyboard.text > cap then
+    VirtualKeyboard.text = VirtualKeyboard.text:sub(1, cap)
+  end
   return true
 end
 
@@ -218,7 +240,9 @@ function VirtualKeyboard.draw(m)
   local cy = py + pad
   -- Title & hint
   Kit.text("button", VirtualKeyboard.title, px + pad, cy, PAL.heading)
-  Kit.textRight("micro", "L1/R1: Mode  X: Bksp  Y: Space  Start: Done  B: Cancel",
+  Kit.textRight("micro", VirtualKeyboard.mode == 4
+    and "X: Bksp  Start: Done  B: Cancel"
+    or "L1/R1: Mode  X: Bksp  Y: Space  Start: Done  B: Cancel",
     px + modalW - pad, cy + 2 * s, PAL.muted)
 
   cy = cy + Kit.textHeight("button") + math.floor(8 * s)

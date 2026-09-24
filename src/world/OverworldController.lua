@@ -18,6 +18,7 @@ local NPC = require("src.world.NPC")
 local PaletteFX = require("src.render.PaletteFX")
 local Pipelines = require("src.render.Pipelines")
 local Player = require("src.world.Player")
+local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local ScriptRunner = require("src.script.ScriptRunner")
@@ -32,6 +33,33 @@ local Strings = require("src.core.Strings")
 
 -- isOverworld marks the live world state for WorldAPI's stack scan
 local OverworldState = { isOpaque = true, isOverworld = true }
+
+-- The pipeline's own target, not the playfield: a pipeline with a render
+-- scale draws smaller and lets endFrame scale it up.
+local function overrideCanvasHeight()
+  local bound = love.graphics.getCanvas()
+  if bound and not bound.getHeight then bound = bound[1] end      -- several bound
+  if bound and not bound.getHeight then bound = bound.canvas end  -- one face of one
+  return bound and bound.getHeight and bound:getHeight()
+end
+
+-- Run a block of field FX the way the composite expects them.  Where endFrame
+-- mirrors the override, these are the one part of that canvas the mirror would
+-- invert rather than right: the pipeline's pass went in pre-flipped, these are
+-- ordinary 2D.  project() already answers in screen rows, so mirroring the
+-- block about the bound canvas is the whole correction, and project is left
+-- alone -- fixing it too would move each anchor twice.  Exposed for tests.
+local function withOverrideMirror(draw)
+  local height = Renderer.mirrorsWorldOverride() and overrideCanvasHeight()
+  if not height then return draw() end
+  love.graphics.push()
+  love.graphics.translate(0, height)
+  love.graphics.scale(1, -1)
+  draw()
+  love.graphics.pop()
+end
+
+OverworldState.withOverrideMirror = withOverrideMirror
 
 local Game -- set on enter (avoids circular require at load time)
 
@@ -6214,27 +6242,29 @@ function OverworldState:drawWorld()
         love.graphics.pop()
         if shader then love.graphics.setShader() end
       end
-      -- ground-hugging effects sit on the cell they belong to
-      if self.dustAnim then
-        local da = self.dustAnim
-        at(fxDust, da.x * 16 + 8 + (da.ox or 0), da.y * 16 + 8 + (da.oy or 0))
-      end
-      if self.cutAnim then
-        at(fxCutTree, self.cutAnim.x * 16 + 8, self.cutAnim.y * 16 + 16)
-      end
-      if self.healAnim then
-        at(fxHeal, self.healAnim.px + 8, self.healAnim.py + 16)
-      end
-      -- standing effects anchor at the foot of whoever they belong to
-      if self.emote and self.emote.npc then
-        at(fxEmote, self.emote.npc.px + 8, self.emote.npc.py + 16)
-      end
-      if self.flyAnim then
-        at(fxBird, self.player.px + 8, self.player.py + 16)
-      end
-      if self.fishing then
-        at(fxRod, self.player.px + 8, self.player.py + 16)
-      end
+      withOverrideMirror(function()
+        -- ground-hugging effects sit on the cell they belong to
+        if self.dustAnim then
+          local da = self.dustAnim
+          at(fxDust, da.x * 16 + 8 + (da.ox or 0), da.y * 16 + 8 + (da.oy or 0))
+        end
+        if self.cutAnim then
+          at(fxCutTree, self.cutAnim.x * 16 + 8, self.cutAnim.y * 16 + 16)
+        end
+        if self.healAnim then
+          at(fxHeal, self.healAnim.px + 8, self.healAnim.py + 16)
+        end
+        -- standing effects anchor at the foot of whoever they belong to
+        if self.emote and self.emote.npc then
+          at(fxEmote, self.emote.npc.px + 8, self.emote.npc.py + 16)
+        end
+        if self.flyAnim then
+          at(fxBird, self.player.px + 8, self.player.py + 16)
+        end
+        if self.fishing then
+          at(fxRod, self.player.px + 8, self.player.py + 16)
+        end
+      end)
     end
     override = Pipelines.drawWorld(pipelineId, ctx)
     -- world post-processes (a miniature-diorama blur, a colour grade) fold

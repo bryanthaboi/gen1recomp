@@ -310,24 +310,31 @@ T.eq(OnlinePanel.resultText({ winner = nil, how = "agreed" }), "draw",
   "no winner is a draw")
 Client.you = savedYou
 
--- --------------------------------------------------------- join by code
+-- ---------------------------------------------------------- join by room id
 
+local ROOM_A = "r0123456789abcdef"
 local joined = nil
 local savedJoin = Client.joinRoom
-Client.joinRoom = function(code, as, profile)
-  joined = { code = code, as = as, profile = profile }
+Client.joinRoom = function(roomId, as, profile, pin)
+  joined = { room = roomId, as = as, profile = profile, pin = pin }
 end
-T.check(OnlinePanel.joinByCode(imp, "ab2cd3", "player"),
-  "a six-character code joins")
-T.eq(joined and joined.code, "AB2CD3", "the code is upper-cased on the way out")
+T.check(OnlinePanel.joinRoom(imp, ROOM_A, "player"),
+  "a listed room id joins")
+T.eq(joined and joined.room, ROOM_A, "the opaque room id goes out as is")
 T.eq(joined and joined.as, "player", "the join role is passed through")
+T.eq(joined and joined.pin, nil, "an open room sends no PIN")
 T.eq(joined and joined.profile and joined.profile.version, "red",
   "and the join carries the profile of the game that is picked")
 joined = nil
-T.check(not OnlinePanel.joinByCode(imp, "AB", "player"),
-  "a short code is refused")
+T.check(OnlinePanel.joinRoom(imp, ROOM_A, "spectator", "0420"),
+  "a locked room joins with its PIN")
+T.eq(joined and joined.pin, "0420", "the PIN rides the join")
+joined = nil
+T.check(not OnlinePanel.joinRoom(imp, nil, "player"), "no room id is refused")
 T.eq(joined, nil, "and nothing is sent")
 T.check(OnlinePanel.state(imp).status ~= nil, "the refusal says why")
+T.eq(OnlinePanel.joinByCode, nil, "there is no join by code any more")
+T.eq(OnlinePanel.spectateByCode, nil, "and no spectate by code")
 Client.joinRoom = savedJoin
 
 
@@ -512,7 +519,20 @@ do
     "a rule that matches the picks says nothing")
   OnlinePanel.wizardNext(imp)
   T.eq(OnlinePanel.wizardStep(imp), "visibility", "then who can see it")
-  T.eq(st.public, true, "public by default")
+  T.eq(st.private, false, "public by default")
+  st.private = true
+  T.check(not OnlinePanel.wizardReady(imp), "a private lobby needs a PIN first")
+  st.pin = OnlinePanel.sanitizePin("04a2x7")
+  T.eq(st.pin, "0427", "the host PIN keeps digits only")
+  T.check(OnlinePanel.wizardReady(imp), "four digits unlock Next")
+  local privateAnswers = OnlinePanel.wizardAnswers(imp)
+  for _, row in ipairs(privateAnswers) do
+    if row.step == "visibility" then
+      T.eq(row.value, "Private", "the summary says Private")
+      T.check(not row.value:find("0427", 1, true), "and never shows the PIN")
+    end
+  end
+  st.private, st.pin = false, ""
   OnlinePanel.wizardNext(imp)
   T.eq(OnlinePanel.wizardStep(imp), "summary", "and the summary last")
 
@@ -536,9 +556,22 @@ do
   OnlinePanel.wizardTo(imp, "summary")
   T.check(OnlinePanel.wizardNext(imp), "the confirm hosts the room")
   T.eq(created and created.intent, "battle", "as a battle room")
-  T.eq(created and created.public, true, "listed publicly")
+  T.eq(created and created.private, false, "listed publicly")
+  T.eq(created and created.pin, nil, "with no PIN")
+  T.eq(created and created.seats, 2, "for two seats")
   T.eq(OnlinePanel.screen(imp), "room", "and lands on the Room screen")
   T.eq(OnlinePanel.wizard(imp), nil, "with the wizard put away")
+  OnlinePanel.startWizard(imp, "hostBattle")
+  st.private, st.pin = true, "0427"
+  OnlinePanel.wizardTo(imp, "summary")
+  created = nil
+  T.check(OnlinePanel.wizardNext(imp), "a private lobby hosts too")
+  T.eq(created and created.private, true, "marked private")
+  T.eq(created and created.pin, "0427", "with the host's PIN")
+  OnlinePanel.startWizard(imp, "hostBattle")
+  T.eq(st.private, false, "the next Host a battle starts Public")
+  T.eq(st.pin, "", "with no PIN carried over")
+  OnlinePanel.home(imp)
   Client.createRoom = savedCreate
   OnlinePanel.home(imp)
 end
@@ -548,11 +581,11 @@ do
   st.tourPlaying = true
   OnlinePanel.startWizard(imp, "hostTournament")
   T.eq(table.concat(OnlinePanel.wizardSteps(imp), ","),
-    "game,save,playing,team,rules,shotclock,spectators,summary",
-    "the tournament wizard owns the shot clock and the spectators")
+    "game,save,playing,team,rules,shotclock,spectators,tourvisibility,summary",
+    "the tournament wizard owns the shot clock, spectators and visibility")
   st.tourPlaying = false
   T.eq(table.concat(OnlinePanel.wizardSteps(imp), ","),
-    "game,save,playing,rules,shotclock,spectators,summary",
+    "game,save,playing,rules,shotclock,spectators,tourvisibility,summary",
     "an organizer never picks a team")
   st.tourPlaying = true
   OnlinePanel.home(imp)
@@ -562,7 +595,7 @@ do
   local st = OnlinePanel.state(imp)
   st.setupDone, st.slotId = true, "slot1"
   st.team = { { where = "party", index = 1 } }
-  T.check(OnlinePanel.startJoin(imp, "ab2cd3", { partySize = 3 }),
+  T.check(OnlinePanel.startJoin(imp, { room = ROOM_A }, { partySize = 3 }),
     "joining from a row opens the join wizard")
   T.eq(table.concat(OnlinePanel.wizardSteps(imp), ","), "summary",
     "steps already answered this session are skipped")
@@ -572,16 +605,16 @@ do
   OnlinePanel.wizardTo(imp, "summary")
   local joined = nil
   local savedJoin = Client.joinRoom
-  Client.joinRoom = function(code, as) joined = { code = code, as = as } end
+  Client.joinRoom = function(roomId, as) joined = { room = roomId, as = as } end
   T.check(not OnlinePanel.wizardNext(imp),
     "a team the room's rule refuses does not join")
   T.eq(joined, nil, "nothing is sent")
-  T.eq(st.status, "This room needs 3 Pokemon, you picked 1.",
+  T.eq(st.status, "This room needs 3 POKéMON, you picked 1.",
     "and the message names the requirement")
   OnlinePanel.toggleTeam(st.team, 2)
   OnlinePanel.toggleTeam(st.team, 3)
   T.check(OnlinePanel.wizardNext(imp), "matching the rule joins")
-  T.eq(joined and joined.code, "AB2CD3", "with the sanitized code")
+  T.eq(joined and joined.room, ROOM_A, "with the listed room id")
   T.eq(OnlinePanel.screen(imp), "room", "landing on Room")
   Client.joinRoom = savedJoin
   OnlinePanel.home(imp)
@@ -590,33 +623,33 @@ end
 -- -------------------------------------------------------------- deep link
 
 do
+  local TOKEN = ("ab"):rep(16)
   local joined = nil
-  local savedJoin = Client.joinRoom
-  Client.joinRoom = function(code, as) joined = { code = code, as = as } end
+  local savedInvite = Client.joinRoomByInvite
+  local savedState = Client.state
+  Client.joinRoomByInvite = function(token, as, profile)
+    joined = { token = token, as = as, profile = profile }
+    return { done = false }
+  end
+  Client.state = function() return "online" end
   local st = OnlinePanel.state(imp)
-  st.setupDone, st.slotId, st.team = nil, nil, {}
-  T.check(OnlinePanel.deepLink(imp, "ab2cd3"),
-    "a join-code deep link is taken")
-  T.eq(OnlinePanel.screen(imp), "wizard",
-    "an unconfigured player sets up first")
-  T.eq(joined, nil, "and nothing is sent yet")
-  st.slotId = "slot1"
-  OnlinePanel.toggleTeam(st.team, 1)
-  OnlinePanel.wizardTo(imp, "summary")
-  OnlinePanel.wizardNext(imp)
-  T.eq(joined and joined.code, "AB2CD3", "then the code is joined")
+  T.check(not OnlinePanel.deepLink(imp, "ab2cd3"),
+    "a six-character code is not a deep link any more")
+  T.eq(joined, nil, "and nothing is sent")
+  T.check(OnlinePanel.deepLink(imp, { invite = TOKEN:upper() }),
+    "an invite token deep link is taken")
+  T.eq(joined and joined.token, TOKEN, "the token is joined, lower-cased")
+  T.eq(joined and joined.as, "player", "as a player")
   T.eq(OnlinePanel.screen(imp), "room", "on the Room screen")
+  local pending = st.pending
+  T.eq(pending and pending.inviteToken, TOKEN, "the pending join keeps the token")
   joined = nil
-  OnlinePanel.home(imp)
-  T.check(OnlinePanel.deepLink(imp, "cd3ab2"),
-    "a configured player skips straight to the summary")
-  T.eq(table.concat(OnlinePanel.wizardSteps(imp), ","), "summary",
-    "with nothing left to answer")
-  OnlinePanel.wizardNext(imp)
-  T.eq(joined and joined.code, "CD3AB2", "with the sanitized code")
-  T.eq(OnlinePanel.screen(imp), "room", "landing on Room")
-  T.check(not OnlinePanel.deepLink(imp, "AB"), "a short code is refused")
-  Client.joinRoom = savedJoin
+  pending.done, pending.error, pending.reason = true, "full", "full"
+  OnlinePanel.pendingDone(imp, pending)
+  T.eq(joined and joined.as, "spectator",
+    "a full room falls back to watching on the same token")
+  Client.joinRoomByInvite, Client.state = savedInvite, savedState
+  st.pending, st.inviteJoin = nil, nil
   OnlinePanel.home(imp)
 end
 
@@ -657,7 +690,8 @@ local savedState, savedYou, savedLobby = Client.state, Client.you, Client.lobby
 local savedOpen, savedWatchable, savedCounts =
   Client.openRooms, Client.watchable, Client.counts
 local ROOM_FIXTURE = {
-  code = "AB2CD3", host = "me", stage = "waiting", intent = "battle",
+  room = "rabcdef0123456789", host = "me", stage = "waiting", intent = "battle",
+  locked = true, seats = 2,
   profile = { engine = 1, version = "red", kind = "vanilla",
               rule = { partySize = 3 } },
   players = { { id = "me", name = "RED", ready = false },
@@ -667,9 +701,16 @@ local ROOM_FIXTURE = {
 }
 local FAKE_LOBBY = {}
 for i = 1, 50 do
-  FAKE_LOBBY[i] = { id = "e" .. i, code = ("L%05d"):format(i),
+  local tour = i % 11 == 0
+  FAKE_LOBBY[i] = { id = ("e%07x"):format(i),
+    room = (not tour) and ("r%016x"):format(i) or nil,
+    tour = tour and ("t%016x"):format(i) or nil,
+    locked = (not tour) and i % 7 == 0 or false,
+    where = (i % 9 == 0) and "game" or "launcher",
+    status = (i % 8 == 0) and "busy" or "idle", engine = 1, version = "red",
+    online = true,
     name = "TRAINER" .. i, verified = i % 3 == 0, open = true,
-    intent = (i % 11 == 0) and "tournament" or "battle",
+    intent = tour and "tournament" or "battle",
     note = (i % 4 == 0) and "first to three" or nil,
     spectators = i % 3,
     profile = { engine = 1, version = "red", kind = "vanilla",
@@ -677,7 +718,7 @@ for i = 1, 50 do
                 rule = { partySize = 3 } },
     stage = (i % 6 == 0) and "battling" or "waiting" }
 end
-FAKE_LOBBY[#FAKE_LOBBY + 1] = { id = "me", code = "MINE01", name = "RED",
+FAKE_LOBBY[#FAKE_LOBBY + 1] = { id = "me", room = "r00000000000000ff", name = "RED",
   open = true, intent = "battle", stage = "waiting",
   profile = { engine = 1, version = "red", kind = "vanilla",
               fingerprint = "abc", rule = { partySize = 3 } } }
@@ -727,7 +768,25 @@ do
   T.eq(c.counts.players, 51, "Home counts players off Client.counts")
   T.eq(c.counts.lobbies, 50, "and open rooms off the same call")
   T.check(c.mine ~= nil, "hosting puts a Your lobby card on Play")
-  T.eq(c.mine.code, "AB2CD3", "carrying the room's code")
+  T.eq(c.mine.room, ROOM_FIXTURE.room, "for the room being hosted")
+  T.eq(c.mine.code, nil, "with no code on it")
+  T.eq(c.mine.locked, true, "and the lock of a private lobby")
+  local sawLocked, sawCode = false, false
+  for _, row in ipairs(c.rooms) do
+    if row.locked then sawLocked = true end
+    if row.code ~= nil then sawCode = true end
+  end
+  T.check(sawLocked, "a PIN lobby is listed, marked locked")
+  T.check(not sawCode, "and no row carries a code")
+  local sawPlayer, sawInvitable, sawBusy = false, false, false
+  for _, row in ipairs(c.players) do
+    sawPlayer = true
+    if row.id == "me" then sawPlayer = "self" end
+    if row.reason == nil then sawInvitable = true else sawBusy = true end
+  end
+  T.check(sawPlayer == true, "the Trainers list holds everyone else")
+  T.check(sawInvitable and sawBusy,
+    "idle trainers can be invited, busy or in-game ones say why not")
 
   local sawMeWatching = false
   for _, row in ipairs(c.watch) do
@@ -748,7 +807,7 @@ for _, id in ipairs(SCREENS) do
     OnlinePanel.go(imp, id)
   end
   if id == "trade" then OnlinePanel.tradeState(imp).chosen = true end
-  OnlinePanel.state(imp).routeKey = "R" .. ROOM_FIXTURE.code
+  OnlinePanel.state(imp).routeKey = "R" .. ROOM_FIXTURE.room
   OnlinePanel.refresh(imp)
   Kit.audit = {}
   local wideOk, wideH = drawFor(imp, 1280, 800)
@@ -794,14 +853,14 @@ do
   OnlinePanel.home(imp)
 end
 
--- ------- the trade room shows its code
+-- ------- the trade room shows its players, never a code
 
 do
   local savedRoomFn, savedTourFn = Client.room, Client.tournament
   Client.tournament = function() return nil end
   Client.room = function()
-    return { code = "TR9ZQ2", host = "me", stage = "waiting",
-             intent = "trade",
+    return { room = "r1111222233334444", host = "me", stage = "waiting",
+             intent = "trade", seats = 2,
              profile = { engine = 1, version = "red", kind = "vanilla",
                          rule = { partySize = 1 } },
              players = { { id = "me", name = "RED" } }, spectators = {} }
@@ -820,7 +879,7 @@ do
   for _, row in ipairs(seen) do
     if tostring(row.label or "") == "Copy" then sawCopy = true end
   end
-  T.check(sawCopy, "with a Copy button beside the code")
+  T.check(not sawCopy, "with no code and no Copy button")
   Client.room, Client.tournament = savedRoomFn, savedTourFn
   OnlinePanel.state(imp).routeKey = nil
   OnlinePanel.home(imp)
@@ -1131,7 +1190,7 @@ do
 
   -- remote stages, rendered off a fake session
   T.eq(OnlinePanel.remoteStageText("picking"),
-    "Tap the POKeMON you want to trade", "each stage has its own line")
+    "Tap the POKéMON you want to trade", "each stage has its own line")
   T.eq(OnlinePanel.remoteStageText("waitPick"),
     "Waiting for the other trainer to pick", "including the waits")
   T.eq(OnlinePanel.remoteStageText("weird"), "weird",
@@ -1236,8 +1295,8 @@ do
     activeSlot = {}, slots = {}, pulse = 0 }
   local gst = OnlinePanel.state(gimp)
   gst.version, gst.slotId = "firered", "slot1"
-  T.eq(OnlinePanel.remoteTradeRefusal(gimp), Trade.GEN3_LOCAL_ONLY,
-    "a FireRed save is refused for an internet trade")
+  T.eq(OnlinePanel.remoteTradeRefusal(gimp), nil,
+    "a FireRed save can trade over the internet")
 
   local gtr = OnlinePanel.tradeState(gimp)
   local entry = { version = "firered", slotId = "slot1", generation = 3 }
@@ -1249,17 +1308,13 @@ do
 
   local conv, why = OnlinePanel.convertParty({ party = {} }, "firered", "red")
   T.eq(conv, nil, "a FireRed team can't be converted for a room")
-  T.eq(why, TeamPick.GEN3_OFFLINE, "and it says why")
-  local packed, pwhy = TeamPick.pack({ party = { { species = 25, moves = { 84 } } } },
+  T.eq(why, TeamPick.NO_TIME_CAPSULE, "and it says why")
+  local _, pwhy = TeamPick.pack({ party = { { species = 25, moves = { 84 } } } },
     { 1 }, 3)
-  T.eq(packed, nil, "a FireRed team can't be packed for a room")
-  T.eq(pwhy, TeamPick.GEN3_OFFLINE, "with the same message")
+  T.check(pwhy == nil or pwhy ~= "FireRed and LeafGreen can't join online rooms yet.",
+    "a FireRed team is no longer refused outright for a room")
   local cpacked = TeamPick.packConverted({}, { 1 }, 3)
-  T.eq(cpacked, nil, "nor packed as converted")
-  local profile, prwhy = require("src.online.ArenaData").profile("firered",
-    "vanilla", nil, nil)
-  T.eq(profile, nil, "FireRed has no arena profile")
-  T.eq(prwhy, TeamPick.GEN3_OFFLINE, "and says why instead of crashing")
+  T.eq(cpacked, nil, "but never packed as converted")
 
   local lines = OnlinePanel.tradeLines({
     sides = { { role = "a",
@@ -1906,43 +1961,52 @@ do
     Client.joinRoom, Client.joinTournament, Client.lobby
   local roomJoins, tourJoins = {}, {}
   local pendingRoom
-  Client.joinRoom = function(code, as, profile)
-    roomJoins[#roomJoins + 1] = { code = code, as = as, profile = profile }
-    pendingRoom = { code = code, done = false }
+  Client.joinRoom = function(roomId, as, profile, pin)
+    roomJoins[#roomJoins + 1] = { room = roomId, as = as, profile = profile,
+                                  pin = pin }
+    pendingRoom = { id = roomId, done = false }
     return pendingRoom
   end
-  Client.joinTournament = function(code, as)
-    tourJoins[#tourJoins + 1] = { code = code, as = as }
-    return { code = code, done = false }
+  Client.joinTournament = function(opts)
+    tourJoins[#tourJoins + 1] = opts
+    return { id = opts.tour, done = false }
   end
+  local TOUR_ID = "t00000000000000aa"
+  local OPEN_ROOM = "r00000000000000bb"
+  local LOCKED_ROOM = "r00000000000000cc"
   Client.lobby = function()
-    return { { id = "t1", code = "TQURA2", intent = "tournament" } }
+    return { { id = "p1", tour = TOUR_ID, intent = "tournament" },
+             { id = "p2", room = OPEN_ROOM, intent = "battle",
+               profile = { engine = 1, version = "red", kind = "vanilla" } },
+             { id = "p3", room = LOCKED_ROOM, intent = "battle", locked = true,
+               profile = { engine = 1, version = "red", kind = "vanilla" } } }
   end
-  T.check(OnlinePanel.spectateByCode(simp, "tqura2"),
-    "spectating a listed tournament code")
+  T.check(OnlinePanel.spectate(simp, { id = "p1", tour = TOUR_ID,
+    intent = "tournament" }), "watching a listed tournament")
   T.eq(#tourJoins, 1, "goes straight to tour_join")
+  T.eq(tourJoins[1] and tourJoins[1].tour, TOUR_ID, "by its id")
+  T.eq(tourJoins[1] and tourJoins[1].code, nil, "never by a code")
   T.eq(tourJoins[1] and tourJoins[1].as, "spectator", "as a spectator")
   T.eq(#roomJoins, 0, "with no room_join")
 
-  T.check(OnlinePanel.spectateByCode(simp, "RMBC23"),
-    "spectating an unlisted code")
-  T.eq(#roomJoins, 1, "tries the room first")
+  T.check(OnlinePanel.spectate(simp, { id = "p2", room = OPEN_ROOM,
+    intent = "battle" }), "spectating an open listed room")
+  T.eq(#roomJoins, 1, "joins it at once")
+  T.eq(roomJoins[1].as, "spectator", "as a spectator")
   T.eq(OnlinePanel.screen(simp), "room", "on the Room screen")
-  pendingRoom.error, pendingRoom.reason, pendingRoom.done =
-    "That room code wasn't found.", "not_found", true
-  OnlinePanel.update(simp, 1 / 60)
-  T.eq(#tourJoins, 2, "and a not_found answer retries it as a tournament")
-  T.eq(tourJoins[2] and tourJoins[2].code, "RMBC23", "with the same code")
-  T.eq(sst.status, nil, "without surfacing the room miss as an error")
-
-  T.check(OnlinePanel.spectateByCode(simp, "RMCD34"), "another unlisted code")
   pendingRoom.error, pendingRoom.reason, pendingRoom.done =
     "That room is full.", "full", true
   OnlinePanel.update(simp, 1 / 60)
-  T.eq(#tourJoins, 2, "other join errors do not retry")
-  T.eq(sst.status, "That room is full.", "and are shown")
+  T.eq(sst.status, "That room is full.", "join errors are shown")
+
+  OnlinePanel.home(simp)
+  T.check(OnlinePanel.spectate(simp, { id = "p3", room = LOCKED_ROOM,
+    intent = "battle", locked = true }), "spectating a locked room")
+  T.eq(#roomJoins, 1, "sends nothing before the PIN")
+  T.check(OnlinePanel.pinModal(simp) ~= nil, "and asks for the PIN")
   Client.joinRoom, Client.joinTournament, Client.lobby =
     savedJoin, savedTour, savedLobby
+  OnlinePanel.pinClose(simp)
   OnlinePanel.home(simp)
 end
 
@@ -1953,10 +2017,11 @@ do
   jst.version, jst.ready = "red", true
   local savedLobby = Client.lobby
   Client.lobby = function()
-    return { { id = "t1", code = "TQURA2", intent = "tournament",
+    return { { id = "p1", tour = "t00000000000000aa", intent = "tournament",
                profile = { rule = { partySize = 3 } } } }
   end
-  T.check(OnlinePanel.startJoin(jimp, "tqura2"), "joining a listed code")
+  T.check(OnlinePanel.startJoin(jimp, "t00000000000000aa"),
+    "joining a listed tournament")
   T.eq(jst.joinTarget.tournament, true, "learns it is a tournament")
   T.eq(jst.joinTarget.rule.partySize, 3, "and picks up its rule")
   T.eq(OnlinePanel.teamCap(jimp), 3, "so the team step caps at the rule")
@@ -1992,8 +2057,8 @@ do
   OnlinePanel.go(dimp, "trade")
   tr.remote = { handle = { path = "x", version = "red", party = {} },
     session = {},
-    update = function() return "done" end,
-    commit = function() return true end,
+    update = function() return "committed" end,
+    commitResult = { true },
     close = function() closed = closed + 1 end }
   OnlinePanel.pumpRemoteTrade(dimp)
   T.eq(tr.remote, nil, "a finished trade closes the remote session")
@@ -2011,6 +2076,7 @@ end
 do
   local Trade = require("src.online.Trade")
   local link = { closed = false, paired = true, sent = {},
+    seat = function() return 0 end,
     send = function(self, m) self.sent[#self.sent + 1] = m end,
     poll = function() return {} end, close = function() end }
   local Protocol = require("src.link.Protocol")
@@ -2023,8 +2089,8 @@ do
   T.eq(remote:update(), "cancelled", "the other trainer leaving calls it off")
   T.eq(remote.session.error, "the other trainer left", "with a reason")
   link.paired, link.closed = true, true
-  remote.session.stage = "done"
-  T.eq(remote:update(), "done", "but a finished trade stays finished")
+  remote.phase = "committed"
+  T.eq(remote:update(), "committed", "but a committed trade stays committed")
 end
 
 do
@@ -2046,7 +2112,7 @@ do
     _pages = {}, _uiActions = {}, _actAt = {} }
   T.eq(OnlinePanel.selectedVersion(wimp), "crystal", "the tab starts on the header")
   local wst = OnlinePanel.state(wimp)
-  wst.joinWant = { code = "AB2CD3", as = "player", at = 1e9 }
+  wst.joinWant = { room = ROOM_A, as = "player", at = 1e9 }
   wimp.modScope = "red"
   T.eq(OnlinePanel.selectedVersion(wimp), "crystal",
     "a parked join is not re-aimed at another game by the header")
@@ -2060,10 +2126,11 @@ do
   T.eq(OnlinePanel.selectedVersion(aimp), "crystal", "the tab starts on the header")
   local savedLobby = Client.lobby
   Client.lobby = function()
-    return { { code = "RM1234", intent = "battle",
+    return { { room = "r0000000000001234", intent = "battle",
                profile = { version = "red", kind = "vanilla" } } }
   end
-  T.check(OnlinePanel.alignToRoom(aimp, "RM1234"), "aligning to a listed room")
+  T.check(OnlinePanel.alignToRoom(aimp, "r0000000000001234"),
+    "aligning to a listed room")
   T.eq(ast.version, "red", "takes the room's game")
   T.eq(OnlinePanel.selectedVersion(aimp), "red",
     "and the header does not yank the tab while the room is live")
@@ -2082,16 +2149,16 @@ do
   pst.ready = true
   local sent, profiles = {}, nil
   local savedJoin, savedSet = Client.joinRoom, Client.setProfiles
-  Client.joinRoom = function(code, as, profile)
-    sent[#sent + 1] = { code = code, as = as, profile = profile }
-    return { code = code, done = false }
+  Client.joinRoom = function(roomId, as, profile)
+    sent[#sent + 1] = { room = roomId, as = as, profile = profile }
+    return { id = roomId, done = false }
   end
   Client.setProfiles = function(list) profiles = list return list end
 
-  T.check(not OnlinePanel.joinByCode(pimp, "ab2cd3", "player"),
+  T.check(not OnlinePanel.joinRoom(pimp, ROOM_A, "player"),
     "a join with no computed profile yet is not sent")
   T.eq(#sent, 0, "nothing goes on the wire")
-  T.eq(pst.joinWant and pst.joinWant.code, "AB2CD3", "the join is parked")
+  T.eq(pst.joinWant and pst.joinWant.room, ROOM_A, "the join is parked")
   T.eq(pst.profileWant, "crystal|vanilla|-",
     "and the profile for the picked game is queued")
 
@@ -2109,7 +2176,7 @@ do
   local savedTime = love.timer.getTime
   local clock = 0
   love.timer.getTime = function() return clock end
-  pst.pending = { code = "AB2CD3", done = false, at = 0 }
+  pst.pending = { id = ROOM_A, done = false, at = 0 }
   clock = OnlinePanel.JOIN_WAIT + 1
   OnlinePanel.update(pimp, 1 / 60)
   T.eq(pst.pending, nil, "a join the relay never answers stops pending")
@@ -2119,7 +2186,7 @@ do
   pst.status = nil
   pst.profiles["crystal|vanilla|-"] = { profile = nil, reason = "no cache" }
   clock = 100
-  T.check(not OnlinePanel.joinByCode(pimp, "cd3ab2", "player"),
+  T.check(not OnlinePanel.joinRoom(pimp, ROOM_A, "player"),
     "an unreadable profile refuses the join")
   T.eq(pst.status, "no cache", "with the reason")
   clock = 100 + OnlinePanel.JOIN_WAIT + 1

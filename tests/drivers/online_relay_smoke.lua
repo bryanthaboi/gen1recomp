@@ -139,13 +139,13 @@ return function(game)
   local room = Host.createRoom({ intent = "battle", profile = PROFILE,
                                  playing = true, maxSpectators = 4 })
   waitFor(function() return room.done end, 600, "room_create to answer")
-  check(room.code ~= nil, "the real relay creates a room: " .. tostring(room.error))
-  if not room.code then
+  check(room.id ~= nil, "the real relay creates a room: " .. tostring(room.error))
+  if not room.id then
     stopServer()
     return finish()
   end
 
-  local joined = Guest.joinRoom(room.code, "player", YELLOW)
+  local joined = Guest.joinRoom(room.id, "player", YELLOW)
   waitFor(function() return joined.done end, 600, "room_join to answer")
   check(joined.error == nil,
         "a yellow guest joins a red room: " .. tostring(joined.error))
@@ -173,7 +173,7 @@ return function(game)
   local badProfile = {}
   for k, v in pairs(PROFILE) do badProfile[k] = v end
   badProfile.fingerprint = "deadbeef"
-  local refused = Watcher.joinRoom(room.code, "spectator", badProfile)
+  local refused = Watcher.joinRoom(room.id, "spectator", badProfile)
   for _ = 1, 600 do
     if refused.done then break end
     pump3(1)
@@ -181,7 +181,7 @@ return function(game)
   check(refused.reason == "profile_mismatch",
         "a spectator whose profile differs is refused: " ..
         tostring(refused.reason))
-  local watching = Watcher.joinRoom(room.code, "spectator", PROFILE)
+  local watching = Watcher.joinRoom(room.id, "spectator", PROFILE)
   for _ = 1, 600 do
     if watching.done then break end
     pump3(1)
@@ -192,8 +192,8 @@ return function(game)
   local function rejoin(profile)
     Watcher.leaveRoom()
     pump3(10)
-    local pending = profile and Watcher.joinRoom(room.code, "spectator", profile)
-      or Watcher.joinRoom(room.code, "spectator")
+    local pending = profile and Watcher.joinRoom(room.id, "spectator", profile)
+      or Watcher.joinRoom(room.id, "spectator")
     for _ = 1, 600 do
       if pending.done then break end
       pump3(1)

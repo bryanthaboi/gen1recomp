@@ -224,7 +224,7 @@ function ModManager.show(opts)
   ModManager._prompt = nil
   ModManager._viewKey = nil
   ModManager._viewFirst = 1
-  Stack.push("mod_manager", ModManager, { hideBelow = true })
+  Stack.push("mod_manager", ModManager, { hideBelow = true, fullscreen = true })
 end
 
 function ModManager.close()

@@ -226,7 +226,7 @@ function MoveRelearner.show(mon, opts)
   MoveRelearner.scroll = 0
   clamp_cursor()
   to_list()
-  Stack.push("move_relearner", MoveRelearner, { hideBelow = true })
+  Stack.push("move_relearner", MoveRelearner, { hideBelow = true, fullscreen = true })
 end
 
 function MoveRelearner.handleInput(input)

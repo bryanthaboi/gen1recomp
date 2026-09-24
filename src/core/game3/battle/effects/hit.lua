@@ -718,6 +718,14 @@ function Hit.tripleKick(M)
   end
 end
 
+-- pokefirered/src/battle_script_commands.c:8601
+local function speciesInfoStats(Pokemon, sp)
+  local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(sp)
+  local row = meta and meta.linkStats
+  if type(row) == "table" and #row >= 6 then return { atk = row[2], def = row[3] } end
+  return Pokemon.stats(sp)
+end
+
 -- pokefirered/src/battle_script_commands.c:8571
 function Hit.beatUp(M)
   local ad, user, target = M.adapter, M.user, M.target
@@ -739,8 +747,8 @@ function Hit.beatUp(M)
     if mon and hp > 0 and (mon.species or 0) ~= 0 and not mon.isEgg and (status == nil or status == 0) then
       any = true
       local sp = tonumber(mon.species) or 0
-      local aBase = Pokemon.stats(sp)
-      local dBase = Pokemon.stats(tonumber(target.species) or 0)
+      local aBase = speciesInfoStats(Pokemon, sp)
+      local dBase = speciesInfoStats(Pokemon, tonumber(target.species) or 0)
       local atk = aBase and aBase.atk or 50
       local def = dBase and dBase.def or 50
       local lvl = tonumber(mon.level) or 1

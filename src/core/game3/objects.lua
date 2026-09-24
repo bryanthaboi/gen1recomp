@@ -558,6 +558,7 @@ function Objects.forDraw()
         facing = VIRT_DIR_FACE[tonumber(vo.direction)] or "down",
         sprite = GfxIds.spriteFor(gid),
         graphicsId = gid,
+        raiseY = tonumber(vo.y2) or 0,
         visible = true,
         hidden = false,
       }
@@ -597,6 +598,12 @@ function Objects.blocks(tx, ty, exceptLocalId)
           return true
         end
       end
+    end
+  end
+  -- pokefirered/src/union_room_player_avatar.c:475
+  if VirtualObjects.count() > 0 then
+    for _, vo in ipairs(VirtualObjects.list()) do
+      if vo.solid == true and tonumber(vo.x) == tx and tonumber(vo.y) == ty then return true end
     end
   end
   return false

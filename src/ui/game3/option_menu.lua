@@ -62,7 +62,7 @@ function OptionMenu.show(opts)
   OptionMenu._pages = {}
   pushPage(RomText.plain("gText_MenuOption"), buildTop()) -- src/option_menu.c:537
   OptionMenu.cursor = 1
-  Stack.push("option", OptionMenu, { hideBelow = true })
+  Stack.push("option", OptionMenu, { hideBelow = true, fullscreen = true })
 end
 
 function OptionMenu.close()

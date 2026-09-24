@@ -152,6 +152,7 @@ function PartyChrome.install(cache)
   PartyChrome._slotMainSel = nil
   PartyChrome._slotWideSel = nil
   PartyChrome._slotEmpty = nil
+  PartyChrome._slotMulti = nil
   PartyChrome._cancelBtn = nil
   PartyChrome._cancelBtnSel = nil
   PartyChrome._confirmBtn = nil
@@ -233,7 +234,30 @@ local function ensureBg()
   return PartyChrome._bg
 end
 
-local function ensureSlot(kind, selected)
+local function ensureMultiSlot(kind, selected)
+  local key = (kind == "main" and "main" or "wide") .. (selected and "_selected" or "")
+  PartyChrome._slotMulti = PartyChrome._slotMulti or {}
+  if PartyChrome._slotMulti[key] then return PartyChrome._slotMulti[key] end
+  local m = man()
+  local file, w, h
+  if kind == "main" then
+    file = selected and "slot_main_multi_selected.rgba" or "slot_main_multi.rgba"
+    w, h = m.slotMainW or 80, m.slotMainH or 56
+  else
+    file = selected and "slot_wide_multi_selected.rgba" or "slot_wide_multi.rgba"
+    w, h = m.slotWideW or 144, m.slotWideH or 24
+  end
+  local img = rgba_to_image(read_bytes(party_root() .. "/" .. file), w, h)
+  if not img then return nil end
+  local entry = { image = img, w = w, h = h }
+  PartyChrome._slotMulti[key] = entry
+  return entry
+end
+
+local function ensureSlot(kind, selected, multi)
+  if multi and kind ~= "empty" then
+    return ensureMultiSlot(kind, selected)
+  end
   if selected then
     if kind == "main" and PartyChrome._slotMainSel then return PartyChrome._slotMainSel end
     if kind == "wide" and PartyChrome._slotWideSel then return PartyChrome._slotWideSel end
@@ -365,8 +389,8 @@ local function blit_no_hp(slot, kind, px, py)
 end
 
 --- Draw pret slot panel at window tile coords. kind: main|wide|empty
-function PartyChrome.drawSlot(kind, tileLeft, tileTop, selected, hideHp)
-  local slot = ensureSlot(kind == "main" and "main" or (kind == "empty" and "empty" or "wide"), selected)
+function PartyChrome.drawSlot(kind, tileLeft, tileTop, selected, hideHp, multi)
+  local slot = ensureSlot(kind == "main" and "main" or (kind == "empty" and "empty" or "wide"), selected, multi)
   local T = Display.TILE or 8
   local px, py = tileLeft * T, tileTop * T
   love.graphics.setColor(1, 1, 1, 1)

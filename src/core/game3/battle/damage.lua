@@ -110,11 +110,7 @@ local function roll_from(rng, lo, hi)
       print("[game3/damage] rng call failed: " .. tostring(v))
     end
   end
-  local okR, Rng = pcall(require, "src.core.game3.rng")
-  if okR and Rng and Rng.compat then
-    return Rng.compat(lo, hi)
-  end
-  return math.random(lo, hi)
+  return require("src.core.game3.battle.link_guard").fallback("damage.roll", lo, hi)
 end
 
 local function ability_of(battler, adapter)
@@ -363,7 +359,7 @@ function Damage.calc(attacker, defender, moveId, opts)
   local dmgMultiplier = tonumber(opts.dmgMultiplier) or 1
   local magnitudeVal = nil
   local weatherKind = opts.weatherKind or Rules.weather.kind(opts.weather)
-  local rng = opts.rng or math.random
+  local rng = opts.rng or require("src.core.game3.battle.link_guard").source("damage.calc", math.random)
   local level = tonumber(aMon.level or attacker.level) or 5
 
   if power <= 0 and not opts.power then

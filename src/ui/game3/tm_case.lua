@@ -92,7 +92,7 @@ function TmCase.show(session, bag, opts)
   TmCase.actionCursor = 1
   TmCase.messageText = nil
   clamp_cursor()
-  Stack.push("tm_case", TmCase, { hideBelow = true })
+  Stack.push("tm_case", TmCase, { hideBelow = true, fullscreen = true })
 end
 
 function TmCase.close()

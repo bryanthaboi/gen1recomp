@@ -299,7 +299,7 @@ function SlotMachineUi.show(opts)
     SlotMachineUi.MSG_WIDTH, SlotMachineUi.MSG_HEIGHT)
   SlotMachineUi._yesNoTpl = Window.template(SlotMachineUi.YESNO_LEFT, SlotMachineUi.YESNO_TOP, 6, 4)
   SlotMachineUi._amounts = { credit = -1, payout = -1, bet = -1 }
-  Stack.push("slot_machine", SlotMachineUi, { hideBelow = true })
+  Stack.push("slot_machine", SlotMachineUi, { hideBelow = true, fullscreen = true })
   return SlotMachineUi.state
 end
 

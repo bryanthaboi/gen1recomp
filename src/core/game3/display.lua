@@ -284,8 +284,15 @@ local function presentPlanes(game)
   local Bg = require("src.core.game3.bg")
 
   local battleActive = Battle.isActive()
+  local Stack = package.loaded["src.ui.game3.stack"]
+  local MG = package.loaded["src.core.game3.minigames.common"]
+  local mgRun = type(MG) == "table" and MG._run or nil
+  local minigameActive = not battleActive and type(mgRun) == "table" and mgRun.stage ~= "enter"
+    and Stack ~= nil and Stack.has ~= nil and Stack.has("minigame")
+  local uiOnly = minigameActive or (not battleActive and Stack ~= nil
+    and Stack.fullscreen ~= nil and Stack.fullscreen())
   local Renderer = prepareRenderer(game, battleActive and "battle" or "field")
-  Renderer:beginFrame(not battleActive)
+  Renderer:beginFrame(not battleActive and not uiOnly)
 
   if battleActive then
     love.graphics.push("all")
@@ -305,6 +312,16 @@ local function presentPlanes(game)
     else
       Oam.flush()
     end
+    love.graphics.pop()
+    Renderer:endFrame(nil, nil)
+    Display.mirrorFlatFrame(Renderer)
+    return
+  end
+
+  if uiOnly then
+    love.graphics.push("all")
+    love.graphics.origin()
+    drawUiPlane()
     love.graphics.pop()
     Renderer:endFrame(nil, nil)
     Display.mirrorFlatFrame(Renderer)

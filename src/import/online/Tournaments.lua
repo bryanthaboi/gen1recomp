@@ -99,25 +99,26 @@ local function lobbyView(imp, x, y, w, m)
       end })
   cy = cy + btnH + gap
 
-  cy = cy + Ui.label(Strings("Join by code"), x, cy) + tiny
+  cy = cy + Ui.label(Strings("Join private tournament"), x, cy) + tiny
   local codeW = math.floor(w * 0.5)
-  Ui.field(imp, x, cy, codeW, btnH, "online-code", st.joinCode,
-    Strings("Six characters"), imp._onlineFocus == "online-code",
-    function(text) st.joinCode = OnlinePanel.sanitizeCode(text) end)
+  local field = OnlinePanel.TOUR_CODE_FIELD
+  local code = st.tourCode or ""
+  Ui.field(imp, x, cy, codeW, btnH, field, code,
+    Strings("Six characters"), imp._onlineFocus == field,
+    function(text) st.tourCode = OnlinePanel.sanitizeCode(text) end)
   local restW = math.floor((w - codeW - 2 * gap) / 2)
+  local full = #code == OnlinePanel.CODE_LEN
   LV().btn(imp, x + codeW + gap, cy, restW, btnH, "online-tour-join",
     Strings("Join"),
-    { kind = "accent", font = "small",
-      enabled = canPlay and #st.joinCode == OnlinePanel.CODE_LEN,
+    { kind = "accent", font = "small", enabled = canPlay and full,
       action = function()
-        OnlinePanel.startJoinTournament(imp, st.joinCode)
+        OnlinePanel.startJoinTournament(imp, { code = st.tourCode })
       end })
   LV().btn(imp, x + codeW + restW + 2 * gap, cy, restW, btnH,
     "online-tour-watch", Strings("Watch"),
-    { kind = "ghost", font = "small",
-      enabled = online and #st.joinCode == OnlinePanel.CODE_LEN,
+    { kind = "ghost", font = "small", enabled = online and full,
       action = function()
-        OnlinePanel.joinTournamentByCode(imp, st.joinCode, "spectator")
+        OnlinePanel.joinTournament(imp, { code = st.tourCode }, "spectator")
       end })
   cy = cy + btnH + gap
 
@@ -139,20 +140,21 @@ local function lobbyView(imp, x, y, w, m)
       cy + math.floor(5 * m.s), ink or PAL.heading)
     Kit.text("micro", Kit.ellipsize("micro", row.sub, textW), tx,
       cy + rowH - Kit.textHeight("micro") - math.floor(5 * m.s), PAL.muted)
-    local code, rule = row.code, row.ruleTable
+    local tourId, rule = row.tour, row.ruleTable
     LV().btn(imp, x + w - 2 * actW - gap - math.floor(6 * m.s),
       cy + (rowH - btnH) / 2, actW, btnH, "online-tour-join-" .. row.id,
       Strings("Join"),
       { kind = "accent", font = "small",
         enabled = canPlay and row.stage == "waiting" and row.reason == nil,
         action = function()
-          OnlinePanel.startJoinTournament(imp, code, rule)
+          OnlinePanel.startJoinTournament(imp, { tour = tourId, name = row.name },
+            rule)
         end })
     LV().btn(imp, x + w - actW - math.floor(6 * m.s), cy + (rowH - btnH) / 2,
       actW, btnH, "online-tour-watch-" .. row.id, Strings("Watch"),
       { kind = "ghost", font = "small", enabled = online,
         action = function()
-          OnlinePanel.joinTournamentByCode(imp, code, "spectator")
+          OnlinePanel.joinTournament(imp, { tour = tourId }, "spectator")
         end })
     cy = cy + rowH + tiny
   end
@@ -181,6 +183,12 @@ function Tournaments.draw(imp, x, y, w, availH, m)
   local cy = y + Ui.header(imp, x, y, w, m, Strings("Tournament"),
     Strings(Tournaments.STAGE_TEXT[stage] or stage), PAL.lineStrong)
 
+  local format = OnlinePanel.formatText(tour.profile)
+  if format then
+    cy = cy + Kit.textWrapped("small", Strings("%s  -  %s", format,
+      OnlinePanel.ruleText(tour.rule or (tour.profile and tour.profile.rule))),
+      x, cy, w, PAL.muted, 1) + tiny
+  end
   local banner = OnlinePanel.bannerText(tour, me) or OnlinePanel.tourNotice
   if banner then
     cy = cy + Kit.textWrapped("small", banner, x, cy, w, PAL.green, 2) + tiny
@@ -193,8 +201,14 @@ function Tournaments.draw(imp, x, y, w, availH, m)
 
   cy = cy + Tournaments.bracket(imp, x, cy, w, m, tour) + gap
 
-  cy = cy + Room.codeCard(imp, x, cy, w, m, tour.code, "online-tour",
-    "Tournament code copied.")
+  if controls.isCreator and type(tour.code) == "string" and tour.code ~= "" then
+    cy = cy + Ui.label(Strings("Private tournament code"), x, cy) + tiny
+    cy = cy + Room.codeCard(imp, x, cy, w, m, tour.code, "online-tour",
+      "Tournament code copied.")
+    cy = cy + Kit.textWrapped("small",
+      Strings("Give this code to the trainers you want in."), x, cy, w,
+      PAL.muted, 2) + tiny
+  end
   cy = cy + Ui.label(Strings("Players (%d) - spectators (%d)",
     #(tour.players or {}), #(tour.spectators or {})), x, cy) + tiny
 

@@ -121,6 +121,7 @@ function LauncherView.detach(imp)
     pcall(imp._restoreNxPointerBridge, imp)
   end
   Transition.reset()
+  Kit.occlude(nil)
   if not imp or not imp._flex then return end
   imp._flex = nil
   if love.keyboard and love.keyboard.setKeyRepeat then
@@ -392,6 +393,10 @@ function LauncherView.keypressed(imp, key)
     end
     if imp._tradeModal then
       require("src.import.OnlinePanel").tradeModalAction(imp, "a")
+      return true
+    end
+    if imp._pinModal then
+      require("src.import.OnlinePanel").pinAction(imp, "a")
       return true
     end
   end
@@ -6390,6 +6395,7 @@ local MODAL_KEYS = {
   "_cartPopup", "_modScopePopup", "_filterPopup", "_indexManage",
   "_syncModal", "_pcPicker", "_tradeModal", "_skinActions", "_modActions",
   "_findEntry", "_gameManage", "_saveExport", "_savePicker", "_modGames",
+  "_pinModal", "_invitePicker",
 }
 
 LauncherView.MODAL_KEYS = MODAL_KEYS
@@ -6407,7 +6413,8 @@ local function modalUp(imp)
     or imp._modHeaderActionsPopup or imp._profilesPopup or imp._singleProfileActions or imp._profileSavePrompt
     or imp._profileRenamePrompt or imp._findEntry or imp._gameManage
     or imp._saveExport or imp._savePicker or imp._modGames
-    or imp._tradeModal or imp._bugModal or imp._pcPicker) ~= nil
+    or imp._tradeModal or imp._bugModal or imp._pcPicker
+    or imp._pinModal or imp._invitePicker) ~= nil
 end
 
 local function modalKey(imp)
@@ -6586,6 +6593,12 @@ local function buildModals(imp, m)
   if imp._tradeModal then
     return require("src.import.online.TradeScreen").drawModal(imp, m) == true
   end
+  if imp._pinModal then
+    return require("src.import.online.PinModal").draw(imp, m) == true
+  end
+  if imp._invitePicker then
+    return require("src.import.online.InvitePicker").draw(imp, m) == true
+  end
   if imp._skinActions then buildSkinActionsModal(imp, m) return true end
   if imp._modActions then buildModActionsModal(imp, m) return true end
   if imp._findEntry then buildFindEntryModal(imp, m) return true end
@@ -6741,6 +6754,8 @@ function LauncherView.draw(imp)
   imp._clickPt = nil
   imp._wheelY = 0
   imp._noDragN = 0
+  local Toast = require("src.import.online.Toast")
+  Toast.occlude(imp)
 
   Theme.field()
 
@@ -6848,9 +6863,13 @@ function LauncherView.draw(imp)
   endModalDraw(m)
   if held then imp[held.key] = nil end
 
+  local spec = loaderSpec(imp)
+  Toast.draw(imp, m, contentY + math.floor(8 * m.s), spec ~= nil
+    or (Kit.VirtualKeyboard and Kit.VirtualKeyboard.active)
+    or (Kit.FileBrowser and Kit.FileBrowser.active) or false)
+
   -- The loader sits above everything, including modals: it is the one thing
   -- that must never be clicked around.
-  local spec = loaderSpec(imp)
   if spec then
     if Loader.overlay(m, spec) and spec.onCancel then
       queueAction(imp, "loader-cancel", spec.onCancel)

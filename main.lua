@@ -406,6 +406,7 @@ local function makeLauncher(launcherOpts)
     launcher = true,
     forceImport = forceImport,
     initialTab = launcherOpts and launcherOpts.initialTab or nil,
+    invite = launcherOpts and launcherOpts.invite or nil,
     onEditSave = openEditor,
     onEditTouchControls = openTouchControlsEditor,
     -- Skin Studio owns a touch-first layout as well as the desktop workspace.
@@ -459,7 +460,8 @@ local function returnToLauncher(opts)
     love.window.setTitle(Version.title("Gen 1 Recompilation Project"))
   end
 
-  Importer = makeLauncher({ initialTab = opts and opts.tab or nil })
+  Importer = makeLauncher({ initialTab = opts and opts.tab or nil,
+    invite = opts and opts.invite or nil })
   -- Finger that confirmed EXIT GAME is often still down over Import Save.
   if Importer.ignoreReturningPointer then
     Importer:ignoreReturningPointer()
@@ -860,6 +862,8 @@ function love.update(dt)
     startLaunchRequest(request)
   end
   if Prelaunch then return Prelaunch:update(dt) end
+  local connect = package.loaded["src.online.Connect"]
+  if connect then pcall(connect.update, dt) end
   local client = onlineClientModule()
   if client then pcall(client.update, dt) end
   if pendingLauncherReturn then

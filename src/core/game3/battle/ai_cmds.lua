@@ -126,8 +126,9 @@ local function rng(vm, lo, hi)
       return v
     end
   end
-  if hi and lo then return math.random(lo, hi) end
-  return math.random(0, 255)
+  local Guard = require("src.core.game3.battle.link_guard")
+  if hi and lo then return Guard.fallback("ai_cmds.rng", lo, hi) end
+  return Guard.fallback("ai_cmds.rng", 0, 255)
 end
 
 local function random_u16(vm)

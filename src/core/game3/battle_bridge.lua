@@ -177,7 +177,7 @@ local function battle_payload(Battle, opts, foe, isDouble)
   local sp = enemy and tonumber(enemy.species or enemy.speciesId)
   local tid = opts.trainerId or (foe and foe.trainerId)
   return {
-    battle = st, kind = opts.wild and "wild" or "trainer",
+    battle = st, kind = (opts.link and "link") or (opts.wild and "wild") or "trainer",
     trainerId = (not opts.wild) and tid or nil,
     trainerClass = (not opts.wild) and foe and foe.trainerClass or nil,
     species = G3.speciesName(sp), speciesId = sp,
@@ -276,15 +276,21 @@ end
 function BattleBridge.start(mod, game, foe, opts)
   opts = opts or {}
   local Runtime = require("src.core.game3.runtime")
-  local session = Runtime.getSession()
+  local session = (opts.link and type(opts.session) == "table" and opts.session) or Runtime.getSession()
   if not session then return nil, "no session" end
 
   BattleBridge.installWhiteoutIntercept(mod, game)
 
-  local battleParty, remap = PartyView.fromSession(session.party, session.move_overlay)
+  local linkParty = opts.link and type(opts.linkParty) == "table" and opts.linkParty or nil
+  local battleParty, remap
+  if linkParty then
+    battleParty, remap = PartyView.fromSession(linkParty, nil)
+  else
+    battleParty, remap = PartyView.fromSession(session.party, session.move_overlay)
+  end
   if #battleParty == 0 then return nil, "empty party" end
   local isDouble = (not opts.wild) and (opts.double or (foe and foe.doubleBattle)) and true or false
-  if isDouble and Party.monsStateToDoubles(session.party) ~= Party.PLAYER_HAS_TWO_USABLE_MONS then
+  if isDouble and Party.monsStateToDoubles(linkParty or session.party) ~= Party.PLAYER_HAS_TWO_USABLE_MONS then
     return nil, "need two mons"
   end
 
@@ -306,7 +312,7 @@ function BattleBridge.start(mod, game, foe, opts)
     if okN and Natives and Natives.outcome_to_code then
       session.battleOutcome = Natives.outcome_to_code(result or "win")
     end
-    writeback(session, battleParty, remap, result, save, opts)
+    if not linkParty then writeback(session, battleParty, remap, result, save, opts) end
     if opts.roamer or (foe and foe.roamer) then
       local okR, Roamer = pcall(require, "src.core.game3.roamer")
       if okR and Roamer and Roamer.onBattleEnd then
@@ -378,9 +384,13 @@ function BattleBridge.start(mod, game, foe, opts)
   local startOpts = {
     -- pokefirered/src/cable_club.c:664 BATTLE_TYPE_LINK
     link = opts.link or (foe and foe.link) or nil,
+    session = session,
+    spectate = opts.spectate,
+    autoFight = opts.autoFight,
     linkFlags = opts.linkFlags,
     -- pokefirered/src/battle_controllers.c:148 InitLinkBtlControllers
     linkMaster = opts.linkMaster,
+    multi = opts.link and opts.multi or nil,
     unionRoom = opts.unionRoom,
     peerName = opts.peerName or (foe and foe.name) or nil,
     wild = opts.wild,

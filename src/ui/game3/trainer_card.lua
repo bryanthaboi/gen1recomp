@@ -550,7 +550,7 @@ function TrainerCard.show(opts)
   texts_cache.c, texts_cache.colon, texts_cache.front, texts_cache.back = false, false, nil, nil
   TrainerCard._onClose = opts.onClose
   ensureAssets()
-  Stack.push("trainer", TrainerCard, { hideBelow = true })
+  Stack.push("trainer", TrainerCard, { hideBelow = true, fullscreen = true })
   play_se("SE_CARD_OPEN")
 end
 

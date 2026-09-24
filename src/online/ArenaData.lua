@@ -243,11 +243,117 @@ local function compute(version, kind, cartId, cart, cartHash)
   return result
 end
 
-function ArenaData.profile(version, kind, cartId, rule)
+local G3_DEFAULT_RULESET = "g3_single"
+
+local function g3Rulesets()
+  return require("src.online.Protocol2").G3_RULESETS
+end
+
+local function isG3Ruleset(id)
+  for _, known in ipairs(g3Rulesets()) do
+    if known == id then return true end
+  end
+  return false
+end
+
+local function compute3(version, kind)
+  local prevVersion, prevPrefix = GameVersion.get(), CacheFs.prefix
+  local ok, result = pcall(function()
+    GameVersion.set(version)
+    CacheFs.prefix = GameVersion.cachePrefix(version)
+    CacheFs.mountVersion(version)
+    if not CacheFs.readActive("data/generated/gba/pokemon/stats.lua") then
+      return { error = ("%s is not imported"):format(version) }
+    end
+    local data = { generation = 3, gen3Inputs = Fingerprint.gen3Inputs(function(rel)
+      return CacheFs.readActive(rel)
+    end) }
+    return {
+      engine = 3,
+      version = version,
+      engineVersion = Version.engine,
+      apiVersion = Handshake.apiVersion or Version.modApi,
+      fingerprint = Fingerprint.compute(data, {}, 3),
+      rulesetId = G3_DEFAULT_RULESET,
+      kind = kind,
+    }
+  end)
+  pcall(CacheFs.unmountVersion, version)
+  GameVersion.set(prevVersion)
+  CacheFs.prefix = prevPrefix
+  if not ok then return nil, tostring(result) end
+  if type(result) ~= "table" then return nil, "could not read that game" end
+  if result.error then return nil, result.error end
+  return result
+end
+
+local function profile3(version, kind, rule, rulesetId)
+  if kind ~= "vanilla" then return nil, "that game has no online carts" end
+  rulesetId = rulesetId or G3_DEFAULT_RULESET
+  if not isG3Ruleset(rulesetId) then return nil, "unknown ruleset" end
+  local key = ArenaData.cacheKey(version, kind,
+    "gba" .. tostring(require("src.import.gba.versions").CACHE_VERSION))
+  local entry = cachedProfiles()[key]
+  if not (type(entry) == "table" and entry.fingerprint) then
+    if busy() then return nil, "close the game first" end
+    local reason
+    entry, reason = compute3(version, kind)
+    if not entry then return nil, reason end
+    storeProfile(key, entry)
+  end
+  local out = copyProfile(entry, rule)
+  out.rulesetId = rulesetId
+  return out
+end
+
+function ArenaData.withRuleset(profile, rulesetId)
+  if type(profile) ~= "table" then return nil end
+  local out = copyProfile(profile, profile.rule)
+  out.rulesetId = rulesetId
+  return out
+end
+
+function ArenaData.rulesetFor(activity)
+  return require("src.online.Protocol2").ACTIVITY_RULESET[activity]
+end
+
+local function liveVersion(game)
+  local version = game.version
+  if type(version) == "string" and GameVersion.generation(version) == 3
+      and GameVersion.VERSIONS[version] then
+    return version
+  end
+  return GameVersion.get()
+end
+
+function ArenaData.liveProfile3(game, rulesetId)
+  if type(game) ~= "table" then return nil, "no game" end
+  if Handshake.linkModified(game) then return nil, "mods" end
+  local version = liveVersion(game)
+  if not GameVersion.VERSIONS[version] or GameVersion.generation(version) ~= 3 then
+    return nil, "unknown game"
+  end
+  rulesetId = rulesetId or G3_DEFAULT_RULESET
+  if not isG3Ruleset(rulesetId) then return nil, "unknown ruleset" end
+  local ok, fingerprint = pcall(Fingerprint.compute, game.data,
+    Handshake.mods(game), 3)
+  if not ok then return nil, tostring(fingerprint) end
+  return copyProfile({
+    engine = 3,
+    version = version,
+    engineVersion = Version.engine,
+    apiVersion = Handshake.apiVersion or Version.modApi,
+    fingerprint = fingerprint,
+    rulesetId = rulesetId,
+    kind = "vanilla",
+  }, nil)
+end
+
+function ArenaData.profile(version, kind, cartId, rule, rulesetId)
   kind = kind or "vanilla"
   if not GameVersion.VERSIONS[version] then return nil, "unknown game" end
   if GameVersion.generation(version) == 3 then
-    return nil, require("src.online.TeamPick").GEN3_OFFLINE
+    return profile3(version, kind, rule, rulesetId)
   end
   if kind ~= "vanilla" and kind ~= "cart" then return nil, "unknown arena kind" end
 
@@ -275,6 +381,7 @@ function ArenaData.profile(version, kind, cartId, rule)
 end
 
 function ArenaData.rulesetIds(version)
+  if GameVersion.generation(version) == 3 then return g3Rulesets() end
   if rulesetMemo[version] then return rulesetMemo[version] end
   if GameVersion.generation(version) == 2 then
     rulesetMemo[version] = { "gen2" }

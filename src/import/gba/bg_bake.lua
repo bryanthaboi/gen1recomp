@@ -105,13 +105,12 @@ function BgBake.bakeBgRgba(gfx, palBanks, map, W, H)
   return table.concat(chunks)
 end
 
-function BgBake.bakeRegionRgba(gfx, palBanks, map, W, H, opts)
+function BgBake.regionIndices(gfx, map, W, H, opts)
   opts = opts or {}
   local mapW = opts.mapW or 32
   local x0 = opts.x0 or 0
   local y0 = opts.y0 or 0
   local bankOffset = opts.bankOffset or 0
-  local alpha0 = opts.alpha0 and true or false
   local tileCount = math.floor(BgBake.byteLen(gfx) / 32)
   local mapLen = BgBake.byteLen(map)
 
@@ -154,7 +153,22 @@ function BgBake.bakeRegionRgba(gfx, palBanks, map, W, H, opts)
       end
     end
   end
+  return indices, pals
+end
 
+function BgBake.bakeRegionIndices(gfx, map, W, H, opts)
+  local indices, pals = BgBake.regionIndices(gfx, map, W, H, opts)
+  local chunks = {}
+  for i = 1, W * H do
+    chunks[i] = string.char(pals[i] < 0 and 0 or indices[i])
+  end
+  return table.concat(chunks)
+end
+
+function BgBake.bakeRegionRgba(gfx, palBanks, map, W, H, opts)
+  opts = opts or {}
+  local alpha0 = opts.alpha0 and true or false
+  local indices, pals = BgBake.regionIndices(gfx, map, W, H, opts)
   local chunks = {}
   for i = 1, W * H do
     local idx = indices[i]

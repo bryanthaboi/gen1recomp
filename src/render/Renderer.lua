@@ -53,6 +53,16 @@ end
 -- endFrame composites the padded canvas back with a matching offset.
 Renderer.UPRIGHT_MARGIN = 160
 
+-- Whether endFrame composites a world override MIRRORED.  A pipeline owns its
+-- own clip convention and the ones in the wild pre-flip Y for LOVE 11, which
+-- LOVE 12 turns into one flip too many.  Named because it is not only the
+-- blit's business: see ctx.drawFx in src/world/OverworldController.lua.
+function Renderer.mirrorsWorldOverride()
+  local sys = love.system
+  if not (sys and sys.getOS and sys.getOS() == "iOS") then return false end
+  return (love.getVersion()) >= 12
+end
+
 -- LOVE units + framebuffer pixels + per-axis unit→pixel ratios.
 -- Android's DisplayMetrics.density is often non-integer (1.5, 2.75, …).
 -- Integer scaling in units then maps each GB pixel to a fractional number of
@@ -1056,8 +1066,7 @@ function Renderer:endFrame(zones, worldZones)
     -- runs, so dialogs, menus and the HUD sit on top as usual.
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setScissor(vux, vuy, vuw, vuh)
-    local loveMajor = love.getVersion()
-    if love.system and love.system.getOS and love.system.getOS() == "iOS" and loveMajor >= 12 then
+    if Renderer.mirrorsWorldOverride() then
       love.graphics.draw(self.worldOverride, vux, vuy + vuh, 0, 1 / dpiX, -1 / dpiY)
     else
       love.graphics.draw(self.worldOverride, vux, vuy, 0, 1 / dpiX, 1 / dpiY)

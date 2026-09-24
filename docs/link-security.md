@@ -122,7 +122,7 @@ build's) keeps a bounded, scalar-only copy of its payload instead of
 being dropped.
 
 The v2 types go through the same door: `SCHEMAS.lobby_*`, `room_*` and
-`tour_*` live beside the v1 ones in `Wire.lua`, and `room_msg` sanitizes its
+`tour_*` live beside the link ones in `Wire.lua`, and `room_msg` sanitizes its
 inner lockstep message as well as its envelope, so `Client.roomSession()`
 hands `LinkBattle` the same shape a LAN `Session` does.
 
@@ -169,20 +169,22 @@ Assume something still gets through:
 - Line buffers are capped, lines per second are capped, connections per
   IP and in total are capped, and an unbound connection that never hosts,
   joins or binds as a lobby is swept after 30s.
-- `SERVER_ONLY` (`relay.js:76`) is the set of message types the server is
-  the only legitimate author of. It covers the v1 names (`peer_gone`,
-  `bracket_update`, `match_start`, `tournament_over`, `spectate`, ...) and
-  every v2 one (`lobby_welcome`, `lobby_list`, `lobby_delta`, `room_state`,
-  `room_replay`, `room_deadline`, `room_result`, `room_closed`, `tour_state`,
+- `SERVER_ONLY` (`relay.js:168`) is the set of message types the server is
+  the only legitimate author of. It covers every v2 one (`lobby_welcome`,
+  `lobby_list`, `lobby_delta`, `room_state`, `room_replay`,
+  `room_deadline`, `room_result`, `room_closed`, `tour_state`,
   `tour_match`, `tour_match_spectate`, `tour_bye`, `tour_deadline`,
-  `tour_over`, `tour_closed`). A peer that sends one has it dropped rather
+  `tour_over`, `tour_closed`, `trade_commit`, `trade_abort`, the invite,
+  plaza and group ones, ...). A peer that sends one has it dropped rather
   than forwarded, so a bracket opponent cannot forge a result or fake "your
   opponent left".
-- `room_msg` only carries an inner `msg.type` from a fixed set (`hello`,
-  `party`, `action`, `hash`, `replace`, `bye`, `forfeit`), only from a
-  seated player, and only while the room is `battling`. Its `seq` must
-  rise, so a resumed client's replayed tail is idempotent.
-- Names, notes, room codes and profile strings are reduced to a printable
+- `room_msg` only carries an inner `msg.type` from the engine's allowlist
+  (engine 1/2: `hello`, `party`, `action`, `hash`, `replace`, `bye`,
+  `forfeit`, `records`, `pick`, `confirm`, `trade_confirm`; engine 3: the
+  `game3_*` set, each with a byte cap), only from a seated player, and only
+  while the room is `battling`. Its `seq` must rise, so a resumed client's
+  replayed tail is idempotent.
+- Names, notes, room ids and profile strings are reduced to a printable
   subset and capped on the way in (10 characters for a trainer name, 16 for
   a lobby display name, 40 for an advertisement note), because they are
   rendered by the dashboard and broadcast to every participant.

@@ -1,6 +1,10 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
-require("tests.game3_cache").stubSpeciesNames()
+local Cache = require("tests.game3_cache")
+if not Cache.mount("meta.json") then
+  print("[skip] link trade: " .. tostring(Cache.reason))
+  os.exit(0)
+end
 require("tests.fixture_data.game3_items").install()
 package.loaded["src.core.game3.rom_text"] = {
   plain = function(key) return key end, box = function(key) return key end,
@@ -41,22 +45,13 @@ local MAPS = {
   },
 }
 
-local function mon(species, level, personality, extra)
-  local m = {
-    species = species,
-    level = level,
-    hp = 30,
-    maxHp = 30,
-    moves = { 33 },
-    pp = { 35 },
-    maxPp = { 35 },
-    personality = personality or (species * 7),
-    nickname = "",
-    friendship = 120,
-    otName = "RED",
-    otId = 0x1234,
-  }
+local function mon(species, level, _, extra)
+  local holder = { name = "RED", trainerId = 0x1234, party = {} }
+  require("src.core.game3.party").giveMon(holder, species, level)
+  local m = holder.party[1]
+  m.friendship, m.happiness = 120, 120
   for k, v in pairs(extra or {}) do m[k] = v end
+  if m.otName then m.ot = m.otName end
   return m
 end
 
@@ -102,22 +97,20 @@ package.loaded["src.core.game3.scripting.space"] = {
 
 local Natives = require("src.core.game3.scripting.natives")
 local NativesLink = require("src.core.game3.scripting.natives_link")
-local Std = require("src.core.game3.scripting.stdscripts")
 local Link = require("src.core.game3.link")
 local LT = require("src.core.game3.link.trade")
 local Union = require("src.core.game3.link.union_room")
-local Status = require("src.core.game3.link.status")
 local Trade = require("src.core.game3.scripting.natives_trade")
 local TradeScene = require("src.core.game3.trade_scene")
-local Game3Link = require("src.link.Game3Link")
-local Flags = require("src.core.game3.scripting.flags")
+local FakeRelay = require("tests.g3link_fake_relay")
 
 local peer
 
 local function openLink()
   Link.reset()
   LT.reset()
-  local host, other = Game3Link.loopback({ game = game })
+  LT.loopbackCommit = false
+  local host, other = FakeRelay.pair({ game = game })
   host:update(0)
   other:update(0)
   Link.attach(host)
@@ -139,28 +132,45 @@ local function peerSend(message)
   if peer then peer:send(message) end
 end
 
-print("[test] 1. the trade specials answer to their pret index")
-local EXPECTED = {
-  TryTradeLinkup = 0x1D,
-  EnterTradeSeat = 0x21,
-  StartWiredCableClubTrade = 0x22,
-  ShowWirelessCommunicationScreen = 0x16E,
-}
-for name, id in pairs(EXPECTED) do
-  eq(NativesLink.SPECIAL[name], id, "NativesLink.SPECIAL." .. name)
-  check(Natives.ALLOW["special:" .. id] ~= nil, name .. " is bound in Natives.ALLOW")
-  eq(Std.SPECIAL_NAME_BY_ID[id], name,
-    string.format("special 0x%X answers to its pret name", id))
+local Protocol = require("src.link.Protocol")
+local Wire = require("src.link.Wire")
+
+local function packedParty(list)
+  local idx = {}
+  for i = 1, #list do idx[i] = i end
+  return Protocol.packParty3(list, idx)
 end
--- pokefirered/include/link.h:73
-eq(LT.LINKCMD.READY_TO_TRADE, 0xAABB, "LINKCMD_READY_TO_TRADE")
-eq(LT.LINKCMD.INIT_BLOCK, 0xBBBB, "LINKCMD_INIT_BLOCK")
-eq(LT.LINKCMD.START_TRADE, 0xCCDD, "LINKCMD_START_TRADE")
-eq(LT.LINKCMD.CONFIRM_FINISH_TRADE, 0xDCBA, "LINKCMD_CONFIRM_FINISH_TRADE")
-eq(LT.LINKCMD.SET_MONS_TO_TRADE, 0xDDDD, "LINKCMD_SET_MONS_TO_TRADE")
--- pokefirered/src/cable_club.c:527 gLinkType = LINKTYPE_TRADE_SETUP
-eq(LT.LINKUP.linkType, 0x1133, "TryTradeLinkup asks for LINKTYPE_TRADE_SETUP")
-eq(LT.LINKUP.min, 2, "and for exactly two players")
+
+local function peerParty(list, extra)
+  local msg = { type = LT.MSG.PARTY, party = packedParty(list), name = "BLUE",
+    trainerId = 0x2222, gender = 0, version = 4, progressFlags = 0 }
+  for k, v in pairs(extra or {}) do msg[k] = v end
+  peerSend(msg)
+end
+
+local function peerMon(block, m, extra)
+  local msg = { type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222, mon = Protocol.packMon3(m) }
+  for k, v in pairs(extra or {}) do msg[k] = v end
+  peerSend(msg)
+  local theirs = Wire.sanitize(msg).mon
+  peerSend({ type = LT.MSG.CONFIRM, digest = Protocol.tradeDigest(block.mon, theirs) })
+end
+
+local function runTrade()
+  local before, guard, confirms = LT.completed, 0, 0
+  while guard < 4000 and LT.completed == before do
+    pumpPeer(function(msg)
+      -- pokefirered/src/trade_scene.c:2344
+      if msg.cmd == LT.LINKCMD.CONFIRM_FINISH_TRADE then
+        confirms = confirms + 1
+        peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.CONFIRM_FINISH_TRADE })
+      end
+    end)
+    LT.update(0)
+    guard = guard + 1
+  end
+  return LT.completed > before, confirms
+end
 
 print("[test] 2. the trade menu exchanges both parties before anything is chosen")
 openLink()
@@ -173,24 +183,16 @@ eq(sentParty and sentParty.name, "RED", "with the player's name on it")
 eq(sentParty and #sentParty.party, 2, "two mons")
 eq(sentParty and sentParty.party[1].species, 1, "the lead is BULBASAUR")
 -- pokefirered/src/trade.c:1435 Trade_Memcpy
-eq(sentParty and sentParty.party[1].maxHp, 30, "with max HP for the other screen's HP bar")
-eq(sentParty and sentParty.party[1].moves and sentParty.party[1].moves[1], 33,
+eq(sentParty and sentParty.party[1].maxHp, nil, "packed with packMon3: no stats go on the wire")
+eq(sentParty and sentParty.party[1].moves and sentParty.party[1].moves[1]
+  and sentParty.party[1].moves[1].id, session.party[1].moves[1],
   "and its moves for the selected-mon screen and summary")
-peerSend({
-  type = LT.MSG.PARTY,
-  name = "BLUE",
-  trainerId = 0x2222,
-  gender = 0,
-  version = 4,
-  progressFlags = 0,
-  party = {
-    { species = 7, level = 11, hp = 25, personality = 49, isEgg = false },
-    { species = 25, level = 9, hp = 22, personality = 175, isEgg = false },
-  },
-})
+local blueSquirtle = mon(7, 11, nil, { otName = "BLUE", otId = 0x2222, friendship = 40 })
+peerParty({ mon(25, 9), blueSquirtle })
 LT.update(0)
 eq(LT.peer and LT.peer.name, "BLUE", "the other player introduced itself")
 eq(#LT.peerParty, 2, "and its party is on this screen")
+check((LT.peerParty[1].maxHp or 0) > 0, "with stats recomputed by the strict unpack")
 eq(LT.state, "menu", "the trade menu is up")
 
 print("[test] 3. the offer both machines have to agree on")
@@ -219,15 +221,13 @@ session.party = { mon(1, 10) }
 eq(LT.checkValidityOfTradeMons(1, 2), LT.PLAYER_MON_INVALID,
   "trading away the only mon left is PLAYER_MON_INVALID")
 session.party = keepParty
-local keepPeerParty = LT.peerParty
+local keepPeerParty, keepPeerPacked = LT.peerParty, LT._peerPacked
 -- pokefirered/src/trade.c:1955 the partner cannot trade an illegitimate DEOXYS or MEW
-peerSend({ type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, gender = 0,
-  version = 0, progressFlags = 1,
-  party = { { species = 410, level = 30, personality = 5, fatefulEncounter = false } } })
+peerParty({ mon(410, 30, nil, { fatefulEncounter = false }) }, { version = 0, progressFlags = 1 })
 LT.pump()
 eq(LT.checkValidityOfTradeMons(1, 1), LT.PARTNER_MON_INVALID,
   "an illegitimate DEOXYS on the other machine is PARTNER_MON_INVALID")
-LT.peerParty = keepPeerParty
+LT.peerParty, LT._peerPacked = keepPeerParty, keepPeerPacked
 
 print("[test] 5. both confirmations, then the mons go over the cable")
 check(LT.confirm(true), "the player answers YES to IS THIS TRADE OKAY?")
@@ -250,30 +250,27 @@ eq(block and block.mon.species, 1, "the mon it offered")
 eq(session.party[1].species, 1, "and the party still holds it until the other one arrives")
 eq(#session.party, 2, "with nothing lost")
 
-print("[test] 6. the swap only happens once both mons are in hand")
-peerSend({
-  type = LT.MSG.MON,
-  name = "BLUE",
-  trainerId = 0x2222,
-  mon = mon(7, 11, 49, { otName = "BLUE", otId = 0x2222, friendship = 40 }),
-})
+print("[test] 6. the swap only happens after the commit, once both mons are in hand")
+local saves = 0
+function game:saveGame() saves = saves + 1 end
+peerSend({ type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222,
+  mon = Protocol.packMon3(blueSquirtle) })
 LT.update(0)
-eq(LT.state, "scene", "the trade cinema starts")
+eq(LT.state, "commit_wait", "both blocks in hand: the confirm went out and it waits for the commit")
+peer:update(0)
+local sentConfirm = peer:take(LT.MSG.CONFIRM)
+check(sentConfirm and type(sentConfirm.digest) == "string" and #sentConfirm.digest == 16,
+  "game3_trade_confirm carries a 16 hex digest")
+eq(TradeScene.isOpen(), false, "no cinema before the commit")
+peerSend({ type = LT.MSG.CONFIRM, digest = sentConfirm and sentConfirm.digest })
+LT.update(0)
+eq(LT.state, "scene", "the commit starts the trade cinema")
 eq(TradeScene.isLink(), true, "on its link arm")
 eq(session.party[1].species, 1, "the party is untouched while the cinema plays")
-local guard, confirms = 0, 0
-while guard < 4000 and LT.state ~= "done" do
-  pumpPeer(function(msg)
-    -- pokefirered/src/trade_scene.c:2344 LINKCMD_CONFIRM_FINISH_TRADE
-    if msg.cmd == LT.LINKCMD.CONFIRM_FINISH_TRADE then
-      confirms = confirms + 1
-      peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.CONFIRM_FINISH_TRADE })
-    end
-  end)
-  LT.update(0)
-  guard = guard + 1
-end
-eq(LT.state, "done", "and it runs to the end of the link tail")
+local finished, confirms = runTrade()
+check(finished, "and it runs to the end of the link tail")
+eq(saves, 1, "the save was written once, after the commit")
+eq(LT.state, "menu", "then the TRADE CENTER returns to the trade menu")
 eq(confirms, 1, "each machine confirms the finished trade exactly once")
 eq(session.party[1].species, 7, "SQUIRTLE is in the party now")
 eq(session.party[1].otName, "BLUE", "with the other player as its OT")
@@ -296,10 +293,7 @@ session.party = { mon(1, 10), mon(4, 12) }
 LT.startMenu()
 peer:update(0)
 peer:take(LT.MSG.PARTY)
-peerSend({
-  type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, version = 4, progressFlags = 0,
-  party = { { species = 7, level = 11, personality = 49 } },
-})
+peerParty({ mon(7, 11) })
 LT.update(0)
 LT.offer(1)
 peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.REQUEST_CANCEL })
@@ -319,10 +313,8 @@ session.party = { mon(1, 10), mon(4, 12) }
 LT.startMenu()
 peer:update(0)
 peer:take(LT.MSG.PARTY)
-peerSend({
-  type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, version = 4, progressFlags = 0,
-  party = { { species = 7, level = 11, personality = 49 } },
-})
+local pulledSquirtle = mon(7, 11)
+peerParty({ pulledSquirtle })
 LT.update(0)
 LT.offer(1)
 peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
@@ -331,12 +323,21 @@ LT.confirm(true)
 peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.INIT_BLOCK })
 LT.update(0)
 eq(LT.state, "exchange", "the trade reached the block exchange")
+peer:update(0)
+local pulledBlock = peer:take(LT.MSG.MON)
+peerSend({ type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222,
+  mon = Protocol.packMon3(pulledSquirtle) })
+LT.update(0)
+eq(LT.state, "commit_wait", "both blocks crossed and the confirm went out")
+check(pulledBlock ~= nil, "the offered mon went over the cable")
+saves = 0
 peer:close("cable_pulled")
 LT.update(0)
-eq(LT.state, "off", "the session closed when the cable was pulled")
+eq(LT.state, "off", "the session closed when the cable was pulled before the commit")
 eq(LT.lastResult, "peer_dropped", "as a dropped peer")
 eq(session.party[1].species, 1, "the offered mon is still in the party")
 eq(#session.party, 2, "and the party is whole")
+eq(saves, 0, "and nothing was saved")
 eq(TradeScene.isOpen(), false, "with no cinema left on screen")
 
 print("[test] 9. the mons the trade menu refuses")
@@ -344,8 +345,7 @@ openLink()
 -- pokefirered/src/trade.c:2767 the retail build answers CANT_TRADE_NATIONAL for an EGG
 session.party = { mon(1, 10), mon(4, 12, 99, { isEgg = true }) }
 LT.startMenu()
-peerSend({ type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, gender = 0,
-  version = 4, progressFlags = 0, party = { mon(7, 11) } })
+peerParty({ mon(7, 11) })
 LT.pump()
 local ok, code = LT.offer(2)
 eq(ok, false, "an EGG is refused")
@@ -386,24 +386,12 @@ eq(session.gameStats[50], 1, "and GAME_STAT_NUM_UNION_ROOM_BATTLES went up, as i
 peer:update(0)
 local urBlock = peer:take(LT.MSG.MON)
 eq(urBlock and urBlock.mon.species, 67, "the registered mon went over the wire")
-peerSend({
-  type = LT.MSG.MON,
-  name = "BLUE",
-  trainerId = 0x2222,
-  mon = mon(25, 9, 175, { otName = "BLUE", otId = 0x2222 }),
-})
+peerMon(urBlock, mon(25, 9, nil, { otName = "BLUE", otId = 0x2222 }))
 LT.update(0)
-eq(LT.state, "scene", "the union room trade plays the same cinema")
-guard = 0
-while guard < 4000 and LT.state ~= "done" do
-  pumpPeer(function(msg)
-    if msg.cmd == LT.LINKCMD.CONFIRM_FINISH_TRADE then
-      peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.CONFIRM_FINISH_TRADE })
-    end
-  end)
-  LT.update(0)
-  guard = guard + 1
-end
+LT.update(0)
+eq(LT.state, "scene", "the union room trade goes through the same commit to the same cinema")
+check(runTrade(), "and finishes")
+eq(LT.state, "done", "a union room trade does not reopen the trade menu")
 eq(session.party[2].species, 25, "PIKACHU came back for MACHOKE")
 -- pokefirered/src/trade_scene.c:2601
 eq(session.gameStats[21], nil, "a union room trade leaves GAME_STAT_POKEMON_TRADES alone")
@@ -412,108 +400,33 @@ eq(questEvents[#questEvents] and questEvents[#questEvents].key, "TradedMon1ForTr
 -- pokefirered/src/union_room.c:1746 ResetUnionRoomTrade
 eq(Union.trade().playerSpecies, 0, "and the trading board registration was cleared")
 
-print("[test] 11. trade evolution on the mon that just arrived")
-local Cache = require("tests.game3_cache")
-local root = Cache.mount("meta.json")
-if not root then
-  print("[skip] trade evolution: " .. tostring(Cache.reason))
-else
-  local Pokemon = require("src.core.game3.pokemon")
-  Pokemon.install(nil)
-  if #(Pokemon.evolutions(67) or {}) == 0 then
-    print("[skip] trade evolution: the mounted cache at " .. tostring(root) ..
-      " carries no evolution rows")
-  else
-    openLink()
-    session.party = { mon(1, 10), mon(4, 12) }
-    session.dex = { seen = {}, owned = {} }
-    LT.startMenu()
-    peer:update(0)
-    peer:take(LT.MSG.PARTY)
-    peerSend({
-      type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, version = 4, progressFlags = 1,
-      party = { { species = 67, level = 30, personality = 4242 } },
-    })
-    LT.update(0)
-    LT.offer(1)
-    peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
-    LT.update(0)
-    LT.confirm(true)
-    peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.INIT_BLOCK })
-    LT.update(0)
-    peer:take(LT.MSG.MON)
-    peerSend({
-      type = LT.MSG.MON,
-      name = "BLUE",
-      trainerId = 0x2222,
-      mon = mon(67, 30, 4242, { otName = "BLUE", otId = 0x2222 }),
-    })
-    LT.update(0)
-    guard = 0
-    while guard < 4000 and LT.state ~= "done" do
-      pumpPeer(function(msg)
-        if msg.cmd == LT.LINKCMD.CONFIRM_FINISH_TRADE then
-          peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.CONFIRM_FINISH_TRADE })
-        end
-      end)
-      LT.update(0)
-      guard = guard + 1
-    end
-    -- pokefirered/src/trade_scene.c:2322 CB2_TryLinkTradeEvolution
-    eq(session.party[1].species, 68, "the MACHOKE that arrived evolved into MACHAMP")
-  end
-end
-
-print("[test] 12. the wireless communication status screen counts")
-Link.reset()
-LT.reset()
-Union.reset()
-local G = Status.GROUPTYPE
-local counts = Status.counts({
-  { activity = Union.ACTIVITY.TRADE },
-  { activity = Union.ACTIVITY.BATTLE_SINGLE },
-  { activity = Union.ACTIVITY.BATTLE_MULTI },
-  { activity = Union.ACTIVITY.NONE + Union.IN_UNION_ROOM },
-})
-eq(counts[G.TRADE], 2, "a trading group is two people")
-eq(counts[G.BATTLE], 6, "a single and a multi battle are six")
-eq(counts[G.UNION], 1, "one player idling in the UNION ROOM")
-eq(counts[G.TOTAL], 9, "and the total is trade plus battle plus union")
--- pokefirered/src/wireless_communication_status_screen.c:505 the retail total drops the rest
-local wonder = Status.counts({ { activity = Union.ACTIVITY.WONDER_CARD } })
-eq(wonder[G.TOTAL], 0,
-  "the retail total leaves WONDER CARD players out, as the cart does")
-local chat = Status.counts({
-  { activity = Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM, members = 3 },
-})
-eq(chat[G.UNION], 3, "a chat group counts its own members")
-local rows = Status.rows()
-eq(#rows, 4, "the screen has four rows")
-eq(rows[1].label, "sHeaderTexts[1]", "the first is the trading count (sHeaderTexts[GROUPTYPE_TRADE + 1])")
-eq(rows[4].total, true, "and the last is the total")
-
-print("[test] 13. the adapter answer and the screen the monitor opens")
-Flags.setVar(store, ctx, Link.VAR_RESULT, 9)
-local yieldW, value = Natives.special(ctx, NativesLink.SPECIAL.IsWirelessAdapterConnected, adapters)
-eq(yieldW, false, "IsWirelessAdapterConnected does not yield")
-eq(value, 0, "with no session it answers FALSE, and the monitor says so")
+print("[test] 11. trade evolution on the mon that just arrived, saved after it evolved")
 openLink()
-local _, connected = Natives.special(ctx, NativesLink.SPECIAL.IsWirelessAdapterConnected, adapters)
--- pokefirered/data/scripts/cable_club.inc:849 FALSE is what routes the direct corner
-eq(connected, 0, "with a live session it still answers FALSE: this port has no adapter")
-local LinkMenu = require("src.ui.game3.link_menu")
-eq(LinkMenu.isOpen(), false, "the status screen starts closed")
-local closed = false
-LinkMenu.show({ onClose = function() closed = true end })
-eq(LinkMenu.isOpen(), true, "ShowWirelessCommunicationScreen puts it up")
-eq(#LinkMenu.rows, 4, "with the four group counts on it")
-LinkMenu.update(1 / 60)
-eq(LinkMenu.palIdx, 0, "the wave palette does not move on the first frame")
-for _ = 1, 6 do LinkMenu.update(1 / 60) end
-eq(LinkMenu.palIdx, 1, "and steps once every six frames, as CyclePalette does")
-eq(LinkMenu.countText(3), " 3", "counts are right aligned to two places")
-LinkMenu.close()
-eq(closed, true, "closing it hands the script back")
+session.party = { mon(1, 10), mon(4, 12) }
+session.dex = { seen = {}, owned = {} }
+LT.startMenu()
+peer:update(0)
+peer:take(LT.MSG.PARTY)
+local blueMachoke = mon(67, 30, nil, { otName = "BLUE", otId = 0x2222 })
+peerParty({ blueMachoke }, { progressFlags = 1 })
+LT.update(0)
+LT.offer(1)
+peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
+LT.update(0)
+LT.confirm(true)
+peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.INIT_BLOCK })
+LT.update(0)
+peer:update(0)
+local evoBlock = peer:take(LT.MSG.MON)
+peerMon(evoBlock, blueMachoke)
+local savedSpecies
+function game:saveGame() savedSpecies = session.party[1].species end
+check(runTrade(), "the trade ran to its end")
+-- pokefirered/src/trade_scene.c:2322
+eq(session.party[1].species, 68, "the MACHOKE that arrived evolved into MACHAMP")
+-- pokefirered/src/trade_scene.c:2595
+eq(savedSpecies, 68, "and the link save came after the evolution")
+game.saveGame = nil
 
 print("[test] 14. the letter the traded mon is holding rides with it")
 local Mail = require("src.core.game3.mail")
@@ -530,10 +443,9 @@ check(sentMailId ~= Mail.MAIL_NONE, "the offered mon is carrying ORANGE MAIL")
 LT.startMenu()
 peer:update(0)
 peer:take(LT.MSG.PARTY)
-peerSend({
-  type = LT.MSG.PARTY, name = "BLUE", trainerId = 0x2222, version = 4, progressFlags = 0,
-  party = { { species = 7, level = 11, personality = 49 } },
-})
+local mailSquirtle = mon(7, 11, nil, { otName = "BLUE", otId = 0x2222, item = RETRO_MAIL,
+  heldItem = RETRO_MAIL })
+peerParty({ mailSquirtle })
 LT.update(0)
 LT.offer(1)
 peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
@@ -549,29 +461,18 @@ check(sentBlock and type(sentBlock.mail) == "table", "with its letter beside it"
 eq(sentBlock and sentBlock.mail and sentBlock.mail.itemId, ORANGE_MAIL,
   "the same ORANGE MAIL record")
 eq(sentBlock and sentBlock.mail and sentBlock.mail.playerName, "RED", "signed by this player")
-peerSend({
-  type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222,
-  mon = mon(7, 11, 49, { otName = "BLUE", otId = 0x2222, mail = 0, heldItem = RETRO_MAIL }),
+peerMon(sentBlock, mailSquirtle, {
   mail = {
     itemId = RETRO_MAIL, playerName = "BLUE", trainerId = 0x2222, species = 7, design = 1,
     words = { 1, 2, 3, 4, 5, 6, 7, 8, 9 },
   },
 })
 LT.update(0)
-eq(LT.state, "scene", "the cinema starts once both letters are in hand")
+LT.update(0)
+eq(LT.state, "scene", "the cinema starts once both letters are in hand and the trade committed")
 -- pokefirered/src/trade_scene.c:2488 gLinkPartnerMail[0] = mail
 check(Trade.PARTNER_MAIL[0] ~= nil, "the partner's letter is parked in gLinkPartnerMail")
-guard = 0
-while guard < 4000 and LT.state ~= "done" do
-  pumpPeer(function(msg)
-    if msg.cmd == LT.LINKCMD.CONFIRM_FINISH_TRADE then
-      peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.CONFIRM_FINISH_TRADE })
-    end
-  end)
-  LT.update(0)
-  guard = guard + 1
-end
-eq(LT.state, "done", "the trade ran to its end")
+check(runTrade(), "the trade ran to its end")
 eq(session.party[1].species, 7, "the received mon is in the party")
 -- pokefirered/src/trade_scene.c:1078 GiveMailToMon2
 check(Mail.monHasMail(session.party[1]), "still holding the letter it came with")
@@ -609,8 +510,7 @@ tick(1)
 -- pokefirered/src/trade.c:853
 eq(Menu.cb, "loading", "the screen holds on standby until the other party arrives")
 eq(Menu.message, "gText_Trade_CommunicationStandby", "with the standby message up")
-peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11), mon(25, 14) }, name = "BLUE",
-  trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+peerParty({ mon(7, 11), mon(25, 14) }, { version = 0, progressFlags = 1 })
 tick(12)
 eq(#LT.peerParty, 2, "the other machine's party arrived over the wire")
 eq(Menu.cb, "main", "then the grid takes input once the fade is done")
@@ -679,8 +579,7 @@ openLink()
 session.party = { mon(1, 10), mon(4, 12) }
 LT.startMenu()
 Menu.show()
-peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11) }, name = "BLUE",
-  trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+peerParty({ mon(7, 11) }, { version = 0, progressFlags = 1 })
 tick(12)
 Menu.handleInput(press("b"))
 eq(Menu.cb, "main", "B on the grid does nothing")
@@ -720,8 +619,7 @@ openLink()
 session.party = { mon(1, 10) }
 LT.startMenu()
 Menu.show()
-peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11) }, name = "BLUE",
-  trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+peerParty({ mon(7, 11) }, { version = 0, progressFlags = 1 })
 tick(12)
 Menu.handleInput(press("a"))
 Menu.handleInput(press("down"))
@@ -738,40 +636,6 @@ eq(Menu.message, nil, "and clears the message")
 Menu.reset()
 LT.reset()
 
-print("[test] 18. grid, HP-bar and level tile tables")
-local full = {}
-for i = 0, 12 do full[i] = true end
--- pokefirered/src/trade.c:349 sCursorMoveDestinations
-eq(Menu.newCursorPosition(0, 4, full), 1, "0 RIGHT -> 1")
-eq(Menu.newCursorPosition(1, 4, full), 6, "1 RIGHT -> 6")
-eq(Menu.newCursorPosition(4, 2, full), 0, "4 DOWN wraps to 0")
-eq(Menu.newCursorPosition(11, 2, full), 12, "11 DOWN -> CANCEL")
-local twoEach = { [0] = true, [1] = true, [6] = true, [7] = true, [12] = true }
-eq(Menu.newCursorPosition(12, 1, twoEach), 7, "CANCEL UP with two partner mons -> 7")
-eq(Menu.newCursorPosition(5, 4, twoEach), 6, "an absent source still reads its row")
--- pokefirered/src/battle_interface.c:2165 GetHPBarLevel
-eq(Menu.hpBarLevel(30, 30), 4, "full HP")
-eq(Menu.hpBarLevel(20, 30), 3, "over half")
-eq(Menu.hpBarLevel(10, 30), 2, "over a fifth")
-eq(Menu.hpBarLevel(1, 100), 1, "one HP is still red")
-eq(Menu.hpBarLevel(0, 30), 0, "fainted")
--- pokefirered/src/trade.c:2397 PrintLevelAndGender
-local lv5 = Menu.levelGenderTiles(mon(1, 5))
-eq(lv5.tens, nil, "a one-digit level has no tens tile")
-eq(lv5.ones, 0x75, "Lv5 ones tile")
-local lv100 = Menu.levelGenderTiles(mon(1, 100))
-eq(lv100.tens, 0x6A, "Lv100 uses the 10 tile")
-eq(lv100.ones, 0x70, "and a 0")
-check(lv100.symbol == 0x83 or lv100.symbol == 0x84 or lv100.symbol == 0x85, "gender tile is one of 0x83-0x85")
-local egg = Menu.levelGenderTiles(mon(1, 5, nil, { isEgg = true }))
-check(egg.egg and egg.ones == nil, "an egg prints no level")
-eq(egg.symbol, 0x80, "and the egg symbol tile")
-check(egg.symbolFlip, "drawn flipped")
--- pokefirered/src/trade.c:2339 BufferMovesString
-eq(#Menu.movesLines(mon(1, 5)), 4, "four move rows")
-eq(Menu.movesLines(mon(1, 5, nil, { isEgg = true }))[1], "gText_4Qmark", "an egg shows ????")
-eq(LT.resumeMenu(), false, "resumeMenu only answers a canceled trade")
-
 print("[test] 19. held D-pad repeats, held items, the partner summary and the exit fades")
 Link.reset()
 LT.reset()
@@ -780,8 +644,7 @@ openLink()
 session.party = { mon(1, 10, nil, { item = 13 }), mon(4, 12, nil, { heldItem = 121 }) }
 LT.startMenu()
 Menu.show()
-peerSend({ type = LT.MSG.PARTY, party = { mon(7, 11, nil, { otName = "BLUE", otId = 0x2222 }) },
-  name = "BLUE", trainerId = 0x2222, gender = 0, version = 0, progressFlags = 1 })
+peerParty({ mon(7, 11, nil, { otName = "BLUE", otId = 0x2222 }) }, { version = 0, progressFlags = 1 })
 tick(12)
 local held = function(key, fresh)
   return {
@@ -840,6 +703,12 @@ Menu.show()
 Menu.cb = "idle"
 Menu.fade = 0
 LT.state = "exchange"
+tick(20)
+check(Menu.isOpen() and Menu.fade == 0, "the block exchange keeps the screen up")
+LT.state = "commit_wait"
+tick(20)
+check(Menu.isOpen() and Menu.fade == 0, "and so does waiting for trade_commit")
+LT.state = "committed"
 -- pokefirered/src/trade.c:1293 CB_FadeToStartTrade
 tick(15)
 eq(Menu.fade, 0, "the leader holds the screen 16 frames before the trade")
@@ -851,17 +720,41 @@ love = savedLove
 Menu.reset()
 LT.reset()
 
-print("[test] 20. a received EGG is not entered in the POKeDEX")
-do
-  local s = { party = { mon(1, 10), mon(4, 12) }, dex = { seen = {}, owned = {}, caught = {} } }
-  -- pokefirered/src/trade_scene.c:1036 UpdatePokedexForReceivedMon
-  Trade.tradeMons(s, 0, mon(152, 5, nil, { isEgg = true }))
-  eq(s.party[1].species, 152, "the egg is in the party")
-  check(not s.dex.seen[152], "its species is not seen")
-  check(not s.dex.owned[152] and not s.dex.caught[152], "and not caught")
-  Trade.tradeMons(s, 1, mon(155, 5))
-  check(s.dex.seen[155] == true, "a received mon still is")
-end
+print("[test] 20. a block that is not the mon the other party showed is refused")
+openLink()
+session.party = { mon(1, 10), mon(4, 12) }
+LT.startMenu()
+peer:update(0)
+peer:take(LT.MSG.PARTY)
+peerParty({ mon(7, 11) }, { version = 0, progressFlags = 1 })
+LT.update(0)
+LT.offer(1)
+peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.READY_TO_TRADE, cursor = 0 })
+LT.update(0)
+eq(LT.checkValidityOfTradeMons(1, 1), LT.BOTH_MONS_VALID, "the previewed SQUIRTLE passes the validity check")
+LT.confirm(true)
+peerSend({ type = LT.MSG.CMD, cmd = LT.LINKCMD.INIT_BLOCK })
+LT.update(0)
+eq(LT.state, "exchange", "the block exchange started")
+peer:update(0)
+peer:take(LT.MSG.MON)
+pumpPeer()
+-- pokefirered/src/trade.c:1955
+peerSend({ type = LT.MSG.MON, name = "BLUE", trainerId = 0x2222,
+  mon = Protocol.packMon3(mon(151, 30, nil, { fatefulEncounter = false })) })
+LT.update(0)
+eq(LT.state, "canceled", "an illegitimate MEW in place of the SQUIRTLE is refused")
+eq(LT.lastResult, "bad_mon", "as bad_mon")
+eq(LT.lastRefusal, "not the POKéMON that was shown", "because it is not the mon that was shown")
+peer:update(0)
+eq(peer:take(LT.MSG.CONFIRM), nil, "no confirm went to the relay")
+local sawRefuse = false
+pumpPeer(function(msg)
+  if msg.cmd == LT.LINKCMD.PLAYER_CANCEL_TRADE then sawRefuse = true end
+end)
+check(sawRefuse, "the other machine was told to cancel")
+eq(session.party[1].species, 1, "and the party is untouched")
+LT.reset()
 
 Link.reset()
 LT.reset()

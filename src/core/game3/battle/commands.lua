@@ -211,6 +211,15 @@ function Commands.switchError(st, slot, forced, battlerId)
   if not mon then return nil end
   local Pokemon = require("src.core.game3.pokemon")
   local vars = { stringVars = { Pokemon.displayMonName(mon) } }
+  if st.multi and st.partyOwner then
+    local own = tonumber(battlerId) or tonumber(st.linkOwn) or 0
+    local owner = st.partyOwner.player and st.partyOwner.player[slot]
+    if owner ~= nil and owner ~= own then
+      -- pokefirered/src/party_menu.c:5922
+      local name = st.linkNames and st.linkNames[owner] or ""
+      return RomText.ascii("gText_CantSwitchWithAlly", { stringVars = { name } })
+    end
+  end
   if (tonumber(mon.hp) or 0) <= 0 then return RomText.ascii("gText_PkmnHasNoEnergy", vars) end
   if st.player and st.player.partyIndex == slot then return RomText.ascii("gText_PkmnAlreadyInBattle", vars) end
   if st.double then
@@ -346,12 +355,7 @@ function Commands.tryFlee(st, adapter)
   if ok and type(v) == "number" then
     r = v
   else
-    local okR, Rng = pcall(require, "src.core.game3.rng")
-    if okR and Rng and Rng.compat then
-      r = Rng.compat(0, 255)
-    else
-      r = math.random(0, 255)
-    end
+    r = require("src.core.game3.battle.link_guard").fallback("commands.flee", 0, 255)
   end
   if r < odds then
     adapter:sayText("STRINGID_GOTAWAYSAFELY")

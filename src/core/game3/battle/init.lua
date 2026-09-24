@@ -54,6 +54,13 @@ Battle._residualStepState = nil
 
 local D = {}
 
+local function LB_copy(value, depth)
+  if type(value) ~= "table" or (depth or 0) > 8 then return value end
+  local out = {}
+  for k, v in pairs(value) do out[k] = LB_copy(v, (depth or 0) + 1) end
+  return out
+end
+
 -- Phases in which the level-up stat window can still be dismissed by the
 -- player.  Input routing and drawing both key off this, so the window can never
 -- linger somewhere it can no longer be dismissed (#2324).
@@ -132,7 +139,28 @@ local function push_msgs(list)
   end
 end
 
-local function foe_mon_from(foe)
+local function link_mon_from(foe)
+  if type(foe) ~= "table" then error("link battle: the peer sent no mon") end
+  for _, key in ipairs({ "personality", "ivs", "item" }) do
+    if foe[key] == nil then error("link battle: the peer's mon has no " .. key) end
+  end
+  if type(foe.moves) ~= "table" or #foe.moves == 0 then error("link battle: the peer's mon has no moves") end
+  local mon = LB_copy(foe)
+  mon.item = tonumber(foe.item) or 0
+  mon.heldItem = mon.item
+  if not mon.maxPp or #mon.maxPp == 0 then
+    mon.maxPp = {}
+    for i, m in ipairs(mon.moves) do mon.maxPp[i] = Pokemon.movePp(m) end
+  end
+  if not mon.pp or #mon.pp == 0 then
+    mon.pp = {}
+    for i in ipairs(mon.moves) do mon.pp[i] = mon.maxPp[i] end
+  end
+  return Damage.ensureStats(mon, mon.level)
+end
+
+local function foe_mon_from(foe, link)
+  if link then return link_mon_from(foe) end
   if type(foe) ~= "table" then
     return Damage.ensureStats({
       species = 16, level = 3,
@@ -315,9 +343,9 @@ function Battle.getState()
 end
 
 -- pokefirered/src/battle_message.c:1695 STRINGID_BATTLEEND
-function Battle.linkEndText(st, outcome)
+function Battle.linkEndText(st, outcome, ran)
   local out = ({ lose = "lost", draw = "drew" })[outcome] or "won"
-  return BattleText.get(BattleText.BATTLEEND, Adapter.fill(st, { outcome = out }))
+  return BattleText.get(BattleText.BATTLEEND, Adapter.fill(st, { outcome = out, linkRan = ran and true or nil }))
 end
 
 local function finish(result)
@@ -329,6 +357,7 @@ local function finish(result)
     Pokedude.event(pst, "endlinkbattle", "player")
   end
   stop_low_hp_song()
+  require("src.core.game3.battle.link_guard").disarm()
   Battle._active = false
   Battle._phase = nil
   Battle._residualEvents = nil
@@ -390,33 +419,61 @@ function Battle.start(opts)
   if #playerParty == 0 then
     return nil, "empty party"
   end
-  local foeMon = foe_mon_from(opts.foe)
-  local foeParty = opts.foeParty
-  if not foeParty and opts.foe and opts.foe.party then
+  local linkBattle = (opts.link or (type(opts.foe) == "table" and opts.foe.link)) and true or false
+  local Guard = require("src.core.game3.battle.link_guard")
+  if linkBattle then Guard.arm() else Guard.disarm() end
+  local foeMon, foeParty
+  if linkBattle then
     foeParty = {}
-    for _, fm in ipairs(opts.foe.party) do
-      foeParty[#foeParty + 1] = foe_mon_from(fm)
+    for _, fm in ipairs((type(opts.foe) == "table" and opts.foe.party) or {}) do
+      foeParty[#foeParty + 1] = foe_mon_from(fm, true)
     end
-  end
-  if foeParty and foeParty[1] and type(opts.foe) == "table" and opts.foe.species == nil and opts.foe.id == nil then
-    foeMon = foeParty[1]
+    if #foeParty == 0 then
+      Guard.disarm()
+      return nil, "the peer sent no party"
+    end
+  else
+    foeMon = foe_mon_from(opts.foe)
+    foeParty = opts.foeParty
+    if not foeParty and opts.foe and opts.foe.party then
+      foeParty = {}
+      for _, fm in ipairs(opts.foe.party) do
+        foeParty[#foeParty + 1] = foe_mon_from(fm)
+      end
+    end
+    if foeParty and foeParty[1] and type(opts.foe) == "table" and opts.foe.species == nil and opts.foe.id == nil then
+      foeMon = foeParty[1]
+    end
   end
   Moves.loadRomPack(opts.cache)
   local double = (opts.double == true) and not opts.wild
+  local multi = (linkBattle and double and type(opts.multi) == "table") and opts.multi or nil
   local st = State.new({
     wild = opts.wild,
     double = double or nil,
-    playerIndex = opts.playerIndex or State.firstUsable(playerParty) or 1,
+    playerIndex = opts.playerIndex or (not multi and State.firstUsable(playerParty)) or nil,
     playerParty = playerParty,
     foeMon = foeMon,
     foeParty = foeParty,
     rng = opts.rng,
+    multi = multi and true or nil,
+    partyOwner = multi and multi.owners or nil,
   })
+  if st.multi then
+    -- pokefirered/src/battle_controllers.c:223
+    st.linkOwn = tonumber(multi.own)
+    st.linkNames = multi.names or {}
+    st.linkGenders = multi.genders or {}
+    st.linkSeatOf = multi.seatOf or {}
+    st.linkLocalOf = multi.localOf or {}
+    st.linkOrder = multi.order
+  end
   -- pokefirered/src/battle_main.c:2584
   SwitchSeq.stampSwitchIn(st)
   D.reset()
   -- pokefirered/src/cable_club.c:664 BATTLE_TYPE_LINK
-  st.link = (opts.link or (opts.foe and opts.foe.link)) and true or false
+  st.link = linkBattle
+  st.spectate = (linkBattle and opts.spectate) and true or false
   st.linkFlags = tonumber(opts.linkFlags) or nil
   -- pokefirered/src/battle_controllers.c:148 InitLinkBtlControllers
   st.linkMaster = (opts.linkMaster ~= false) and true or false
@@ -488,6 +545,7 @@ function Battle.start(opts)
   Battle._adapter = Adapter.new(st, function(text) Ui.push(text) end)
   Battle._onDone = opts.onDone
   Battle._active = true
+  Battle._linkFault = nil
   Battle._lowHpSong = false
   Battle._phase = "intro"
   Battle._actions = nil
@@ -596,7 +654,7 @@ function Battle.start(opts)
     or (trainerInfo and trainerInfo.items)
     or { 0, 0, 0, 0 }
   st.playerGender = playerGender
-  st.overworldWeather = opts.overworldWeather or overworld_weather()
+  st.overworldWeather = (not st.link) and (opts.overworldWeather or overworld_weather()) or nil
   do
     -- pokefirered/src/battle_controllers.c:59
     local okAi, Ai = pcall(require, "src.core.game3.battle.ai")
@@ -654,12 +712,13 @@ function Battle.start(opts)
       for _, t in ipairs(IntroSeq.headlessGhostIntro(st)) do Ui.push(t) end
     elseif st.wild then
       Ui.push(IntroSeq.introText(st))
-    elseif st.double then
-      for _, t in ipairs(D.headlessIntro(st, trainerId, rivalName)) do Ui.push(t) end
     elseif st.link then
       -- pokefirered/src/battle_message.c:1551
       Ui.push(IntroSeq.introText(st))
       Ui.push(IntroSeq.sendOutText(st, "enemy"))
+      if st.double then Ui.push(IntroSeq.sendOutText(st, "player")) end
+    elseif st.double then
+      for _, t in ipairs(D.headlessIntro(st, trainerId, rivalName)) do Ui.push(t) end
     else
       local strings = Trainers.introStrings(trainerId, ename, { rivalName = rivalName })
       Ui.push(strings.wants)
@@ -760,24 +819,41 @@ local function link_battle()
 end
 
 -- pokefirered/src/battle_main.c:3226 HandleTurnActionSelectionState
-local function link_enemy_action(st, msg, id)
+local function link_side_action(st, msg, id, side)
   if type(msg) ~= "table" then return nil end
-  if msg.kind == "run" then return { kind = "run", user = "enemy" } end
+  local lockedB = (id and State.battler(st, id)) or st[side]
+  if lockedB and (lockedB.expLockedMove or lockedB.expMustRecharge) then
+    -- pokefirered/src/battle_main.c:3125
+    local mon = lockedB.mon or {}
+    local slot = lockedB.expLockedSlot or 1
+    return { kind = "move", slot = slot, user = side, locked = true,
+      move = lockedB.expLockedMove or lockedB.lastMoveId or lockedB.lastMove or (mon.moves and mon.moves[slot]),
+      target = st.moveTarget and id and st.moveTarget[id] or nil }
+  end
+  if msg.kind == "run" then return { kind = "run", user = side } end
   if msg.kind == "switch" then
-    return { kind = "switch", user = "enemy", slot = tonumber(msg.slot) }
+    return { kind = "switch", user = side, slot = tonumber(msg.slot) }
   end
   if msg.kind == "bag" or msg.kind == "item" then
-    return { kind = "item", user = "enemy", item = msg.item }
+    local itemId = tonumber(msg.itemId)
+    return { kind = (side == "player") and "bag" or "item", user = side, item = itemId, itemId = itemId }
   end
-  local battler = (id and State.battler(st, id)) or st.enemy
+  local battler = (id and State.battler(st, id)) or st[side]
   local mon = battler and battler.mon
+  if msg.move == "STRUGGLE" or (msg.slot == nil and msg.move == nil) then
+    return { kind = "move", move = "STRUGGLE", slot = nil, user = side }
+  end
   local slot = math.floor(tonumber(msg.slot) or 1)
   if slot < 1 or slot > 4 then slot = 1 end
   local move = mon and mon.moves and mon.moves[slot]
   if not move or move == 0 or move == "" then
-    return { kind = "move", move = "STRUGGLE", slot = nil, user = "enemy" }
+    return { kind = "move", move = "STRUGGLE", slot = nil, user = side }
   end
-  return { kind = "move", move = move, slot = slot, user = "enemy" }
+  return { kind = "move", move = move, slot = slot, user = side }
+end
+
+local function link_enemy_action(st, msg, id)
+  return link_side_action(st, msg, id, "enemy")
 end
 
 Battle._linkEnemyAction = link_enemy_action
@@ -789,29 +865,90 @@ local function link_enemy_action_for(st, msg, id)
   act.user = nil
   act.battler = id
   local target = tonumber(msg and msg.target)
-  if target then act.target = (target % 2 == 0) and (target + 1) or (target - 1) end
+  if target and not act.locked then act.target = (target % 2 == 0) and (target + 1) or (target - 1) end
   return act
 end
 
+local function link_own_action_for(st, msg, id)
+  local act = link_side_action(st, msg, id, "player")
+  if not act then return nil end
+  act.user = nil
+  act.battler = id
+  if not act.locked then act.target = tonumber(msg and msg.target) end
+  return act
+end
+
+local function link_pending_party(st, side)
+  if side == "player" then return st and st.playerParty end
+  return st and st.foeParty
+end
+
+-- pokefirered/src/battle_controllers.c:248
+local function link_canon(st, id)
+  id = tonumber(id)
+  if id == nil then return nil end
+  if st and st.multi and st.linkSeatOf then return st.linkSeatOf[id] end
+  if st and st.linkMaster == false then return (id % 2 == 0) and (id + 1) or (id - 1) end
+  return id
+end
+
+local function link_local(st, id)
+  id = tonumber(id)
+  if id == nil then return nil end
+  if st and st.multi and st.linkLocalOf then return st.linkLocalOf[id] end
+  return link_canon(st, id)
+end
+
+local function multi_remote(st, id)
+  return st and st.multi and (st.spectate or id ~= st.linkOwn) and true or false
+end
+
 -- pokefirered/data/battle_scripts_1.s:2837 switchhandleorder BS_FAINTED
-local function link_peer_replacement(st)
+local function link_replacement(st, side, battler)
   local LB = link_battle()
   if not LB then return nil end
-  local slot = LB.peerSwitch()
+  local slot
+  if st and st.multi and battler ~= nil then
+    slot = LB.seatSwitch(st.linkSeatOf[battler])
+  elseif side == "player" then
+    slot = LB.ownSwitch and LB.ownSwitch() or nil
+  else
+    slot = LB.peerSwitch()
+  end
   if not slot then return nil end
-  local mon = st and st.foeParty and st.foeParty[slot]
-  if not (mon and (tonumber(mon.hp) or 0) > 0) then return nil end
+  local party = link_pending_party(st, side)
+  local mon = party and party[slot]
+  if not (mon and (tonumber(mon.hp) or 0) > 0)
+      or (battler ~= nil and not State.ownsSlot(st, battler, slot)) then
+    LB.protocolError("switch")
+    return nil
+  end
   return slot
+end
+
+local function link_wait_seat(st, side, battler)
+  if st and st.multi and battler ~= nil then return st.linkSeatOf[battler] end
+  if st and st.spectate then return (side == "player") and 0 or 1 end
+  return nil
 end
 
 local function link_switch_step()
   local pending = Battle._linkSwitch
   if not pending then return true end
   local st = Battle._st
-  local slot = link_peer_replacement(st)
+  local slot = link_replacement(st, pending.side or "enemy", pending.battler)
   local LB = link_battle()
   if not slot then
-    if LB and LB.linkOpen() then return false end
+    if LB and LB.isActive() then
+      if not LB.linkOpen() then
+        -- pokefirered/src/cable_club.c:1002
+        LB.peerDropped()
+      elseif LB.peerAhead(link_wait_seat(st, pending.side, pending.battler), st and st.turn) then
+        -- pokefirered/src/battle_main.c:3097
+        LB.protocolError("switch")
+      end
+      return false
+    end
     slot = pending.fallback
   end
   Battle._linkSwitch = nil
@@ -821,18 +958,47 @@ end
 
 Battle._linkSwitchStep = link_switch_step
 
-local function with_link_replacement(st, fallback, cb)
+local function with_link_replacement(st, fallback, cb, side, battler)
   local LB = st and st.link and link_battle() or nil
-  if not (LB and LB.isActive() and LB.linkOpen()) then return cb(fallback) end
-  Battle._linkSwitch = { cb = cb, fallback = fallback }
+  if not (LB and LB.isActive()) then return cb(fallback) end
+  Battle._linkSwitch = { cb = cb, fallback = fallback, side = side or "enemy", battler = battler }
   Battle._phase = "linkswitch"
   link_switch_step()
+end
+
+-- pokefirered/src/battle_main.c:4287
+local function link_run_result(mine, theirs)
+  if mine and theirs then return "draw" end
+  if mine then return "run" end
+  if theirs then return "win" end
+  return nil
+end
+
+local function link_run_end(st, result)
+  st.over = true
+  st.result = result
+  st.linkRan = true
+  st.endReason = "link_run"
+  Battle._actions = {}
+  Battle._metaAct = nil
+  Battle._midTurn = nil
+  local shown = (result == "run") and "lose" or result
+  Ui.push(Battle.linkEndText(st, shown, true))
+  Battle._pendingEnd = result
+  Battle._phase = "ending"
 end
 
 local function resolve_turn(playerAct, enemyAct)
   local st = Battle._st
   local ad = Battle._adapter
   local actions, meta = Engine.planTurnFromActions(st, ad, playerAct, enemyAct)
+  local first = actions and actions[1]
+  if meta and st.link and st.linkMaster == false and first and first.battler == 1
+      and (first.kind == "switch" or first.kind == "item") then
+    -- pokefirered/src/battle_main.c:3586
+    table.insert(actions, 2, { kind = "player_meta", meta = meta, battler = 0 })
+    meta = nil
+  end
   open_turn(st, playerAct, enemyAct, nil)
   Battle._actions = actions
   Battle._actionI = 1
@@ -852,6 +1018,67 @@ local function resolve_turn(playerAct, enemyAct)
   end
 end
 
+-- pokefirered/src/battle_main.c:3097
+local function multi_turn_step()
+  local st = Battle._st
+  local LB = link_battle()
+  local got = {}
+  for id = 0, 3 do
+    if State.battler(st, id) and not State.isAbsent(st, id) and multi_remote(st, id) then
+      local msg = LB.seatAction(st.linkSeatOf[id], st.turn)
+      if not msg then
+        -- pokefirered/src/cable_club.c:1002
+        if not LB.linkOpen() then
+          LB.peerDropped()
+        elseif LB.peerAhead(st.linkSeatOf[id], st.turn) then
+          LB.protocolError("action")
+        end
+        return false
+      end
+      got[id] = msg
+    end
+  end
+  local chosen = Battle._linkAct or {}
+  Battle._linkAct = nil
+  Battle._linkMulti = nil
+  st.monToSwitchInto = st.monToSwitchInto or {}
+  for id = 0, 3 do
+    local msg = got[id]
+    if msg then
+      LB.forgetSeatAction(st.linkSeatOf[id], st.turn)
+      -- pokefirered/src/battle_main.c:3182
+      if msg.kind == "list" or msg.kind == "bag" or msg.kind == "item" or msg.actions ~= nil then
+        LB.protocolError("action")
+        return false
+      end
+      local side = State.sideOf(id)
+      local act = link_side_action(st, msg, id, side)
+      act.user = nil
+      act.battler = id
+      if not act.locked then act.target = link_local(st, msg.target) end
+      if act.kind == "switch" then
+        local party = link_pending_party(st, side)
+        local mon = party and act.slot and party[act.slot]
+        if not (mon and (tonumber(mon.hp) or 0) > 0 and State.ownsSlot(st, id, act.slot)) then
+          LB.protocolError("switch")
+          return false
+        end
+        st.monToSwitchInto[id] = act.slot
+      end
+      chosen[id] = act
+    end
+  end
+  local function ran(a) return a ~= nil and a.kind == "run" end
+  -- pokefirered/src/battle_main.c:4283
+  local result = link_run_result(ran(chosen[0]) or ran(chosen[2]), ran(chosen[1]) or ran(chosen[3]))
+  if result then
+    link_run_end(st, result)
+    return true
+  end
+  D.resolveDoubleTurn(chosen)
+  return true
+end
+
 local function link_turn_step()
   local st = Battle._st
   local LB = link_battle()
@@ -859,10 +1086,15 @@ local function link_turn_step()
     Battle._phase = "command"
     return false
   end
+  if Battle._linkMulti then return multi_turn_step() end
   local msg = LB.peerAction(st.turn)
   if not msg then
     -- pokefirered/src/cable_club.c:1002 Task_WaitForLinkPlayerConnection
-    if not LB.linkOpen() then LB.peerDropped() end
+    if not LB.linkOpen() then
+      LB.peerDropped()
+    elseif LB.peerAhead(st.spectate and 1 or nil, st.turn) then
+      LB.protocolError("action")
+    end
     return false
   end
   LB.forgetAction(st.turn)
@@ -871,20 +1103,112 @@ local function link_turn_step()
   if Battle._linkDouble then
     Battle._linkDouble = nil
     local chosen = playerAct or {}
-    local list = msg.actions or { msg }
-    local i = 1
-    for _, id in ipairs({ 1, 3 }) do
+    local list = msg.actions
+    if msg.kind ~= "list" or type(list) ~= "table" or #list ~= 2 then
+      LB.protocolError("action")
+      return false
+    end
+    local mineRun = (chosen[0] and chosen[0].kind == "run") or (chosen[2] and chosen[2].kind == "run")
+    local theirRun = false
+    st.monToSwitchInto = st.monToSwitchInto or {}
+    -- pokefirered/src/battle_main.c:3226
+    for i, id in ipairs({ 1, 3 }) do
       if State.battler(st, id) and not State.isAbsent(st, id) then
-        chosen[id] = link_enemy_action_for(st, list[i] or list[1], id)
-        i = i + 1
+        chosen[id] = link_enemy_action_for(st, list[i], id)
+        if chosen[id] and chosen[id].kind == "run" then theirRun = true end
+        if chosen[id] and chosen[id].kind == "switch" then st.monToSwitchInto[id] = chosen[id].slot end
       end
+    end
+    local ran = link_run_result(mineRun, theirRun)
+    if ran then
+      link_run_end(st, ran)
+      return true
     end
     D.resolveDoubleTurn(chosen)
     return true
   end
-  resolve_turn(playerAct, link_enemy_action(st, msg))
+  if msg.kind == "list" then
+    LB.protocolError("action")
+    return false
+  end
+  local enemyAct = link_enemy_action(st, msg)
+  local ran = link_run_result(playerAct and playerAct.kind == "run", enemyAct and enemyAct.kind == "run")
+  if ran then
+    link_run_end(st, ran)
+    return true
+  end
+  resolve_turn(playerAct, enemyAct)
   return true
 end
+
+local function spectate_turn_step()
+  local st = Battle._st
+  local LB = link_battle()
+  if not (st and LB and LB.ownAction) then return false end
+  local turn = st.turn + 1
+  if st.multi then
+    for id = 0, 3 do
+      if State.battler(st, id) and not State.isAbsent(st, id) and not LB.seatAction(st.linkSeatOf[id], turn) then
+        if not LB.linkOpen() then
+          LB.peerDropped()
+        elseif LB.peerAhead(st.linkSeatOf[id], turn) then
+          LB.protocolError("action")
+        end
+        return false
+      end
+    end
+    LB.beginSpectatedTurn(turn)
+    st.monToSwitchInto = {}
+    st.turn = turn
+    Battle._linkAct = {}
+    Battle._linkMulti = true
+    Battle._phase = "linkwait"
+    return link_turn_step()
+  end
+  local msg = LB.ownAction(turn)
+  if not msg then
+    if not LB.linkOpen() then
+      LB.peerDropped()
+    elseif LB.peerAhead(0, turn) then
+      LB.protocolError("action")
+    end
+    return false
+  end
+  if st.double then
+    local list = msg.actions
+    if msg.kind ~= "list" or type(list) ~= "table" or #list ~= 2 then
+      LB.protocolError("action")
+      return false
+    end
+    local chosen = {}
+    for i, id in ipairs({ 0, 2 }) do
+      if State.battler(st, id) and not State.isAbsent(st, id) then
+        chosen[id] = link_own_action_for(st, list[i], id)
+        if chosen[id] and chosen[id].kind == "switch" then
+          st.monToSwitchInto = st.monToSwitchInto or {}
+          st.monToSwitchInto[id] = chosen[id].slot
+        end
+      end
+    end
+    st.monToSwitchInto = st.monToSwitchInto or {}
+    st.turn = turn
+    Battle._linkAct = chosen
+    Battle._linkDouble = true
+    Battle._phase = "linkwait"
+    return link_turn_step()
+  end
+  if msg.kind == "list" then
+    LB.protocolError("action")
+    return false
+  end
+  local act = link_side_action(st, msg, 0, "player")
+  st.turn = turn
+  Battle._linkAct = act
+  Battle._phase = "linkwait"
+  return link_turn_step()
+end
+
+Battle._spectateTurnStep = spectate_turn_step
 
 Battle._linkTurnStep = link_turn_step
 Battle._linkBattle = link_battle
@@ -920,10 +1244,19 @@ local function begin_turn_with(playerAct)
     Battle._phase = "command"
     return
   end
-  st.turn = st.turn + 1
   local LB = st.link and link_battle() or nil
   if LB and LB.isActive() then
+    local pb = st.player
+    if pb and (pb.expLockedMove or pb.expMustRecharge) then
+      -- pokefirered/src/battle_main.c:3125
+      playerAct = D.lockedAction(st, 0)
+      playerAct.user = "player"
+    end
+  end
+  st.turn = st.turn + 1
+  if LB and LB.isActive() then
     LB.sendAction(st.turn, playerAct)
+    if st.over or not Battle._active then return end
     Battle._linkAct = playerAct
     Battle._phase = "linkwait"
     link_turn_step()
@@ -982,11 +1315,14 @@ end
 
 local resume_turn
 
-local function send_out_enemy_next(nextEnemyIdx)
+local function send_out_enemy_next(nextEnemyIdx, after)
   local st = Battle._st
   if not st then return end
   local pushFn = function(text) Ui.push(text) end
-  local onDone = function() resume_turn() end
+  local onDone = function()
+    if after then return after() end
+    resume_turn()
+  end
   if Battle._headless or Battle._auto then
     SwitchSeq.beginSendOut(st, "enemy", nextEnemyIdx, {
       headless = true,
@@ -1001,6 +1337,17 @@ local function send_out_enemy_next(nextEnemyIdx)
     })
     Battle._phase = "switching"
   end
+end
+
+-- pokefirered/src/battle_script_commands.c:3413
+function D.linkDraw(st)
+  st.over = true
+  st.result = "draw"
+  Battle._actions = {}
+  Battle._pendingEnd = "draw"
+  Battle._phase = "ending"
+  -- pokefirered/data/battle_scripts_1.s:2984
+  Ui.push(Battle.linkEndText(st, "draw"))
 end
 
 -- pokefirered/src/battle_main.c:3781
@@ -1042,6 +1389,8 @@ local function handle_player_faint(opts)
   end
   local hasLiving = Engine.hasLivingMons(st.playerParty)
   if not hasLiving then
+    if st.link and st.enemy and st.foeParty then State.syncBattlerToParty(st.enemy, st.foeParty) end
+    if st.link and not Engine.hasLivingMons(st.foeParty) then return D.linkDraw(st) end
     Battle._pendingEnd = "lose"
     Battle._phase = "ending"
     D.pushBattleLost(st)
@@ -1051,6 +1400,18 @@ local function handle_player_faint(opts)
   local onDone = function()
     if opts.after then return opts.after() end
     resume_turn()
+  end
+
+  if st.spectate then
+    local nextI = Engine.nextLivingMonIndex(st.playerParty, st.player and st.player.partyIndex) or 1
+    return with_link_replacement(st, nextI, function(slot)
+      SwitchSeq.beginSendOut(st, "player", slot, {
+        headless = Battle._headless,
+        pushMsg = function(t) Ui.push(t) end,
+        onDone = onDone,
+      })
+      if not Battle._headless then Battle._phase = "switching" end
+    end, "player")
   end
 
   if Battle._headless or Battle._auto then
@@ -1244,7 +1605,7 @@ local function handle_enemy_faint(opts)
   end
   Battle._leveledUp = {}
   local nextEnemyIdx = (not st.wild) and Engine.nextLivingMonIndex(st.foeParty, st.enemy and st.enemy.partyIndex)
-  if nextEnemyIdx then
+  if nextEnemyIdx and not st.link then
     -- pokefirered/src/battle_controller_opponent.c:1416
     local okS, pick = pcall(Engine.mostSuitableMon, st, Battle._adapter, "enemy")
     if okS and pick and st.foeParty[pick] and (tonumber(st.foeParty[pick].hp) or 0) > 0 then
@@ -1327,6 +1688,11 @@ local function check_faints_and_end()
     else
       -- pokefirered/src/battle_util.c:1195
       handle_enemy_faint({ mutual = true, onFinished = function(nextEnemyIdx)
+        if st.link and not st.linkMaster then
+          return with_link_replacement(st, nextEnemyIdx, function(slot)
+            send_out_enemy_next(slot, function() handle_player_faint() end)
+          end)
+        end
         handle_player_faint({ after = function()
           with_link_replacement(st, nextEnemyIdx, send_out_enemy_next)
         end })
@@ -1347,6 +1713,9 @@ local function check_faints_and_end()
     return true
   elseif endResult == "lose" then
     handle_player_faint()
+    return true
+  elseif endResult == "draw" and st.link then
+    D.linkDraw(st)
     return true
   end
 
@@ -1616,6 +1985,8 @@ local function step_enemy_flee(act)
   Battle._phase = "ending"
 end
 
+local open_pending_choice
+
 local function step_action()
   local st = Battle._st
   local ad = Battle._adapter
@@ -1781,59 +2152,55 @@ local function step_action()
         if result == "heal" then BattleItems.afterPlayerItem(st, ad, meta.itemId) end
       end
     elseif meta.kind == "switch" then
-      -- Pursuit interrupt check
-      local enemyAct = nil
-      local enemyActIdx = nil
-      for idx, a in ipairs(Battle._actions or {}) do
-        if a.user == "enemy" and a.kind == "move" then
-          enemyAct = a
-          enemyActIdx = idx
-          break
-        end
-      end
-      if enemyAct and Engine.isPursuit(enemyAct.move) and not State.isFainted(st.enemy) then
-        table.remove(Battle._actions, enemyActIdx)
-        local out = {}
-        Engine.resolveMove(enemyAct.user, st.player, enemyAct.move, enemyAct.slot, ad, st, out, { pursuitSwitch = true })
-        local animMeta = out._anim
-        if Battle._headless or not animMeta then
-          push_msgs(out)
-          if State.isFainted(st.player) then
-            Battle._actions = {}
-            handle_player_faint()
-            return
-          end
-        else
-          AnimSeq.begin(animMeta, seq_push)
-          Battle._phase = "animating"
-          return
-        end
-      end
-
       local newSlot = meta.slot or 1
       local pushFn = function(text) Ui.push(text) end
-      local onDone = function()
-        Battle._phase = "actions"
-        if not Battle._actions or not Battle._actions[Battle._actionI] then
-          after_actions()
+      local function switch_out()
+        if State.isFainted(st.player) then
+          Battle._actions = {}
+          handle_player_faint()
+          return true
         end
-      end
-      if Battle._headless then
-        SwitchSeq.beginPlayerSwitch(st, newSlot, {
-          headless = true,
-          pushMsg = pushFn,
-          onDone = onDone,
-        })
-        -- Fall through to enemy action list
-      else
+        if Battle._headless then
+          SwitchSeq.beginPlayerSwitch(st, newSlot, {
+            headless = true,
+            pushMsg = pushFn,
+            onDone = function() Battle._phase = "actions" end,
+          })
+          return false
+        end
         SwitchSeq.beginPlayerSwitch(st, newSlot, {
           headless = false,
           pushMsg = pushFn,
-          onDone = onDone,
+          onDone = function()
+            Battle._phase = "actions"
+            if not Battle._actions or not Battle._actions[Battle._actionI] then
+              after_actions()
+            end
+          end,
         })
         Battle._phase = "switching"
-        return
+        return true
       end
+      -- pokefirered/src/battle_script_commands.c:8337
+      local enemyAct = D.pursuitRow(st, 1, 0)
+      if enemyAct then
+        for i = #(Battle._actions or {}), 1, -1 do
+          if Battle._actions[i] == enemyAct then table.remove(Battle._actions, i) end
+        end
+        enemyAct.done = true
+        local out = {}
+        Engine.resolveMove(st.enemy, st.player, enemyAct.move, enemyAct.slot, ad, st, out, { pursuitSwitch = true })
+        local animMeta = out._anim
+        if Battle._headless or not animMeta then
+          push_msgs(out)
+        else
+          AnimSeq.begin(animMeta, seq_push)
+          Battle._phase = "animating"
+          Battle._singleAfterAnim = function() switch_out() end
+          return
+        end
+      end
+      if switch_out() then return end
     end
   end
 
@@ -1844,6 +2211,10 @@ local function step_action()
   end
   Battle._actionI = Battle._actionI + 1
 
+  if act.kind == "player_meta" then
+    Battle._metaAct = act.meta
+    return step_action()
+  end
   if st.safari and (act.kind == "watch" or act.kind == "run") then
     return step_safari_enemy(act)
   end
@@ -1868,7 +2239,7 @@ local function step_action()
   end
 
   local out = {}
-  st.interactiveChoices = not (Battle._headless or Battle._auto)
+  st.interactiveChoices = st.link or not (Battle._headless or Battle._auto)
   st.pdActor = (type(act.user) == "table" and act.user.side) or act.user
   Engine.resolveMove(act.user, act.target, act.move, act.slot, ad, st, out)
   st.interactiveChoices = nil
@@ -1882,6 +2253,7 @@ local function step_action()
     else
       push_msgs(out)
     end
+    if Battle._pendingChoice then return open_pending_choice() end
     if end_if_over() then return end
   else
     AnimSeq.begin(animMeta, seq_push)
@@ -1898,7 +2270,7 @@ local function step_action()
 end
 
 -- pokefirered/src/battle_script_commands.c:4626
-local function open_pending_choice()
+open_pending_choice = function()
   local st, ad = Battle._st, Battle._adapter
   local req = Battle._pendingChoice
   Battle._pendingChoice = nil
@@ -1916,6 +2288,26 @@ local function open_pending_choice()
       for _, t in ipairs(out or {}) do Ui.push(t) end
       Battle._phase = "actions"
       if st.double and not Battle._pendingChoice then D.afterEach() end
+    end
+  end
+  local LB = st.link and link_battle() or nil
+  if LB and LB.isActive() and req and req.kind == "baton_pass" then
+    local cands = req.candidates or {}
+    local bpId = tonumber(req.battler) or uid
+    if st.multi and multi_remote(st, bpId) then
+      return with_link_replacement(st, cands[1], resume, State.sideOf(bpId), bpId)
+    end
+    if req.side == "enemy" or st.spectate then
+      return with_link_replacement(st, cands[1], resume, req.side == "enemy" and "enemy" or "player")
+    end
+    if Battle._headless or Battle._auto then
+      LB.sendSwitch(cands[1])
+      return resume(cands[1])
+    end
+    local chosen = resume
+    resume = function(slot)
+      LB.sendSwitch(slot)
+      return chosen(slot)
     end
   end
   if Battle._headless or Battle._auto or not (req and req.kind == "baton_pass") then
@@ -1992,6 +2384,7 @@ function D.reset()
   Battle._midTurn = nil
   Battle._linkAct = nil
   Battle._linkDouble = nil
+  Battle._linkMulti = nil
   Battle._linkSwitch = nil
 end
 
@@ -2097,6 +2490,10 @@ function D.startSelection()
   local st = Battle._st
   st.monToSwitchInto = {}
   Battle._phase = "command"
+  if st.spectate then
+    Battle._dblSel = nil
+    return
+  end
   Battle._dblSel = { chosen = {}, pos = 1 }
   return D.advanceSelection()
 end
@@ -2108,7 +2505,8 @@ function D.advanceSelection()
   while sel.pos <= #SEL_ORDER do
     local id = SEL_ORDER[sel.pos]
     local b = State.battler(st, id)
-    if not b or State.isAbsent(st, id) then
+    -- pokefirered/src/battle_controllers.c:231
+    if not b or State.isAbsent(st, id) or multi_remote(st, id) then
       sel.pos = sel.pos + 1
     else
       local locked = D.lockedAction(st, id)
@@ -2147,7 +2545,9 @@ end
 
 function D.openMenu(id)
   local sel = Battle._dblSel
-  return Ui.openMenu(id, { partnerAction = (id == 2 and sel) and sel.chosen[0] or nil })
+  local st = Battle._st
+  local partner = (id == 2 and sel and not (st and st.multi)) and sel.chosen[0] or nil
+  return Ui.openMenu(id, { partnerAction = partner })
 end
 
 function D.commit(cmd)
@@ -2163,7 +2563,7 @@ function D.onCommand(cmd)
   if not sel or not sel.active then return end
   local id = sel.active
   if cmd.kind == "cancel_partner" then
-    if id == 2 and not State.isAbsent(st, 0) then return D.cancelPartner() end
+    if id == 2 and not State.isAbsent(st, 0) and not st.multi then return D.cancelPartner() end
     return D.openMenu(id)
   end
   local b = State.battler(st, id)
@@ -2244,10 +2644,24 @@ function D.finishSelection()
   Battle._dblSel = nil
   st.activeBattler = nil
   local LB = st.link and Battle._linkBattle() or nil
-  if LB and LB.isActive() and LB.linkOpen() then
+  if st.multi and LB and LB.isActive() then
+    -- pokefirered/src/battle_main.c:3097
+    st.turn = st.turn + 1
+    local own = st.linkOwn
+    local act = own ~= nil and chosen[own] or nil
+    LB.sendMultiAction(st.turn, act, act and link_canon(st, act.target) or nil)
+    if st.over or not Battle._active then return end
+    Battle._linkAct = chosen
+    Battle._linkMulti = true
+    Battle._phase = "linkwait"
+    Battle._linkTurnStep()
+    return
+  end
+  if LB and LB.isActive() then
     -- pokefirered/src/battle_main.c:3226 both of this machine's actions go out together
     st.turn = st.turn + 1
     LB.sendActionList(st.turn, { chosen[0], chosen[2] })
+    if st.over or not Battle._active then return end
     Battle._linkAct = chosen
     Battle._linkDouble = true
     Battle._phase = "linkwait"
@@ -2300,7 +2714,7 @@ function D.stepAction()
   if act.kind == "move" then
     if not user or State.isFainted(user) then return D.afterEach() end
     local out = {}
-    st.interactiveChoices = not (Battle._headless or Battle._auto)
+    st.interactiveChoices = st.link or not (Battle._headless or Battle._auto)
     Engine.resolveMove(act.battler, act.target, act.move, act.slot, ad, st, out)
     st.interactiveChoices = nil
     Battle._pendingChoice = out.pendingChoice
@@ -2409,6 +2823,11 @@ function D.faintStep()
   if F.stage == "check" then
     -- pokefirered/data/battle_scripts_1.s:2825
     local res = Engine.checkEnd(st, ad)
+    if res == "draw" and st.link then
+      Battle._dblFaint = nil
+      stop_low_hp_song()
+      return D.linkDraw(st)
+    end
     if res == "win" or res == "lose" then
       Battle._dblFaint = nil
       Battle._actions = {}
@@ -2422,7 +2841,7 @@ function D.faintStep()
     F.stage = "repl"
   end
   if F.stage == "repl" then
-    for id = 0, 3 do
+    for _, id in ipairs(State.battlerOrder(st)) do
       local b = State.battler(st, id)
       if b and not State.isAbsent(st, id) and State.isFainted(b) then
         local cands = Engine.replacementCandidates(st, id)
@@ -2463,6 +2882,27 @@ function D.pickReplacement(id, cands)
   local function go(slot)
     st.monToSwitchInto[id] = slot
     return D.sendOut(id, slot)
+  end
+  local LB = st.link and Battle._linkBattle() or nil
+  if LB and LB.isActive() and st.multi and multi_remote(st, id) then
+    return with_link_replacement(st, cands[1], go, State.sideOf(id), id)
+  end
+  if LB and LB.isActive() then
+    if State.sideOf(id) == "enemy" then
+      return with_link_replacement(st, cands[1], go, "enemy")
+    end
+    if st.spectate then
+      return with_link_replacement(st, cands[1], go, "player")
+    end
+    if Battle._headless or Battle._auto then
+      LB.sendSwitch(cands[1])
+      return go(cands[1])
+    end
+    local sendOut = go
+    go = function(slot)
+      LB.sendSwitch(slot)
+      return sendOut(slot)
+    end
   end
   if State.sideOf(id) == "enemy" then
     -- pokefirered/src/battle_controller_opponent.c:1410
@@ -2830,7 +3270,30 @@ function Battle.quitPokedude()
   return true
 end
 
+local update_body
+
 function Battle.update(dt, game)
+  if not Battle._active then return end
+  local st = Battle._st
+  if not (st and st.link) then return update_body(dt, game) end
+  local ok, err = xpcall(function() return update_body(dt, game) end, debug.traceback)
+  if ok then return end
+  print("[game3/battle] link battle step failed: " .. tostring(err))
+  local again = Battle._linkFault
+  Battle._linkFault = true
+  local LB = link_battle()
+  local Guard = require("src.core.game3.battle.link_guard")
+  local where = Guard.tripped
+  Guard.tripped = nil
+  if not again and LB and LB.desync then
+    LB.desync(LB._turn or st.turn or 0, where and ("rng:" .. tostring(where)) or "engine")
+  end
+  if Battle._active and (again or Battle._phase ~= "ending") then
+    finish("draw")
+  end
+end
+
+update_body = function(dt, game)
   if not Battle._active then return end
 
   -- A stat window whose phase can no longer dismiss it must not linger (#2324).
@@ -2879,6 +3342,11 @@ function Battle.update(dt, game)
 
   if Battle._phase == "linkswitch" then
     link_switch_step()
+    return
+  end
+
+  if Battle._phase == "command" and Battle._st and Battle._st.spectate then
+    spectate_turn_step()
     return
   end
 
@@ -3278,6 +3746,35 @@ end
 
 function Battle.abort(result)
   if Battle._active then finish(result or "run") end
+end
+
+function Battle.linkEnd(result, text, reason)
+  if not Battle._active then return false end
+  local st = Battle._st
+  if not st then return false end
+  result = result or "draw"
+  st.over = true
+  st.result = result
+  st.endReason = reason or "link"
+  D.reset()
+  Battle._dblFaint = nil
+  Battle._actions = {}
+  Battle._actionI = 1
+  Battle._metaAct = nil
+  Battle._residualEvents = nil
+  Battle._pendingChoice = nil
+  AnimSeq.reset()
+  SwitchSeq.reset()
+  for _, name in ipairs({ "src.ui.game3.party_menu", "src.ui.game3.bag_menu", "src.ui.game3.summary_menu" }) do
+    local M = package.loaded[name]
+    if M and M.isOpen and M.isOpen() and M.close then pcall(M.close) end
+  end
+  if Ui.clearLinger then Ui.clearLinger() end
+  if text and text ~= "" then Ui.push(text) end
+  Battle._pendingEnd = result
+  Battle._phase = "ending"
+  if Battle._headless then finish(result) end
+  return true
 end
 
 return Battle

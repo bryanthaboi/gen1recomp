@@ -1,6 +1,6 @@
 -- Unit coverage for event:discord.join_requested (DiscordPresence Ask-to-Join).
--- Mods subscribe through Runtime; the engine emits before it hands the code
--- to the launcher's online client.
+-- Mods subscribe through Runtime; the engine emits before it hands the invite
+-- token to the launcher.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -44,40 +44,38 @@ local function listen()
   return seen
 end
 
+local TOKEN = ("0123456789abcdef"):rep(2)
 do
   local game = freshGame()
   local st = DiscordPresence._state
   st.game = game
   st.activity = "exploring"
   local seen = listen()
-
   joined = {}
-  DiscordPresence.handleJoinRequest("m:HOST01")
-  T.eq(#seen, 1, "match join emits discord.join_requested")
-  T.eq(seen[1].code, "HOST01", "payload carries the match code")
-  T.eq(seen[1].kind, "m", "payload carries kind tag m")
+  DiscordPresence.handleJoinRequest("i:" .. TOKEN)
+  T.eq(#seen, 1, "an invite join emits discord.join_requested")
+  T.eq(seen[1].invite, TOKEN, "payload carries the invite token")
+  T.eq(seen[1].kind, "i", "payload carries kind tag i")
   T.eq(game.returned and game.returned.tab, "online",
     "a running game returns to the launcher's online tab")
-  T.eq(game.returned and game.returned.joinCode, "HOST01",
-    "the launcher is handed the code")
-  T.eq(#joined, 1, "the online client is asked to join the room")
-  T.eq(joined[1].code, "HOST01", "...with the code")
-  T.eq(joined[1].as, "player", "...as a player")
+  T.eq(game.returned and game.returned.invite, TOKEN,
+    "the launcher is handed the token")
+  T.eq(#joined, 0, "the launcher joins, not DiscordPresence")
   T.eq(game.stack:top(), nil, "no in-game link screen is pushed any more")
   bus:removeOwner("discord_join_test")
 end
 
 do
   local st = DiscordPresence._state
-  st.game = nil -- the launcher, with no game booted
+  st.game = nil
   st.activity = "menu"
   local seen = listen()
-
-  joined = {}
-  DiscordPresence.handleJoinRequest("t:TOUR99")
-  T.eq(#seen, 1, "a tournament secret still emits discord.join_requested")
-  T.eq(seen[1].kind, "t", "payload carries kind tag t")
-  T.eq(joined[1] and joined[1].code, "TOUR99", "it joins that room code")
+  local handed
+  DiscordPresence.joinHandler = function(token) handed = token end
+  DiscordPresence.handleJoinRequest(TOKEN)
+  T.eq(#seen, 1, "a bare token still emits discord.join_requested")
+  T.eq(handed, TOKEN, "the launcher's join handler takes it")
+  DiscordPresence.joinHandler = nil
   bus:removeOwner("discord_join_test")
 end
 
@@ -87,13 +85,10 @@ do
   st.game = game
   st.activity = "exploring"
   local seen = listen()
-
-  joined = {}
-  DiscordPresence.handleJoinRequest("PLAIN42")
-  T.eq(#seen, 1, "plain secret still emits discord.join_requested")
-  T.eq(seen[1].kind, "m", "plain secret defaults to match kind")
-  T.eq(seen[1].code, "PLAIN42", "plain secret is the whole code")
-  T.eq(joined[1] and joined[1].code, "PLAIN42", "and it joins that room")
+  DiscordPresence.handleJoinRequest("m:HOST01")
+  T.eq(#seen, 1, "an old room-code secret still emits the event")
+  T.eq(seen[1].code, "HOST01", "with the code for mods")
+  T.eq(game.returned, nil, "but nothing joins a room code any more")
   bus:removeOwner("discord_join_test")
 end
 

@@ -70,6 +70,7 @@ local function stepGame(imp, x, y, w, m)
       OnlinePanel.invalidate(imp)
     end)
 
+  if OnlinePanel.isGen3(imp) then return cy - y end
   local arena = { { id = "vanilla", label = Strings("Vanilla") } }
   for _, row in ipairs(c.carts) do
     arena[#arena + 1] = { id = row.id, label = row.title, cart = true }
@@ -95,6 +96,37 @@ local function stepGame(imp, x, y, w, m)
   end
   return cy - y
 end
+
+local function stepFormat(imp, x, y, w, m)
+  local OnlinePanel = OP()
+  local st = OnlinePanel.state(imp)
+  local _, gap, tiny = Ui.pads(m)
+  local tour = st.wizard and st.wizard.kind == "hostTournament"
+  local options = {}
+  for _, row in ipairs(OnlinePanel.G3_FORMATS) do
+    if not tour or OnlinePanel.TOUR_FORMATS[row.id] then
+      options[#options + 1] = { id = row.id, label = Strings(row.label), note = row.note }
+    end
+  end
+  local current = OnlinePanel.ruleset(imp)
+  local cy = y + chipRow(imp, x, y, w, m, Strings("Battle"), "online-format", options,
+    function(option) return option.id == current end,
+    function(option) OnlinePanel.setRuleset(imp, option.id) end)
+  for _, option in ipairs(options) do
+    if option.id == current then
+      cy = cy + Kit.textWrapped("micro", Strings(option.note), x, cy, w,
+        PAL.faint, 2) + tiny
+    end
+  end
+  if tour then
+    cy = cy + Kit.textWrapped("micro",
+      Strings("Multi battles are for four trainers, so they stay out of brackets."),
+      x, cy, w, PAL.faint, 2) + tiny
+  end
+  return (cy - y) + gap - tiny
+end
+
+Wizard.stepFormat = stepFormat
 
 local function stepSave(imp, x, y, w, availH, m)
   local OnlinePanel = OP()
@@ -187,14 +219,20 @@ local function stepTeam(imp, x, y, w, m)
   if target and type(target.rule) == "table" then
     local want, have = OnlinePanel.teamCap(imp), #(st.team or {})
     cy = cy + Kit.textWrapped("small",
-      Strings("Pick %d POKeMON (%d of %d picked)  -  %s", want, have, want,
+      Strings("Pick %d POKéMON (%d of %d picked)  -  %s", want, have, want,
         OnlinePanel.ruleText(target.rule)),
       x, cy, w, have == want and PAL.green or PAL.yellow, 2) + tiny
+  elseif OnlinePanel.ruleset(imp) then
+    local ruleset = OnlinePanel.ruleset(imp)
+    local need = OnlinePanel.formatMismatch(imp, ruleset)
+    cy = cy + Kit.textWrapped("small", need or Strings("%s  -  %d picked",
+      Strings(OnlinePanel.FORMAT_TEXT[ruleset] or ruleset), #(st.team or {})),
+      x, cy, w, need and PAL.yellow or PAL.green, 2) + tiny
   end
   cy = cy + Ui.label(Strings("Your party"), x, cy) + tiny
   if #c.party == 0 then
     Kit.emptyBox(x, cy, w, rowH,
-      c.partyReason or Strings("That save has no POKeMON."))
+      c.partyReason or Strings("That save has no POKéMON."))
     cy = cy + rowH + tiny
   else
     local box = math.floor(56 * m.s)
@@ -236,7 +274,7 @@ local function stepTeam(imp, x, y, w, m)
   cy = cy + Ui.label(Strings("Picked (%d)", #(st.team or {})), x, cy) + tiny
   if #(c.team or {}) == 0 then
     Kit.emptyBox(x, cy, w, rowH,
-      Strings("Tap a POKeMON above, or pull one out of the PC."))
+      Strings("Tap a POKéMON above, or pull one out of the PC."))
     cy = cy + rowH + tiny
   else
     for _, row in ipairs(c.team) do
@@ -270,18 +308,25 @@ local function stepRules(imp, x, y, w, m)
   end
   local third = m.twoCol and math.floor((w - 2 * gap) / 3) or w
 
-  cy = cy + Ui.label(Strings("How many POKeMON each"), x, cy) + tiny
-  Ui.chooser(imp, x, cy, third, rowH, "online-size",
-    ("%d v %d"):format(rule.partySize or 1, rule.partySize or 1),
-    function()
-      rule.partySize = Ui.cycle(OnlinePanel.SIZES, rule.partySize, -1)
-      bump()
-    end,
-    function()
-      rule.partySize = Ui.cycle(OnlinePanel.SIZES, rule.partySize, 1)
-      bump()
-    end)
-  cy = cy + rowH + gap
+  cy = cy + Ui.label(Strings("How many POKéMON each"), x, cy) + tiny
+  if OnlinePanel.ruleset(imp) == "g3_multi" then
+    cy = cy + Kit.textWrapped("small",
+      Strings("%d POKéMON for every trainer.",
+        OnlinePanel.MULTI_TEAM),
+      x, cy, w, PAL.muted, 2) + gap
+  else
+    Ui.chooser(imp, x, cy, third, rowH, "online-size",
+      ("%d v %d"):format(rule.partySize or 1, rule.partySize or 1),
+      function()
+        rule.partySize = Ui.cycle(OnlinePanel.SIZES, rule.partySize, -1)
+        bump()
+      end,
+      function()
+        rule.partySize = Ui.cycle(OnlinePanel.SIZES, rule.partySize, 1)
+        bump()
+      end)
+    cy = cy + rowH + gap
+  end
 
   cy = cy + Ui.label(Strings("Levels"), x, cy) + tiny
   local col2 = m.twoCol and (x + third + gap) or x
@@ -332,16 +377,39 @@ local function stepVisibility(imp, x, y, w, m)
   local cy = y
   cy = cy + chipRow(imp, x, cy, w, m, Strings("Visibility"), "online-visible",
     { { id = "public", label = Strings("Public") },
-      { id = "code", label = Strings("Code only") } },
+      { id = "private", label = Strings("Private (PIN)") } },
     function(option)
-      if option.id == "public" then return st.public ~= false end
-      return st.public == false
+      if option.id == "public" then return st.private ~= true end
+      return st.private == true
     end,
-    function(option) st.public = option.id == "public" end)
-  cy = cy + Kit.textWrapped("micro", st.public == false
-    and Strings("Only trainers you give the code to can join.")
+    function(option)
+      st.private = option.id == "private"
+      if st.private then
+        imp._onlineFocus = OnlinePanel.HOST_PIN_FIELD
+        if type(imp._armTextInput) == "function" then
+          pcall(imp._armTextInput, imp)
+        end
+      end
+    end)
+  cy = cy + Kit.textWrapped("micro", st.private == true
+    and Strings("Listed with a lock. Trainers need your PIN to join or watch.")
     or Strings("Anyone browsing Play sees this lobby."),
     x, cy, w, PAL.faint, 2) + gap
+  if st.private == true then
+    local field = OnlinePanel.HOST_PIN_FIELD
+    cy = cy + Ui.label(Strings("PIN"), x, cy) + tiny
+    local pinW = math.min(w, math.floor(160 * m.s))
+    Ui.field(imp, x, cy, pinW, btnH, field, st.pin or "",
+      Strings("4 digits"), imp._onlineFocus == field,
+      function(text) st.pin = OnlinePanel.sanitizePin(text) end,
+      { mask = true, digits = true, maxLen = OnlinePanel.PIN_LEN })
+    cy = cy + btnH + tiny
+    if not OnlinePanel.pinValid(st.pin) then
+      cy = cy + Kit.textWrapped("micro", Strings("Pick 4 digits to share."),
+        x, cy, w, PAL.yellow, 1) + tiny
+    end
+    cy = cy + gap - tiny
+  end
   cy = cy + Ui.label(Strings("Note (optional)"), x, cy) + tiny
   Ui.field(imp, x, cy, w, btnH, "online-note", st.note,
     Strings("Say something, like first to three"),
@@ -411,26 +479,74 @@ local function stepSpectators(imp, x, y, w, m)
   return cy - y
 end
 
+local function stepTourVisibility(imp, x, y, w, m)
+  local OnlinePanel = OP()
+  local st = OnlinePanel.state(imp)
+  local _, gap = Ui.pads(m)
+  local cy = y + chipRow(imp, x, y, w, m, Strings("Visibility"),
+    "online-tour-visible",
+    { { id = "public", label = Strings("Public") },
+      { id = "private", label = Strings("Private (code)") } },
+    function(option)
+      if option.id == "public" then return st.tourPublic ~= false end
+      return st.tourPublic == false
+    end,
+    function(option) st.tourPublic = option.id == "public" end)
+  cy = cy + Kit.textWrapped("micro", st.tourPublic == false
+    and Strings("You get a code to give the trainers you want in.")
+    or Strings("Anyone browsing Tournaments can join."),
+    x, cy, w, PAL.faint, 2) + gap
+  return cy - y
+end
+
+Wizard.stepTourVisibility = stepTourVisibility
+
 local function stepRole(imp, x, y, w, m)
   local OnlinePanel = OP()
   local st = OnlinePanel.state(imp)
   local tr = OnlinePanel.tradeState(imp)
   local _, gap, tiny = Ui.pads(m)
-  local btnH = math.max(m.btnH, Kit.tapMin())
   local cy = y + chipRow(imp, x, y, w, m, Strings("Trade"), "online-trade-role",
     { { id = "host", label = Strings("Host a trade") },
-      { id = "join", label = Strings("Join with a code") } },
+      { id = "join", label = Strings("Join a listed trade") } },
     function(option) return option.id == (st.tradeRole or "host") end,
     function(option) st.tradeRole = option.id end)
   if (st.tradeRole or "host") == "join" then
-    cy = cy + Ui.label(Strings("Trade code"), x, cy) + tiny
-    Ui.field(imp, x, cy, w, btnH, "online-trade-code", tr.code,
-      Strings("Six characters"), imp._onlineFocus == "online-trade-code",
-      function(text) tr.code = OnlinePanel.sanitizeCode(text) end)
-    cy = cy + btnH + gap
+    local c = OnlinePanel.cache(imp)
+    local rowH = math.max(m.rowH, Kit.tapMin())
+    local rows = {}
+    for _, row in ipairs(c.rooms or {}) do
+      if row.intent == "trade" and row.reason == nil then rows[#rows + 1] = row end
+    end
+    cy = cy + Ui.label(Strings("Open trades"), x, cy) + tiny
+    if #rows == 0 then
+      Kit.emptyBox(x, cy, w, rowH, Strings("No open trades right now."))
+      cy = cy + rowH + gap
+    end
+    for i = 1, math.min(#rows, 5) do
+      local row = rows[i]
+      local picked = type(tr.target) == "table" and tr.target.room == row.room
+      local pick = row
+      local ink = LV().rowHit(imp, x, cy, w, rowH, picked,
+        "online-trade-pick-" .. row.id,
+        function()
+          tr.target = { room = pick.room, locked = pick.locked, name = pick.name }
+        end)
+      local tx = x + math.floor(10 * m.s)
+      if row.locked then
+        local size = math.floor(14 * m.s)
+        Ui.lock(tx, cy + (rowH - size) / 2, size, PAL.yellow)
+        tx = tx + size + math.floor(6 * m.s)
+      end
+      Kit.text("small", Kit.ellipsize("small", row.name .. "  " .. row.game,
+        w - (tx - x) - math.floor(10 * m.s)), tx,
+        cy + (rowH - Kit.textHeight("small")) / 2, ink or PAL.heading)
+      cy = cy + rowH + tiny
+    end
+    cy = cy + gap - tiny
   else
     cy = cy + Kit.textWrapped("micro",
-      Strings("You get a code to give the other trainer."),
+      Strings("Your trade shows up in Play for the other trainer to join."),
       x, cy, w, PAL.faint, 2) + gap
   end
   local refusal = OnlinePanel.remoteTradeRefusal(imp)
@@ -467,6 +583,7 @@ end
 
 local BODIES = {
   game = function(imp, x, y, w, availH, m) return stepGame(imp, x, y, w, m) end,
+  format = function(imp, x, y, w, availH, m) return stepFormat(imp, x, y, w, m) end,
   save = stepSave,
   team = function(imp, x, y, w, availH, m) return stepTeam(imp, x, y, w, m) end,
   rules = function(imp, x, y, w, availH, m) return stepRules(imp, x, y, w, m) end,
@@ -483,6 +600,9 @@ local BODIES = {
     return stepSpectators(imp, x, y, w, m)
   end,
   role = function(imp, x, y, w, availH, m) return stepRole(imp, x, y, w, m) end,
+  tourvisibility = function(imp, x, y, w, availH, m)
+    return stepTourVisibility(imp, x, y, w, m)
+  end,
   summary = function(imp, x, y, w, availH, m)
     return stepSummary(imp, x, y, w, m)
   end,

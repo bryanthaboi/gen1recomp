@@ -260,7 +260,7 @@ function Records.show(opts)
     Stack.push(Records.ID, Records, { hideBelow = false, drawUnder = true })
   else
     Records._phase = "in"
-    Stack.push(Records.ID, Records, { hideBelow = true })
+    Stack.push(Records.ID, Records, { hideBelow = true, fullscreen = true })
     fade_in()
   end
   return Records

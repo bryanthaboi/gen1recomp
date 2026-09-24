@@ -1904,6 +1904,23 @@ local function dispatch(vm, row)
     Flags.setVar(store, ctx, 0x800D, 0)
     if op == "multichoice" then
       local listId = tonumber(row.listId or row[3]) or -1
+      local MultiO = require("src.core.game3.scripting.multichoice")
+      local override = MultiO.OVERRIDES and MultiO.OVERRIDES[listId]
+      if override then
+        local picked = false
+        ctx.mode = "native"
+        ctx.status = "waiting"
+        ctx.nativePoll = function() return picked end
+        local took = override(ctx, row, function(sel)
+          Flags.setVar(store, ctx, 0x800D, tonumber(sel) or 0)
+          picked = true
+        end)
+        if took and not picked then return true end
+        ctx.mode = "bytecode"
+        ctx.status = "running"
+        ctx.nativePoll = nil
+        if took then return false end
+      end
       local okP, Prize = pcall(require, "src.ui.game3.prize_corner")
       if okP and type(Prize) == "table" and Prize.isPrizeList(listId) then
         local Multi = require("src.core.game3.scripting.multichoice")

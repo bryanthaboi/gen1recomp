@@ -118,8 +118,8 @@ NativesLink.HANDLERS = {
     return false
   end,
   -- pokefirered/src/link.c:243
-  [S.IsWirelessAdapterConnected] = function(ctx)
-    return Link.isWirelessAdapterConnected(ctx)
+  [S.IsWirelessAdapterConnected] = function(ctx, adapters)
+    return Link.isWirelessAdapterConnected(ctx, adapters)
   end,
   -- pokefirered/src/union_room.c:382
   [S.TryBecomeLinkLeader] = function(ctx, adapters)
@@ -169,6 +169,13 @@ NativesLink.HANDLERS = {
     return false
   end,
 }
+
+local okM, Multi = pcall(require, "src.core.game3.scripting.multichoice")
+if okM and type(Multi) == "table" then
+  Multi.OVERRIDES = Multi.OVERRIDES or {}
+  -- pokefirered/data/scripts/cable_club.inc:956
+  Multi.OVERRIDES[Union.MULTICHOICE_JOIN_OR_LEAD] = Union.directModes
+end
 
 -- pokefirered/src/union_room.c:3606 natives_queries sorts after this module, so its
 local okQ, Queries = pcall(require, "src.core.game3.scripting.natives_queries")

@@ -109,6 +109,14 @@ return function(game)
     "FLAG_HIDE_MG_DELIVERYMEN is set by CableClub_OnTransition")
   U.shot(game, DIR .. "/gift_ticket_01_pc2f_no_card.png")
 
+  local mystic
+  for _, entry in ipairs(MysteryGift.builtins()) do
+    if entry.key == "mystic_ticket" then mystic = entry end
+  end
+  result(mystic ~= nil, "the built-in set carries the MYSTIC TICKET card")
+  result(mystic ~= nil and MysteryGift.receiveCard(session, mystic.card),
+    "the Wonder Card saves onto the session")
+
   result(game:saveGame() ~= false, "the game saved before the Mystery Gift menu")
   U.wait(30)
   game:returnToTitle()
@@ -141,32 +149,6 @@ return function(game)
     return finish()
   end
   local st = game.boot.gift
-
-  U.tap(game, "a")
-  for _ = 1, 300 do
-    if st.state == GiftUi.STATE.SOURCE_INPUT then break end
-    if st.msg then U.tap(game, "a") end
-    U.wait(4)
-  end
-  result(st.state == GiftUi.STATE.SOURCE_INPUT, "the source picker opened")
-  local mystic
-  for i, entry in ipairs(st.sources or {}) do
-    if entry.key == "mystic_ticket" then mystic = i end
-  end
-  result(mystic ~= nil, "the MYSTIC TICKET is one of the sources")
-  for _ = 2, (mystic or 1) do
-    U.tap(game, "down")
-    U.wait(6)
-  end
-  U.shot(game, DIR .. "/gift_ticket_02_source_picker.png")
-  U.tap(game, "a")
-  for _ = 1, 600 do
-    if st.state == GiftUi.STATE.MAIN_MENU and not st.msg then break end
-    if st.msg then U.tap(game, "a") end
-    U.wait(4)
-  end
-  result(st.state == GiftUi.STATE.MAIN_MENU,
-    "the card was received and saved, state=" .. tostring(st.state))
 
   U.tap(game, "a")
   for _ = 1, 300 do

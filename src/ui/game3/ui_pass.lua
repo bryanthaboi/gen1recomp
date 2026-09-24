@@ -128,6 +128,10 @@ function UiPass.drawUi()
     tryDraw(SeagallopUi)
   end
 
+  -- pokefirered/src/overworld.c:1833
+  local okW, WirelessIcon = pcall(require, "src.ui.game3.wireless_icon")
+  if okW and WirelessIcon.drawField then tryDraw({ draw = WirelessIcon.drawField }) end
+
   local okF, Fade = pcall(require, "src.ui.game3.fade")
   local isNamingOpen = okN and Naming.isOpen and Naming.isOpen()
   local okR, RegionMap = pcall(require, "src.ui.game3.region_map")

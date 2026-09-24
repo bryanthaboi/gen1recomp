@@ -43,41 +43,27 @@ local function LV()
   return require("src.import.LauncherView")
 end
 
-local BANNED = { [60] = true, [62] = true, [38] = true, [34] = true, [39] = true }
+local Connect = require("src.online.Connect")
 
-function OnlinePanel.sanitizeName(text)
-  text = tostring(text or "")
+OnlinePanel.sanitizeName = Connect.sanitizeName
+OnlinePanel.nameValid = Connect.nameValid
+OnlinePanel.threeDigits = Connect.threeDigits
+OnlinePanel.defaultName = Connect.defaultName
+
+OnlinePanel.PIN_LEN = 4
+
+function OnlinePanel.sanitizePin(text)
   local out = {}
-  for i = 1, #text do
-    local b = text:byte(i)
-    if b >= 32 and b <= 126 and not BANNED[b] then
-      out[#out + 1] = string.char(b)
-      if #out >= OnlinePanel.NAME_MAX then break end
-    end
+  for digit in tostring(text or ""):gmatch("%d") do
+    out[#out + 1] = digit
+    if #out >= OnlinePanel.PIN_LEN then break end
   end
-  return (table.concat(out):gsub("^%s+", ""):gsub("%s+$", ""))
+  return table.concat(out)
 end
 
-function OnlinePanel.nameValid(name)
-  if type(name) ~= "string" then return false end
-  local n = #name
-  return n >= OnlinePanel.NAME_MIN and n <= OnlinePanel.NAME_MAX
-    and name == OnlinePanel.sanitizeName(name)
-end
-
-function OnlinePanel.threeDigits(random)
-  random = random or math.random
-  return ("%03d"):format(random(0, 999))
-end
-
-function OnlinePanel.defaultName(trainerName, digits)
-  local base = OnlinePanel.sanitizeName(trainerName)
-  if base == "" then base = "PLAYER" end
-  local suffix = "#" .. tostring(digits or "000")
-  if #base + #suffix > OnlinePanel.NAME_MAX then
-    base = base:sub(1, OnlinePanel.NAME_MAX - #suffix)
-  end
-  return base .. suffix
+function OnlinePanel.pinValid(pin)
+  return type(pin) == "string" and #pin == OnlinePanel.PIN_LEN
+    and pin:match("^%d%d%d%d$") ~= nil
 end
 
 function OnlinePanel.sanitizeCode(text)
@@ -100,8 +86,9 @@ function OnlinePanel.state(imp)
       version = nil, slotId = nil, cartId = nil, kind = "vanilla",
       rule = { partySize = 1, minLevel = nil, maxLevel = nil, forceLevel = nil },
       ruleEdited = false,
+      ruleset = nil,
       team = {},
-      note = "", joinCode = "", public = true,
+      note = "", tourCode = "", private = false, pin = "",
       name = nil, nameDraft = nil,
       profiles = {}, profileWant = nil, profileBusy = nil,
       slotRead = nil,
@@ -109,9 +96,9 @@ function OnlinePanel.state(imp)
       engine = nil, converted = nil, convertWant = nil,
       trade = nil, roomCart = nil, roomCartKey = nil, cartInstall = nil,
       status = nil, statusOk = false,
-      job = nil, ticket = nil, ticketState = "idle",
-      connectWanted = false,
       ready = false,
+      list = "rooms",
+      invites = {}, outgoing = nil,
       pending = nil,
       tourPlaying = true,
       tourShotClock = 6,
@@ -237,117 +224,42 @@ function OnlinePanel.trainerNameFor(imp, version)
   return nil
 end
 
-function OnlinePanel.storedName()
-  local ok, SyncState = pcall(require, "src.sync.SyncState")
-  if not ok then return nil end
-  local loaded, state = pcall(SyncState.load)
-  if not loaded or type(state) ~= "table" then return nil end
-  return state.displayName
-end
-
-function OnlinePanel.persistName(name)
-  local ok, SyncState = pcall(require, "src.sync.SyncState")
-  if not ok then return false end
-  return (pcall(SyncState.update, function(state) state.displayName = name end))
-end
+OnlinePanel.storedName = Connect.storedName
+OnlinePanel.persistName = Connect.persistName
+OnlinePanel.linked = Connect.linked
 
 function OnlinePanel.ensureName(imp)
   local st = OnlinePanel.state(imp)
-  if st.name then return st.name end
-  local stored = OnlinePanel.storedName()
-  if OnlinePanel.nameValid(stored) then
-    st.name = stored
-    return st.name
+  local known = Connect.name()
+  if known then
+    st.name = known
+    return known
   end
   local version = OnlinePanel.selectedVersion(imp)
-  local name = OnlinePanel.defaultName(OnlinePanel.trainerNameFor(imp, version),
-    OnlinePanel.threeDigits())
-  st.name = name
-  OnlinePanel.persistName(name)
-  return name
+  st.name = Connect.ensureName(function()
+    return OnlinePanel.trainerNameFor(imp, version)
+  end, version)
+  return st.name
 end
 
 function OnlinePanel.setName(imp, text)
   local st = OnlinePanel.state(imp)
-  local name = OnlinePanel.sanitizeName(text)
-  if not OnlinePanel.nameValid(name) then
-    st.status = Strings("Names are 3 to 16 characters.")
+  local ok, why = Connect.setName(text,
+    { syncClient = OnlinePanel.syncClient(imp) })
+  if not ok then
+    st.status = why
     st.statusOk = false
     return false, "name too short"
   end
-  st.name = name
-  OnlinePanel.persistName(name)
-  if OnlinePanel.linked() then
-    OnlinePanel.startJob(imp, "displayName", function(client)
-      return client:setDisplayName(name)
-    end)
-  end
+  st.name = Connect.name()
   return true
-end
-
-function OnlinePanel.linked()
-  local ok, SyncState = pcall(require, "src.sync.SyncState")
-  if not ok then return false end
-  local loaded, state = pcall(SyncState.load)
-  if not loaded then return false end
-  return SyncState.linked(state) == true
 end
 
 function OnlinePanel.syncClient(imp)
-  local engine = imp._syncEngine and imp:_syncEngine() or nil
+  local engine = type(imp) == "table" and imp._syncEngine and imp:_syncEngine()
+    or nil
   if engine and engine.client then return engine.client end
-  local ok, SyncClient = pcall(require, "src.sync.SyncClient")
-  if not ok then return nil end
-  local made, client = pcall(SyncClient.new, {})
-  if not made or type(client) ~= "table" then return nil end
-  local loadedState, SyncState = pcall(require, "src.sync.SyncState")
-  if loadedState then
-    local got, state = pcall(SyncState.load)
-    if got and type(state) == "table" then
-      client:setAuth(state.account, state.deviceToken)
-    end
-  end
-  return client
-end
-
-function OnlinePanel.startJob(imp, kind, begin)
-  local st = OnlinePanel.state(imp)
-  if st.job then return false, "busy" end
-  local client = OnlinePanel.syncClient(imp)
-  if not client then return false, "no network transport" end
-  local ok, handle = pcall(begin, client)
-  if not ok or handle == nil then return false, "no network transport" end
-  st.job = { kind = kind, handle = handle, client = client }
-  return true
-end
-
-local function jobFinished(imp, res)
-  local st = OnlinePanel.state(imp)
-  local job = st.job
-  st.job = nil
-  if job then pcall(job.client.release, job.client, job.handle) end
-  if not job then return end
-  if job.kind == "ticket" then
-    if res.status == "ok" and type(res.data) == "table"
-        and type(res.data.ticket) == "string" then
-      st.ticket = res.data.ticket
-      st.ticketExpiresAt = tonumber(res.data.expiresAt)
-      st.ticketState = "ok"
-    else
-      st.ticket = nil
-      st.ticketState = (res.code == 404) and "unsupported" or "failed"
-      if res.code ~= 404 and res.err then
-        st.status = Strings("Sign-in didn't work: %s", tostring(res.err))
-        st.statusOk = false
-      end
-    end
-    if st.connectWanted then OnlinePanel.doConnect(imp) end
-  elseif job.kind == "displayName" then
-    if res.status ~= "ok" and res.code ~= 404 then
-      st.status = Strings("The server kept your old name.")
-      st.statusOk = false
-    end
-  end
+  return nil
 end
 
 function OnlinePanel.profileKey(version, kind, cartId)
@@ -424,6 +336,70 @@ function OnlinePanel.setEngine(imp, generation)
   return true
 end
 
+OnlinePanel.G3_FORMATS = {
+  { id = "g3_single", label = "Single battle",
+    note = "One POKéMON out on each side." },
+  { id = "g3_double", label = "Double battle",
+    note = "Two POKéMON out on each side. Bring at least 2." },
+  { id = "g3_multi", label = "Multi battle",
+    note = "Four trainers in two teams of two. Each brings 3 POKéMON." },
+}
+
+OnlinePanel.FORMAT_TEXT = {
+  g3_single = "Single battle", g3_double = "Double battle",
+  g3_multi = "Multi battle", g3_link = "Trade",
+}
+
+OnlinePanel.TOUR_FORMATS = { g3_single = true, g3_double = true }
+OnlinePanel.MULTI_TEAM = 3
+OnlinePanel.DOUBLE_MIN = 2
+OnlinePanel.TRADE_RULESET = "g3_link"
+
+function OnlinePanel.formatKnown(id)
+  for _, row in ipairs(OnlinePanel.G3_FORMATS) do
+    if row.id == id then return true end
+  end
+  return false
+end
+
+function OnlinePanel.isGen3(imp)
+  return OnlinePanel.roomEngine(imp) == 3
+end
+
+function OnlinePanel.ruleset(imp)
+  if not OnlinePanel.isGen3(imp) then return nil end
+  local st = OnlinePanel.state(imp)
+  if OnlinePanel.formatKnown(st.ruleset) then return st.ruleset end
+  return "g3_single"
+end
+
+function OnlinePanel.setRuleset(imp, id)
+  if not OnlinePanel.formatKnown(id) then return false end
+  local st = OnlinePanel.state(imp)
+  if st.ruleset == id then return true end
+  st.ruleset = id
+  st.ready = false
+  if id == "g3_multi" then
+    while #(st.team or {}) > OnlinePanel.MULTI_TEAM do table.remove(st.team) end
+  end
+  OnlinePanel.invalidate(imp, "party", "summary")
+  return true
+end
+
+local function variant(hit, ruleset, rule)
+  hit.variants = hit.variants or {}
+  local v = hit.variants[ruleset]
+  if not v then
+    local ArenaData = require("src.online.ArenaData")
+    local ok, copy = pcall(ArenaData.withRuleset, hit.profile, ruleset)
+    if not ok or type(copy) ~= "table" then return hit.profile end
+    v = copy
+    hit.variants[ruleset] = v
+  end
+  v.rule = copyRule(rule)
+  return v
+end
+
 function OnlinePanel.myProfile(imp)
   local st = OnlinePanel.state(imp)
   local version = OnlinePanel.engineVersion(imp)
@@ -440,7 +416,48 @@ function OnlinePanel.myProfile(imp)
   end
   if not hit.profile then return nil, hit.reason end
   hit.profile.rule = copyRule(st.rule)
+  local ruleset = OnlinePanel.ruleset(imp)
+  if ruleset == "g3_multi" then hit.profile.rule.partySize = OnlinePanel.MULTI_TEAM end
+  if ruleset and hit.profile.rulesetId ~= ruleset then
+    return variant(hit, ruleset, hit.profile.rule)
+  end
   return hit.profile
+end
+
+function OnlinePanel.profileFor(imp, rulesetId)
+  local profile, reason = OnlinePanel.myProfile(imp)
+  if not profile then return nil, reason end
+  if tonumber(profile.engine) ~= 3 or type(rulesetId) ~= "string"
+      or profile.rulesetId == rulesetId then
+    return profile
+  end
+  local st = OnlinePanel.state(imp)
+  local hit = st.profiles[OnlinePanel.profileKeyFor(imp) or ""]
+  if not hit or not hit.profile then return profile end
+  return variant(hit, rulesetId, profile.rule)
+end
+
+function OnlinePanel.tradeProfile(imp)
+  if OnlinePanel.isGen3(imp) then
+    return OnlinePanel.profileFor(imp, OnlinePanel.TRADE_RULESET)
+  end
+  return OnlinePanel.myProfile(imp)
+end
+
+-- pokefirered/src/pokemon.c:3769
+function OnlinePanel.formatMismatch(imp, ruleset)
+  local st = OnlinePanel.state(imp)
+  local n = #(st.team or {})
+  if ruleset == "g3_double" and n < OnlinePanel.DOUBLE_MIN then
+    return Strings("A double battle needs at least %d POKéMON.",
+      OnlinePanel.DOUBLE_MIN)
+  end
+  -- pokefirered/data/scripts/cable_club.inc:592
+  if ruleset == "g3_multi" and n ~= OnlinePanel.MULTI_TEAM then
+    return Strings("A multi battle needs exactly %d POKéMON.",
+      OnlinePanel.MULTI_TEAM)
+  end
+  return nil
 end
 
 function OnlinePanel.computeProfile(imp, key)
@@ -455,6 +472,7 @@ function OnlinePanel.computeProfile(imp, key)
   else
     st.profiles[key] = { profile = profile, reason = reason }
   end
+  st.profilesRev = (st.profilesRev or 0) + 1
   st.profileWant = nil
   return st.profiles[key]
 end
@@ -556,7 +574,9 @@ end
 
 function OnlinePanel.ruleFor(imp)
   local st = OnlinePanel.state(imp)
-  if not st.ruleEdited then
+  if OnlinePanel.ruleset(imp) == "g3_multi" then
+    st.rule.partySize = OnlinePanel.MULTI_TEAM
+  elseif not st.ruleEdited then
     st.rule.partySize = math.max(1, #(st.team or {}))
   end
   return st.rule
@@ -574,7 +594,7 @@ function OnlinePanel.ruleMismatch(imp, rule, what)
   local team = st.team or {}
   local want = tonumber(rule.partySize)
   if want and #team ~= want then
-    return Strings("%s needs %d Pokemon, you picked %d.",
+    return Strings("%s needs %d POKéMON, you picked %d.",
       what or Strings("This room"), want, #team)
   end
   local pick = OnlinePanel.readTeamSlot(imp)
@@ -592,7 +612,7 @@ function OnlinePanel.convertParty(party, fromVersion, toVersion)
   local fromGen = GameVersion.generation(fromVersion)
   local toGen = GameVersion.generation(toVersion)
   if fromGen == toGen then return nil, "same generation" end
-  if fromGen == 3 or toGen == 3 then return nil, TeamPick.GEN3_OFFLINE end
+  if fromGen == 3 or toGen == 3 then return nil, TeamPick.NO_TIME_CAPSULE end
   local gen1Version = (fromGen == 1) and fromVersion or toVersion
   local gen2Version = (fromGen == 2) and fromVersion or toVersion
   local gen2Data, err = Trade.withDataset(gen2Version, function(d) return d end)
@@ -694,9 +714,20 @@ function OnlinePanel.partyDigest(packed)
   return Fingerprint.digest(table.concat(out))
 end
 
+function OnlinePanel.alignedProfile(theirs, mine)
+  if type(theirs) ~= "table" or type(mine) ~= "table" then return mine end
+  if tonumber(mine.engine) ~= 3 or tonumber(theirs.engine) ~= 3 then return mine end
+  if mine.rulesetId == theirs.rulesetId then return mine end
+  local out = {}
+  for k, v in pairs(mine) do out[k] = v end
+  out.rulesetId = theirs.rulesetId
+  return out
+end
+
 function OnlinePanel.joinReason(entry, myProfile)
   if type(entry) ~= "table" then return "no listing" end
   if type(myProfile) ~= "table" then return "pick a game first" end
+  myProfile = OnlinePanel.alignedProfile(entry.profile, myProfile)
   local ArenaData = require("src.online.ArenaData")
   if ArenaData.equal(entry.profile, myProfile) then return nil end
   return ArenaData.describeMismatch(entry.profile, myProfile) or "that game differs"
@@ -714,8 +745,16 @@ function OnlinePanel.ruleText(rule)
   return table.concat(parts, ", ")
 end
 
+function OnlinePanel.formatText(profile)
+  if type(profile) ~= "table" or tonumber(profile.engine) ~= 3 then return nil end
+  local text = OnlinePanel.FORMAT_TEXT[tostring(profile.rulesetId)]
+  return text and Strings(text) or nil
+end
+
 function OnlinePanel.arenaText(profile)
   if type(profile) ~= "table" then return "" end
+  local format = OnlinePanel.formatText(profile)
+  if format then return format end
   if profile.kind == "cart" and profile.cart then
     return tostring(profile.cart.id)
   end
@@ -733,10 +772,94 @@ end
 
 OnlinePanel.nowSeconds = nowSeconds
 
-function OnlinePanel.pushProfile(profile)
+OnlinePanel.PROFILES_MAX = 12
+
+local G3_EXTRA = { "g3_double", "g3_link" }
+
+function OnlinePanel.lobbyProfiles(imp, first)
+  local st = OnlinePanel.state(imp)
+  local out, seen = {}, {}
+  local function add(p)
+    if type(p) ~= "table" or #out >= OnlinePanel.PROFILES_MAX then return end
+    local key = table.concat({ tostring(p.version), tostring(p.kind),
+      tostring(p.rulesetId), tostring(p.fingerprint),
+      tostring(p.cart and p.cart.id) }, "|")
+    if seen[key] then return end
+    seen[key] = true
+    out[#out + 1] = p
+  end
+  add(first)
+  local key = st.profileWant == nil and OnlinePanel.profileKeyFor(imp) or nil
+  local hit = key and st.profiles[key]
+  if hit and hit.profile then add(hit.profile) end
+  local ArenaData = package.loaded["src.online.ArenaData"]
+  for _, version in ipairs(OnlinePanel.readyVersions(imp)) do
+    local row = st.profiles[OnlinePanel.profileKey(version, "vanilla", nil)]
+    if row and row.profile then
+      add(row.profile)
+      if tonumber(row.profile.engine) == 3 and ArenaData
+          and type(ArenaData.withRuleset) == "function" then
+        for _, ruleset in ipairs(G3_EXTRA) do
+          local ok, copy = pcall(ArenaData.withRuleset, row.profile, ruleset)
+          if ok then add(copy) end
+        end
+      end
+    end
+  end
+  return out
+end
+
+function OnlinePanel.profileKeyFor(imp)
+  local st = OnlinePanel.state(imp)
+  local version = OnlinePanel.engineVersion(imp)
+  if not version then return nil end
+  local cross = OnlinePanel.crossGen(imp)
+  return OnlinePanel.profileKey(version, cross and "vanilla" or st.kind,
+    (not cross) and st.cartId or nil)
+end
+
+function OnlinePanel.pumpLobbyProfiles(imp)
+  local st = OnlinePanel.state(imp)
+  local client = Client()
+  if client.state() ~= "online" then return false end
+  for _, version in ipairs(OnlinePanel.readyVersions(imp)) do
+    local key = OnlinePanel.profileKey(version, "vanilla", nil)
+    if not st.profiles[key] then
+      OnlinePanel.computeProfile(imp, key)
+      return true
+    end
+  end
+  local session = type(client.sessionId) == "function" and client.sessionId() or nil
+  local seen = st.profilesSeen
+  if seen and seen.rev == (st.profilesRev or 0) and seen.first == st.lastPushed
+      and seen.session == session then
+    return false
+  end
+  st.profilesSeen = { rev = st.profilesRev or 0, first = st.lastPushed,
+                      session = session }
+  local list = OnlinePanel.lobbyProfiles(imp, st.lastPushed)
+  local parts = {}
+  for i, p in ipairs(list) do
+    parts[i] = tostring(p.version) .. ":" .. tostring(p.rulesetId) .. ":"
+      .. tostring(p.fingerprint)
+  end
+  local key = table.concat(parts, ",")
+  if key == st.profilesKey then return false end
+  st.profilesKey = key
+  if type(client.setProfiles) == "function" then pcall(client.setProfiles, list) end
+  return true
+end
+
+function OnlinePanel.pushProfile(profile, imp)
   local client = Client()
   if type(client.setProfiles) ~= "function" then return false end
-  return client.setProfiles(profile and { profile } or {})
+  local list = { profile }
+  if imp and imp._online and profile then
+    imp._online.lastPushed = profile
+    list = OnlinePanel.lobbyProfiles(imp, profile)
+    imp._online.profilesKey = nil
+  end
+  return client.setProfiles(profile and list or {})
 end
 
 local ensureHooks
@@ -771,6 +894,11 @@ function OnlinePanel.recordResult(result)
   if type(client.report) ~= "function" then return end
   if client.role() == "spectator" then return end
   pcall(client.report, result)
+end
+
+function OnlinePanel.noteResult(result)
+  if type(result) ~= "string" then return end
+  OnlinePanel.lastResult = result
 end
 
 -- -------------------------------------------------------------------- trade
@@ -885,14 +1013,41 @@ end
 OnlinePanel.monLabel = monLabel
 
 OnlinePanel.TRADE_STAGE_TEXT = {
-  waitRecords = "Comparing POKeMON with the other game",
+  waitRecords = "Comparing POKéMON with the other game",
   waitParty = "Waiting for the other party",
-  picking = "Tap the POKeMON you want to trade",
+  picking = "Tap the POKéMON you want to trade",
   waitPick = "Waiting for the other trainer to pick",
   confirming = "Confirm the trade",
   done = "Trade complete",
   cancelled = "The trade was called off",
+  handshake = "Linking up with the other game",
+  seat = "Linking up with the other game",
+  waitConfirm = "Waiting for the other trainer to confirm",
+  exchange = "Trading",
+  commit_wait = "Saving the trade on both sides",
+  committed = "Trade complete",
 }
+
+OnlinePanel.TRADE_RESULT_TEXT = {
+  partner_canceled = "The other trainer called off the trade.",
+  player_canceled = "The trade was called off.",
+  trade_canceled = "The trade was called off.",
+  both_canceled = "You both called off the trade.",
+  bad_mon = "That POKéMON can't be traded.",
+  partner_invalid = "That POKéMON can't be traded.",
+  no_mon = "That POKéMON can't be traded.",
+  digest = "The two games disagreed about the trade, so nothing changed.",
+  timeout = "The other trainer didn't confirm in time, so nothing changed.",
+  left = "The other trainer left, so nothing changed.",
+  ["the other trainer left"] = "The other trainer left, so nothing changed.",
+}
+
+function OnlinePanel.tradeResultText(why)
+  if why == nil then return nil end
+  local text = OnlinePanel.TRADE_RESULT_TEXT[tostring(why)]
+  if text then return Strings(text) end
+  return tostring(why)
+end
 
 function OnlinePanel.remoteStageText(stage)
   local text = OnlinePanel.TRADE_STAGE_TEXT[tostring(stage)]
@@ -907,7 +1062,7 @@ function OnlinePanel.tradeState(imp)
       sides = {}, picks = {}, handles = {},
       plan = nil, lines = nil, convertLines = nil,
       status = nil, statusOk = false,
-      code = "", remote = nil, remoteError = nil, remoteResult = nil,
+      remote = nil, remoteError = nil, remoteResult = nil,
     }
   end
   return st.trade
@@ -1192,7 +1347,7 @@ function OnlinePanel.tradePreview(imp)
   local tr = OnlinePanel.tradeState(imp)
   tr.plan, tr.lines = nil, nil
   if not (tr.picks.a and tr.picks.b) then
-    tr.status, tr.statusOk = Strings("Tap a POKeMON on each side."), false
+    tr.status, tr.statusOk = Strings("Tap a POKéMON on each side."), false
     return false
   end
   local Trade = require("src.online.Trade")
@@ -1372,9 +1527,6 @@ end
 -- ------- remote trade
 
 function OnlinePanel.remoteTradeRefusal(imp)
-  if OnlinePanel.saveGeneration(imp) == 3 then
-    return Strings(require("src.online.Trade").GEN3_LOCAL_ONLY)
-  end
   if OnlinePanel.crossGen(imp) then
     return Strings("Both players need the same game generation for now.")
   end
@@ -1393,27 +1545,32 @@ function OnlinePanel.hostTrade(imp)
     return false
   end
   ensureHooks()
-  local profile, reason = OnlinePanel.myProfile(imp)
+  local profile, reason = OnlinePanel.tradeProfile(imp)
   if not profile then
     tr.status, tr.statusOk = reason or Strings("Reading your game..."), false
     st.status, st.statusOk = tr.status, false
     return false
   end
-  st.pending = Client().createRoom({ intent = "trade", profile = profile,
-    playing = true, maxSpectators = 0, public = st.public ~= false,
-    note = (st.note ~= "" and st.note) or nil })
+  st.pending = Client().createRoom(OnlinePanel.roomOptions(imp, "trade",
+    profile, 0))
+  OnlinePanel.stampPending(st.pending)
   tr.status, tr.statusOk = Strings("Waiting for the other trainer."), true
   return true
 end
 
-function OnlinePanel.joinTrade(imp, code)
+function OnlinePanel.joinTrade(imp, target)
   local tr = OnlinePanel.tradeState(imp)
   local why = OnlinePanel.remoteTradeRefusal(imp)
   if why then
     tr.status, tr.statusOk = why, false
     return false
   end
-  return OnlinePanel.joinByCode(imp, code or tr.code, "player")
+  target = target or tr.target
+  if type(target) ~= "table" or not target.room then
+    tr.status, tr.statusOk = Strings("Pick a trade to join."), false
+    return false
+  end
+  return OnlinePanel.joinRoom(imp, target.room, "player", target.pin)
 end
 
 function OnlinePanel.beginRemoteTrade(imp, payload)
@@ -1478,7 +1635,10 @@ function OnlinePanel.remoteRows(remote)
   local version = type(remote.handle) == "table" and remote.handle.version or nil
   for index, mon in ipairs(party) do
     local pickable = true
-    if type(session.canPick) == "function" then
+    if type(remote.canPick) == "function" then
+      local ok, allowed = pcall(remote.canPick, remote, index)
+      pickable = ok and allowed == true
+    elseif type(session.canPick) == "function" then
       local ok, allowed = pcall(session.canPick, session, index)
       pickable = ok and allowed == true
     end
@@ -1517,40 +1677,70 @@ function OnlinePanel.remoteConfirm(imp, yes)
   return (pcall(function() tr.remote:confirm(yes and true or false) end))
 end
 
-function OnlinePanel.pumpRemoteTrade(imp)
+function OnlinePanel.remoteCancel(imp)
+  local tr = OnlinePanel.tradeState(imp)
+  local remote = tr.remote
+  if not remote then return false end
+  local stage = remote:stage()
+  if type(remote.cancelPick) == "function"
+      and (stage == "picking" or stage == "waitPick") then
+    local ok, sent = pcall(remote.cancelPick, remote)
+    if ok and sent then return true end
+  end
+  OnlinePanel.endRemoteTrade(imp)
+  return true
+end
+
+function OnlinePanel.remoteNote(remote)
+  if type(remote) ~= "table" then return nil end
+  local why = remote.lastResult
+  if why == nil then return nil end
+  if remote.lastRefusal and (why == "bad_mon" or why == "partner_invalid") then
+    return Strings("That POKéMON can't be traded: %s", tostring(remote.lastRefusal))
+  end
+  return OnlinePanel.tradeResultText(why)
+end
+
+function OnlinePanel.pumpRemoteTrade(imp, dt)
   local st = OnlinePanel.state(imp)
   local tr = st.trade
   if not tr or not tr.remote then return end
-  local ok, stage = pcall(function() return tr.remote:update() end)
+  local ok, stage = pcall(function() return tr.remote:update(dt or 0) end)
   if not ok then
     tr.remoteError = tostring(stage)
     OnlinePanel.endRemoteTrade(imp)
     return
   end
   local session = tr.remote.session
-  if session and session.theirParty and not tr.peerPrimed then
-    tr.peerPrimed = true
+  local peerCount = session and type(session.theirParty) == "table"
+    and #session.theirParty or 0
+  if peerCount > 0 and tr.peerPrimed ~= peerCount then
+    tr.peerPrimed = peerCount
     Sprites().prime(tr.remote.handle.version, session.theirParty)
   end
   if tr.remoteDone then return end
-  if stage == "done" then
+  if stage == "committed" then
     tr.remoteDone = true
-    local committed, result = tr.remote:commit()
-    if committed then
+    local result = tr.remote.commitResult or {}
+    if result[1] then
       pcall(require("src.online.Trade").pruneBackups,
         tr.remote.handle.path, 3)
       tr.remoteResult = Strings("Trade complete.")
+      if type(imp) == "table" and type(imp.savesChanged) == "function" then
+        local entry = tr.remote.handle
+        pcall(imp.savesChanged, imp, OnlinePanel.scopeFor(entry.version, entry.cartId))
+      end
       OnlinePanel.endRemoteTrade(imp)
       OnlinePanel.home(imp)
       st.status, st.statusOk = tr.remoteResult, true
       return
     end
-    tr.remoteResult = tostring(result)
+    tr.remoteResult = tostring(result[2] or Strings("The trade didn't save."))
     OnlinePanel.endRemoteTrade(imp)
   elseif stage == "cancelled" then
     tr.remoteDone = true
-    tr.remoteResult = tostring((tr.remote.session or {}).error
-      or Strings("The trade was called off."))
+    tr.remoteResult = OnlinePanel.tradeResultText((tr.remote.session or {}).error)
+      or Strings("The trade was called off.")
     OnlinePanel.endRemoteTrade(imp)
   end
 end
@@ -1720,6 +1910,12 @@ end
 function OnlinePanel.hostTournament(imp)
   local st = OnlinePanel.state(imp)
   ensureHooks()
+  local ruleset = OnlinePanel.ruleset(imp)
+  if ruleset and not OnlinePanel.TOUR_FORMATS[ruleset] then
+    st.status, st.statusOk =
+      Strings("Multi battles can't be played in a tournament."), false
+    return false
+  end
   local rule = OnlinePanel.ruleFor(imp)
   local profile, reason = OnlinePanel.myProfile(imp)
   if not profile then
@@ -1729,6 +1925,7 @@ function OnlinePanel.hostTournament(imp)
   local packed, digest
   if st.tourPlaying ~= false then
     local why = OnlinePanel.ruleMismatch(imp, rule, Strings("Your rule"))
+      or OnlinePanel.formatMismatch(imp, ruleset)
     if why then
       st.status, st.statusOk = why, false
       return false
@@ -1748,31 +1945,91 @@ function OnlinePanel.hostTournament(imp)
     maxSpectators = tonumber(st.tourSpectators) or 0,
     party = packed,
     partyDigest = digest,
+    public = st.tourPublic ~= false,
   })
+  OnlinePanel.stampPending(st.pending)
   finishTo(imp, "tournament")
   return true
 end
 
-function OnlinePanel.joinTournamentByCode(imp, code, as)
+function OnlinePanel.tourTarget(target)
+  if type(target) == "string" then
+    local code = OnlinePanel.sanitizeCode(target)
+    if #code == OnlinePanel.CODE_LEN then return { code = code } end
+    return nil
+  end
+  if type(target) ~= "table" then return nil end
+  if type(target.tour) == "string" and target.tour ~= "" then
+    return { tour = target.tour }
+  end
+  if type(target.code) == "string" then
+    local code = OnlinePanel.sanitizeCode(target.code)
+    if #code == OnlinePanel.CODE_LEN then return { code = code } end
+  end
+  return nil
+end
+
+function OnlinePanel.joinTournament(imp, target, as)
   local st = OnlinePanel.state(imp)
-  code = OnlinePanel.sanitizeCode(code)
-  if #code ~= OnlinePanel.CODE_LEN then
+  local want = OnlinePanel.tourTarget(target)
+  if not want then
     st.status, st.statusOk = Strings("Tournament codes are 6 characters."), false
     return false
   end
   ensureHooks()
+  local current = OnlinePanel.ruleset(imp)
+  if current and not OnlinePanel.TOUR_FORMATS[current] then
+    OnlinePanel.setRuleset(imp, "g3_single")
+  end
+  local listed = want.tour and OnlinePanel.findEntry("tour", want.tour) or nil
+  local listedProfile = listed and listed.profile or nil
+  if type(listedProfile) == "table" and OnlinePanel.formatKnown(listedProfile.rulesetId)
+      and OnlinePanel.isGen3(imp) then
+    OnlinePanel.setRuleset(imp, listedProfile.rulesetId)
+  end
   local packed, digest
   if as ~= "spectator" then
-    local why
+    local why = OnlinePanel.formatMismatch(imp, OnlinePanel.ruleset(imp))
+    if why then
+      st.status, st.statusOk = why, false
+      return false
+    end
     packed, digest, why = OnlinePanel.packTeam(imp)
     if not packed then
       st.status, st.statusOk = why, false
       return false
     end
   end
-  st.pending = Client().joinTournament(code, as or "player", packed, digest,
-    OnlinePanel.myProfile(imp))
+  local profile = OnlinePanel.myProfile(imp)
+  if type(listedProfile) == "table" and OnlinePanel.formatKnown(listedProfile.rulesetId) then
+    profile = OnlinePanel.profileFor(imp, listedProfile.rulesetId) or profile
+  end
+  st.pending = Client().joinTournament({ tour = want.tour, code = want.code,
+    as = as or "player", party = packed, partyDigest = digest,
+    profile = profile })
+  OnlinePanel.stampPending(st.pending)
+  if type(st.pending) == "table" then
+    st.pending.tourTarget = want
+    st.pending.tourAs = as or "player"
+    st.pending.tourRuleset = profile and profile.rulesetId or nil
+  end
   return true
+end
+
+function OnlinePanel.retryTourRuleset(imp, pending)
+  if type(pending) ~= "table" or not pending.tourTarget then return false end
+  if pending.reason ~= "profile_mismatch" or pending.field ~= "rulesetId" then
+    return false
+  end
+  if pending.tourRetried then return false end
+  local tried = pending.tourRuleset
+  if not OnlinePanel.TOUR_FORMATS[tostring(tried)] then return false end
+  local other = tried == "g3_single" and "g3_double" or "g3_single"
+  local st = OnlinePanel.state(imp)
+  OnlinePanel.setRuleset(imp, other)
+  local ok = OnlinePanel.joinTournament(imp, pending.tourTarget, pending.tourAs)
+  if ok and st.pending then st.pending.tourRetried = true end
+  return ok
 end
 
 function OnlinePanel.leaveTournament(imp)
@@ -1820,7 +2077,8 @@ ensureHooks = function()
       OnlinePanel._tourClosed = e.text
     elseif e.scope == "room" and e.reason == "resume_incomplete" then
       OnlinePanel._roomLost = Strings("Connection lost, left the room.")
-    elseif e.scope == "join" then
+    elseif e.scope == "join" and e.reason ~= "bad_pin"
+        and e.reason ~= "pin_required" and e.reason ~= "pin_locked" then
       OnlinePanel._joinError = e.text
     end
   end)
@@ -1829,24 +2087,56 @@ ensureHooks = function()
       and Strings("Champion: %s", tostring(payload.champion))
       or Strings("Tournament over")
   end)
+  client.on("invite_in", function(msg)
+    local q = OnlinePanel._events
+    q[#q + 1] = { kind = "in", msg = msg }
+  end)
+  client.on("invite_closed", function(msg)
+    local q = OnlinePanel._events
+    q[#q + 1] = { kind = "closed", msg = msg }
+  end)
+  client.on("invite_token", function(msg)
+    local have = OnlinePanel._tokenFor
+    if type(msg) == "table" and have and have.room == msg.room then
+      have.token = msg.token
+      have.expiresAt = tonumber(msg.expiresAt)
+    end
+  end)
+end
+
+OnlinePanel._events = {}
+
+function OnlinePanel.drainEvents(imp)
+  local q = OnlinePanel._events
+  if #q == 0 then return end
+  OnlinePanel._events = {}
+  for _, ev in ipairs(q) do
+    if ev.kind == "in" then
+      OnlinePanel.inviteIn(imp, ev.msg)
+    elseif ev.kind == "closed" then
+      OnlinePanel.inviteClosed(imp, ev.msg)
+    end
+  end
+end
+
+function OnlinePanel.connectOptions(imp)
+  local version = OnlinePanel.selectedVersion(imp)
+  return {
+    source = "launcher",
+    version = version,
+    trainerName = function() return OnlinePanel.trainerNameFor(imp, version) end,
+    profiles = OnlinePanel.lobbyProfiles(imp),
+    presence = { where = "launcher", status = "idle",
+                 version = version or "" },
+    relayAddress = OnlinePanel.relayAddress,
+    syncClient = OnlinePanel.syncClient(imp),
+  }
 end
 
 function OnlinePanel.doConnect(imp)
   local st = OnlinePanel.state(imp)
-  st.connectWanted = false
-  local client = Client()
-  local known, address = pcall(client.configure, {})
-  if not known or address == nil then
-    local Net = require("src.link.Net")
-    pcall(client.configure,
-      { relayAddress = OnlinePanel.relayAddress or Net.defaultRelayAddress() })
-  end
-  local profile = OnlinePanel.myProfile(imp)
-  local ok, err = client.connect({
-    name = OnlinePanel.ensureName(imp),
-    ticket = st.ticket,
-    profiles = profile and { profile } or {},
-  })
+  OnlinePanel.ensureName(imp)
+  local ok, err = Connect.doConnect(OnlinePanel.connectOptions(imp))
   if not ok then
     st.status = tostring(err or "the relay didn't answer")
     st.statusOk = false
@@ -1860,57 +2150,96 @@ function OnlinePanel.connect(imp)
   local st = OnlinePanel.state(imp)
   ensureHooks()
   OnlinePanel.ensureName(imp)
-  if OnlinePanel.linked() and st.ticketState ~= "ok"
-      and st.ticketState ~= "unsupported" then
-    st.connectWanted = true
-    st.ticketState = "pending"
-    local started = OnlinePanel.startJob(imp, "ticket", function(client)
-      return client:lobbyTicket(st.name)
-    end)
-    if started then return true end
-    st.ticketState = "unsupported"
+  OnlinePanel.armDiscord()
+  local ok, err = Connect.start(OnlinePanel.connectOptions(imp))
+  if not ok then
+    st.status = tostring(err or "the relay didn't answer")
+    st.statusOk = false
+  else
+    st.status, st.statusOk = nil, false
   end
-  return OnlinePanel.doConnect(imp)
+  return ok
 end
 
 function OnlinePanel.disconnect(imp)
   local st = OnlinePanel.state(imp)
   st.ready = false
-  Client().disconnect()
+  Connect.disconnect()
   OnlinePanel.clearPresence()
+end
+
+local function Presence()
+  local ok, mod = pcall(require, "src.core.DiscordPresence")
+  if ok and type(mod) == "table" then return mod end
+  return nil
+end
+
+function OnlinePanel.armDiscord()
+  local presence = Presence()
+  if not presence then return false end
+  presence.joinHandler = function(token)
+    OnlinePanel._discordInvite = token
+    return true
+  end
+  if type(presence.ensureLauncher) == "function" then
+    pcall(presence.ensureLauncher)
+  end
+  return true
 end
 
 function OnlinePanel.clearPresence()
   OnlinePanel._presenceKey = nil
-  local ok, Presence = pcall(require, "src.core.DiscordPresence")
-  if ok and type(Presence.setJoinCode) == "function" then
-    pcall(Presence.setJoinCode, nil, "match", 1, 2)
+  OnlinePanel._tokenFor = nil
+  local presence = Presence()
+  if presence and type(presence.setJoinSecret) == "function" then
+    pcall(presence.setJoinSecret, nil)
   end
 end
 
-function OnlinePanel.pushTourPresence(tour)
-  local players = #(tour.players or {})
-  local key = "T" .. tostring(tour.code) .. "/" .. players
-  if OnlinePanel._presenceKey == key then return end
-  local ok, Presence = pcall(require, "src.core.DiscordPresence")
-  if not ok or type(Presence.setJoinCode) ~= "function" then return end
-  OnlinePanel._presenceKey = key
-  pcall(Presence.setJoinCode, tour.code, "tournament", players,
-    OnlinePanel.TOUR_MAX_PLAYERS)
+OnlinePanel.TOKEN_MARGIN = 60000
+
+function OnlinePanel.wantToken(roomId)
+  local have = OnlinePanel._tokenFor
+  if have and have.room == roomId then
+    if have.token == nil then return false end
+    local now = Client().serverTime() or 0
+    if (have.expiresAt or 0) - now > OnlinePanel.TOKEN_MARGIN then return false end
+  end
+  local client = Client()
+  if type(client.inviteToken) ~= "function" then return false end
+  OnlinePanel._tokenFor = { room = roomId, token = nil }
+  pcall(client.inviteToken, roomId)
+  return true
 end
 
 function OnlinePanel.pushPresence(room)
-  local key = tostring(room.code) .. "/" .. #(room.players or {})
+  local players = #(room.players or {})
+  local seats = tonumber(room.seats) or 2
+  local open = players < seats and (room.stage == "waiting"
+    or room.stage == "ready")
+  if not open then
+    if OnlinePanel._presenceKey ~= nil then OnlinePanel.clearPresence() end
+    return
+  end
+  local live = Presence()
+  if not (live and type(live.enabled) == "function" and live.enabled()) then
+    return
+  end
+  OnlinePanel.wantToken(room.room)
+  local have = OnlinePanel._tokenFor
+  local token = have and have.room == room.room and have.token or nil
+  local key = tostring(token) .. "/" .. players .. "/" .. seats
   if OnlinePanel._presenceKey == key then return end
-  local ok, Presence = pcall(require, "src.core.DiscordPresence")
-  if not ok or type(Presence.setJoinCode) ~= "function" then return end
+  local presence = Presence()
+  if not presence or type(presence.setJoinSecret) ~= "function" then return end
   OnlinePanel._presenceKey = key
-  pcall(Presence.setJoinCode, room.code, "match", #(room.players or {}), 2)
+  pcall(presence.setJoinSecret, token, players, seats)
 end
 
 function OnlinePanel.partyRefusal(imp, packed)
   local st = OnlinePanel.state(imp)
   if st.kind == "cart" or st.cartId then return nil end
+  if OnlinePanel.isGen3(imp) then return nil end
   local version = OnlinePanel.engineVersion(imp)
   if not version then return nil end
   local ok, known = pcall(function()
@@ -1975,12 +2304,66 @@ function OnlinePanel.unready(imp)
   Client().ready({}, nil)
 end
 
+function OnlinePanel.specTeam3(team, size)
+  local out = {}
+  for _, ref in ipairs(team or {}) do
+    if #out >= size then break end
+    local r = asRef(ref)
+    if type(r) == "table" and r.where == "box" then
+      out[#out + 1] = { where = "box", box = tonumber(r.box), index = tonumber(r.index) }
+    elseif type(r) == "table" then
+      out[#out + 1] = tonumber(r.index)
+    end
+  end
+  return out
+end
+
+function OnlinePanel.buildSpec3(imp, payload, profile, opts)
+  local st = OnlinePanel.state(imp)
+  local client = opts.client or Client()
+  local ArenaBoot = require("src.online.ArenaBoot")
+  local spectating = payload.role == "spectator"
+  local rule = type(profile.rule) == "table" and profile.rule or {}
+  local size = math.max(1, math.min(OnlinePanel.TEAM_MAX,
+    tonumber(rule.partySize) or OnlinePanel.TEAM_MAX))
+  local team, myParty
+  if not spectating then
+    local pick, reason = OnlinePanel.readTeamSlot(imp)
+    if not pick then return nil, reason or Strings("Pick a save first.") end
+    if #(st.team or {}) == 0 then return nil, Strings("Pick your team first.") end
+    local refs = {}
+    for i = 1, math.min(#st.team, size) do refs[i] = st.team[i] end
+    local packed, why = require("src.online.TeamPick").pack(pick, refs, 3)
+    if not packed then return nil, why end
+    myParty = packed
+    team = OnlinePanel.specTeam3(refs, size)
+  end
+  return ArenaBoot.spec({
+    profile = profile,
+    role = payload.role,
+    seat = (not spectating) and tonumber(payload.seat) or nil,
+    seats = tonumber(payload.seats) or 2,
+    slotId = (not spectating) and st.slotId or nil,
+    team = team,
+    myParty = myParty,
+    seed = payload.seed,
+    match = payload.match,
+    room = payload.room,
+    players = payload.players,
+    session = opts.session or client.roomSession(),
+    onDone = OnlinePanel.noteResult,
+  })
+end
+
 function OnlinePanel.buildSpec(imp, payload, opts)
   opts = opts or {}
   local st = OnlinePanel.state(imp)
   local client = opts.client or Client()
   local ArenaBoot = require("src.online.ArenaBoot")
   local profile = payload.profile or OnlinePanel.myProfile(imp)
+  if type(profile) == "table" and tonumber(profile.engine) == 3 then
+    return OnlinePanel.buildSpec3(imp, payload, profile, opts)
+  end
   local refs = nil
   if payload.role ~= "spectator" and #st.team > 0 then refs = st.team end
   local team, myParty = nil, nil
@@ -2023,15 +2406,20 @@ OnlinePanel.SCREENS = {
 
 OnlinePanel.WIZARDS = {
   hostBattle = { title = "Host a battle", confirm = "Host the battle",
-    steps = { "game", "save", "team", "rules", "visibility", "summary" } },
+    steps = { "game", "format", "save", "team", "rules", "visibility",
+              "summary" } },
   hostTournament = { title = "Host a tournament",
     confirm = "Host the tournament",
-    steps = { "game", "save", "playing", "team", "rules", "shotclock",
-              "spectators", "summary" } },
+    steps = { "game", "format", "save", "playing", "team", "rules",
+              "shotclock", "spectators", "tourvisibility", "summary" } },
   join = { title = "Join a battle", confirm = "Join", resume = true,
     steps = { "game", "save", "team", "summary" } },
+  invite = { title = "Send an invite", confirm = "Send invite", resume = true,
+    steps = { "game", "save", "team", "summary" } },
+  accept = { title = "Accept an invite", confirm = "Accept", resume = true,
+    steps = { "game", "save", "team", "summary" } },
   tradeRemote = { title = "Trade online", confirm = "Go",
-    steps = { "game", "save", "role", "summary" } },
+    steps = { "game", "save", "role", "visibility", "summary" } },
 }
 
 OnlinePanel.STEP_TITLE = {
@@ -2044,13 +2432,15 @@ OnlinePanel.STEP_TITLE = {
   shotclock = "Shot clock",
   spectators = "Spectators",
   role = "Host or join?",
+  tourvisibility = "Who can join?",
+  format = "Which kind of battle?",
   summary = "Check this over",
 }
 
 OnlinePanel.STEP_LABEL = {
-  game = "Game", save = "Save", team = "Team", rules = "Rules",
+  game = "Game", format = "Battle", save = "Save", team = "Team", rules = "Rules",
   visibility = "Visibility", playing = "Playing", shotclock = "Shot clock",
-  spectators = "Spectators", role = "Trade",
+  spectators = "Spectators", role = "Trade", tourvisibility = "Visibility",
 }
 
 function OnlinePanel.nav(imp)
@@ -2069,6 +2459,7 @@ local function entered(imp, id)
   local c = OnlinePanel.cache(imp)
   imp._tradeModal = nil
   imp._pcPicker = nil
+  imp._invitePicker = nil
   st.status, st.statusOk = nil, false
   st.confirmLeave = nil
   if id == "play" or id == "watch" or id == "tournament" then
@@ -2118,6 +2509,8 @@ end
 function OnlinePanel.back(imp)
   local st = imp and imp._online
   if not st then return false end
+  if imp._pinModal then return OnlinePanel.pinClose(imp) end
+  if imp._invitePicker then return OnlinePanel.invitePickerClose(imp) end
   if imp._pcPicker then return OnlinePanel.pcClose(imp) end
   if imp._tradeModal then return OnlinePanel.tradeModalClose(imp) end
   if OnlinePanel.screen(imp) == "wizard" and st.wizard
@@ -2160,9 +2553,29 @@ end
 
 -- ---------------------------------------------------------------- wizards
 
+function OnlinePanel.wizardActivity(imp)
+  local st = OnlinePanel.state(imp)
+  local w = st.wizard
+  if not w then return nil end
+  if w.kind == "invite" and type(st.inviteTarget) == "table" then
+    return st.inviteTarget.activity
+  end
+  if w.kind == "accept" and type(st.acceptTarget) == "table" then
+    return st.acceptTarget.activity
+  end
+  return nil
+end
+
 function OnlinePanel.startWizard(imp, kind, opts)
   local st = OnlinePanel.state(imp)
   if not OnlinePanel.WIZARDS[kind] then return false end
+  if kind == "hostTournament" and st.ruleset
+      and not OnlinePanel.TOUR_FORMATS[st.ruleset] then
+    st.ruleset = "g3_single"
+  end
+  if kind == "hostBattle" or kind == "tradeRemote" then
+    st.private, st.pin = false, ""
+  end
   st.wizard = { kind = kind, at = 1, show = {}, opts = opts or {} }
   st.status, st.statusOk = nil, false
   OnlinePanel.go(imp, "wizard")
@@ -2179,6 +2592,11 @@ function OnlinePanel.wizardDef(imp)
   return w and OnlinePanel.WIZARDS[w.kind] or nil
 end
 
+local function tradeJoinStep(st, id)
+  return id == "visibility" and st.wizard and st.wizard.kind == "tradeRemote"
+    and st.tradeRole == "join"
+end
+
 function OnlinePanel.wizardSteps(imp)
   local st = OnlinePanel.state(imp)
   local w, def = st.wizard, OnlinePanel.wizardDef(imp)
@@ -2186,7 +2604,13 @@ function OnlinePanel.wizardSteps(imp)
   local out = {}
   for _, id in ipairs(def.steps) do
     local skip = false
-    if id == "team" and w.kind == "hostTournament"
+    if tradeJoinStep(st, id) then
+      skip = true
+    elseif id == "format" then
+      skip = not OnlinePanel.isGen3(imp)
+    elseif id == "team" and OnlinePanel.wizardActivity(imp) == "trade" then
+      skip = true
+    elseif id == "team" and w.kind == "hostTournament"
         and st.tourPlaying == false then
       skip = true
     elseif def.resume and id ~= "summary" and not w.show[id]
@@ -2223,14 +2647,18 @@ function OnlinePanel.wizardReady(imp)
         and type(target.rule) == "table" and tonumber(target.rule.partySize) then
       return n == OnlinePanel.teamCap(imp)
     end
+    if OnlinePanel.formatMismatch(imp, OnlinePanel.ruleset(imp)) then return false end
     return true
   end
   if id == "role" then
     if st.tradeRole == "join" then
-      return #OnlinePanel.sanitizeCode(OnlinePanel.tradeState(imp).code or "")
-        == OnlinePanel.CODE_LEN
+      local target = OnlinePanel.tradeState(imp).target
+      return type(target) == "table" and target.room ~= nil
     end
-    return st.tradeRole == "host"
+    return (st.tradeRole or "host") == "host"
+  end
+  if id == "visibility" then
+    return st.private ~= true or OnlinePanel.pinValid(st.pin)
   end
   return true
 end
@@ -2320,7 +2748,7 @@ function OnlinePanel.wizardAnswers(imp)
       for _, row in ipairs(c.slots or {}) do
         if row.id == st.slotId then value = row.label end
       end
-    elseif id == "team" then
+    elseif id == "team" and OnlinePanel.wizardActivity(imp) ~= "trade" then
       local names = {}
       for _, row in ipairs(c.team or {}) do
         names[#names + 1] = row and row.name or "?"
@@ -2328,12 +2756,18 @@ function OnlinePanel.wizardAnswers(imp)
       value = (#names > 0) and table.concat(names, ", ") or Strings("none")
     elseif id == "rules" then
       value = OnlinePanel.ruleText(OnlinePanel.ruleFor(imp))
-    elseif id == "visibility" then
-      value = (st.public == false) and Strings("Code only")
+    elseif id == "format" then
+      local ruleset = OnlinePanel.ruleset(imp)
+      value = ruleset and Strings(OnlinePanel.FORMAT_TEXT[ruleset] or ruleset) or nil
+    elseif id == "visibility" and not tradeJoinStep(st, id) then
+      value = (st.private == true) and Strings("Private")
         or Strings("Public")
       if st.note and st.note ~= "" then
         value = tostring(value) .. ' - "' .. tostring(st.note) .. '"'
       end
+    elseif id == "tourvisibility" then
+      value = (st.tourPublic == false) and Strings("Private (code)")
+        or Strings("Public")
     elseif id == "playing" then
       value = (st.tourPlaying == false) and Strings("Organize and watch")
         or Strings("Play in it")
@@ -2344,9 +2778,10 @@ function OnlinePanel.wizardAnswers(imp)
         and Strings("Up to %d", st.tourSpectators)
         or Strings("No spectators")
     elseif id == "role" then
+      local target = OnlinePanel.tradeState(imp).target
       value = (st.tradeRole == "join")
-        and Strings("Join code %s", tostring(OnlinePanel.tradeState(imp).code
-          or "")) or Strings("Host a trade")
+        and Strings("Join %s", tostring(type(target) == "table"
+          and target.name or "?")) or Strings("Host a trade")
     end
     if value ~= nil then
       out[#out + 1] = { step = id,
@@ -2370,6 +2805,7 @@ function OnlinePanel.hostBattle(imp)
   ensureHooks()
   local rule = OnlinePanel.ruleFor(imp)
   local why = OnlinePanel.ruleMismatch(imp, rule, Strings("Your rule"))
+    or OnlinePanel.formatMismatch(imp, OnlinePanel.ruleset(imp))
   if why then
     st.status, st.statusOk = why, false
     return false, why
@@ -2380,32 +2816,101 @@ function OnlinePanel.hostBattle(imp)
     return false
   end
   st.setupDone = true
-  st.pending = Client().createRoom({
-    intent = "battle", profile = profile, playing = true, maxSpectators = 8,
-    public = st.public ~= false,
-    note = (st.note ~= "" and st.note) or nil,
-  })
+  st.pending = Client().createRoom(OnlinePanel.roomOptions(imp, "battle",
+    profile, 8))
+  OnlinePanel.stampPending(st.pending)
   finishTo(imp, "room")
   return true
 end
 
-function OnlinePanel.startJoin(imp, code, rule, as, tournament)
+function OnlinePanel.roomOptions(imp, intent, profile, maxSpectators)
   local st = OnlinePanel.state(imp)
-  code = OnlinePanel.sanitizeCode(code)
-  if #code ~= OnlinePanel.CODE_LEN then
-    st.status, st.statusOk = Strings("Room codes are 6 characters."), false
+  local private = st.private == true and OnlinePanel.pinValid(st.pin)
+  local seats = 2
+  if type(profile) == "table" and profile.rulesetId == "g3_multi" then seats = 4 end
+  return {
+    intent = intent, profile = profile, playing = true,
+    maxSpectators = maxSpectators, private = private,
+    pin = private and st.pin or nil, seats = seats, auto = false,
+    note = (st.note ~= "" and st.note) or nil,
+  }
+end
+
+function OnlinePanel.stampPending(pending)
+  if type(pending) == "table" and pending.at == nil then
+    pending.at = nowSeconds()
+  end
+  return pending
+end
+
+function OnlinePanel.findEntry(field, value)
+  if value == nil then return nil end
+  for _, entry in ipairs(Client().lobby() or EMPTY) do
+    if entry[field] == value then return entry end
+  end
+  return nil
+end
+
+function OnlinePanel.targetFor(entry, as)
+  if type(entry) ~= "table" then return nil end
+  local profile = entry.profile or entry.profileTable
+  local tournament = entry.tour ~= nil or entry.intent == "tournament"
+  return {
+    room = (not tournament) and (entry.room or nil) or nil,
+    tour = tournament and (entry.tour or nil) or nil,
+    rule = entry.ruleTable or (type(profile) == "table" and profile.rule) or nil,
+    as = as or "player",
+    tournament = tournament,
+    locked = entry.locked == true,
+    name = entry.name,
+    version = entry.version or (type(profile) == "table" and profile.version)
+      or nil,
+    engine = type(profile) == "table" and tonumber(profile.engine) or nil,
+    rulesetId = type(profile) == "table" and profile.rulesetId or nil,
+    intent = entry.intent,
+  }
+end
+
+function OnlinePanel.applyTarget(imp, target)
+  if type(target) ~= "table" then return end
+  if target.engine == 3 and target.as ~= "spectator"
+      and OnlinePanel.formatKnown(target.rulesetId) then
+    if OnlinePanel.engineVersionFor(imp, 3) then
+      OnlinePanel.alignEngine(imp, 3, target.version)
+    end
+    OnlinePanel.setRuleset(imp, target.rulesetId)
+  end
+end
+
+function OnlinePanel.startJoin(imp, target, rule, as, tournament)
+  local st = OnlinePanel.state(imp)
+  if type(target) == "string" then
+    local entry = OnlinePanel.findEntry("room", target)
+      or OnlinePanel.findEntry("tour", target)
+    target = entry and OnlinePanel.targetFor(entry, as)
+      or { room = target, as = as or "player" }
+  end
+  if type(target) ~= "table" or not (target.room or target.tour or target.code) then
+    st.status, st.statusOk = Strings("That lobby is gone."), false
     return false
   end
-  if type(rule) ~= "table" then
-    for _, entry in ipairs(Client().lobby() or {}) do
-      if entry.code == code then
-        rule = entry.profile and entry.profile.rule or nil
-        if entry.intent == "tournament" then tournament = true end
-      end
-    end
+  target.as = as or target.as or "player"
+  if type(rule) == "table" then target.rule = rule end
+  if tournament then target.tournament = true end
+  if target.tournament or target.tour or target.code then
+    target.tournament = true
   end
-  st.joinTarget = { code = code, rule = rule, as = as or "player",
-                    tournament = tournament == true }
+  st.joinTarget = target
+  OnlinePanel.applyTarget(imp, target)
+  if target.as == "spectator" and not target.tournament then
+    if target.locked and not target.pin then
+      return OnlinePanel.pinOpen(imp, target)
+    end
+    return OnlinePanel.joinTargetNow(imp)
+  end
+  if target.locked and not target.pin and OnlinePanel.setupComplete(imp) then
+    return OnlinePanel.pinOpen(imp, target)
+  end
   return OnlinePanel.startWizard(imp, "join")
 end
 
@@ -2417,11 +2922,45 @@ function OnlinePanel.teamCap(imp)
     local n = tonumber(target.rule.partySize)
     if n then return math.max(1, math.min(n, OnlinePanel.TEAM_MAX)) end
   end
+  if OnlinePanel.ruleset(imp) == "g3_multi" then return OnlinePanel.MULTI_TEAM end
   return OnlinePanel.TEAM_MAX
 end
 
-function OnlinePanel.startJoinTournament(imp, code, rule)
-  return OnlinePanel.startJoin(imp, code, rule, "player", true)
+function OnlinePanel.startJoinTournament(imp, target, rule)
+  if type(target) == "string" then
+    local want = OnlinePanel.tourTarget(target)
+    if not want then
+      local st = OnlinePanel.state(imp)
+      st.status, st.statusOk = Strings("Tournament codes are 6 characters."), false
+      return false
+    end
+    target = want
+  end
+  return OnlinePanel.startJoin(imp, target, rule, "player", true)
+end
+
+function OnlinePanel.joinTargetNow(imp)
+  local st = OnlinePanel.state(imp)
+  local target = st.joinTarget
+  if type(target) ~= "table" then return false end
+  if target.tournament then
+    local ok = OnlinePanel.joinTournament(imp,
+      { tour = target.tour, code = target.code }, target.as)
+    if ok then finishTo(imp, "tournament") end
+    return ok
+  end
+  local ok = OnlinePanel.joinRoom(imp, target.room, target.as, target.pin)
+  if ok then finishTo(imp, "room") end
+  return ok
+end
+
+function OnlinePanel.pickTeamInRoom(imp)
+  local st = OnlinePanel.state(imp)
+  local room = Client().room()
+  if not room then return false end
+  st.joinTarget = { room = room.room, inRoom = true, as = "player",
+    rule = type(room.profile) == "table" and room.profile.rule or nil }
+  return OnlinePanel.startWizard(imp, "join")
 end
 
 function OnlinePanel.joinFromWizard(imp)
@@ -2430,6 +2969,8 @@ function OnlinePanel.joinFromWizard(imp)
   if type(target) ~= "table" then return false end
   if target.as ~= "spectator" then
     local why = OnlinePanel.ruleMismatch(imp, target.rule, Strings("This room"))
+      or (target.engine == 3 and OnlinePanel.formatMismatch(imp, target.rulesetId))
+      or nil
     if why then
       st.status, st.statusOk = why, false
       st.ruleBlock = true
@@ -2438,14 +2979,14 @@ function OnlinePanel.joinFromWizard(imp)
   end
   st.ruleBlock = nil
   st.setupDone = true
-  if target.tournament then
-    local ok = OnlinePanel.joinTournamentByCode(imp, target.code, target.as)
-    if ok then finishTo(imp, "tournament") end
-    return ok
+  if target.inRoom then
+    finishTo(imp, "room")
+    return true
   end
-  local ok = OnlinePanel.joinByCode(imp, target.code, target.as)
-  if ok then finishTo(imp, "room") end
-  return ok
+  if target.locked and not target.pin and not target.tournament then
+    return OnlinePanel.pinOpen(imp, target)
+  end
+  return OnlinePanel.joinTargetNow(imp)
 end
 
 function OnlinePanel.wizardFinish(imp)
@@ -2455,11 +2996,38 @@ function OnlinePanel.wizardFinish(imp)
   if w.kind == "hostBattle" then return OnlinePanel.hostBattle(imp) end
   if w.kind == "hostTournament" then return OnlinePanel.hostTournament(imp) end
   if w.kind == "join" then return OnlinePanel.joinFromWizard(imp) end
+  if w.kind == "invite" then
+    st.setupDone = true
+    local ok = OnlinePanel.sendInvite(imp)
+    if ok then
+      local said, good = st.status, st.statusOk
+      finishTo(imp, "play")
+      st.status, st.statusOk = said, good
+    end
+    return ok
+  end
+  if w.kind == "accept" then
+    st.setupDone = true
+    local invite = st.acceptTarget
+    if not OnlinePanel.inviteOpen(invite) then
+      st.acceptTarget = nil
+      finishTo(imp, "play")
+      st.status, st.statusOk = Strings("That invite ran out."), false
+      return false
+    end
+    return OnlinePanel.acceptNow(imp, invite)
+  end
   if w.kind == "tradeRemote" then
     local tr = OnlinePanel.tradeState(imp)
     st.setupDone = true
     if st.tradeRole == "join" then
-      if not OnlinePanel.joinTrade(imp, tr.code) then return false end
+      local target = tr.target
+      if type(target) == "table" and target.locked and not target.pin then
+        st.joinTarget = { room = target.room, as = "player", locked = true,
+                          name = target.name, trade = true }
+        return OnlinePanel.pinOpen(imp, st.joinTarget)
+      end
+      if not OnlinePanel.joinTrade(imp, target) then return false end
       finishTo(imp, "room")
       return true
     end
@@ -2467,6 +3035,577 @@ function OnlinePanel.wizardFinish(imp)
     finishTo(imp, "room")
     return true
   end
+  return false
+end
+
+OnlinePanel.PIN_FIELD = "online-pin"
+OnlinePanel.PIN_ENTER = "online-pin-enter"
+OnlinePanel.PIN_CANCEL = "online-pin-cancel"
+
+function OnlinePanel.pinModal(imp)
+  return type(imp) == "table" and imp._pinModal or nil
+end
+
+OnlinePanel._pinLockout = {}
+
+local function lockoutFor(target)
+  local room = type(target) == "table" and target.room or nil
+  return room and OnlinePanel._pinLockout[room] or nil
+end
+
+function OnlinePanel.pinOpen(imp, target, err, pin)
+  if type(imp) ~= "table" then return false end
+  local was = imp._pinModal
+  imp._pinModal = {
+    target = target,
+    pin = OnlinePanel.sanitizePin(pin
+      or (was and was.target == target and was.pin) or ""),
+    error = err,
+    retryAt = (was and was.target == target and was.retryAt) or lockoutFor(target),
+  }
+  imp._onlineFocus = OnlinePanel.PIN_FIELD
+  if type(imp._armTextInput) == "function" then pcall(imp._armTextInput, imp) end
+  Kit.setFocus(OnlinePanel.PIN_FIELD)
+  return true
+end
+
+function OnlinePanel.pinClose(imp)
+  if type(imp) ~= "table" or not imp._pinModal then return false end
+  imp._pinModal = nil
+  if imp._onlineFocus == OnlinePanel.PIN_FIELD then
+    imp._onlineFocus = nil
+    if type(imp._disarmTextInput) == "function" then
+      pcall(imp._disarmTextInput, imp)
+    end
+  end
+  Kit.setFocus(nil)
+  return true
+end
+
+function OnlinePanel.pinLocked(imp)
+  local mo = OnlinePanel.pinModal(imp)
+  if not mo or not mo.retryAt then return false end
+  local now = Client().serverTime() or 0
+  if now >= mo.retryAt then
+    mo.retryAt = nil
+    local room = type(mo.target) == "table" and mo.target.room or nil
+    if room then OnlinePanel._pinLockout[room] = nil end
+    return false
+  end
+  return true
+end
+
+function OnlinePanel.pinType(imp, text)
+  local mo = OnlinePanel.pinModal(imp)
+  if not mo then return false end
+  mo.pin = OnlinePanel.sanitizePin((mo.pin or "") .. tostring(text or ""))
+  return true
+end
+
+function OnlinePanel.pinBack(imp)
+  local mo = OnlinePanel.pinModal(imp)
+  if not mo then return false end
+  mo.pin = (mo.pin or ""):sub(1, -2)
+  return true
+end
+
+function OnlinePanel.pinSubmit(imp)
+  local st = OnlinePanel.state(imp)
+  local mo = OnlinePanel.pinModal(imp)
+  if not mo then return false end
+  if OnlinePanel.pinLocked(imp) then return false end
+  if not OnlinePanel.pinValid(mo.pin) then
+    mo.error = Strings("A PIN is 4 digits.")
+    return false
+  end
+  local target = mo.target or st.joinTarget
+  if type(target) ~= "table" then
+    OnlinePanel.pinClose(imp)
+    return false
+  end
+  target.pin = mo.pin
+  st.joinTarget = target
+  mo.error = nil
+  mo.sent = true
+  if target.as ~= "spectator" and not OnlinePanel.setupComplete(imp)
+      and not target.trade then
+    OnlinePanel.pinClose(imp)
+    return OnlinePanel.startWizard(imp, "join")
+  end
+  local ok = OnlinePanel.joinTargetNow(imp)
+  if ok then
+    if st.pending then st.pending.pinTarget = target end
+    OnlinePanel.pinClose(imp)
+  end
+  return ok
+end
+
+function OnlinePanel.pinAction(imp, action)
+  if not OnlinePanel.pinModal(imp) then return false end
+  if action == "b" then return OnlinePanel.pinClose(imp) end
+  if action == "a" then OnlinePanel.pinSubmit(imp) return true end
+  return false
+end
+
+function OnlinePanel.retryAtText(retryAt)
+  local now = Client().serverTime() or 0
+  local mins = math.max(1, math.ceil(((tonumber(retryAt) or now) - now) / 60000))
+  return Strings("Too many tries. Try again in %d min.", mins)
+end
+
+function OnlinePanel.pinFailed(imp, pending)
+  local target = pending.pinTarget or (OnlinePanel.state(imp).joinTarget)
+  if type(target) ~= "table" then return false end
+  local typed = target.pin
+  target.pin = nil
+  local reason = pending.reason
+  local err
+  if reason == "bad_pin" then
+    local left = tonumber(pending.triesLeft)
+    err = (left == 1 and Strings("That PIN didn't match. 1 try left."))
+      or (left and Strings("That PIN didn't match. %d tries left.", left))
+      or Strings("That PIN didn't match.")
+  elseif reason == "pin_locked" then
+    err = OnlinePanel.retryAtText(pending.retryAt)
+  else
+    err = Strings("This lobby needs its PIN.")
+  end
+  OnlinePanel.pinOpen(imp, target, err, typed)
+  if reason == "pin_locked" and imp._pinModal then
+    local retryAt = tonumber(pending.retryAt)
+      or ((Client().serverTime() or 0) + 600000)
+    imp._pinModal.retryAt = retryAt
+    if target.room then OnlinePanel._pinLockout[target.room] = retryAt end
+  end
+  return true
+end
+
+OnlinePanel.INVITE_TTL = 20000
+
+OnlinePanel.ACTIVITY_TEXT = {
+  battle_single = "a battle", battle_double = "a double battle",
+  battle_multi = "a multi battle", trade = "a trade", chat = "a chat",
+  card = "a card swap", watch = "watch a match", tournament = "a tournament",
+  minigame_jump = "POKéMON Jump", minigame_crush = "Berry Crush",
+  minigame_pick = "Dodrio Berry Picking",
+}
+
+OnlinePanel.ACTIVITY_LABEL = {
+  battle_single = "Battle", battle_double = "Double battle", trade = "Trade",
+  watch = "Watch my match", tournament = "Join my tournament",
+}
+
+OnlinePanel.WHERE_TEXT = {
+  launcher = "Launcher", game = "In game", union = "Union Room",
+  direct = "Direct Corner",
+}
+
+local NEEDS_TEAM = { battle_single = true, battle_double = true,
+  battle_multi = true, tournament = true }
+local NEEDS_SAVE = { trade = true }
+
+OnlinePanel.NEEDS_TEAM = NEEDS_TEAM
+
+function OnlinePanel.inviteLine(invite)
+  if type(invite) ~= "table" then return "" end
+  local from = type(invite.from) == "table" and invite.from or EMPTY
+  local what = OnlinePanel.ACTIVITY_TEXT[tostring(invite.activity)]
+    or tostring(invite.activity)
+  if invite.activity == "watch" then
+    return Strings("%s invites you to watch a match.", tostring(from.name or "?"))
+  end
+  return Strings("%s invites you to %s.", tostring(from.name or "?"), Strings(what))
+end
+
+function OnlinePanel.inviteOpen(invite)
+  if type(invite) ~= "table" or invite.closed then return false end
+  local at = tonumber(invite.expiresAt)
+  if at and (Client().serverTime() or 0) >= at then return false end
+  return true
+end
+
+function OnlinePanel.inviteLeft(invite)
+  local at = type(invite) == "table" and tonumber(invite.expiresAt) or nil
+  if not at then return 1 end
+  local left = (at - (Client().serverTime() or 0)) / OnlinePanel.INVITE_TTL
+  return math.max(0, math.min(1, left))
+end
+
+function OnlinePanel.toast(imp)
+  local st = type(imp) == "table" and imp._online or nil
+  if not st then return nil end
+  local list = st.invites
+  for i = 1, #list do
+    if not list[i].closed and not list[i].answered then return list[i] end
+  end
+  return nil
+end
+
+function OnlinePanel.activitiesFor(imp, player)
+  local out = {}
+  if type(player) ~= "table" then return out end
+  local engine = tonumber(player.engine) or 0
+  local ok = engine >= 1 and engine <= 3
+    and OnlinePanel.engineVersionFor(imp, engine) ~= nil
+  if ok then
+    if engine ~= 2 or OnlinePanel.gen2Battles() then
+      out[#out + 1] = "battle_single"
+    end
+    if engine == 3 then out[#out + 1] = "battle_double" end
+    out[#out + 1] = "trade"
+  end
+  local place = player.place or player.where
+  if place == "union" or place == "direct" then return out end
+  local client = Client()
+  local room = client.room()
+  if room and room.room and room.intent ~= "trade" then
+    out[#out + 1] = "watch"
+  end
+  local tour = client.tournament()
+  if tour and tour.tour and tour.stage == "registering" then
+    out[#out + 1] = "tournament"
+  end
+  return out
+end
+
+function OnlinePanel.invitePickerOpen(imp, player)
+  if type(imp) ~= "table" or type(player) ~= "table" then return false end
+  imp._invitePicker = { player = player,
+    activities = OnlinePanel.activitiesFor(imp, player) }
+  Kit.setFocus("online-invite-cancel")
+  return true
+end
+
+function OnlinePanel.invitePickerClose(imp)
+  if type(imp) ~= "table" or not imp._invitePicker then return false end
+  imp._invitePicker = nil
+  Kit.setFocus(nil)
+  return true
+end
+
+local function alignEngine(imp, engine, version)
+  local st = OnlinePanel.state(imp)
+  engine = tonumber(engine)
+  if not engine then return true end
+  local current = OnlinePanel.selectedVersion(imp)
+  if current and GameVersion.generation(current) == engine then return true end
+  local want = (version and imp.ready and imp.ready[version]) and version
+    or OnlinePanel.engineVersionFor(imp, engine)
+  if not want then return false end
+  st.version, st.slotId, st.cartId, st.team = want, nil, nil, {}
+  st.slotRead, st.ready, st.kind, st.engine = nil, false, "vanilla", nil
+  st.versionPicked = true
+  st.setupDone = false
+  OnlinePanel.invalidate(imp)
+  return true
+end
+
+OnlinePanel.alignEngine = alignEngine
+
+function OnlinePanel.inviteReady(imp, activity)
+  local st = OnlinePanel.state(imp)
+  if activity == "watch" then return true end
+  if NEEDS_TEAM[activity] then
+    return OnlinePanel.setupComplete(imp)
+      and OnlinePanel.formatMismatch(imp, OnlinePanel.ruleset(imp)) == nil
+  end
+  if NEEDS_SAVE[activity] then
+    return OnlinePanel.selectedVersion(imp) ~= nil and st.slotId ~= nil
+  end
+  return true
+end
+
+function OnlinePanel.startInvite(imp, player, activity)
+  local st = OnlinePanel.state(imp)
+  OnlinePanel.invitePickerClose(imp)
+  if type(player) ~= "table" or type(activity) ~= "string" then return false end
+  st.inviteTarget = { id = player.id, name = player.name, activity = activity,
+                      engine = player.engine, version = player.version }
+  if activity ~= "watch" and activity ~= "tournament" then
+    if not alignEngine(imp, player.engine, player.version) then
+      st.status, st.statusOk = Strings("Import that game first."), false
+      return false
+    end
+    if tonumber(player.engine) == 3 then
+      local ruleset = require("src.online.Protocol2").ACTIVITY_RULESET[activity]
+      if OnlinePanel.formatKnown(ruleset) then OnlinePanel.setRuleset(imp, ruleset) end
+    end
+  end
+  if OnlinePanel.inviteReady(imp, activity) then
+    return OnlinePanel.sendInvite(imp)
+  end
+  return OnlinePanel.startWizard(imp, "invite")
+end
+
+function OnlinePanel.inviteProfile(imp, activity)
+  if activity == "watch" or activity == "tournament" then
+    local room = Client().room()
+    local tour = Client().tournament()
+    local p = (room and room.profile) or (tour and tour.profile)
+    if p then return p end
+  end
+  local profile, reason = OnlinePanel.myProfile(imp)
+  if not profile then return nil, reason end
+  if tonumber(profile.engine) ~= 3 then return profile end
+  local ruleset = require("src.online.Protocol2").ACTIVITY_RULESET[activity]
+  return OnlinePanel.profileFor(imp, ruleset)
+end
+
+function OnlinePanel.sendInvite(imp)
+  local st = OnlinePanel.state(imp)
+  local target = st.inviteTarget
+  if type(target) ~= "table" then return false end
+  local client = Client()
+  if type(client.invite) ~= "function" then
+    st.status, st.statusOk = Strings("This build can't send invites."), false
+    return false
+  end
+  ensureHooks()
+  local profile, reason = OnlinePanel.inviteProfile(imp, target.activity)
+  if not profile then
+    st.status, st.statusOk = reason or Strings("Reading your game..."), false
+    return false
+  end
+  local detail = {}
+  if target.activity == "watch" then
+    local room = client.room()
+    detail.room = room and room.room or nil
+  elseif target.activity == "tournament" then
+    local tour = client.tournament()
+    detail.tour = tour and tour.tour or nil
+  elseif profile.rulesetId then
+    detail.ruleset = profile.rulesetId
+  end
+  OnlinePanel.pushProfile(profile, imp)
+  st.outgoing = client.invite(target.id, target.activity, detail, profile)
+  st.outgoingName = target.name
+  st.status, st.statusOk = Strings("Invite sent to %s.", tostring(target.name or "?")),
+    true
+  return st.outgoing ~= nil
+end
+
+function OnlinePanel.inviteClosedText(msg)
+  local ok, Protocol2 = pcall(require, "src.online.Protocol2")
+  if ok and type(Protocol2.inviteClosedText) == "function" then
+    local got, text = pcall(Protocol2.inviteClosedText, msg)
+    if got and type(text) == "string" and text ~= "" then return text end
+  end
+  local why = type(msg) == "table" and msg.why or msg
+  if why == "declined" then return Strings("They said no.") end
+  if why == "timeout" then return Strings("No answer.") end
+  if why == "busy" then return Strings("They are busy right now.") end
+  if why == "offline" or why == "target_left" then
+    return Strings("They went offline.")
+  end
+  if why == "profile_mismatch" then
+    return Strings("Your games don't match.")
+  end
+  return Strings("The invite was called off.")
+end
+
+local function needsSetup(imp, invite)
+  local activity = invite and invite.activity
+  return not OnlinePanel.inviteReady(imp, activity)
+end
+
+function OnlinePanel.acceptNow(imp, invite)
+  local st = OnlinePanel.state(imp)
+  if not OnlinePanel.inviteOpen(invite) then
+    st.status, st.statusOk = Strings("That invite ran out."), false
+    return false
+  end
+  local client = Client()
+  if type(client.replyInvite) ~= "function" then return false end
+  ensureHooks()
+  local profile = invite.activity ~= "watch"
+    and OnlinePanel.inviteProfile(imp, invite.activity) or nil
+  if profile then OnlinePanel.pushProfile(profile, imp) end
+  invite.answered = true
+  st.acceptTarget = nil
+  OnlinePanel.syncToast(imp)
+  if type(imp.tab) == "string" and imp.tab ~= "online"
+      and type(imp._switchTab) == "function" then
+    pcall(imp._switchTab, imp, "online")
+  end
+  local sent = client.replyInvite(invite.id, true)
+  if invite.activity == "tournament" then
+    local detail = type(invite.detail) == "table" and invite.detail or EMPTY
+    st.joinTarget = { tour = detail.tour, tournament = true, as = "player" }
+    if detail.tour and OnlinePanel.joinTournament(imp, { tour = detail.tour },
+        "player") then
+      finishTo(imp, "tournament")
+    end
+    return sent ~= false
+  end
+  st.accepted = { id = invite.id, activity = invite.activity }
+  if st.wizard then finishTo(imp, "play") end
+  st.status, st.statusOk = Strings("Joining %s...",
+    tostring((invite.from or EMPTY).name or "?")), true
+  return sent ~= false
+end
+
+function OnlinePanel.acceptInvite(imp, invite)
+  local st = OnlinePanel.state(imp)
+  if not OnlinePanel.inviteOpen(invite) then return false end
+  if OnlinePanel.inviteEngine(invite) == 3 then
+    local from = type(invite.from) == "table" and invite.from or EMPTY
+    local version = type(from.avatar) == "table" and from.avatar.version or nil
+    alignEngine(imp, 3, version)
+    local ruleset = require("src.online.Protocol2").ACTIVITY_RULESET[invite.activity]
+    local detail = type(invite.detail) == "table" and invite.detail or EMPTY
+    if OnlinePanel.formatKnown(detail.ruleset) then ruleset = detail.ruleset end
+    if OnlinePanel.formatKnown(ruleset) then OnlinePanel.setRuleset(imp, ruleset) end
+  end
+  if needsSetup(imp, invite) then
+    st.acceptTarget = invite
+    invite.answered = true
+    OnlinePanel.syncToast(imp)
+    if type(imp.tab) == "string" and imp.tab ~= "online"
+        and type(imp._switchTab) == "function" then
+      pcall(imp._switchTab, imp, "online")
+    end
+    return OnlinePanel.startWizard(imp, "accept")
+  end
+  return OnlinePanel.acceptNow(imp, invite)
+end
+
+function OnlinePanel.declineInvite(imp, invite)
+  if type(invite) ~= "table" then return false end
+  invite.answered = true
+  local client = Client()
+  if type(client.replyInvite) == "function" then
+    pcall(client.replyInvite, invite.id, false)
+  end
+  if type(imp) == "table" and imp._online then OnlinePanel.syncToast(imp) end
+  return true
+end
+
+OnlinePanel.LAUNCHER_ACTIVITIES = {
+  battle_single = true, battle_double = true, trade = true, watch = true,
+  tournament = true,
+}
+
+OnlinePanel.GAME_ONLY_TEXT = {
+  chat = "%s wanted to chat. Chats happen in the Union Room.",
+  card = "%s wanted to swap trainer cards. That happens in the Union Room.",
+  battle_multi = "%s wanted a multi battle. Join one from Play instead.",
+  minigame_jump = "%s asked you to play POKéMON Jump. That happens in game.",
+  minigame_crush = "%s asked you to play Berry Crush. That happens in game.",
+  minigame_pick = "%s asked you to play Dodrio Berry Picking. That happens in game.",
+}
+
+function OnlinePanel.inviteEngine(invite)
+  if type(invite) ~= "table" then return nil end
+  local detail = type(invite.detail) == "table" and invite.detail or EMPTY
+  if type(detail.ruleset) == "string" and detail.ruleset:match("^g3_") then return 3 end
+  local from = type(invite.from) == "table" and invite.from or EMPTY
+  if from.where == "union" or from.where == "direct" then return 3 end
+  if type(from.avatar) == "table" then return 3 end
+  if invite.activity == "battle_double" or invite.activity == "chat"
+      or invite.activity == "card" then
+    return 3
+  end
+  return nil
+end
+
+function OnlinePanel.inviteUsable(imp, invite)
+  if type(invite) ~= "table" then return false, nil end
+  local from = type(invite.from) == "table" and invite.from or EMPTY
+  local name = tostring(from.name or "?")
+  if not OnlinePanel.LAUNCHER_ACTIVITIES[tostring(invite.activity)] then
+    local text = OnlinePanel.GAME_ONLY_TEXT[tostring(invite.activity)]
+      or "%s sent an invite this launcher can't answer."
+    return false, Strings(text, name)
+  end
+  if OnlinePanel.inviteEngine(invite) == 3 and invite.activity ~= "watch"
+      and invite.activity ~= "tournament"
+      and not OnlinePanel.engineVersionFor(imp, 3) then
+    return false, Strings("%s plays FireRed or LeafGreen. Import one to answer.", name)
+  end
+  return true, nil
+end
+
+function OnlinePanel.inviteIn(imp, msg)
+  local st = OnlinePanel.state(imp)
+  if type(msg) ~= "table" or msg.id == nil then return end
+  for _, have in ipairs(st.invites) do
+    if have.id == msg.id then return end
+  end
+  local usable, why = OnlinePanel.inviteUsable(imp, msg)
+  if not usable then
+    local client = Client()
+    if type(client.replyInvite) == "function" then
+      pcall(client.replyInvite, msg.id, false)
+    end
+    st.status, st.statusOk = why, false
+    return
+  end
+  local copy = {}
+  for k, v in pairs(msg) do copy[k] = v end
+  copy.line = OnlinePanel.inviteLine(copy)
+  st.invites[#st.invites + 1] = copy
+  OnlinePanel.syncToast(imp)
+end
+
+local TOAST_SLIDE = { duration = 0.22 }
+
+function OnlinePanel.syncToast(imp)
+  local st = OnlinePanel.state(imp)
+  local head = OnlinePanel.toast(imp)
+  local id = head and head.id or nil
+  if id == st.toastId then return false end
+  st.toastId = id
+  if id ~= nil then Transition.start("toast", "in", TOAST_SLIDE) end
+  return id ~= nil
+end
+
+function OnlinePanel.inviteClosed(imp, msg)
+  local st = OnlinePanel.state(imp)
+  if type(msg) ~= "table" then return end
+  for i = #st.invites, 1, -1 do
+    if st.invites[i].id == msg.id then
+      st.invites[i].closed = true
+      table.remove(st.invites, i)
+    end
+  end
+  if st.acceptTarget and st.acceptTarget.id == msg.id
+      and msg.why ~= "accepted" then
+    st.acceptTarget = nil
+    st.status, st.statusOk = Strings("That invite ran out."), false
+  end
+  OnlinePanel.syncToast(imp)
+  local out = st.outgoing
+  local mine = out and ((out.id ~= nil and out.id == msg.id)
+    or (out.id == nil and msg.to ~= nil and msg.to == out.to
+      and (msg.activity == nil or msg.activity == out.activity)))
+  if mine then
+    if msg.why == "accepted" or msg.why == "crossed" then
+      st.status, st.statusOk = Strings("%s accepted.",
+        tostring(st.outgoingName or "?")), true
+    else
+      st.status, st.statusOk = OnlinePanel.inviteClosedText(msg), false
+    end
+    st.outgoing = nil
+  end
+end
+
+function OnlinePanel.pruneInvites(imp)
+  local st = OnlinePanel.state(imp)
+  for i = #st.invites, 1, -1 do
+    local invite = st.invites[i]
+    if not OnlinePanel.inviteOpen(invite)
+        or (invite.answered and invite ~= st.acceptTarget) then
+      table.remove(st.invites, i)
+    end
+  end
+  OnlinePanel.syncToast(imp)
+end
+
+function OnlinePanel.toastAction(imp, action)
+  local invite = OnlinePanel.toast(imp)
+  if not invite then return false end
+  if action == "accept" then return OnlinePanel.acceptInvite(imp, invite) end
+  if action == "decline" then return OnlinePanel.declineInvite(imp, invite) end
   return false
 end
 
@@ -2551,19 +3690,110 @@ function OnlinePanel.pcAction(imp, action)
   return false
 end
 
-function OnlinePanel.deepLink(imp, code, as)
+OnlinePanel.HOST_PIN_FIELD = "online-host-pin"
+OnlinePanel.TOUR_CODE_FIELD = "online-tour-code"
+
+function OnlinePanel.fieldType(imp, key, text)
   local st = OnlinePanel.state(imp)
-  st.joinCode = OnlinePanel.sanitizeCode(code)
-  if #st.joinCode ~= OnlinePanel.CODE_LEN then return false end
-  if as == "spectator" then
-    ensureHooks()
-    if OnlinePanel.joinByCode(imp, st.joinCode, as) then
-      OnlinePanel.go(imp, "room")
-      return true
-    end
+  text = tostring(text or "")
+  if key == "online-name" then
+    st.nameDraft = OnlinePanel.sanitizeName((st.nameDraft or "") .. text)
+  elseif key == "online-note" then
+    local note = (st.note or "") .. text
+    while #note > OnlinePanel.NOTE_MAX do note = OnlinePanel.dropLast(note) end
+    st.note = note
+  elseif key == OnlinePanel.TOUR_CODE_FIELD then
+    st.tourCode = OnlinePanel.sanitizeCode((st.tourCode or "") .. text)
+  elseif key == OnlinePanel.HOST_PIN_FIELD then
+    st.pin = OnlinePanel.sanitizePin((st.pin or "") .. text)
+  elseif key == OnlinePanel.PIN_FIELD then
+    OnlinePanel.pinType(imp, text)
+  elseif key == OnlinePanel.PC_FIELD then
+    local pc = OnlinePanel.pcPicker(imp)
+    OnlinePanel.pcQuery(imp, ((pc and pc.query) or "") .. text)
+  else
     return false
   end
-  return OnlinePanel.startJoin(imp, st.joinCode, nil, as or "player")
+  return true
+end
+
+local function dropLast(text)
+  text = tostring(text or "")
+  local cut = #text
+  while cut > 0 do
+    local b = text:byte(cut)
+    cut = cut - 1
+    if b < 0x80 or b >= 0xC0 then break end
+  end
+  return text:sub(1, cut)
+end
+
+OnlinePanel.dropLast = dropLast
+
+function OnlinePanel.fieldBack(imp, key)
+  local st = OnlinePanel.state(imp)
+  if key == "online-name" then
+    st.nameDraft = dropLast(st.nameDraft)
+  elseif key == "online-note" then
+    st.note = dropLast(st.note)
+  elseif key == OnlinePanel.TOUR_CODE_FIELD then
+    st.tourCode = dropLast(st.tourCode)
+  elseif key == OnlinePanel.HOST_PIN_FIELD then
+    st.pin = dropLast(st.pin)
+  elseif key == OnlinePanel.PIN_FIELD then
+    OnlinePanel.pinBack(imp)
+  elseif key == OnlinePanel.PC_FIELD then
+    local pc = OnlinePanel.pcPicker(imp)
+    OnlinePanel.pcQuery(imp, dropLast((pc and pc.query) or ""))
+  else
+    return false
+  end
+  return true
+end
+
+function OnlinePanel.inviteToken(link)
+  if type(link) == "table" then link = link.invite end
+  if type(link) ~= "string" then return nil end
+  link = link:lower()
+  if link:match("^%x+$") and #link == 32 then return link end
+  return nil
+end
+
+function OnlinePanel.deepLink(imp, link, as)
+  local st = OnlinePanel.state(imp)
+  local token = OnlinePanel.inviteToken(link)
+  if not token then return false end
+  ensureHooks()
+  st.inviteJoin = { token = token, as = as or "player", at = nowSeconds() }
+  if Connect.state() ~= "online" then
+    if Connect.state() == "offline" or Connect.state() == "error" then
+      OnlinePanel.connect(imp)
+    end
+    return true
+  end
+  return OnlinePanel.joinByInvite(imp)
+end
+
+function OnlinePanel.joinByInvite(imp)
+  local st = OnlinePanel.state(imp)
+  local want = st.inviteJoin
+  if type(want) ~= "table" then return false end
+  local client = Client()
+  if type(client.joinRoomByInvite) ~= "function" then
+    st.inviteJoin = nil
+    return false
+  end
+  local profile = OnlinePanel.myProfile(imp)
+  st.inviteJoin = nil
+  if profile then OnlinePanel.pushProfile(profile, imp) end
+  st.pending = client.joinRoomByInvite(want.token, want.as, profile)
+  OnlinePanel.stampPending(st.pending)
+  if st.pending then
+    st.pending.inviteToken = want.token
+    st.pending.inviteAs = want.as
+  end
+  OnlinePanel.go(imp, "room")
+  return st.pending ~= nil
 end
 
 -- ------------------------------------------------------------- gen 2 gate
@@ -2589,6 +3819,7 @@ OnlinePanel.FILTERS = {
   { id = "all", label = "All" },
   { id = "gen1", label = "Gen 1" },
   { id = "gen2", label = "Gen 2" },
+  { id = "gen3", label = "Gen 3" },
   { id = "vanilla", label = "Vanilla" },
   { id = "carts", label = "Carts" },
 }
@@ -2621,11 +3852,16 @@ function OnlinePanel.entryPasses(filter, entry)
   if type(filter) == "table" then filter = filter.id or "all" end
   if filter == nil or filter == "all" then return true end
   local profile = type(entry) == "table" and entry.profile or nil
-  if type(profile) ~= "table" then return true end
+  if type(profile) ~= "table" then
+    local engine = type(entry) == "table" and tonumber(entry.engine) or nil
+    if not engine or engine == 0 then return true end
+    profile = { engine = engine }
+  end
   local generation = tonumber(profile.engine)
     or GameVersion.generation(profile.version) or 1
-  if filter == "gen1" then return generation ~= 2 end
+  if filter == "gen1" then return generation == 1 end
   if filter == "gen2" then return generation == 2 end
+  if filter == "gen3" then return generation == 3 end
   if filter == "carts" then return profile.kind == "cart" end
   if filter == "vanilla" then return profile.kind ~= "cart" end
   return true
@@ -2638,7 +3874,7 @@ local function newCache()
     dirty = { slots = true, carts = true, party = true, lobby = true,
               trade = true, summary = true },
     slots = {}, carts = {}, party = {}, pc = {}, team = {},
-    rooms = {}, watch = {}, tours = {}, mine = nil,
+    rooms = {}, watch = {}, tours = {}, players = {}, mine = nil,
     tradeSlots = {}, tradeRows = { a = {}, b = {} },
     tradePc = EMPTY, tradePcKey = nil,
     counts = { players = 0, lobbies = 0 },
@@ -2812,22 +4048,88 @@ local function refreshSummary(imp, c)
   c.summary = table.concat(parts, " - ")
 end
 
+function OnlinePanel.gameName(version)
+  if version == nil or version == "" then return "?" end
+  local info = GameVersion.info(version)
+  return tostring((info and (info.label or info.launcherName)) or version)
+end
+
+function OnlinePanel.whereText(entry)
+  local where = type(entry) == "table" and entry.where or nil
+  local text = OnlinePanel.WHERE_TEXT[tostring(where)]
+  return text and Strings(text) or nil
+end
+
+function OnlinePanel.invitable(entry, me)
+  if type(entry) ~= "table" then return false end
+  if me ~= nil and entry.id == me then return false end
+  if entry.online == false then return false end
+  if entry.where == "game" then return false end
+  local status = entry.status
+  return status == nil or status == "idle" or status == "recruiting" or status == "waiting"
+end
+
+local function playerRow(imp, entry, me)
+  local version = entry.version
+  if (version == nil or version == "") and type(entry.profile) == "table" then
+    version = entry.profile.version
+  end
+  local engine = tonumber(entry.engine) or 0
+  if engine == 0 and version and version ~= "" then
+    engine = GameVersion.generation(version) or 0
+  end
+  local reason = nil
+  if not OnlinePanel.invitable(entry, me) then
+    reason = entry.where == "game" and Strings("playing")
+      or Strings(tostring(entry.status or "busy"))
+  elseif engine == 0 or not OnlinePanel.engineVersionFor(imp, engine) then
+    reason = Strings("needs a game you haven't imported")
+  end
+  return {
+    id = tostring(entry.id),
+    name = tostring(entry.name or "?"),
+    verified = entry.verified == true,
+    engine = engine,
+    version = version,
+    game = OnlinePanel.gameName(version),
+    where = OnlinePanel.whereText(entry) or "",
+    place = entry.where,
+    status = tostring(entry.status or "idle"),
+    reason = reason,
+  }
+end
+
+OnlinePanel.playerRow = playerRow
+
 local function roomRow(imp, entry, profile, mine)
   local ep = entry.profile or EMPTY
   local reason = OnlinePanel.joinReason(entry, profile)
   return {
     id = tostring(entry.id),
-    code = entry.code or entry.room,
+    room = entry.room,
+    tour = entry.tour,
+    locked = entry.locked == true,
+    version = ep.version,
+    where = OnlinePanel.whereText(entry),
+    players = tonumber(entry.players) or nil,
+    seats = tonumber(entry.seats) or nil,
     name = tostring(entry.name or "?"),
     verified = entry.verified == true,
     intent = tostring(entry.intent or "battle"),
-    game = tostring(ep.version or "?"),
+    game = OnlinePanel.gameName(ep.version),
     arena = OnlinePanel.arenaText(ep),
     rule = OnlinePanel.ruleText(ep.rule),
     ruleTable = ep.rule,
     spectators = tonumber(entry.spectators) or 0,
+    engine = tonumber(ep.engine) or tonumber(entry.engine) or nil,
+    rulesetId = ep.rulesetId,
+    profile = entry.profile,
+    format = OnlinePanel.formatText(ep),
+    seatsText = (tonumber(entry.seats) or 2) > 2
+      and Strings("%d/%d trainers", tonumber(entry.players) or 0,
+        tonumber(entry.seats)) or nil,
     stage = tostring(entry.stage or "waiting"),
-    sub = ("%s  %s  %s"):format(tostring(ep.version or "?"),
+    sub = ("%s  %s  %s"):format(OnlinePanel.gameName(ep.version),
       OnlinePanel.arenaText(ep), OnlinePanel.ruleText(ep.rule)),
     note = (entry.note ~= nil and entry.note ~= "") and tostring(entry.note)
       or nil,
@@ -2858,14 +4160,21 @@ local function refreshLobby(imp, c)
   c.lobbyKey = key
   local filter = OnlinePanel.filter(imp)
   local me = OnlinePanel.mySeatId()
-  c.rooms, c.watch, c.tours = {}, {}, {}
+  c.rooms, c.watch, c.tours, c.players = {}, {}, {}, {}
   for _, entry in ipairs(open) do
     if entry.id ~= me and OnlinePanel.entryPasses(filter, entry) then
-      if entry.intent == "tournament" then
+      if entry.intent == "tournament" or entry.tour ~= nil then
         c.tours[#c.tours + 1] = roomRow(imp, entry, profile)
       else
         c.rooms[#c.rooms + 1] = roomRow(imp, entry, profile)
       end
+    end
+  end
+  local everyone = online and client.lobby() or EMPTY
+  for _, entry in ipairs(everyone) do
+    if entry.id ~= me and entry.online ~= false
+        and OnlinePanel.entryPasses(filter, entry) then
+      c.players[#c.players + 1] = playerRow(imp, entry, me)
     end
   end
   for _, entry in ipairs(watch) do
@@ -2879,10 +4188,12 @@ local function refreshLobby(imp, c)
   local room = client.room()
   if room and room.intent ~= "tournament" then
     c.mine = {
-      code = room.code,
+      room = room.room,
+      locked = room.locked == true,
       stage = tostring(room.stage or "waiting"),
       intent = tostring(room.intent or "battle"),
       players = #(room.players or {}),
+      seats = tonumber(room.seats) or 2,
       hosting = me ~= nil and room.host == me,
     }
   else
@@ -2964,11 +4275,14 @@ local function route(imp)
   local st = OnlinePanel.state(imp)
   local room = Client().room()
   local tour = Client().tournament()
-  local key = (tour and ("T" .. tostring(tour.code)))
-    or (room and ("R" .. tostring(room.code)))
+  local key = (tour and ("T" .. tostring(tour.tour or tour.code)))
+    or (room and ("R" .. tostring(room.room)))
     or nil
   if key == st.routeKey then return end
   st.routeKey = key
+  if room and type(room.profile) == "table" then
+    OnlinePanel.alignToProfile(imp, room.profile, true)
+  end
   if tour then
     OnlinePanel.go(imp, "tournament")
   elseif room then
@@ -2990,12 +4304,37 @@ end
 function OnlinePanel.update(imp, dt)
   local st = imp._online
   if not st then return end
-  if st.job then
-    local res = st.job.client:poll(st.job.handle)
-    if res.status ~= "pending" then jobFinished(imp, res) end
-  end
+  ensureHooks()
+  local notice = Connect.takeNotice()
+  if notice then st.status, st.statusOk = notice, false end
+  OnlinePanel.drainEvents(imp)
   if st.profileWant and not st.profiles[st.profileWant] then
     OnlinePanel.computeProfile(imp, st.profileWant)
+  else
+    OnlinePanel.pumpLobbyProfiles(imp)
+  end
+  OnlinePanel.pruneInvites(imp)
+  if OnlinePanel._discordInvite then
+    local token = OnlinePanel._discordInvite
+    OnlinePanel._discordInvite = nil
+    OnlinePanel.deepLink(imp, { invite = token }, "player")
+  end
+  if st.inviteJoin and Connect.state() == "online" then
+    OnlinePanel.joinByInvite(imp)
+  elseif st.inviteJoin and nowSeconds() - (st.inviteJoin.at or 0)
+      > OnlinePanel.JOIN_WAIT then
+    st.inviteJoin = nil
+    st.status, st.statusOk = Strings("Couldn't reach the lobby to join."), false
+  end
+  local presence = Presence()
+  if presence and not st.discordArmed and not presence.launcherArmed
+      and Connect.state() == "online" then
+    st.discordArmed = true
+    OnlinePanel.armDiscord()
+  end
+  if presence and type(presence.update) == "function"
+      and presence.launcherArmed then
+    pcall(presence.update, dt)
   end
   if st.convertWant then
     OnlinePanel.computeConverted(imp, st.convertWant)
@@ -3004,7 +4343,7 @@ function OnlinePanel.update(imp, dt)
   if type(imp.pumpOnlineCartInstall) == "function" then
     pcall(imp.pumpOnlineCartInstall, imp)
   end
-  OnlinePanel.pumpRemoteTrade(imp)
+  OnlinePanel.pumpRemoteTrade(imp, dt)
   if OnlinePanel._tourClosed then
     st.status, st.statusOk = OnlinePanel._tourClosed, false
     OnlinePanel._tourClosed = nil
@@ -3024,10 +4363,7 @@ function OnlinePanel.update(imp, dt)
     local want = st.joinWant
     if OnlinePanel.myProfile(imp) then
       st.joinWant = nil
-      if OnlinePanel.joinByCode(imp, want.code, want.as) then
-        if want.tourFallback and st.pending then
-          st.pending.tourFallback = true
-        end
+      if OnlinePanel.joinRoom(imp, want.room, want.as, want.pin) then
         if st.wizard then finishTo(imp, "room") else OnlinePanel.go(imp, "room") end
       end
     elseif nowSeconds() > (want.at or 0) then
@@ -3044,20 +4380,14 @@ function OnlinePanel.update(imp, dt)
   if st.pending and st.pending.done then
     local pending = st.pending
     st.pending = nil
-    if pending.error and pending.tourFallback
-        and pending.reason == "not_found" then
-      OnlinePanel.joinTournamentByCode(imp, pending.code, "spectator")
-    elseif pending.error then
-      if OnlinePanel.screen(imp) == "room" and not Client().room() then
-        OnlinePanel.go(imp, "play")
-      end
-      st.status, st.statusOk = tostring(pending.error), false
-    end
+    OnlinePanel.pendingDone(imp, pending)
   end
   local room = Client().room()
   local tour = Client().tournament()
   if tour then
-    OnlinePanel.pushTourPresence(tour)
+    if st.hadRoom and OnlinePanel._presenceKey ~= nil then
+      OnlinePanel.clearPresence()
+    end
   elseif room then
     OnlinePanel.pushPresence(room)
   elseif st.hadRoom then
@@ -3068,7 +4398,7 @@ function OnlinePanel.update(imp, dt)
       and not st.joinWant then
     st.roomPicked = nil
   end
-  local cartKey = room and tostring(room.code) or nil
+  local cartKey = room and tostring(room.room) or nil
   if cartKey ~= st.roomCartKey then
     st.roomCartKey = cartKey
     st.roomCart = room and OnlinePanel.cartNeed(room.profile) or nil
@@ -3087,18 +4417,31 @@ function OnlinePanel.update(imp, dt)
       if spec then
         OnlinePanel.lastResult = nil
         local cartId = st.cartId
-        if OnlinePanel.crossGen(imp) then cartId = nil end
-        imp:playArena(OnlinePanel.engineVersion(imp), cartId, spec)
+        if OnlinePanel.crossGen(imp) or tonumber(start.engine) == 3 then cartId = nil end
+        imp:playArena(OnlinePanel.arenaVersion(imp, start), cartId, spec)
       else
         st.status, st.statusOk = tostring(err), false
+        if tonumber(start.engine) == 3 then
+          pcall(function() Client().leaveRoom() end)
+        end
       end
     end
   end
 end
 
+function OnlinePanel.arenaVersion(imp, start)
+  if type(start) == "table" and tonumber(start.engine) == 3 then
+    local version = OnlinePanel.selectedVersion(imp)
+    if version and GameVersion.generation(version) == 3 then return version end
+    return OnlinePanel.engineVersionFor(imp, 3)
+  end
+  return OnlinePanel.engineVersion(imp)
+end
+
 function OnlinePanel.autoReadyTrade(imp, room)
   local st = OnlinePanel.state(imp)
   if not room or room.intent ~= "trade" then return false end
+  if tonumber(room.engine) == 3 then return false end
   if st.trade and st.trade.remote then return false end
   if room.stage ~= "waiting" and room.stage ~= "ready" then return false end
   local players = room.players or {}
@@ -3117,66 +4460,146 @@ function OnlinePanel.autoReadyTrade(imp, room)
   return OnlinePanel.sendReady(imp)
 end
 
-function OnlinePanel.alignToRoom(imp, code)
+function OnlinePanel.alignToProfile(imp, p, soft)
   local st = OnlinePanel.state(imp)
-  for _, entry in ipairs(Client().lobby() or {}) do
-    local p = entry.code == code and entry.profile or nil
-    if p and p.version and imp.ready and imp.ready[p.version] then
-      local kind = p.kind or "vanilla"
-      local cartId = p.cart and p.cart.id or nil
+  if type(p) ~= "table" or not p.version then return false end
+  if tonumber(p.engine) == 3 and OnlinePanel.formatKnown(p.rulesetId) then
+    st.ruleset = p.rulesetId
+  end
+  if tonumber(p.engine) == 3 then
+    local current = OnlinePanel.selectedVersion(imp)
+    if current and GameVersion.generation(current) == 3 then
       st.roomPicked = true
-      if p.version ~= st.version or kind ~= st.kind or cartId ~= st.cartId then
-        st.version, st.kind, st.cartId = p.version, kind, cartId
-        st.slotId, st.team, st.slotRead, st.ready = nil, {}, nil, false
-        OnlinePanel.invalidate(imp)
-      end
       return true
     end
   end
-  return false
-end
-
-function OnlinePanel.spectateByCode(imp, code)
-  local st = OnlinePanel.state(imp)
-  code = OnlinePanel.sanitizeCode(code)
-  for _, entry in ipairs(Client().lobby() or {}) do
-    if entry.code == code and entry.intent == "tournament" then
-      return OnlinePanel.joinTournamentByCode(imp, code, "spectator")
+  if tonumber(p.engine) == 3 and not (imp.ready and imp.ready[p.version]) then
+    local other = OnlinePanel.engineVersionFor(imp, 3)
+    if other then
+      local copy = {}
+      for k, v in pairs(p) do copy[k] = v end
+      copy.version = other
+      p = copy
     end
   end
-  OnlinePanel.alignToRoom(imp, code)
-  if not OnlinePanel.joinByCode(imp, code, "spectator") then
-    if st.joinWant then st.joinWant.tourFallback = true end
-    return false
+  if not (imp.ready and imp.ready[p.version]) then return false end
+  local kind = p.kind or "vanilla"
+  local cartId = p.cart and p.cart.id or nil
+  if soft then
+    local current = OnlinePanel.selectedVersion(imp)
+    if current and GameVersion.generation(current)
+        == GameVersion.generation(p.version) then
+      return true
+    end
   end
-  if st.pending then st.pending.tourFallback = true end
-  OnlinePanel.go(imp, "room")
+  st.roomPicked = true
+  if p.version ~= st.version or kind ~= st.kind or cartId ~= st.cartId then
+    st.version, st.kind, st.cartId = p.version, kind, cartId
+    st.slotId, st.team, st.slotRead, st.ready = nil, {}, nil, false
+    OnlinePanel.invalidate(imp)
+  end
   return true
+end
+
+function OnlinePanel.alignToRoom(imp, roomId)
+  local entry = OnlinePanel.findEntry("room", roomId)
+  if not entry then return false end
+  return OnlinePanel.alignToProfile(imp, entry.profile)
+end
+
+function OnlinePanel.spectate(imp, row)
+  if type(row) ~= "table" then return false end
+  local target = OnlinePanel.targetFor(row, "spectator")
+  if not target then return false end
+  if target.tournament then
+    local st = OnlinePanel.state(imp)
+    st.joinTarget = target
+    local ok = OnlinePanel.joinTournament(imp, { tour = target.tour },
+      "spectator")
+    if ok then OnlinePanel.go(imp, "tournament") end
+    return ok
+  end
+  OnlinePanel.alignToRoom(imp, target.room)
+  return OnlinePanel.startJoin(imp, target, nil, "spectator")
 end
 
 OnlinePanel.JOIN_WAIT = 15
 
-function OnlinePanel.joinByCode(imp, code, as)
+function OnlinePanel.roomRuleset(imp, roomId)
+  local entry = OnlinePanel.findEntry("room", roomId)
+  local p = entry and entry.profile or nil
+  if type(p) == "table" and tonumber(p.engine) == 3 and type(p.rulesetId) == "string" then
+    return p.rulesetId
+  end
   local st = OnlinePanel.state(imp)
-  code = OnlinePanel.sanitizeCode(code)
-  if #code ~= OnlinePanel.CODE_LEN then
+  local target = st.joinTarget
+  if type(target) == "table" and target.room == roomId and target.engine == 3
+      and type(target.rulesetId) == "string" then
+    return target.rulesetId
+  end
+  local tr = st.trade
+  if type(tr) == "table" and type(tr.target) == "table" and tr.target.room == roomId
+      and OnlinePanel.isGen3(imp) then
+    return OnlinePanel.TRADE_RULESET
+  end
+  return nil
+end
+
+function OnlinePanel.joinRoom(imp, roomId, as, pin)
+  local st = OnlinePanel.state(imp)
+  if type(roomId) ~= "string" or roomId == "" then
     st.joinWant = nil
-    st.status, st.statusOk = Strings("Room codes are 6 characters."), false
+    st.status, st.statusOk = Strings("That lobby is gone."), false
     return false
   end
   ensureHooks()
   local profile, reason = OnlinePanel.myProfile(imp)
   if not profile then
-    st.joinWant = { code = code, as = as or "player",
+    st.joinWant = { room = roomId, as = as or "player", pin = pin,
                     at = nowSeconds() + OnlinePanel.JOIN_WAIT }
     st.status, st.statusOk = reason or Strings("Reading your game..."), false
     return false
   end
+  local want = OnlinePanel.roomRuleset(imp, roomId)
+  if want then profile = OnlinePanel.profileFor(imp, want) or profile end
   st.joinWant = nil
-  OnlinePanel.pushProfile(profile)
-  st.pending = Client().joinRoom(code, as or "player", profile)
-  if st.pending and st.pending.at == nil then st.pending.at = nowSeconds() end
+  OnlinePanel.pushProfile(profile, imp)
+  st.pending = Client().joinRoom(roomId, as or "player", profile, pin)
+  OnlinePanel.stampPending(st.pending)
+  if type(st.pending) == "table" and pin then
+    st.pending.pinTarget = st.joinTarget
+  end
   return true
+end
+
+local PIN_REASONS = { bad_pin = true, pin_required = true, pin_locked = true }
+
+function OnlinePanel.pendingDone(imp, pending)
+  local st = OnlinePanel.state(imp)
+  if not pending.error then return end
+  if PIN_REASONS[pending.reason] then
+    if OnlinePanel.screen(imp) == "room" and not Client().room() then
+      OnlinePanel.go(imp, "play")
+    end
+    OnlinePanel.pinFailed(imp, pending)
+    return
+  end
+  if OnlinePanel.retryTourRuleset(imp, pending) then
+    OnlinePanel._joinError = nil
+    st.status, st.statusOk = nil, false
+    return
+  end
+  if pending.reason == "full" and pending.inviteToken
+      and pending.inviteAs ~= "spectator" then
+    st.inviteJoin = { token = pending.inviteToken, as = "spectator",
+                      at = nowSeconds() }
+    OnlinePanel.joinByInvite(imp)
+    return
+  end
+  if OnlinePanel.screen(imp) == "room" and not Client().room() then
+    OnlinePanel.go(imp, "play")
+  end
+  st.status, st.statusOk = tostring(pending.error), false
 end
 
 -- ---------------------------------------------------------------- screens
@@ -3196,7 +4619,11 @@ local function shotDemo(imp)
   local want = os.getenv("POKEPORT_ONLINE_SHOT")
   if not want or want == "" then return end
   OnlinePanel._shotArmed = true
-  local ok, demo = pcall(require, "tests.drivers.online_shot")
+  local module = os.getenv("POKEPORT_ONLINE_SHOT_MODULE")
+  if not module or not module:match("^tests%.drivers%.online_[%w_]+$") then
+    module = "tests.drivers.online_shot"
+  end
+  local ok, demo = pcall(require, module)
   if ok and type(demo) == "function" then pcall(demo, OnlinePanel, imp, want) end
 end
 

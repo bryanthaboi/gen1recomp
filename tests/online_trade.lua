@@ -29,6 +29,20 @@ local fs = {
   end,
   remove = function(name) files[name] = nil return true end,
   createDirectory = function() return true end,
+  getDirectoryItems = function(dir)
+    local prefix, out, seen = dir .. "/", {}, {}
+    for name in pairs(files) do
+      if name:sub(1, #prefix) == prefix then
+        local head = name:sub(#prefix + 1):match("^[^/]+")
+        if head and not seen[head] then
+          seen[head] = true
+          out[#out + 1] = head
+        end
+      end
+    end
+    table.sort(out)
+    return out
+  end,
 }
 
 local realPortableFs = SaveData.portableFs
@@ -649,17 +663,39 @@ do
   T.eq(why, "that's not in the PC", "and the reason names the PC")
 end
 
--- ------- a remote trade over the loopback pair
+-- ------- a remote trade through the relay's commit barrier
+
+local Relay = require("tests.online_trade_fakerelay")
+
+local function remotePair(version, slotA, slotB, data, opts)
+  local relay = Relay.new(opts)
+  local rsA, rsB = relay:join(0, "A"), relay:join(1, "B")
+  local remoteA = Trade.remote(open(version, slotA, data), rsA)
+  local remoteB = Trade.remote(open(version, slotB, data), rsB)
+  return relay, remoteA, remoteB, rsA, rsB
+end
+
+local function negotiate(remoteA, remoteB)
+  remoteA:start()
+  remoteB:start()
+  remoteA:update()
+  remoteB:update()
+  remoteA:pick(1)
+  remoteB:pick(1)
+  remoteA:update()
+  remoteB:update()
+  remoteA:confirm(true)
+  remoteB:confirm(true)
+  remoteA:update()
+  remoteB:update()
+end
 
 do
   files = {}
-  local Net = require("src.link.Net")
   local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
   local pathB = put("red", "slot2",
     gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
-  local netA, netB = Net.loopbackPair()
-  local remoteA = Trade.remote(open("red", "slot1", GEN1), netA)
-  local remoteB = Trade.remote(open("red", "slot2", GEN1), netB)
+  local relay, remoteA, remoteB = remotePair("red", "slot1", "slot2", GEN1)
   T.check(remoteA ~= nil and remoteB ~= nil, "both ends open an adapter")
   T.eq(remoteA.game.save, remoteA.handle.save,
     "the stub game the session reads is the handle's own save")
@@ -674,17 +710,22 @@ do
   remoteB:pick(1)
   remoteA:update()
   remoteB:update()
+  local before = files[pathA]
   remoteA:confirm(true)
   remoteB:confirm(true)
   remoteA:update()
   remoteB:update()
-  T.eq(remoteA:stage(), "done", "the negotiation completes")
-  T.eq(remoteB:stage(), "done", "on both ends")
-
-  local okA = remoteA:commit()
-  local okB = remoteB:commit()
-  T.eq(okA, true, "each side commits its own file")
-  T.eq(okB, true, "and only its own")
+  T.eq(remoteA:stage(), "commit_wait", "the negotiation completes into the barrier")
+  T.eq(remoteB:stage(), "commit_wait", "on both ends")
+  T.eq(relay.commits, 1, "the relay saw two equal digests")
+  T.eq(files[pathA], before, "nothing is written before trade_commit arrives")
+  local early = remoteA:commit()
+  T.eq(early, false, "commit refuses before the relay committed")
+  remoteA:update()
+  remoteB:update()
+  T.eq(remoteA:stage(), "committed", "trade_commit writes seat 0")
+  T.eq(remoteB:stage(), "committed", "and seat 1")
+  T.eq(remoteA:commit(), true, "commit reports the result it already has")
   T.eq(decodeAt(pathA).party[1].species, "ALAKAZAM",
     "the KADABRA arrives evolved")
   T.eq(decodeAt(pathB).party[1].species, "PIKACHU",
@@ -695,18 +736,36 @@ do
   remoteB:close()
 end
 
--- ------- a remote Gen 2 trade uses the Gen 2 codec
+do
+  files = {}
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local diskA, diskB = files[pathA], files[pathB]
+  local relay, remoteA, remoteB = remotePair("red", "slot1", "slot2", GEN1)
+  local realPrepare = Trade.prepare
+  Trade.prepare = function(plan)
+    if plan.sides[1].handle == remoteB.handle then return false, "that save didn't validate" end
+    return realPrepare(plan)
+  end
+  negotiate(remoteA, remoteB)
+  remoteA:update()
+  remoteB:update()
+  Trade.prepare = realPrepare
+  T.eq(remoteB:stage(), "cancelled", "a save that won't build backs out before the confirm")
+  T.eq(remoteB.session.error, "that save didn't validate", "and says why")
+  T.eq(relay.commits, 0, "so the relay never commits")
+  T.eq(files[pathA], diskA, "and seat 0 writes nothing")
+  T.eq(files[pathB], diskB, "nor seat 1")
+end
 
 do
   files = {}
-  local Net = require("src.link.Net")
-  local pathA = put("gold", "slot1",
-    gen2Save("GOLD", { gen2Mon("TOTODILE", 20, { item = "LEFTOVERS" }) }))
-  local pathB = put("gold", "slot2",
-    gen2Save("SILVER", { gen2Mon("MACHOKE", 30) }))
-  local netA, netB = Net.loopbackPair()
-  local remoteA = Trade.remote(open("gold", "slot1", GEN2), netA)
-  local remoteB = Trade.remote(open("gold", "slot2", GEN2), netB)
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local diskA, diskB = files[pathA], files[pathB]
+  local relay, remoteA, remoteB, rsA = remotePair("red", "slot1", "slot2", GEN1)
   remoteA:start()
   remoteB:start()
   remoteA:update()
@@ -715,13 +774,73 @@ do
   remoteB:pick(1)
   remoteA:update()
   remoteB:update()
-  remoteA:confirm(true)
   remoteB:confirm(true)
   remoteA:update()
+  T.eq(remoteA:stage(), "confirming", "seat 0 still deciding")
+  rsA.close()
   remoteB:update()
-  T.eq(remoteA:stage(), "done", "the Gen 2 negotiation completes")
-  T.eq(remoteA:commit(), true, "and each side commits")
-  T.eq(remoteB:commit(), true, "its own save")
+  T.eq(relay.aborts, 0, "no digest ever reached the relay")
+  T.eq(remoteB:stage(), "cancelled", "the other trainer leaving calls it off")
+  T.eq(remoteB.session.error, "the other trainer left", "and says so")
+  T.eq(files[pathA], diskA, "a drop before commit writes nothing on seat 0")
+  T.eq(files[pathB], diskB, "or seat 1")
+end
+
+do
+  files = {}
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local diskA, diskB = files[pathA], files[pathB]
+  local relay, remoteA, remoteB = remotePair("red", "slot1", "slot2", GEN1, {
+    tamper = function(seat, digest)
+      if seat == 1 then return ("f"):rep(16) end
+      return digest
+    end })
+  negotiate(remoteA, remoteB)
+  remoteA:update()
+  remoteB:update()
+  T.eq(relay.aborts, 1, "unequal digests abort at the relay")
+  T.eq(remoteA:stage(), "cancelled", "seat 0 cancels")
+  T.eq(remoteA.session.error, "digest", "naming the digest")
+  T.eq(files[pathA], diskA, "and writes nothing")
+  T.eq(files[pathB], diskB, "on either side")
+end
+
+do
+  files = {}
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local _, remoteA, remoteB, _, rsB = remotePair("red", "slot1", "slot2", GEN1)
+  negotiate(remoteA, remoteB)
+  rsB.online = false
+  remoteA:update()
+  T.eq(remoteA:stage(), "committed", "seat 0 commits while seat 1 is dropped")
+  remoteB:update()
+  T.eq(remoteB:stage(), "commit_wait", "seat 1 waits through the drop")
+  rsB.online = true
+  remoteB:update()
+  T.eq(remoteB:stage(), "committed", "and commits on the replay")
+  T.eq(decodeAt(pathA).party[1].species, "ALAKAZAM", "both files are written")
+  T.eq(decodeAt(pathB).party[1].species, "PIKACHU", "after a drop past the commit")
+end
+
+-- ------- a remote Gen 2 trade uses the Gen 2 codec
+
+do
+  files = {}
+  local pathA = put("gold", "slot1",
+    gen2Save("GOLD", { gen2Mon("TOTODILE", 20, { item = "LEFTOVERS" }) }))
+  local pathB = put("gold", "slot2",
+    gen2Save("SILVER", { gen2Mon("MACHOKE", 30) }))
+  local _, remoteA, remoteB = remotePair("gold", "slot1", "slot2", GEN2)
+  negotiate(remoteA, remoteB)
+  T.eq(remoteB:stage(), "commit_wait", "the Gen 2 negotiation reaches the barrier")
+  remoteA:update()
+  remoteB:update()
+  T.eq(remoteA:stage(), "committed", "and each side commits")
+  T.eq(remoteB:stage(), "committed", "its own save")
   T.eq(decodeAt(pathA).party[1].species, "MACHAMP",
     "the MACHOKE arrives evolved")
   T.eq(decodeAt(pathB).party[1].species, "TOTODILE",
@@ -731,6 +850,188 @@ do
   remoteA:close()
   remoteB:close()
 end
+
+local LT = require("src.core.game3.link.trade")
+local Protocol = require("src.link.Protocol")
+local realWithDataset = Trade.withDataset
+
+local function restart(relay)
+  Trade._resolver, Trade._scanned = nil, false
+  Trade._applied, Trade._journalPaths = {}, {}
+  LT.outcomeClient = relay and relay:outcomeClient() or nil
+  Trade.withDataset = function(version, fn)
+    local data = version == "gold" and GEN2 or GEN1
+    local ok, result = pcall(fn, data)
+    if not ok then return nil, tostring(result) end
+    return result
+  end
+  return LT.outcomeClient
+end
+
+local function settle(steps)
+  for _ = 1, steps or 40 do
+    if Trade.pumpPending(1000) == true then return true end
+  end
+  return false
+end
+
+local function journalAt(path)
+  local body = files[Trade.journalPath(path)]
+  local data = body and SaveData.decode(body) or nil
+  return data and data.entries or nil
+end
+
+local function backupsOf(path)
+  local n = 0
+  for name in pairs(files) do
+    if name:sub(1, #path + 11) == path .. ".trade-bak-" then n = n + 1 end
+  end
+  return n
+end
+
+do
+  files = {}
+  restart(nil)
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local relay, remoteA, remoteB, _, rsB = remotePair("red", "slot1", "slot2", GEN1)
+  negotiate(remoteA, remoteB)
+  local jB = journalAt(pathB)
+  T.eq(jB and #jB, 1, "seat 1 journals the trade before its confirm leaves")
+  T.eq(jB and jB[1].room, relay.room, "keyed by the relay room")
+  T.eq(jB and jB[1].digest, remoteB.digest, "and the digest it confirmed")
+  T.eq(jB and jB[1].slotId, "slot2", "naming the save it belongs to")
+  T.eq(jB and jB[1].sent.species, "KADABRA", "with the mon it sends")
+  T.eq(jB and jB[1].record.species, "PIKACHU", "and the one it gets")
+  T.check(journalAt(pathA) ~= nil, "seat 0 journals too")
+  rsB.online = false
+  remoteA:update()
+  T.eq(remoteA:stage(), "committed", "seat 0 commits")
+  T.eq(journalAt(pathA), nil, "and drops its journal after the save")
+  remoteB:close()
+  T.eq(decodeAt(pathB).party[1].species, "KADABRA",
+    "seat 1 lost the link for good before trade_commit")
+
+  local client = restart(relay)
+  client.failNext = 1
+  Trade.pumpPending(0)
+  Trade.pumpPending(0)
+  T.eq(#client.requests, 1, "the next launcher start asks the ledger")
+  T.eq(client.requests[1].path, "/trade/outcome", "on the outcome route")
+  T.eq(client.requests[1].room, relay.room, "for that room")
+  T.eq(client.requests[1].digest, remoteB.digest, "and that digest")
+  T.eq(client.requests[1].noAuth, true, "without an account")
+  T.eq(decodeAt(pathB).party[1].species, "KADABRA", "an unreachable server changes nothing")
+  T.check(journalAt(pathB) ~= nil, "and keeps the journal for a retry")
+  T.eq(settle(), true, "the retry settles it")
+  T.check(#client.requests >= 2, "after asking again")
+  local disk = decodeAt(pathB)
+  T.eq(disk.party[1].species, "PIKACHU", "the committed trade is applied to seat 1's save")
+  T.eq(disk.party[1].traded, true, "as a traded mon")
+  T.eq(disk.pokedex.owned.PIKACHU, true, "with the dex marked")
+  T.eq(journalAt(pathB), nil, "and the journal is dropped")
+  T.eq(backupsOf(pathB), 1, "the old file is backed up first")
+  T.eq(decodeAt(pathA).party[1].species, "ALAKAZAM", "seat 0 keeps what it got")
+
+  restart(relay)
+  T.eq(settle(), false, "nothing is left to resolve")
+  T.eq(decodeAt(pathB).party[1].species, "PIKACHU", "and nothing is applied twice")
+end
+
+do
+  files = {}
+  restart(nil)
+  local pathA = put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local relay, remoteA, remoteB, _, rsB = remotePair("red", "slot1", "slot2", GEN1, {
+    tamper = function(seat, digest)
+      if seat == 0 then return ("f"):rep(16) end
+      return digest
+    end })
+  negotiate(remoteA, remoteB)
+  T.eq(relay.aborts, 1, "the relay aborts the round")
+  rsB.online = false
+  remoteA:update()
+  T.eq(journalAt(pathA), nil, "a seat that hears trade_abort drops its journal")
+  local before = files[pathB]
+  remoteB:close()
+  T.check(journalAt(pathB) ~= nil, "a seat that never heard it keeps one")
+  local client = restart(relay)
+  T.eq(settle(), true, "the ledger settles it")
+  T.eq(#client.requests, 1, "in one ask")
+  T.eq(files[pathB], before, "an aborted trade leaves the save alone")
+  T.eq(journalAt(pathB), nil, "and drops the journal")
+end
+
+do
+  files = {}
+  restart(nil)
+  put("red", "slot1", gen1Save("RED", { gen1Mon("PIKACHU", 25) }))
+  local pathB = put("red", "slot2",
+    gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  put("red", "slot3", gen1Save("GREEN", { gen1Mon("PIKACHU", 9) }))
+  local held = true
+  local relay, remoteA, remoteB, _, rsB = remotePair("red", "slot1", "slot2", GEN1, {
+    tamper = function(seat, digest)
+      if held and seat == 0 then return nil end
+      return digest
+    end })
+  negotiate(remoteA, remoteB)
+  T.eq(relay.commits + relay.aborts, 0, "seat 0's confirm is still in flight")
+  rsB.online = false
+  remoteB:close()
+  local client = restart(relay)
+  Trade.pumpPending(0)
+  Trade.pumpPending(0)
+  T.eq(client.requests[1] and client.requests[1].digest, remoteB.digest, "the ledger is asked")
+  T.eq(relay:outcome(relay.room, remoteB.digest), "open", "and says the round is open")
+  T.eq(decodeAt(pathB).party[1].species, "KADABRA", "so nothing is applied yet")
+  T.check(journalAt(pathB) ~= nil, "and the journal stays")
+  local plan, why = Trade.plan({ from = open("red", "slot2", GEN1), fromIndex = 1,
+    to = open("red", "slot3", GEN1), toIndex = 1 })
+  T.eq(plan, nil, "a mon whose trade is unsettled can't be traded again")
+  T.eq(why, "that POKéMON's last trade isn't settled yet", "and says why")
+  held = false
+  relay:_barrier(0, remoteB.digest)
+  T.eq(relay.commits, 1, "the round commits late")
+  T.eq(settle(), true, "the next ask settles it")
+  T.eq(decodeAt(pathB).party[1].species, "PIKACHU", "applying the trade")
+  T.eq(journalAt(pathB), nil, "and dropping the journal")
+end
+
+do
+  files = {}
+  restart(nil)
+  local pathB = put("red", "slot2", gen1Save("BLUE", { gen1Mon("KADABRA", 30) }))
+  local before = files[pathB]
+  files[Trade.journalPath(pathB)] = SaveData.encode({ v = 1, entries = {
+    { room = "r0123456789abcdef", digest = ("a"):rep(16), at = os.time() - 2 * 24 * 60 * 60,
+      version = "red", slotId = "slot2", sent = Protocol.packMon(gen1Mon("KADABRA", 30)),
+      record = gen1Mon("PIKACHU", 25) } } })
+  local relay = Relay.new()
+  local client = restart(relay)
+  T.eq(settle(), true, "a journal older than a day settles")
+  T.eq(#client.requests, 0, "without asking")
+  T.eq(journalAt(pathB), nil, "by dropping it")
+  T.eq(files[pathB], before, "and leaving the save alone")
+
+  files[Trade.journalPath(pathB)] = SaveData.encode({ v = 1, entries = {
+    { room = relay.room, digest = ("b"):rep(16), at = os.time(),
+      version = "red", slotId = "slot2", sent = Protocol.packMon(gen1Mon("PIKACHU", 7)),
+      record = gen1Mon("PIKACHU", 25) } } })
+  relay.ledger[1] = { room = relay.room, n = 1, outcome = "commit", digests = { ("b"):rep(16) } }
+  restart(relay)
+  T.eq(settle(), true, "a commit whose sent mon is gone settles")
+  T.eq(journalAt(pathB), nil, "by dropping the journal")
+  T.eq(files[pathB], before, "without touching the save")
+end
+
+LT.outcomeClient = nil
+Trade.withDataset = realWithDataset
+Trade._resolver, Trade._scanned = nil, false
+Trade._applied, Trade._journalPaths = {}, {}
 
 SaveData.portableFs = realPortableFs
 

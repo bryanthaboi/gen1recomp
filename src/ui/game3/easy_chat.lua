@@ -180,7 +180,7 @@ function EasyChat.open(opts)
 
   EasyChat._state = st
   EasyChat.openFlag = true
-  Stack.push("easy_chat", EasyChat, { hideBelow = true })
+  Stack.push("easy_chat", EasyChat, { hideBelow = true, fullscreen = true })
   return st
 end
 

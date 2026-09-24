@@ -176,7 +176,7 @@ function SummaryMenu.openMenu(party, startIndex, opts)
   end
 
   SummaryChrome.install(opts.cache)
-  Stack.push("summary", SummaryMenu, { hideBelow = true })
+  Stack.push("summary", SummaryMenu, { hideBelow = true, fullscreen = true })
   -- pokefirered/src/pokemon_summary_screen.c:1111
   play_mon_cry()
 end

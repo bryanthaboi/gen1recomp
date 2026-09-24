@@ -195,7 +195,7 @@ function EggHatch.start(mon, opts)
   if Message.setFrame then Message.setFrame("battle") end
   pcall(hatched_pic)
   pcall(Pokemon.frontPic, Pokemon.SPECIES_EGG)
-  Stack.push(STACK_ID, EggHatch, { hideBelow = true })
+  Stack.push(STACK_ID, EggHatch, { hideBelow = true, fullscreen = true })
   return true
 end
 

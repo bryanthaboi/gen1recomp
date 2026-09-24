@@ -15,6 +15,7 @@ local STATE_TEXT = {
   online = "Connected to the lobby.",
   connecting = "Connecting...",
   reconnecting = "Reconnecting...",
+  ticket = "Signing in...",
 }
 
 function Home.identity(imp, x, y, w, m)
@@ -23,14 +24,16 @@ function Home.identity(imp, x, y, w, m)
   local client = Client()
   local pad, gap = Ui.pads(m)
   local rowH = math.max(m.btnH, Kit.tapMin())
-  local state = client.state()
+  local Connect = require("src.online.Connect")
+  local state = Connect.state()
   local you = client.you()
   local verified = type(you) == "table" and you.verified == true
   local offline = state == "offline" or state == "error"
-  local statusLine = st.status
+  local upgrade = Connect.upgradeText()
+  local statusLine = upgrade or st.status
   if not statusLine then
     if state == "error" then
-      statusLine = tostring(client.error() or "Disconnected.")
+      statusLine = tostring(Connect.error() or "Disconnected.")
     else
       statusLine = Strings(STATE_TEXT[state]
         or "Offline. Connect to see who is playing.")
@@ -75,7 +78,7 @@ function Home.identity(imp, x, y, w, m)
   LV().btn(imp, x + w - pad - connectW, cy, connectW, rowH, "online-connect",
     connectLabel, {
       kind = offline and "primary" or "ghost", font = "small",
-      enabled = st.job == nil,
+      enabled = state ~= "ticket" and upgrade == nil,
       action = function()
         if offline then
           OnlinePanel.connect(imp)
@@ -85,7 +88,8 @@ function Home.identity(imp, x, y, w, m)
       end })
   cy = cy + rowH + gap
   Kit.textWrapped("small", statusLine, cx, cy, inner,
-    st.statusOk and PAL.green or (state == "error" and PAL.red or PAL.muted), 2)
+    upgrade and PAL.red or (st.statusOk and PAL.green
+      or (state == "error" and PAL.red or PAL.muted)), 2)
   return cardH
 end
 
@@ -95,8 +99,16 @@ local CARDS = {
   { id = "watch", title = "Watch",
     note = "Open matches and running tournaments to spectate." },
   { id = "trade", title = "Trade",
-    note = "Swap POKeMON with another save or another trainer." },
+    note = "Swap POKéMON with another save or another trainer." },
 }
+
+function Home.countsText(players, lobbies)
+  players, lobbies = tonumber(players) or 0, tonumber(lobbies) or 0
+  return (players == 1 and Strings("1 player online")
+      or Strings("%d players online", players)) .. ", "
+    .. (lobbies == 1 and Strings("1 open lobby")
+      or Strings("%d open lobbies", lobbies))
+end
 
 function Home.draw(imp, x, y, w, availH, m)
   local OnlinePanel = OP()
@@ -106,8 +118,8 @@ function Home.draw(imp, x, y, w, availH, m)
   local cy = y + Home.identity(imp, x, y, w, m) + gap
 
   if online then
-    Kit.text("small", Strings("%d players online, %d open lobbies",
-      c.counts.players, c.counts.lobbies), x, cy, PAL.heading)
+    Kit.text("small", Home.countsText(c.counts.players, c.counts.lobbies),
+      x, cy, PAL.heading)
   else
     Kit.text("small", Strings("Connect to see who is playing."), x, cy,
       PAL.muted)

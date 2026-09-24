@@ -97,12 +97,32 @@ return function(game)
     return busy()
   end
 
+  local function declineWireless()
+    local n = 0
+    while n < 600 and Link.connectPrompt ~= nil and not Choice.active do
+      U.wait(10)
+      n = n + 10
+    end
+    if Link.connectPrompt == nil then return false end
+    U.tap(game, "down")
+    U.wait(10)
+    U.tap(game, "a")
+    U.wait(20)
+    return Link.connectPrompt == nil
+  end
+
   local spoke = talkToAttendant()
   if not result(spoke, "the cable club attendant answers") then
     U.shot(game, DIR .. "/link_counter_99_no_answer.png")
     return finish()
   end
 
+  advance(400)
+  result(Link.connectPrompt ~= nil and Choice.active,
+    "offline, IsWirelessAdapterConnected asks to connect to the Wireless Club")
+  U.shot(game, DIR .. "/link_counter_01b_connect_prompt.png")
+  result(declineWireless() and not Link.adapterConnected(),
+    "NO leaves the adapter unplugged")
   advance(400)
   local sawRoomChoice = Choice.active and true or false
   result(sawRoomChoice, "IsWirelessAdapterConnected routed the player into the wired cable club menu")
@@ -148,6 +168,8 @@ return function(game)
     return finish()
   end
   advance(400)
+  declineWireless()
+  advance(400)
   U.tap(game, "down")
   U.wait(10)
   U.tap(game, "a")
@@ -191,39 +213,23 @@ return function(game)
       "the return warp points back at the Pokemon Center 2F")
     U.shot(game, DIR .. "/link_counter_06_colosseum.png")
   else
-    result(busy(), "the colosseum entry is waiting on the link-up rather than dead")
-    -- pokefirered/src/cable_club.c:222 CreateLinkupTask
-    local LinkMenu = require("src.ui.game3.link_menu")
     local LB = require("src.core.game3.link.battle")
-    local opened = 0
-    while opened < 300 and not LinkMenu.isOpen() do
-      U.wait(10)
-      opened = opened + 10
-    end
-    result(LinkMenu.isOpen(),
-      "and the counter put the HOST / JOIN screen up so a player can get a cable")
+    -- pokefirered/src/cable_club.c:76
+    result(LB.linkup == Link.LINKUP.ONGOING or LB.linkup == Link.LINKUP.CONNECTION_ERROR,
+      "the wired colosseum linkup waits for a cable that never comes")
     U.shot(game, DIR .. "/link_counter_06_awaiting_linkup.png")
-    result(LB.linkup == 0, "the linkup reports LINKUP_ONGOING, not LINKUP_FAILED")
-    local hosting = 0
-    while hosting < 300 and LinkMenu.stage ~= "hosting" do
-      U.tap(game, "a")
+    local waitedOut = 0
+    local limit = LB.LINKUP_TICKS * 4 + 1200
+    while waitedOut < limit and busy() do
+      U.tap(game, (waitedOut / 20) % 2 == 0 and "b" or "a")
       U.wait(20)
-      hosting = hosting + 20
+      waitedOut = waitedOut + 20
     end
-    print("[driver] connect screen: stage=" .. tostring(LinkMenu.stage)
-      .. " transport=" .. tostring(LinkMenu._transport ~= nil) .. " link=" .. tostring(Link.link ~= nil))
-    U.shot(game, DIR .. "/link_counter_07_hosting.png")
-    -- pokefirered/src/link.c:386 OpenLink
-    result(LinkMenu.stage == "hosting", "HOST A GAME opens the port and waits for the other GBA")
-    result(LinkMenu._transport ~= nil and Link.link == nil,
-      "and a real host transport is open, waiting for the other GBA to pair")
-    local closing = 0
-    while closing < 180 and LinkMenu.isOpen() do
-      U.tap(game, "b")
-      U.wait(20)
-      closing = closing + 20
-    end
-    result(not LinkMenu.isOpen(), "B backs out of the connect screen")
+    print("[driver] linkup gave up after " .. waitedOut .. " frames, link=" .. tostring(Link.link ~= nil))
+    -- pokefirered/src/cable_club.c:474
+    result(not busy() and LB.linkup == Link.LINKUP.CONNECTION_ERROR,
+      "with no cable the linkup ends in a connection error")
+    result(Link.link == nil, "and no link session is left open")
   end
 
   -- data/scripts/cable_club.inc:306

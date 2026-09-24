@@ -22,7 +22,7 @@ local function column(imp, x, y, w, m, side, rows, onPick)
   local rowH = math.max(m.rowH, Kit.tapMin())
   local cy = y
   if #rows == 0 then
-    Kit.emptyBox(x, cy, w, rowH, Strings("No POKeMON here."))
+    Kit.emptyBox(x, cy, w, rowH, Strings("No POKéMON here."))
     return rowH + gap
   end
   local sprites = Sprites()
@@ -130,15 +130,6 @@ local function remoteTrade(imp, x, y, w, m)
       x, cy, w, PAL.heading, 2) + tiny
     local mine, theirs = OnlinePanel.remoteRows(tr.remote)
     local peer = tr.peerName or Strings("The other trainer")
-    Ui.label(Strings("Your POKeMON"), x, cy)
-    cy = cy + Ui.label(Strings("%s's POKeMON", tostring(peer)),
-      x + colW + gap, cy) + tiny
-    local left = column(imp, x, cy, colW, m, "mine", mine, function(ref)
-      OnlinePanel.remotePick(imp, ref)
-    end)
-    local right = column(imp, x + colW + gap, cy, colW, m, "theirs", theirs,
-      function() end)
-    cy = cy + math.max(left, right)
     local give, get
     for _, row in ipairs(mine) do if row.picked then give = row.label end end
     for _, row in ipairs(theirs) do if row.picked then get = row.label end end
@@ -146,6 +137,10 @@ local function remoteTrade(imp, x, y, w, m)
       cy = cy + Kit.textWrapped("small",
         Strings("You give %s, you get %s", give or "...", get or "..."),
         x, cy, w, PAL.muted, 2) + tiny
+    end
+    local note = OnlinePanel.remoteNote(tr.remote)
+    if note and stage == "picking" then
+      cy = cy + Kit.textWrapped("small", note, x, cy, w, PAL.yellow, 2) + tiny
     end
     local third = math.floor((w - 2 * gap) / 3)
     LV().btn(imp, x, cy, third, rowH, "online-trade-yes", Strings("Confirm"),
@@ -158,8 +153,19 @@ local function remoteTrade(imp, x, y, w, m)
     LV().btn(imp, x + 2 * (third + gap), cy, third, rowH,
       "online-trade-cancel", Strings("Cancel"),
       { kind = "danger", font = "small",
-        action = function() OnlinePanel.endRemoteTrade(imp) end })
-    return (cy + rowH + gap) - y
+        enabled = stage ~= "exchange" and stage ~= "commit_wait",
+        action = function() OnlinePanel.remoteCancel(imp) end })
+    cy = cy + rowH + gap
+    Ui.label(Strings("Your POKéMON"), x, cy)
+    cy = cy + Ui.label(Strings("%s's POKéMON", tostring(peer)),
+      x + colW + gap, cy) + tiny
+    local left = column(imp, x, cy, colW, m, "mine", mine, function(ref)
+      OnlinePanel.remotePick(imp, ref)
+    end)
+    local right = column(imp, x + colW + gap, cy, colW, m, "theirs", theirs,
+      function() end)
+    cy = cy + math.max(left, right)
+    return cy - y
   end
 
   local refusal = OnlinePanel.remoteTradeRefusal(imp)

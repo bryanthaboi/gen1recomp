@@ -431,6 +431,505 @@ function Protocol.packParty2(party, indices)
   return mons
 end
 
+local U32 = 4294967296
+-- pokefirered/include/constants/species.h:260
+local SPECIES_OLD_UNOWN_B, SPECIES_OLD_UNOWN_Z = 252, 276
+-- pokefirered/include/constants/species.h:420
+local SPECIES_LAST = 411
+-- pokefirered/include/constants/moves.h:358
+local MOVE_LAST = 354
+-- pokefirered/include/constants/items.h:446
+local ITEM_LAST = 374
+-- pokefirered/include/constants/global.h:63
+local NAME_LENGTH, OT_NAME_LENGTH = 10, 7
+-- pokefirered/include/constants/pokemon.h:131
+local EGG_GROUP_DITTO, EGG_GROUP_UNDISCOVERED = 13, 15
+-- pokefirered/include/constants/items.h:16
+local BALL_LAST = 12
+local TM_FIRST_ITEM, TM_COUNT = 289, 58
+local GEN3_IV_KEYS = { "hp", "atk", "def", "spe", "spa", "spd" }
+local GEN3_STATUSES = { SLP = true, PSN = true, BRN = true, FRZ = true,
+                        PAR = true, TOX = true }
+
+local function whole(v)
+  local n = tonumber(v)
+  if n == nil or n ~= n or n == math.huge or n == -math.huge then return nil end
+  if n ~= math.floor(n) then return nil end
+  return n
+end
+
+local function clampInt(v, lo, hi, default)
+  local n = tonumber(v)
+  if n == nil or n ~= n or n == math.huge or n == -math.huge then n = default end
+  n = math.floor(n or lo)
+  if n < lo then return lo end
+  if n > hi then return hi end
+  return n
+end
+
+local function codepoints(s)
+  local _, extra = s:gsub("[\128-\191]", "")
+  return #s - extra
+end
+
+local function clipName(s, max)
+  if type(s) ~= "string" then return "" end
+  s = s:gsub("%c", "")
+  if codepoints(s) <= max then return s end
+  local out, n, i = {}, 0, 1
+  while i <= #s and n < max do
+    local len = 1
+    local b = s:byte(i)
+    if b >= 240 then len = 4 elseif b >= 224 then len = 3 elseif b >= 192 then len = 2 end
+    out[#out + 1] = s:sub(i, i + len - 1)
+    n, i = n + 1, i + len
+  end
+  return table.concat(out)
+end
+
+local function nameOk(s, max)
+  return type(s) == "string" and not s:find("%c") and codepoints(s) <= max
+end
+
+local function pokemon3(data)
+  if type(data) == "table" and type(data.pokemon) == "table"
+      and type(data.pokemon.calcStats) == "function" then
+    return data.pokemon
+  end
+  return require("src.core.game3.pokemon")
+end
+
+local function ppWithBonus(base, ups)
+  return base + math.floor(base * 20 * ups / 100)
+end
+
+-- pokefirered/src/pokemon.c:3898
+local function ppUpsOf(Pokemon, mon, slot, moveId)
+  if type(mon.ppBonusesPacked) == "number" then
+    return math.floor(mon.ppBonusesPacked / 4 ^ (slot - 1)) % 4
+  end
+  local bonuses = mon.ppBonuses
+  if type(bonuses) == "number" then
+    return math.floor(bonuses / 4 ^ (slot - 1)) % 4
+  end
+  if type(bonuses) == "table" and tonumber(bonuses[slot]) then
+    return clampInt(bonuses[slot], 0, 3, 0)
+  end
+  local entry = type(mon.moves) == "table" and mon.moves[slot] or nil
+  if type(entry) == "table" and tonumber(entry.ppUps) then
+    return clampInt(entry.ppUps, 0, 3, 0)
+  end
+  local max = tonumber(mon.maxPp and mon.maxPp[slot])
+    or (type(entry) == "table" and tonumber(entry.maxPp)) or nil
+  if not max then return 0 end
+  local base = tonumber(Pokemon.movePp(moveId)) or 0
+  local best = 0
+  for ups = 0, 3 do
+    local v = ppWithBonus(base, ups)
+    if v == max then return ups end
+    if v <= max then best = ups end
+  end
+  return best
+end
+
+local function movesOf3(Pokemon, mon)
+  local out = {}
+  for slot = 1, 4 do
+    local id = tonumber(Pokemon.moveIdAt(mon, slot))
+    if id and id > 0 then
+      local entry = mon.moves[slot]
+      local ups = ppUpsOf(Pokemon, mon, slot, id)
+      local pp = tonumber(mon.pp and mon.pp[slot])
+        or (type(entry) == "table" and tonumber(entry.pp))
+        or ppWithBonus(tonumber(Pokemon.movePp(id)) or 0, ups)
+      out[#out + 1] = { id = clampInt(id, 0, 65535, 0),
+                        pp = clampInt(pp, 0, 255, 0), ppUps = ups }
+    end
+  end
+  return out
+end
+
+local function itemOf3(mon)
+  local raw = mon.item
+  if raw == nil then raw = mon.heldItem end
+  if raw == nil then return 0 end
+  local n = tonumber(raw)
+  if not n and type(raw) == "string" then
+    n = require("src.core.game3.items_data").toNumericId(raw)
+  end
+  return clampInt(n, 0, ITEM_LAST, 0)
+end
+
+local function statusOf3(mon)
+  local s = require("src.core.game3.battle.adapter").normStatus(mon.status)
+  if s and GEN3_STATUSES[s] then return s end
+  return ""
+end
+
+function Protocol.packMon3(mon)
+  local Pokemon = require("src.core.game3.pokemon")
+  mon = type(mon) == "table" and mon or {}
+  local species = clampInt(Pokemon.speciesOf(mon), 0, 65535, 0)
+  local personality = clampInt(mon.personality, 0, U32 - 1, 0)
+  local pair = Pokemon.abilities(species)
+  local ability = tonumber(mon.abilityId) or tonumber(mon.ability)
+  if not ability or ability == 0
+      or (ability ~= pair[1] and not (pair[2] ~= 0 and ability == pair[2])) then
+    ability = Pokemon.abilityId(species, personality)
+  end
+  local ivs, evs = {}, {}
+  local srcIvs = type(mon.ivs) == "table" and mon.ivs or {}
+  local srcEvs = type(mon.evs) == "table" and mon.evs or {}
+  for _, key in ipairs(GEN3_IV_KEYS) do
+    ivs[key] = clampInt(srcIvs[key], 0, 31, 0)
+    evs[key] = clampInt(srcEvs[key], 0, 255, 0)
+  end
+  local egg = Pokemon.isEgg(mon) == true
+  local friendship = mon.friendship
+  if friendship == nil then friendship = mon.happiness end
+  if friendship == nil then friendship = Pokemon.baseFriendship(species) end
+  return {
+    species = species,
+    nickname = clipName(mon.nickname, NAME_LENGTH),
+    level = clampInt(mon.level, 1, 100, 1),
+    exp = clampInt(mon.exp, 0, 2147483647, 0),
+    hp = clampInt(mon.hp, 0, 65535, 0),
+    status = statusOf3(mon),
+    personality = personality,
+    otId = clampInt(mon.otId, 0, U32 - 1, 0) % 65536,
+    otSecretId = clampInt(mon.otSecretId, 0, 65535, 0),
+    otName = clipName(mon.otName or mon.ot, OT_NAME_LENGTH),
+    otGender = clampInt(mon.otGender, 0, 1, 0),
+    nature = personality % 25,
+    ability = clampInt(ability, 0, 255, 0),
+    gender = Pokemon.gender(species, personality),
+    ivs = ivs,
+    evs = evs,
+    moves = movesOf3(Pokemon, mon),
+    item = itemOf3(mon),
+    friendship = clampInt(friendship, 0, 255, 0),
+    pokerus = clampInt(mon.pokerus, 0, 255, 0),
+    metLocation = clampInt(mon.metLocation, 0, 255, 0),
+    metLevel = clampInt(mon.metLevel, 0, 100, 0),
+    metGame = clampInt(mon.metGame, 0, 15, 0),
+    pokeball = clampInt(mon.pokeball, 1, BALL_LAST, 4),
+    ribbons = clampInt(mon.ribbons, 0, U32 - 1, 0),
+    markings = clampInt(mon.markings, 0, 15, 0),
+    isEgg = egg,
+    fatefulEncounter = mon.fatefulEncounter == true,
+    eggCycles = egg and clampInt(mon.eggCycles, 0, 255, 0) or 0,
+  }
+end
+
+function Protocol.packParty3(party, indices)
+  local mons = {}
+  party = type(party) == "table" and party or {}
+  if indices then
+    for _, i in ipairs(indices) do
+      if party[i] then mons[#mons + 1] = Protocol.packMon3(party[i]) end
+    end
+    return mons
+  end
+  for _, mon in ipairs(party) do mons[#mons + 1] = Protocol.packMon3(mon) end
+  return mons
+end
+
+local evoTargets = setmetatable({}, { __mode = "k" })
+
+-- pokefirered/src/daycare.c:647
+local function hasPreEvolution(Pokemon, species)
+  Pokemon.evolutions(1)
+  local key = Pokemon._evolutions or Pokemon
+  local targets = evoTargets[key]
+  if not targets then
+    targets = {}
+    for id = 1, SPECIES_LAST do
+      for _, evo in ipairs(Pokemon.evolutions(id) or {}) do
+        local into = tonumber(evo.target or evo.species or evo.into)
+        if into then targets[into] = true end
+      end
+    end
+    evoTargets[key] = targets
+  end
+  return targets[species] == true
+end
+
+-- pokefirered/src/daycare.c:1018
+local function eggSpeciesOk(Pokemon, species)
+  -- pokefirered/src/daycare.c:987
+  local incenseless = species == 183 or species == 202
+  if not incenseless and hasPreEvolution(Pokemon, species) then return false end
+  local meta = Pokemon.speciesMeta(species) or {}
+  if tonumber(meta.eggGroup1) == EGG_GROUP_DITTO then return false end
+  if tonumber(meta.eggGroup1) == EGG_GROUP_UNDISCOVERED
+      and #(Pokemon.evolutions(species) or {}) == 0 then
+    return false
+  end
+  return true
+end
+
+-- pokefirered/src/daycare.c:888
+local function eggMoveOk(Pokemon, species, move)
+  for _, row in ipairs(Pokemon.learnset(species) or {}) do
+    if tonumber(row[2] or row.move) == move then return true end
+  end
+  for _, id in ipairs(Pokemon.eggMoves(species) or {}) do
+    if tonumber(id) == move then return true end
+  end
+  for index = 0, TM_COUNT - 1 do
+    if Pokemon.moveFromTmItem(TM_FIRST_ITEM + index) == move then
+      return Pokemon.canLearnTmIndex(species, index) == true
+    end
+  end
+  return false
+end
+
+function Protocol.unpackMon3(data, packed, opts)
+  opts = type(opts) == "table" and opts or {}
+  local strict = opts.strict == true
+  if type(packed) ~= "table" then return nil, "bad mon" end
+  local Pokemon = pokemon3(data)
+  local species = whole(packed.species)
+  if not species or species < 1 or species > SPECIES_LAST
+      or (species >= SPECIES_OLD_UNOWN_B and species <= SPECIES_OLD_UNOWN_Z)
+      or not Pokemon.isInternalSpecies(species) then
+    return nil, "unknown species"
+  end
+
+  local function field(v, lo, hi, default, reason)
+    local n = whole(v)
+    if n and n >= lo and n <= hi then return n end
+    if strict and reason then return nil end
+    return clampInt(v, lo, hi, default)
+  end
+
+  local SummaryData = require("src.core.game3.summary_data")
+  local growth = Pokemon.growthRate(species)
+  local level = field(packed.level, 1, 100, 5, true)
+  if not level then return nil, "bad level" end
+  local expLo = SummaryData.expForLevel(growth, level)
+  local expHi = level < 100 and (SummaryData.expForLevel(growth, level + 1) - 1)
+    or expLo
+  local exp = whole(packed.exp)
+  if not exp or exp < expLo or (level < 100 and exp > expHi) then
+    if strict then return nil, "bad level" end
+    exp = clampInt(packed.exp, expLo, expHi, expLo)
+  elseif exp > expHi then
+    exp = expHi
+  end
+  local forceLevel = tonumber(opts.forceLevel)
+  if forceLevel then
+    level = clampInt(forceLevel, 1, 100, 50)
+    exp = SummaryData.expForLevel(growth, level)
+  end
+
+  local isEgg = packed.isEgg == true
+  local list = type(packed.moves) == "table" and packed.moves or {}
+  if strict and (#list < 1 or #list > 4) then return nil, "bad move" end
+  local moves, pp, maxPp, bonuses, seen = {}, {}, {}, 0, {}
+  for i = 1, math.min(#list, 4) do
+    local entry = type(list[i]) == "table" and list[i] or {}
+    local id = whole(entry.id)
+    local valid = id and id >= 1 and id <= MOVE_LAST and not seen[id]
+    if not valid then
+      if strict then return nil, "bad move" end
+    else
+      local ups = field(entry.ppUps, 0, 3, 0, true)
+      if not ups then return nil, "bad move" end
+      local max = ppWithBonus(tonumber(Pokemon.movePp(id)) or 0, ups)
+      local cur = field(entry.pp, 0, max, max, true)
+      if not cur then return nil, "bad move" end
+      seen[id] = true
+      local slot = #moves + 1
+      moves[slot], pp[slot], maxPp[slot] = id, cur, max
+      bonuses = bonuses + ups * 4 ^ (slot - 1)
+    end
+  end
+  if #moves == 0 then return nil, "bad move" end
+
+  local item = field(packed.item, 0, ITEM_LAST, 0, true)
+  if not item then return nil, "bad item" end
+
+  local srcIvs = type(packed.ivs) == "table" and packed.ivs or {}
+  local srcEvs = type(packed.evs) == "table" and packed.evs or {}
+  local ivs, evs, evTotal = {}, {}, 0
+  for _, key in ipairs(GEN3_IV_KEYS) do
+    ivs[key] = field(srcIvs[key], 0, 31, 0, true)
+    if not ivs[key] then return nil, "bad ivs" end
+    evs[key] = field(srcEvs[key], 0, 255, 0, true)
+    if not evs[key] then return nil, "bad evs" end
+    evTotal = evTotal + evs[key]
+  end
+  if evTotal > 510 then
+    if strict then return nil, "bad evs" end
+    for i = #GEN3_IV_KEYS, 1, -1 do
+      local key = GEN3_IV_KEYS[i]
+      local cut = math.min(evs[key], evTotal - 510)
+      evs[key], evTotal = evs[key] - cut, evTotal - cut
+    end
+  end
+
+  local personality = clampInt(packed.personality, 0, U32 - 1, 0)
+  local nature = personality % 25
+  if strict and whole(packed.nature) ~= nature then
+    return nil, "nature mismatch"
+  end
+  local gender = Pokemon.gender(species, personality)
+  if strict and packed.gender ~= gender then return nil, "gender mismatch" end
+  local pair = Pokemon.abilities(species)
+  local ability = whole(packed.ability)
+  if not ability or ability == 0
+      or (ability ~= pair[1] and not (pair[2] ~= 0 and ability == pair[2])) then
+    if strict then return nil, "bad ability" end
+    ability = Pokemon.abilityId(species, personality)
+  end
+
+  if isEgg and strict then
+    if not eggSpeciesOk(Pokemon, species) then return nil, "bad egg" end
+    for _, id in ipairs(moves) do
+      if not eggMoveOk(Pokemon, species, id) then return nil, "bad egg" end
+    end
+  end
+
+  if strict and not (nameOk(packed.otName, OT_NAME_LENGTH)) then
+    return nil, "bad ot"
+  end
+  local otId = field(packed.otId, 0, 65535, 0, true)
+  local otSecretId = field(packed.otSecretId, 0, 65535, 0, true)
+  local otGender = field(packed.otGender, 0, 1, 0, true)
+  if not (otId and otSecretId and otGender) then return nil, "bad ot" end
+  local otName = clipName(packed.otName, OT_NAME_LENGTH)
+
+  if strict and not nameOk(packed.nickname, NAME_LENGTH) then
+    return nil, "bad nickname"
+  end
+  local nickname = clipName(packed.nickname, NAME_LENGTH)
+
+  local status = packed.status
+  if not (type(status) == "string" and GEN3_STATUSES[status]) then status = nil end
+  local hp = whole(packed.hp)
+  if hp and hp < 0 then hp = 0 end
+  if forceLevel then hp, status = nil, nil end
+
+  local friendship = field(packed.friendship, 0, 255,
+    Pokemon.baseFriendship(species))
+  local mon = {
+    species = species,
+    speciesId = species,
+    speciesNumbering = Pokemon.NUMBERING_INTERNAL,
+    name = Pokemon.name(species),
+    nickname = nickname,
+    level = level,
+    metLevel = field(packed.metLevel, 0, 100, 0),
+    growthRate = growth,
+    exp = exp,
+    hp = hp,
+    status = status,
+    moves = moves,
+    pp = pp,
+    maxPp = maxPp,
+    ppBonusesPacked = bonuses,
+    personality = personality,
+    nature = nature,
+    ivs = ivs,
+    evs = evs,
+    ability = ability,
+    abilityId = ability,
+    gender = gender,
+    happiness = friendship,
+    friendship = friendship,
+    metLocation = field(packed.metLocation, 0, 255, 0),
+    metGame = field(packed.metGame, 0, 15, 0),
+    pokerus = field(packed.pokerus, 0, 255, 0),
+    ot = otName,
+    otName = otName,
+    otId = otId,
+    otSecretId = otSecretId,
+    otGender = otGender,
+    pokeball = field(packed.pokeball, 1, BALL_LAST, 4),
+    item = item,
+    heldItem = item,
+    ribbons = field(packed.ribbons, 0, U32 - 1, 0),
+    markings = field(packed.markings, 0, 15, 0),
+    isEgg = isEgg,
+    eggCycles = isEgg and field(packed.eggCycles, 0, 255, 0) or 0,
+    fatefulEncounter = packed.fatefulEncounter == true,
+  }
+  Pokemon.applyStats(mon)
+  require("src.core.game3.save_mon").normalize(mon)
+  return mon
+end
+
+function Protocol.wireMon3(packed)
+  local Wire = require("src.link.Wire")
+  local msg = Wire.sanitize({ type = "game3_trade_mon", mon = packed })
+  return msg and msg.mon or nil
+end
+
+local function canonicalString(s)
+  return '"' .. s:gsub('[%c"\\]', function(c)
+    if c == '"' then return '\\"' end
+    if c == "\\" then return "\\\\" end
+    if c == "\n" then return "\\n" end
+    if c == "\r" then return "\\r" end
+    if c == "\t" then return "\\t" end
+    return string.format("\\u%04x", c:byte())
+  end) .. '"'
+end
+
+local function canonicalValue(v, out)
+  local t = type(v)
+  if t == "boolean" then
+    out[#out + 1] = v and "true" or "false"
+  elseif t == "number" then
+    if v ~= v or v == math.huge or v == -math.huge then
+      out[#out + 1] = "null"
+    else
+      out[#out + 1] = string.format("%.0f", math.floor(v))
+    end
+  elseif t == "string" then
+    out[#out + 1] = canonicalString(v)
+  elseif t == "table" then
+    local n = #v
+    if n > 0 or next(v) == nil then
+      out[#out + 1] = "["
+      for i = 1, n do
+        if i > 1 then out[#out + 1] = "," end
+        canonicalValue(v[i], out)
+      end
+      out[#out + 1] = "]"
+    else
+      local keys = {}
+      for k in pairs(v) do keys[#keys + 1] = tostring(k) end
+      table.sort(keys)
+      out[#out + 1] = "{"
+      for i, k in ipairs(keys) do
+        if i > 1 then out[#out + 1] = "," end
+        out[#out + 1] = canonicalString(k)
+        out[#out + 1] = ":"
+        local value = v[k]
+        if value == nil then value = v[tonumber(k)] end
+        canonicalValue(value, out)
+      end
+      out[#out + 1] = "}"
+    end
+  else
+    out[#out + 1] = "null"
+  end
+end
+
+function Protocol.canonical(v)
+  local out = {}
+  canonicalValue(v, out)
+  return table.concat(out)
+end
+
+function Protocol.tradeDigest(packedSeat0, packedSeat1)
+  local text = Protocol.canonical(packedSeat0) .. "|" .. Protocol.canonical(packedSeat1)
+  return ("%08x%08x"):format(Fingerprint.fnv1a32(text, 0x811C9DC5),
+                             Fingerprint.fnv1a32(text, 0x050C5D1F))
+end
+
 -- ------- subset negotiation
 
 -- every record hash, not just this party's slice: the receiver filters

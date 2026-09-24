@@ -38,6 +38,7 @@ local FIELD_CB_SILENT = { bike = true, rod = true, map = true, escape = true }
 
 function Game3.new()
   return setmetatable({
+    generation = 3,
     input = Input,
     save = nil,
     session = nil,
@@ -113,6 +114,7 @@ function Game3:load(opts)
   Input:init()
   self.input = Input
   Dataset.hydrate(self)
+  if type(self.data) == "table" then self.data.generation = 3 end
   Help.reset()
   Help.install(Dataset.cache())
   QuestLog.install(Dataset.cache())
@@ -145,7 +147,7 @@ function Game3:load(opts)
     elseif action == "fast_forward_toggle" then
       if pressed then self:_cycleSpeed(1) end
     elseif action == "soft_reset" then
-      if pressed then
+      if pressed and self.phase ~= "arena" then
         if self.input then self.input:reset() end
         TouchControls:reset()
         self:returnToTitle()
@@ -178,6 +180,18 @@ function Game3:load(opts)
 
   self:_exposeModData()
   self:_loadMods(opts)
+  pcall(function() require("src.core.DiscordPresence").init(self) end)
+
+  if opts.arena then
+    FixedStep:init(function(dt)
+      self:fixedUpdate(dt)
+    end)
+    pcall(function()
+      require("src.core.PresentSync").applyFixedStepPeriod()
+    end)
+    self:enterArena(opts.arena)
+    return
+  end
 
   -- Never auto-skip boot into a legacy Sevii sidecar.
   local continueOk = self:_hasContinueSave()
@@ -201,6 +215,53 @@ function Game3:load(opts)
   if ModRuntime.wants("game.ready") then
     ModRuntime.emit("game.ready", { game = self })
   end
+end
+
+local function arenaSession(self, spec)
+  local session
+  local version = require("src.core.GameVersion").get()
+  if spec and spec.slotId and SaveData.setActiveSlot then
+    pcall(SaveData.setActiveSlot, version, spec.slotId)
+  end
+  local ok, save = pcall(SaveData.load)
+  if ok and type(save) == "table" and save.engine == "game3" then
+    local activeMods = self.modStatus and self.modStatus.loaded
+    if SaveData.runMigrations then
+      pcall(SaveData.runMigrations, save, self.mods and self.mods.migrations, activeMods)
+    end
+    local okS, loaded = pcall(Schema.fromSaveTable, save)
+    if okS and type(loaded) == "table" then session = loaded end
+  elseif spec and spec.role ~= "spectator" then
+    require("src.core.Logger").warn("arena3: save slot %s could not be loaded", tostring(spec and spec.slotId))
+  end
+  session = session or { party = {}, bag = {} }
+  if type(session.name) ~= "string" or session.name == "" then
+    for _, row in ipairs((spec and spec.players) or {}) do
+      if spec.seat ~= nil and tonumber(row.seat) == tonumber(spec.seat) then session.name = row.name end
+    end
+  end
+  session.store = session.store or { flags = {}, vars = {} }
+  return session
+end
+
+-- pokefirered/src/cable_club.c:964
+function Game3:enterArena(spec)
+  local session = arenaSession(self, spec)
+  Options.bind(session, self.options)
+  self.session = session
+  self.save = Schema.toSaveTable(session)
+  self.boot = nil
+  Runtime.session = session
+  Runtime._game = self
+  self.phase = "arena"
+  self.arena = require("src.ui.game3.arena_state").new(self, spec)
+  return self.arena
+end
+
+function Game3:leaveArena()
+  self.arena = nil
+  if Runtime.session == self.session then Runtime.session = nil end
+  if Runtime._game == self and not Runtime.isActive() then Runtime._game = nil end
 end
 
 function Game3:_exposeModData()
@@ -456,6 +517,11 @@ function Game3:fixedUpdate(dt)
     ModRuntime.call("input.step", noop, self, dt or FixedStep.STEP)
   end
   if self.input and self.input.step then self.input:step() end
+  if self.phase == "arena" then
+    if self.session then Audio.applyOptions(self.session) end
+    if self.arena then self.arena:update(dt) end
+    return
+  end
   if (self.input and self.input.softResetStep and self.input:softResetStep()) or self.softResetRequested then
     self.softResetRequested = nil
     if self.input then self.input:reset() end
@@ -575,6 +641,7 @@ function Game3:update(dt)
   if self._audioAccum > 0.25 then self._audioAccum = 0 end
   local okT, errT = pcall(function() require("src.render.Tilt").update(dt) end)
   if not okT then s9log("tilt", errT) end
+  pcall(function() require("src.core.DiscordPresence").update(dt) end)
 end
 
 function Game3:_drawHud(w, h)
@@ -595,6 +662,13 @@ end
 function Game3:draw()
   local w = love.graphics.getWidth()
   local h = love.graphics.getHeight()
+
+  if self.phase == "arena" then
+    if self.arena then self.arena:draw(w, h) end
+    self:_drawHud(w, h)
+    if self.touchControls then self.touchControls:draw() end
+    return
+  end
 
   if self.phase == "quest_log" or (self.phase == "boot" and self.boot) then
     local kind = (self.phase == "quest_log") and "quest" or "boot"
@@ -766,7 +840,7 @@ function Game3:saveOffered()
 end
 
 function Game3:saveGame()
-  if not self.session or self.phase == "quest_log" then return end
+  if not self.session or self.phase == "quest_log" or self.phase == "arena" then return end
   if ModRuntime.wantsHook("save.write")
       and ModRuntime.call("save.write", function() return true end, self) == false then
     return false
@@ -1046,6 +1120,7 @@ function Game3:reset()
     self.touchControls = nil
   end
   self.boot = nil
+  self.arena = nil
   self.session = nil
   self.data = nil
   self.mods = nil

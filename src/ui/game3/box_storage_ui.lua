@@ -148,7 +148,7 @@ function BoxStorageUI.show(opts)
     BoxStorageUI.partyCursor = 1
   end
 
-  Stack.push("box_storage", BoxStorageUI, { hideBelow = true })
+  Stack.push("box_storage", BoxStorageUI, { hideBelow = true, fullscreen = true })
   se(5)
 end
 

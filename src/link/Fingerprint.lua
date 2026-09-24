@@ -73,6 +73,12 @@ end
 
 Fingerprint.digest = digest
 
+function Fingerprint.fnv1a32(text, basis)
+  local h = basis
+  for i = 1, #text do h = step(h, text:byte(i)) end
+  return h
+end
+
 -- ------- canonical serialization
 
 -- %.17g is exact for every integer stat involved and is the same format the
@@ -245,6 +251,8 @@ end
 -- of the Gen 2-only registries to false, so a Red boot cannot grow one.
 function Fingerprint.generationOf(data)
   if type(data) ~= "table" then return 1 end
+  if tonumber(data.generation) then return tonumber(data.generation) end
+  if data.gen3Pokemon ~= nil or data.gen3Inputs ~= nil then return 3 end
   local chart = data.type_chart
   if type(chart) == "table" and tonumber(chart.generation) then
     return tonumber(chart.generation)
@@ -431,10 +439,146 @@ local function surfaceGen2(data, mods)
   return table.concat(out)
 end
 
+local GEN3_ROOT = "data/generated/gba/"
+local GEN3_FILES = {
+  stats = "pokemon/stats.lua", types = "pokemon/types.lua",
+  abilities = "pokemon/abilities.lua", meta = "pokemon/meta.lua",
+  moves = "pokemon/battle_moves.lua", items = "items/pack.lua",
+}
+local GEN3_STAT_KEYS = { "hp", "atk", "def", "spe", "spa", "spd" }
+local GEN3_META_FIELDS = { "genderRatio", "growthRate" }
+local GEN3_MOVE_FIELDS = { "effect", "power", "type", "accuracy", "pp",
+                           "secondaryChance", "target", "priority", "flags" }
+local GEN3_HELD_FIELDS = { "holdEffect", "holdEffectParam" }
+-- pokefirered/src/pokemon.c:6163
+local SPECIES_DEOXYS = 410
+local NATURE_PROBE = { hp = 100, atk = 100, def = 100, spe = 100, spa = 100,
+                       spd = 100 }
+
+local function compileTable(src, name)
+  local chunk, err
+  if loadstring and setfenv then
+    chunk, err = loadstring(src, "@" .. name)
+    if chunk then setfenv(chunk, {}) end
+  else
+    chunk, err = load(src, "@" .. name, "t", {})
+  end
+  if not chunk then error(tostring(err), 0) end
+  local ok, value = pcall(chunk)
+  if not ok or type(value) ~= "table" then
+    error(("%s did not load"):format(name), 0)
+  end
+  return value
+end
+
+local function gen3File(read, rel)
+  local src = read(GEN3_ROOT .. rel)
+  if type(src) ~= "string" or src == "" then
+    error(("the game cache has no %s"):format(rel), 0)
+  end
+  return compileTable(src, rel)
+end
+
+local function gen3Natures(Pokemon)
+  local stats = Pokemon.stats
+  Pokemon.stats = function() return NATURE_PROBE end
+  local ok, rows = pcall(function()
+    local out = {}
+    for nature = 0, 24 do
+      local s = Pokemon.calcStats(1, 100, {}, {}, nature)
+      out[nature + 1] = { s.attack, s.defense, s.speed, s.spAtk, s.spDef }
+    end
+    return out
+  end)
+  Pokemon.stats = stats
+  if not ok then error(rows, 0) end
+  return rows
+end
+
+function Fingerprint.gen3Inputs(read)
+  assert(type(read) == "function", "gen3Inputs needs a reader")
+  local Pokemon = require("src.core.game3.pokemon")
+  local Types = require("src.core.game3.battle.types")
+  local physical = {}
+  for id = 0, 17 do physical[id + 1] = Types.PHYSICAL[id] == true end
+  local chart = {}
+  for i, v in ipairs(Types.TABLE) do chart[i] = v end
+  return {
+    stats = gen3File(read, GEN3_FILES.stats),
+    types = gen3File(read, GEN3_FILES.types),
+    abilities = gen3File(read, GEN3_FILES.abilities),
+    meta = gen3File(read, GEN3_FILES.meta),
+    moves = gen3File(read, GEN3_FILES.moves).moves or {},
+    items = gen3File(read, GEN3_FILES.items).items or {},
+    typeChart = chart,
+    natures = gen3Natures(Pokemon),
+    constants = {
+      maxTotalEvs = Pokemon.MAX_TOTAL_EVS,
+      maxStatEvs = Pokemon.MAX_PER_STAT_EVS,
+      maxFriendship = Pokemon.MAX_FRIENDSHIP,
+      physical = physical,
+    },
+  }
+end
+
+local gen3Memo = setmetatable({}, { __mode = "k" })
+
+local function gen3InputsFor(data)
+  if type(data.gen3Inputs) == "table" then return data.gen3Inputs end
+  local hit = gen3Memo[data]
+  if hit then return hit end
+  local cache = require("src.core.game3.dataset").cache()
+  hit = Fingerprint.gen3Inputs(function(rel) return cache:read(rel) end)
+  gen3Memo[data] = hit
+  return hit
+end
+
+local function writeGen3Species(out, inputs)
+  out[#out + 1] = "[pokemon]"
+  for _, id in ipairs(sortedIds(inputs.stats)) do
+    out[#out + 1] = "@" .. tostring(id)
+    local base = inputs.stats[id]
+    if id ~= SPECIES_DEOXYS and type(base) == "table" then
+      for _, key in ipairs(GEN3_STAT_KEYS) do writeValue(out, base[key]) end
+    end
+    writeValue(out, inputs.types[id])
+    writeValue(out, inputs.abilities[id])
+    local meta = inputs.meta[id]
+    if type(meta) == "table" then writeFields(out, meta, GEN3_META_FIELDS) end
+  end
+end
+
+local function surfaceGen3(data, mods)
+  local inputs = gen3InputsFor(data)
+  local out = { "[gen3]\n" }
+  writeGen3Species(out, inputs)
+  writeRecords(out, inputs.moves, "moves", GEN3_MOVE_FIELDS)
+  out[#out + 1] = "[type_chart]"
+  writeValue(out, inputs.typeChart)
+  out[#out + 1] = "[natures]"
+  writeValue(out, inputs.natures)
+  out[#out + 1] = "[held_items]"
+  for _, id in ipairs(sortedIds(inputs.items)) do
+    local record = inputs.items[id]
+    if type(record) == "table" and (tonumber(record.holdEffect) or 0) ~= 0 then
+      out[#out + 1] = "@" .. tostring(id)
+      writeFields(out, record, GEN3_HELD_FIELDS)
+    end
+  end
+  out[#out + 1] = "[constants]"
+  writeValue(out, inputs.constants)
+  out[#out + 1] = "[mods]" .. modKey(mods)
+  return table.concat(out)
+end
+
+Fingerprint.surfaceGen3 = surfaceGen3
+
 -- `generation` is optional everywhere: absent means "ask the data"
 -- (Fingerprint.generationOf), which is what every caller but a test does.
 local function surface(data, mods, generation)
-  if (generation or Fingerprint.generationOf(data)) == 2 then
+  generation = generation or Fingerprint.generationOf(data)
+  if generation == 3 then return surfaceGen3(data, mods) end
+  if generation == 2 then
     return surfaceGen2(data, mods)
   end
   return surfaceGen1(data, mods)
@@ -510,6 +654,7 @@ end
 function Fingerprint.forget(data)
   cache[data] = nil
   recordCache[data] = nil
+  gen3Memo[data] = nil
 end
 
 return Fingerprint

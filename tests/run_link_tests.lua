@@ -152,35 +152,31 @@ end
 -- operate directly on rxBuf, so this much runs even under plain luajit.
 do
   local n = Net.new()
-  local encoded = Json.encode({ type = "hosted", code = "ABCDEF" })
+  local encoded = Json.encode({ type = "lobby_welcome", session = "abc" })
   n.rxBuf = encoded .. "\n"
   n:drainLines()
-  eq(n.code, "ABCDEF", "relay framing: a complete hosted line sets net.code")
+  eq(n.inbox[1] and n.inbox[1].session, "abc",
+     "relay framing: a complete line lands in the inbox")
   check(n.rxBuf == "", "relay framing: a complete line is fully consumed")
 
   local n2 = Net.new()
-  n2.rxBuf = encoded:sub(1, 5) -- the line straddles two reads
+  n2.rxBuf = encoded:sub(1, 5)
   n2:drainLines()
-  check(n2.code == nil, "relay framing: a partial line doesn't parse yet")
+  eq(#n2.inbox, 0, "relay framing: a partial line doesn't parse yet")
   n2.rxBuf = n2.rxBuf .. encoded:sub(6) .. "\n"
   n2:drainLines()
-  eq(n2.code, "ABCDEF", "relay framing: completing the line resolves it")
+  eq(n2.inbox[1] and n2.inbox[1].session, "abc",
+     "relay framing: completing the line resolves it")
 
-  local n3 = Net.new()
-  n3.rxBuf = Json.encode({ type = "join_error", reason = "not_found" }) .. "\n"
-  n3:drainLines()
-  check(n3.error ~= nil and n3.closed, "relay framing: join_error sets error and closes")
-
-  local n4 = Net.new()
-  n4.rxBuf = Json.encode({ type = "paired" }) .. "\n"
-  n4:drainLines()
-  check(n4.paired, "relay framing: paired flips net.paired")
-
-  local n5 = Net.new()
-  n5.paired = true
-  n5.rxBuf = Json.encode({ type = "peer_gone" }) .. "\n"
-  n5:drainLines()
-  check(n5.closed, "relay framing: peer_gone closes the connection")
+  check(Net.hostOnline == nil and Net.joinOnline == nil,
+        "relay: the v1 host/join dialers are gone")
+  for _, v1 in ipairs({ "hosted", "paired", "peer_gone", "join_error" }) do
+    local nv = Net.new()
+    nv.rxBuf = Json.encode({ type = v1, code = "ABCDEF", reason = "not_found" }) .. "\n"
+    nv:drainLines()
+    check(not nv.closed and not nv.paired and nv.error == nil and #nv.inbox == 1,
+          "relay framing: a v1 " .. v1 .. " is no transport control any more")
+  end
 
   local n6 = Net.new()
   n6.rxBuf = Json.encode({ type = "hello", name = "RED" }) .. "\n"
@@ -328,36 +324,50 @@ else
   if not ready then
     print("skip real relay pairing (couldn't reach the spawned pokeserver)")
   else
-    local host = Net.new()
-    check(host:hostOnline("127.0.0.1:" .. PORT), "relay: hostOnline connects: " .. tostring(host.error))
-    local deadline = os.clock() + 3
-    while not host.code and os.clock() < deadline do host:update() end
-    check(host.code ~= nil, "relay: a real server assigns a room code")
-
-    local guest = Net.new()
-    check(guest:joinOnline("127.0.0.1:" .. PORT, host.code or ""),
-          "relay: joinOnline connects: " .. tostring(guest.error))
-    deadline = os.clock() + 3
-    while (not host.paired or not guest.paired) and os.clock() < deadline do
-      host:update()
-      guest:update()
-    end
-    check(host.paired and guest.paired, "relay: both sides pair over a real TCP server")
-
-    host:send({ type = "hello", name = "RED" })
-    local relayed = nil
-    deadline = os.clock() + 3
-    while not relayed and os.clock() < deadline do
-      host:update()
-      guest:update()
-      for _, m in ipairs(guest:poll()) do
-        if m.type == "hello" then relayed = m end
+    local function waitFor(net, pred, seconds)
+      local deadline = os.clock() + (seconds or 3)
+      while os.clock() < deadline do
+        net:update()
+        for _, m in ipairs(net:poll()) do
+          if pred(m) then return m end
+        end
+        if net.closed then return nil end
       end
+      return nil
     end
-    eq(relayed and relayed.name, "RED", "relay: a message round-trips through the real server")
 
-    host:close()
-    guest:close()
+    local lobby = Net.new()
+    check(lobby:connectTCP("127.0.0.1:" .. PORT),
+          "relay: connectTCP dials the real server: " .. tostring(lobby.error))
+    lobby:send({ type = "lobby_hello", protocol = 3, name = "RED", profiles = {} })
+    local welcome = waitFor(lobby, function(m) return m.type == "lobby_welcome" end)
+    check(welcome ~= nil and type(welcome.session) == "string",
+          "relay: a protocol 3 lobby_hello is welcomed over real TCP")
+    lobby:close()
+
+    local relaySrc = io.open("../pokeserver/relay.js", "r")
+    local relayText = relaySrc and relaySrc:read("*a") or ""
+    if relaySrc then relaySrc:close() end
+    if not relayText:find("upgrade_required", 1, true) then
+      print("skip real relay upgrade_required (../pokeserver predates protocol 3)")
+    else
+      local old = Net.new()
+      check(old:connectTCP("127.0.0.1:" .. PORT), "relay: a v1 client still dials")
+      old:send({ type = "host" })
+      local up = waitFor(old, function(m) return m.type == "upgrade_required" end)
+      check(up ~= nil, "relay: a v1 host answers upgrade_required")
+      old:close()
+
+      local stale = Net.new()
+      check(stale:connectTCP("127.0.0.1:" .. PORT), "relay: a v2 client still dials")
+      stale:send({ type = "lobby_hello", protocol = 2, name = "OLD", profiles = {} })
+      local up2 = waitFor(stale, function(m)
+        return m.type == "upgrade_required" or m.type == "lobby_welcome"
+      end)
+      eq(up2 and up2.type, "upgrade_required",
+         "relay: a protocol 2 lobby_hello answers upgrade_required")
+      stale:close()
+    end
   end
 
   local pidHandle = io.open(pidFile, "r")
@@ -895,6 +905,10 @@ check(modOk, "mod link compat suite" .. (modOk and "" or (": " .. tostring(modEr
 local clientOk, clientErr = pcall(dofile, "tests/online_client.lua")
 check(clientOk, "online client suite" .. (clientOk and "" or (": " .. tostring(clientErr))))
 
+local client3Ok, client3Err = pcall(dofile, "tests/online_client_gen3.lua")
+check(client3Ok, "online client gen 3 suite"
+      .. (client3Ok and "" or (": " .. tostring(client3Err))))
+
 -- ---------------------------------------------------------------- gen 2 lockstep
 -- The Gold peer of the lockstep section above: two src/link/LinkBattle2.lua
 -- simulations over a loopback, driven through the real Gen 2 battle screen.
@@ -907,6 +921,21 @@ check(link2Ok, "gen 2 lockstep suite"
 local fuzz2Ok, fuzz2Err = pcall(dofile, "tests/link2_desync_fuzz.lua")
 check(fuzz2Ok, "gen 2 lockstep desync fuzz"
       .. (fuzz2Ok and "" or (": " .. tostring(fuzz2Err))))
+
+local LUA = os.getenv("LUA") or "luajit"
+local function standalone(path)
+  local status = os.execute(LUA .. " " .. path)
+  return status == true or status == 0
+end
+
+for _, suite in ipairs({
+  { "tests/link3_lockstep_test.lua", "gen 3 lockstep suite" },
+  { "tests/link3_arena_state_test.lua", "gen 3 arena state suite" },
+  { "tests/link3_desync_fuzz.lua", "gen 3 lockstep desync fuzz" },
+  { "tests/link3_multi_test.lua", "gen 3 multi battle lockstep suite" },
+}) do
+  check(standalone(suite[1]), suite[2])
+end
 
 print(("\n%s"):format(failures == 0 and "ALL LINK TESTS PASSED" or failures .. " FAILURES"))
 os.exit(failures == 0 and 0 or 1)

@@ -43,19 +43,52 @@ function TeamPick.readSlot(version, slotId, cartId)
     return nil, "that save can't be read"
   end
   local name, meta = SaveData.slotSummary(save)
-  return {
+  local generation = generationOf(version, save)
+  local slot = {
     save = save,
     party = type(save.party) == "table" and save.party or {},
     trainerName = name,
     badges = (meta and meta.badges) or 0,
-    generation = generationOf(version, save),
+    generation = generation,
   }
+  if generation == 3 then slot.boxes = TeamPick.boxes3(save) end
+  return slot
 end
 
 -- engine/pokemon/bills_pc.asm
 local GEN1_BOXES, GEN2_BOXES = 12, 14
+-- pokefirered/include/pokemon_storage_system.h:7
+local GEN3_BOXES, GEN3_BOX_SLOTS = 14, 30
+
+function TeamPick.boxes3(save)
+  local out = {}
+  local storage = type(save) == "table" and save.storage or nil
+  local boxes = type(storage) == "table" and storage.boxes or nil
+  if type(boxes) ~= "table" then return out end
+  for box = 1, GEN3_BOXES do
+    local row = boxes[box] or boxes[tostring(box)]
+    local mons = type(row) == "table" and row.mons or nil
+    local list = {}
+    if type(mons) == "table" then
+      for index = 1, GEN3_BOX_SLOTS do
+        local mon = mons[index] or mons[tostring(index)]
+        if type(mon) == "table" then list[index] = mon end
+      end
+    end
+    out[box] = list
+  end
+  return out
+end
 
 local function boxName(save, generation, index)
+  if generation == 3 then
+    local storage = type(save) == "table" and save.storage or nil
+    local boxes = type(storage) == "table" and storage.boxes or nil
+    local row = type(boxes) == "table" and (boxes[index] or boxes[tostring(index)]) or nil
+    local given = type(row) == "table" and row.name or nil
+    if type(given) == "string" and given ~= "" then return given end
+    return ("BOX %d"):format(index)
+  end
   if generation == 2 then
     local names = type(save) == "table" and save.boxNames or nil
     local given = type(names) == "table" and names[index] or nil
@@ -92,6 +125,7 @@ local function boxesOf(slot)
   local save = type(slot.save) == "table" and slot.save or nil
   if save and type(save.boxes) == "table" then return save.boxes end
   if type(slot.boxes) == "table" then return slot.boxes end
+  if save and type(save.storage) == "table" then return TeamPick.boxes3(save) end
   return nil
 end
 
@@ -123,7 +157,8 @@ function TeamPick.candidates(source)
   local boxes = boxesOf(slot)
   if type(boxes) ~= "table" then return out end
   local generation = tonumber(slot.generation) or 1
-  local last = (generation == 2) and GEN2_BOXES or GEN1_BOXES
+  local last = (generation == 3 and GEN3_BOXES)
+    or (generation == 2 and GEN2_BOXES) or GEN1_BOXES
   for index in pairs(boxes) do
     local n = tonumber(index)
     if n and n > last then last = n end
@@ -132,11 +167,16 @@ function TeamPick.candidates(source)
     local list = boxes[box]
     if type(list) == "table" then
       local name = boxName(slot.save, generation, box)
-      for index, mon in ipairs(list) do
+      local function add(index, mon)
         if type(mon) == "table" then
           out[#out + 1] = { where = "box", box = box, index = index,
                             mon = mon, source = name }
         end
+      end
+      if generation == 3 then
+        for index = 1, GEN3_BOX_SLOTS do add(index, list[index]) end
+      else
+        for index, mon in ipairs(list) do add(index, mon) end
       end
     end
   end
@@ -173,21 +213,18 @@ function TeamPick.validate(source, team, rule)
   return true
 end
 
-TeamPick.GEN3_OFFLINE = "FireRed and LeafGreen can't join online rooms yet."
+TeamPick.NO_TIME_CAPSULE = "no Time Capsule"
 
 function TeamPick.pack(source, team, generation)
   local slot = slotOf(source)
   team = type(team) == "table" and team or {}
-  if tonumber(generation) == 3 or tonumber(slot.generation) == 3 then
-    return nil, TeamPick.GEN3_OFFLINE
-  end
-  local gen2 = tonumber(generation) == 2
+  local gen = tonumber(generation) or tonumber(slot.generation) or 1
+  local pack = (gen == 3 and Protocol.packMon3)
+    or (gen == 2 and Protocol.packMon2) or Protocol.packMon
   local mons = {}
   for _, ref in ipairs(team) do
     local mon = TeamPick.monAt(slot, ref)
-    if mon then
-      mons[#mons + 1] = gen2 and Protocol.packMon2(mon) or Protocol.packMon(mon)
-    end
+    if mon then mons[#mons + 1] = pack(mon) end
   end
   return mons
 end
@@ -223,7 +260,7 @@ end
 function TeamPick.packConverted(converted, team, generation)
   converted = type(converted) == "table" and converted or {}
   team = type(team) == "table" and team or {}
-  if tonumber(generation) == 3 then return nil, TeamPick.GEN3_OFFLINE end
+  if tonumber(generation) == 3 then return nil, TeamPick.NO_TIME_CAPSULE end
   local mons = {}
   for _, ref in ipairs(team) do
     local mon = converted[TeamPick.refKey(ref)]

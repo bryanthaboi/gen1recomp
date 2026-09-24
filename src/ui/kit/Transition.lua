@@ -12,10 +12,15 @@ Transition.DURATIONS = {
 }
 
 Transition.LAYERS = { "tabs", "online", "modal" }
+Transition.PASSIVE = { "toast" }
+
+local ALL = {}
+for i = 1, #Transition.LAYERS do ALL[#ALL + 1] = Transition.LAYERS[i] end
+for i = 1, #Transition.PASSIVE do ALL[#ALL + 1] = Transition.PASSIVE[i] end
 
 local layers = {}
-for i = 1, #Transition.LAYERS do
-  layers[Transition.LAYERS[i]] = {
+for i = 1, #ALL do
+  layers[ALL[i]] = {
     active = false, kind = nil, dir = 1,
     t0 = 0, dur = 0, p = 1,
     from = nil, fromAt = nil, to = nil,
@@ -40,8 +45,8 @@ Transition.ease = ease
 
 function Transition.update(t)
   t = t or now()
-  for i = 1, #Transition.LAYERS do
-    local L = layers[Transition.LAYERS[i]]
+  for i = 1, #ALL do
+    local L = layers[ALL[i]]
     if L.active then
       local raw = 1
       if L.dur > 0 then raw = (t - L.t0) / L.dur end
@@ -117,8 +122,8 @@ function Transition.clear(layer)
 end
 
 function Transition.reset()
-  for i = 1, #Transition.LAYERS do
-    Transition.clear(Transition.LAYERS[i])
+  for i = 1, #ALL do
+    Transition.clear(ALL[i])
   end
 end
 

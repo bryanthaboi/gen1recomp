@@ -337,7 +337,7 @@ function BagMenu.show(sessionBag, opts)
   BagMenu._heldKey = nil
   BagMenu._bagAnim = { n = 0 }
   begin_open(true)
-  Stack.push("bag", BagMenu, { hideBelow = not BagMenu._battle })
+  Stack.push("bag", BagMenu, { hideBelow = not BagMenu._battle, fullscreen = not BagMenu._battle })
 end
 
 function BagMenu.close()

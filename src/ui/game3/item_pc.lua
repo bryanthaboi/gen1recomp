@@ -222,7 +222,7 @@ function ItemPc.show(opts)
   set_scroll_position()
   ItemPc._fx = fx_on()
   se(SE_PC_LOGIN)
-  Stack.push("item_pc", ItemPc, { hideBelow = true })
+  Stack.push("item_pc", ItemPc, { hideBelow = true, fullscreen = true })
 end
 
 local function finish_close()

@@ -2,6 +2,8 @@ local Stack = require("src.ui.game3.stack")
 local Window = require("src.ui.game3.window")
 local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
+local FrlgFont = require("src.ui.game3.frlg_font")
+local ListMenu = require("src.ui.game3.list_menu")
 
 local UnionRoomScreen = {}
 
@@ -11,11 +13,33 @@ UnionRoomScreen.LIST_TEMPLATE = Window.template(1, 3, 13, 10)
 UnionRoomScreen.COUNT_TEMPLATE = Window.template(16, 3, 7, 4)
 -- pokefirered/src/data/union_room.h:165
 UnionRoomScreen.INVITE_TEMPLATE = Window.template(20, 6, 8, 7)
+-- pokefirered/src/data/union_room.h:203
+UnionRoomScreen.REGISTER_TEMPLATE = Window.template(18, 8, 11, 5)
+-- pokefirered/src/data/union_room.h:240
+UnionRoomScreen.TYPES_TEMPLATE = Window.template(20, 2, 9, 11)
+-- pokefirered/src/data/union_room.h:292
+UnionRoomScreen.BOARD_HEADER_TEMPLATE = Window.template(1, 1, 28, 2)
+-- pokefirered/src/data/union_room.h:302
+UnionRoomScreen.BOARD_TEMPLATE = Window.template(1, 5, 28, 10)
 
-UnionRoomScreen.CACHE_DIR = "union_room"
+-- pokefirered/src/data/union_room.h:197
+UnionRoomScreen.ROW_HEIGHT = 14
+
 -- pokefirered/src/link_rfu_3.c:949 CreateWirelessStatusIndicatorSprite
 UnionRoomScreen.INDICATOR_X = 231
 UnionRoomScreen.INDICATOR_Y = 8
+
+-- pokefirered/src/data/union_room.h:250
+UnionRoomScreen.TYPE_IDS = { 0, 10, 11, 13, 12, 15, 4, 5, 2, 14, 1, 3, 6, 7, 16, 8, 17 }
+-- pokefirered/include/constants/pokemon.h:115
+UnionRoomScreen.TYPE_EXIT = 18
+
+-- pokefirered/src/union_room.c:4093
+UnionRoomScreen.BOARD_OTHER = { fg = FrlgFont.STDPAL[14], shadow = FrlgFont.STDPAL[9], bg = FrlgFont.STDPAL[0] }
+-- pokefirered/src/union_room.c:4086
+UnionRoomScreen.BOARD_SELF = { fg = FrlgFont.STDPAL[7], shadow = FrlgFont.STDPAL[9], bg = FrlgFont.STDPAL[0] }
+-- pokefirered/src/data/union_room.h:336
+UnionRoomScreen.BOARD_CURSOR = { fg = FrlgFont.STDPAL[14], shadow = FrlgFont.STDPAL[13], bg = FrlgFont.STDPAL[0] }
 
 UnionRoomScreen.open = false
 UnionRoomScreen.mode = nil
@@ -25,69 +49,14 @@ UnionRoomScreen.lines = {}
 UnionRoomScreen.cursor = 1
 UnionRoomScreen._pollWait = 0
 UnionRoomScreen._onSay = nil
+UnionRoomScreen.list = nil
+UnionRoomScreen.header = nil
 UnionRoomScreen.capacity = nil
 UnionRoomScreen.partner = nil
 UnionRoomScreen._onChoose = nil
 UnionRoomScreen._onCancel = nil
 UnionRoomScreen._onConfirm = nil
 UnionRoomScreen._onPoll = nil
-UnionRoomScreen._chrome = nil
-UnionRoomScreen._chromeTried = false
-
-local function read_bytes(rel)
-  local okD, Dataset = pcall(require, "src.core.game3.dataset")
-  if okD and Dataset and Dataset.cache then
-    local okR, d = pcall(function() return Dataset.cache():read(rel) end)
-    if okR and type(d) == "string" and #d > 0 then return d end
-  end
-  local okC, CacheFs = pcall(require, "src.import.CacheFs")
-  if okC and CacheFs and CacheFs.readActive then
-    local okR, d = pcall(CacheFs.readActive, rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
-  end
-  if love and love.filesystem and love.filesystem.read then
-    local okR, d = pcall(love.filesystem.read, "data/generated/gba/" .. rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
-  end
-  local f = io.open("data/generated/gba/" .. rel, "rb")
-  if f then
-    local d = f:read("*a")
-    f:close()
-    if d and #d > 0 then return d end
-  end
-  return nil
-end
-
-local function load_manifest()
-  local src = read_bytes(UnionRoomScreen.CACHE_DIR .. "/manifest.lua")
-  if not src then return nil end
-  local chunk = load(src, "@union_room/manifest.lua", "t", {})
-  if not chunk then return nil end
-  local ok, t = pcall(chunk)
-  if ok and type(t) == "table" then return t end
-  return nil
-end
-
--- pokefirered/src/link_rfu_3.c:492 sWirelessStatusIndicatorSpriteSheet
-function UnionRoomScreen.indicator()
-  if UnionRoomScreen._chromeTried then return UnionRoomScreen._chrome end
-  UnionRoomScreen._chromeTried = true
-  if not (love and love.graphics and love.image) then return nil end
-  local manifest = load_manifest()
-  local entry = manifest and manifest.wireless_icon
-  local w = entry and tonumber(entry.width)
-  local frameH = entry and (tonumber(entry.frame_h) or tonumber(entry.height))
-  if not (w and frameH) then return nil end
-  local rgba = read_bytes(UnionRoomScreen.CACHE_DIR .. "/wireless_icon.rgba")
-  if not rgba then return nil end
-  local okD, imageData = pcall(love.image.newImageData, w, tonumber(entry.height), "rgba8", rgba)
-  if not okD or not imageData then return nil end
-  local okI, image = pcall(love.graphics.newImage, imageData)
-  if not okI then return nil end
-  UnionRoomScreen._chrome = image
-  UnionRoomScreen._quad = love.graphics.newQuad(0, 0, w, frameH, image:getDimensions())
-  return image
-end
 
 function UnionRoomScreen.isOpen()
   return UnionRoomScreen.open and true or false
@@ -98,26 +67,172 @@ local function push()
   Stack.push("union_room", UnionRoomScreen, { hideBelow = false, drawUnder = true })
 end
 
--- pokefirered/src/union_room.c:2896 UR_STATE_HANDLE_DO_SOMETHING_PROMPT_INPUT
-function UnionRoomScreen.showActivities(items, opts)
-  opts = opts or {}
-  UnionRoomScreen.mode = "activity"
-  UnionRoomScreen.items = items or {}
-  UnionRoomScreen.cursor = 1
-  UnionRoomScreen.partner = opts.partner
-  UnionRoomScreen._onChoose = opts.onChoose
-  UnionRoomScreen._onCancel = opts.onCancel
+local function clearCallbacks()
+  UnionRoomScreen._onChoose = nil
+  UnionRoomScreen._onCancel = nil
   UnionRoomScreen._onConfirm = nil
   UnionRoomScreen._onPoll = nil
   UnionRoomScreen._onSay = nil
+  UnionRoomScreen.list = nil
+  UnionRoomScreen.header = nil
+end
+
+-- pokefirered/src/union_room.c:3917
+function UnionRoomScreen.showList(mode, opts)
+  clearCallbacks()
+  UnionRoomScreen.mode = mode
+  UnionRoomScreen.items = opts.items or {}
+  UnionRoomScreen.cursor = 1
+  UnionRoomScreen.header = opts.header
+  UnionRoomScreen._onChoose = opts.onChoose
+  UnionRoomScreen._onCancel = opts.onCancel
+  UnionRoomScreen.list = ListMenu.new({
+    template = opts.template,
+    frame = opts.frame or "std",
+    items = UnionRoomScreen.items,
+    maxShowed = opts.maxShowed or #UnionRoomScreen.items,
+    itemX = opts.itemX or 8,
+    cursorX = opts.cursorX or 0,
+    upTextY = opts.upTextY or 0,
+    rowHeight = opts.rowHeight or UnionRoomScreen.ROW_HEIGHT,
+    letterSpacing = opts.letterSpacing or 1,
+    onMove = function(_, index) UnionRoomScreen.cursor = index end,
+  })
+  UnionRoomScreen.list.cursorColors = opts.cursorColors
+  UnionRoomScreen.list.fill = opts.fill
+  if opts.cursor then
+    local lm = UnionRoomScreen.list
+    if opts.cursor <= lm:shown() then
+      lm.scroll, lm.row = 0, opts.cursor - 1
+    else
+      lm:setSelected(opts.cursor)
+    end
+    UnionRoomScreen.cursor = opts.cursor
+  end
   push()
   return true
+end
+
+-- pokefirered/src/union_room.c:2896
+function UnionRoomScreen.showActivities(items, opts)
+  opts = opts or {}
+  local rows = {}
+  for i, item in ipairs(items or {}) do
+    rows[i] = { label = UnionRoomScreen.labelFor(item), id = item.key, item = item }
+  end
+  UnionRoomScreen.partner = opts.partner
+  UnionRoomScreen.showList("activity", {
+    template = UnionRoomScreen.INVITE_TEMPLATE,
+    items = rows,
+    maxShowed = 4,
+    onChoose = opts.onChoose,
+    onCancel = opts.onCancel,
+  })
+  UnionRoomScreen.items = items or {}
+  return true
+end
+
+-- pokefirered/src/data/union_room.h:213
+function UnionRoomScreen.showRegister(opts)
+  opts = opts or {}
+  local rows = {}
+  for i = 0, 2 do
+    rows[#rows + 1] = { label = RomText.plain(RomText.key("sListMenuItems_RegisterForTrade", i)), id = i + 1 }
+  end
+  return UnionRoomScreen.showList("register", {
+    template = UnionRoomScreen.REGISTER_TEMPLATE,
+    items = rows,
+    maxShowed = 3,
+    onChoose = opts.onChoose,
+    onCancel = opts.onCancel,
+  })
+end
+
+-- pokefirered/src/data/union_room.h:271
+function UnionRoomScreen.showTypes(opts)
+  opts = opts or {}
+  local rows = {}
+  for i, typeId in ipairs(UnionRoomScreen.TYPE_IDS) do
+    rows[i] = { label = RomText.plain(RomText.key("sListMenuItems_TypeNames", i - 1)), id = typeId }
+  end
+  rows[#rows + 1] = { label = RomText.plain("gText_UR_Exit"), id = UnionRoomScreen.TYPE_EXIT }
+  return UnionRoomScreen.showList("types", {
+    template = UnionRoomScreen.TYPES_TEMPLATE,
+    items = rows,
+    maxShowed = 6,
+    upTextY = 2,
+    onChoose = opts.onChoose,
+    onCancel = opts.onCancel,
+  })
+end
+
+local function levelText(level)
+  return tostring(math.floor(tonumber(level) or 0))
+end
+
+-- pokefirered/src/union_room.c:4348
+function UnionRoomScreen.printBoardRow(entry, px, py, colors)
+  if type(entry) ~= "table" then return end
+  local ox = px - 12
+  FrlgFont.draw(tostring(entry.name or ""), ox + 8, py, { colors = colors, letterSpacing = 1 })
+  local species = tonumber(entry.species) or 0
+  -- pokefirered/include/constants/species.h:421
+  if species == 412 then
+    FrlgFont.draw(RomText.plain("gText_UR_EggTrade"), ox + 68, py, { colors = colors, letterSpacing = 1 })
+    return
+  end
+  local okS, SummaryChrome = pcall(require, "src.ui.game3.summary_chrome")
+  if okS and SummaryChrome.drawTypeBadge then
+    SummaryChrome.drawTypeBadge(tonumber(entry.wantType) or 0, ox + 68, py + 1)
+  end
+  local okP, Pokemon = pcall(require, "src.core.game3.pokemon")
+  local name = okP and Pokemon.name and Pokemon.name(species) or ""
+  FrlgFont.draw(tostring(name or ""), ox + 118, py, { colors = colors, letterSpacing = 1 })
+  local lv = levelText(entry.level)
+  local w = FrlgFont.measure(lv)
+  FrlgFont.draw(lv, ox + 218 - w, py, { colors = colors, letterSpacing = 1 })
+end
+
+-- pokefirered/src/data/union_room.h:312
+function UnionRoomScreen.showBoard(opts)
+  opts = opts or {}
+  local rows = {}
+  rows[1] = { label = "", id = -3, disabled = true, entry = opts.own,
+    print = function(item, px, py)
+      if item.entry then UnionRoomScreen.printBoardRow(item.entry, px, py, UnionRoomScreen.BOARD_SELF) end
+    end }
+  local offers = opts.offers or {}
+  for i = 0, 7 do
+    local entry = offers[i + 1]
+    rows[#rows + 1] = { label = "", id = i, disabled = entry == nil, entry = entry,
+      print = function(item, px, py)
+        if item.entry then UnionRoomScreen.printBoardRow(item.entry, px, py, UnionRoomScreen.BOARD_OTHER) end
+      end }
+  end
+  rows[#rows + 1] = { label = RomText.plain("gText_UR_Exit2"), id = 8, colors = UnionRoomScreen.BOARD_OTHER }
+  local shown = UnionRoomScreen.showList("board", {
+    template = UnionRoomScreen.BOARD_TEMPLATE,
+    items = rows,
+    maxShowed = 5,
+    itemX = 12,
+    upTextY = 2,
+    rowHeight = 15,
+    header = UnionRoomScreen.BOARD_HEADER_TEMPLATE,
+    cursorColors = UnionRoomScreen.BOARD_CURSOR,
+    fill = FrlgFont.STDPAL[15],
+    cursor = 2,
+    onChoose = opts.onChoose,
+    onCancel = opts.onCancel,
+  })
+  UnionRoomScreen.players = offers
+  return shown
 end
 
 -- pokefirered/src/union_room.c:435 LL_STATE_PRINT_SEARCH_TEXT
 function UnionRoomScreen.showPlayers(players, opts)
   opts = opts or {}
-  UnionRoomScreen.mode = opts.mode or "board"
+  clearCallbacks()
+  UnionRoomScreen.mode = opts.mode or "group"
   UnionRoomScreen.players = players or {}
   UnionRoomScreen.items = {}
   UnionRoomScreen.cursor = 1
@@ -128,23 +243,6 @@ function UnionRoomScreen.showPlayers(players, opts)
   UnionRoomScreen._onChoose = nil
   UnionRoomScreen._onSay = nil
   UnionRoomScreen._pollWait = 0
-  push()
-  return true
-end
-
--- pokefirered/src/union_room_chat.c:318 EnterUnionRoomChat
-function UnionRoomScreen.showChat(opts)
-  opts = opts or {}
-  UnionRoomScreen.mode = "chat"
-  UnionRoomScreen.lines = opts.lines or {}
-  UnionRoomScreen.items = {}
-  UnionRoomScreen.players = {}
-  UnionRoomScreen.cursor = 1
-  UnionRoomScreen._onSay = opts.onSay
-  UnionRoomScreen._onCancel = opts.onLeave
-  UnionRoomScreen._onChoose = nil
-  UnionRoomScreen._onConfirm = nil
-  UnionRoomScreen._onPoll = nil
   push()
   return true
 end
@@ -171,16 +269,25 @@ function UnionRoomScreen.reset()
   UnionRoomScreen._onPoll = nil
   UnionRoomScreen._onSay = nil
   UnionRoomScreen._pollWait = 0
+  UnionRoomScreen.list = nil
+  UnionRoomScreen.header = nil
   Stack.pop("union_room")
   return true
 end
 
 function UnionRoomScreen.rowCount()
-  if UnionRoomScreen.mode == "activity" then return #UnionRoomScreen.items end
+  if UnionRoomScreen.list then return #UnionRoomScreen.list.items end
   return #UnionRoomScreen.players
 end
 
 function UnionRoomScreen.move(delta)
+  local lm = UnionRoomScreen.list
+  if lm then
+    local changed = lm:changeSelection(math.abs(delta), delta > 0)
+    local _, index = lm:selected()
+    UnionRoomScreen.cursor = index
+    return changed
+  end
   local n = UnionRoomScreen.rowCount()
   if n < 1 then return false end
   local c = UnionRoomScreen.cursor + delta
@@ -189,12 +296,28 @@ function UnionRoomScreen.move(delta)
   return true
 end
 
+function UnionRoomScreen.select(index)
+  local lm = UnionRoomScreen.list
+  if not lm then return false end
+  lm:setSelected(index)
+  UnionRoomScreen.cursor = index
+  return true
+end
+
 function UnionRoomScreen.confirm()
-  if UnionRoomScreen.mode == "activity" then
+  local lm = UnionRoomScreen.list
+  if lm then
+    local _, current = lm:selected()
+    if UnionRoomScreen.cursor ~= current then lm:setSelected(UnionRoomScreen.cursor) end
+    local item, index = lm:selected()
+    if not item then return false end
+    if item.disabled then
+      ListMenu.playSe("SE_WALL_HIT")
+      return false
+    end
     local cb = UnionRoomScreen._onChoose
-    local index = UnionRoomScreen.cursor
     UnionRoomScreen.close()
-    if cb then cb(index) end
+    if cb then cb(index, item) end
     return true
   end
   local row = UnionRoomScreen.players[UnionRoomScreen.cursor]
@@ -224,8 +347,11 @@ end
 -- pokefirered/src/union_room.c:2795 HandleUnionRoomPlayerRefresh
 UnionRoomScreen.POLL_FRAMES = 30
 
-function UnionRoomScreen.update(_dt)
+function UnionRoomScreen.update(dt)
   if not UnionRoomScreen.open then return end
+  if UnionRoomScreen.list then UnionRoomScreen.list:update(dt) end
+  local Message = package.loaded["src.ui.game3.message"]
+  if Message and Message.isOpen and Message.isOpen() then Message.tick() end
   local poll = UnionRoomScreen._onPoll
   if not poll then return end
   local wait = (UnionRoomScreen._pollWait or 0) - 1
@@ -243,30 +369,22 @@ function UnionRoomScreen.update(_dt)
   end
 end
 
--- pokefirered/src/union_room_chat.c:279 gUnionRoomKeyboardText
-local function compose_chat_line()
-  local okN, Naming = pcall(require, "src.ui.game3.naming")
-  if not (okN and Naming and Naming.open) then return false end
-  if Naming.isOpen and Naming.isOpen() then return true end
-  Naming.open({
-    title = RomText.plain("gText_UR_Chat2"),
-    maxLen = 20,
-    onDone = function(text)
-      local cb = UnionRoomScreen._onSay
-      if cb and type(text) == "string" and text ~= "" then cb(text) end
-    end,
-  })
-  return true
-end
-
 function UnionRoomScreen.handleInput(input)
   if not input then return end
-  if UnionRoomScreen.mode == "chat" then
+  local lm = UnionRoomScreen.list
+  if lm then
     if input:wasPressed("a") then
-      compose_chat_line()
-    elseif input:wasPressed("b") then
-      UnionRoomScreen.cancel()
+      UnionRoomScreen.confirm()
+      return
     end
+    if input:wasPressed("b") then
+      ListMenu.playSe("SE_SELECT")
+      UnionRoomScreen.cancel()
+      return
+    end
+    lm:handleInput(input)
+    local item, index = lm:selected()
+    if item then UnionRoomScreen.cursor = index end
     return
   end
   if input:wasPressed("up") then UnionRoomScreen.move(-1)
@@ -311,41 +429,60 @@ end
 
 -- pokefirered/src/link_rfu_3.c:949 CreateWirelessStatusIndicatorSprite
 local function draw_indicator()
-  local image = UnionRoomScreen.indicator()
-  if not (image and UnionRoomScreen._quad) then return end
-  local _, _, w, h = UnionRoomScreen._quad:getViewport()
+  require("src.ui.game3.wireless_icon").draw(UnionRoomScreen.INDICATOR_X, UnionRoomScreen.INDICATOR_Y)
+end
+
+local function fillTemplate(tpl, color)
+  local T = 8
+  love.graphics.setColor(color[1], color[2], color[3], 1)
+  love.graphics.rectangle("fill", tpl.left * T, tpl.top * T, tpl.w * T, tpl.h * T)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(image, UnionRoomScreen._quad,
-    UnionRoomScreen.INDICATOR_X - w / 2, UnionRoomScreen.INDICATOR_Y - h / 2)
+end
+
+function UnionRoomScreen.fontText(key)
+  local out = {}
+  for _, seg in ipairs(RomText.ir(key)) do
+    if seg.t == "text" then
+      out[#out + 1] = seg.s
+    elseif seg.t == "ext" and type(seg.args) == "table" and seg.args[1] then
+      out[#out + 1] = string.char(0xFC, tonumber(seg.cmd) or 0, (tonumber(seg.args[1]) or 0) % 256)
+    end
+  end
+  return table.concat(out)
+end
+
+-- pokefirered/src/union_room.c:3900
+local function drawBoardHeader(tpl)
+  Window.stdFrame(tpl)
+  fillTemplate(tpl, FrlgFont.STDPAL[15])
+  FrlgFont.draw(UnionRoomScreen.fontText("gText_UR_NameWantedOfferLv"), tpl.left * 8 + 8, tpl.top * 8 + 1,
+    { small = true, colors = UnionRoomScreen.BOARD_OTHER })
+end
+
+local function drawList(lm)
+  if lm.fill then
+    Window.stdFrame(lm.template)
+    fillTemplate(lm.template, lm.fill)
+    local frame = lm.frame
+    lm.frame = "none"
+    local cursorKind = lm.cursorKind
+    lm.cursorKind = 1
+    lm:draw()
+    lm.frame, lm.cursorKind = frame, cursorKind
+    if cursorKind == 0 and lm:shown() > 0 then
+      Window.cursorPx(lm.template.left * 8 + lm.cursorX, lm:rowY(lm.row), { colors = lm.cursorColors })
+    end
+    return
+  end
+  lm:draw()
 end
 
 function UnionRoomScreen.draw()
   if not UnionRoomScreen.open then return end
   if not (love and love.graphics) then return end
-  if UnionRoomScreen.mode == "chat" then
-    -- pokefirered/src/union_room_chat.c:70 registeredTexts
-    local tpl = UnionRoomScreen.LIST_TEMPLATE
-    draw_frame(tpl)
-    local lines = UnionRoomScreen.lines or {}
-    local first = math.max(1, #lines - 8)
-    local row = 0
-    for i = first, #lines do
-      local line = lines[i]
-      Window.print(tostring(line.name or "") .. ": " .. tostring(line.text or ""),
-        Window.labelTx(tpl.left), Window.menuRowY(tpl.top, row + 1))
-      row = row + 1
-    end
-    draw_indicator()
-    return
-  end
-  if UnionRoomScreen.mode == "activity" then
-    local tpl = UnionRoomScreen.INVITE_TEMPLATE
-    draw_frame(tpl)
-    for i, item in ipairs(UnionRoomScreen.items) do
-      local ty = Window.menuRowY(tpl.top, i)
-      if i == UnionRoomScreen.cursor then Window.cursor(tpl.left, ty) end
-      Window.print(UnionRoomScreen.labelFor(item), Window.labelTx(tpl.left), ty)
-    end
+  if UnionRoomScreen.list then
+    if UnionRoomScreen.header then drawBoardHeader(UnionRoomScreen.header) end
+    drawList(UnionRoomScreen.list)
     return
   end
 

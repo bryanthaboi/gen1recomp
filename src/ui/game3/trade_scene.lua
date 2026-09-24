@@ -142,7 +142,7 @@ end
 
 function TradeSceneUi.start(core)
   TradeSceneUi._core = core
-  Stack.push("trade_scene", TradeSceneUi, { hideBelow = true })
+  Stack.push("trade_scene", TradeSceneUi, { hideBelow = true, fullscreen = true })
 end
 
 function TradeSceneUi.close()

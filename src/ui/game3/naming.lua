@@ -425,7 +425,7 @@ function Naming.open(opts)
   }
   Naming._state = st
   Naming.openFlag = true
-  Stack.push("naming", Naming, { hideBelow = true })
+  Stack.push("naming", Naming, { hideBelow = true, fullscreen = true })
   return st
 end
 

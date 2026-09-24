@@ -351,7 +351,7 @@ function Ui.show(session, bag, opts)
   Ui.cursor = (res and (res.scrollOffset + res.selectedRow) or 0) + 1
   to_list()
   Ui.closing = false
-  Stack.push("teachy_tv", Ui, { hideBelow = true })
+  Stack.push("teachy_tv", Ui, { hideBelow = true, fullscreen = true })
   -- pokefirered/src/teachy_tv.c:490 PlayNewMapMusic
   song(MUS_TEACHY_TV_MENU)
   -- pokefirered/src/teachy_tv.c:499 BeginNormalPaletteFade(PALETTES_ALL, 0, 0x10, 0, 0)
@@ -663,7 +663,7 @@ function Ui.resumeFromDemonstration(outcome)
   Ui.open = true
   Ui.static = nil
   if not Stack.has("teachy_tv") then
-    Stack.push("teachy_tv", Ui, { hideBelow = true })
+    Stack.push("teachy_tv", Ui, { hideBelow = true, fullscreen = true })
   end
   -- pokefirered/src/teachy_tv.c:499 BeginNormalPaletteFade(PALETTES_ALL, 0, 0x10, 0, 0)
   local Fade = fade()
@@ -973,7 +973,7 @@ function Ui.returnFromDemo()
   if Ui._bagUnder then
     BagMenu.show(session and session.bag, { session = session })
   end
-  Stack.push("teachy_tv", Ui, { hideBelow = true })
+  Stack.push("teachy_tv", Ui, { hideBelow = true, fullscreen = true })
   Ui.open = true
   Ui.suspended = false
   if res and res.mode == TeachyTv.MODE.RESUME_SCRIPT then

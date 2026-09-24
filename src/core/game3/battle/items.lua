@@ -291,7 +291,8 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     Bag.remove(bag, itemId, 1)
     -- pokefirered/data/battle_scripts_2.s:57
     say_id("STRINGID_PLAYERUSEDITEM", fill)
-    local rng = adapter and adapter.rng and adapter:rng() or math.random
+    local rng = adapter and adapter.rng and adapter:rng()
+      or require("src.core.game3.battle.link_guard").source("items.rng", math.random)
     local foe = Catching.targetFor(st, battlerId)
     local caught, shakes = BattleItems.tryCatch(itemId, foe, st, rng, session)
     if caught then

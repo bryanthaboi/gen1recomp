@@ -1,0 +1,737 @@
+#!/usr/bin/env luajit
+package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.game3_items").install()
+
+local failed = 0
+local function check(cond, msg)
+  if cond then
+    print("[ok] " .. msg)
+  else
+    failed = failed + 1
+    print("[FAIL] " .. msg)
+  end
+end
+
+local function eq(a, b, msg)
+  check(a == b, string.format("%s (%s == %s)", msg, tostring(a), tostring(b)))
+end
+
+local FakeRelay = require("tests.g3link_fake_relay")
+
+local UNION_MAP = "FR_UNION_ROOM"
+local CENTER_MAP = "FR_TEST_POKEMON_CENTER_2F"
+local MAPS = {
+  [UNION_MAP] = { warps = { { x = 7, y = 11, mapGroup = 0x7F, mapNum = 0x7F, destWarp = 128 } } },
+  [CENTER_MAP] = { warps = { { x = 9, y = 1, destMap = "FR_TRADE_CENTER", destWarp = 1 } } },
+  FR_TRADE_CENTER = { warps = { { x = 5, y = 8, mapGroup = 0x7F, mapNum = 0x7F, destWarp = 128 } } },
+}
+
+local store = { flags = {}, vars = {} }
+local session = {
+  store = store, map = UNION_MAP, x = 7, y = 11, name = "RED", gender = 0, trainerId = 0x1234,
+  party = { { species = 1, level = 12 }, { species = 4, level = 9 } },
+  bag = { pockets = { items = {} } },
+}
+local input = { pressed = {} }
+function input:wasPressed(k) return self.pressed[k] == true end
+local game = { data = { maps = MAPS }, session = session, input = input,
+  save = { player = { name = "RED" }, options = {} } }
+
+package.loaded["src.core.game3.runtime"] = {
+  getSession = function() return session end,
+  isActive = function() return true end,
+  _game = game,
+}
+local Player = { cellX = 7, cellY = 11, facing = "down" }
+package.loaded["src.core.game3.player"] = Player
+local mapLoads = {}
+package.loaded["src.core.game3.map"] = {
+  load = function(_mod, _game, mapId, opts)
+    mapLoads[#mapLoads + 1] = { map = mapId, x = opts and opts.x, y = opts and opts.y }
+  end,
+}
+local objectCalls = { added = {}, removed = {} }
+local liveObjects = {}
+package.loaded["src.core.game3.objects"] = {
+  addObject = function(id)
+    objectCalls.added[#objectCalls.added + 1] = id
+    liveObjects[id] = { localId = id, visible = true, raiseY = 0 }
+    return true
+  end,
+  removeObject = function(id)
+    objectCalls.removed[#objectCalls.removed + 1] = id
+    liveObjects[id] = nil
+    return true
+  end,
+  find = function(id) return liveObjects[id] end,
+  refreshGraphics = function() return 0 end,
+}
+local VirtualObjects = require("src.core.game3.virtual_objects")
+
+local romBundle = require("tests.game3_cache").bundle()
+if not romBundle then
+  package.loaded["src.core.game3.rom_text"] = {
+    plain = function(key) return key end, box = function(key) return key end,
+    ascii = function(key) return key end, has = function() return true end,
+    ir = function(key) return { { t = "text", s = key } } end,
+    key = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    at = function(n, i, j) return j and (n .. "[" .. i .. "][" .. j .. "]") or (n .. "[" .. i .. "]") end,
+    count = function() return 0 end, list = function() return {} end,
+    lazy = function(map) return setmetatable({}, { __index = function(_, k) return map[k] end }) end,
+  }
+end
+local RomText = require("src.core.game3.rom_text")
+
+local ctx = { specialVars = {}, stringVars = {} }
+local adapters = { log = function() end, playSe = function() end }
+package.loaded["src.core.game3.scripting.space"] = {
+  store = store, mapId = UNION_MAP, vm = { ctx = ctx, adapters = adapters },
+  ensureBundle = function() return romBundle end,
+}
+local Space = package.loaded["src.core.game3.scripting.space"]
+
+local LIVE = { engine = 3, engineVersion = "1.0.0", fingerprint = "f00dcafe", kind = "vanilla",
+  version = "firered" }
+package.loaded["src.online.ArenaData"] = {
+  liveProfile3 = function(_, rulesetId)
+    local p = {}
+    for k, v in pairs(LIVE) do p[k] = v end
+    p.rulesetId = rulesetId
+    return p
+  end,
+}
+local Client = FakeRelay.client({ state = "online", id = "0000beef" })
+Client._profiles = { LIVE }
+package.loaded["src.online.Client"] = Client
+
+local mgCalls = {}
+package.loaded["src.core.game3.minigames.common"] = {
+  GROUP_GAME = { [4] = "jump", [5] = "crush", [6] = "pick" },
+  partySlot = 1,
+  arm = function(c, spec)
+    mgCalls[#mgCalls + 1] = { ctx = c, spec = spec }
+    return true
+  end,
+}
+
+local Natives = require("src.core.game3.scripting.natives")
+local NativesLink = require("src.core.game3.scripting.natives_link")
+local Link = require("src.core.game3.link")
+local Union = require("src.core.game3.link.union_room")
+local Screen = require("src.ui.game3.union_room")
+local Game3Link = require("src.link.Game3Link")
+local Flags = require("src.core.game3.scripting.flags")
+local Message = require("src.ui.game3.message")
+local Chat = require("src.core.game3.link.chat")
+
+Union._avatars = FakeRelay.avatars()
+local Choice = require("src.ui.game3.choice")
+
+local function getVar(id) return tonumber(Flags.getVar(store, ctx, id)) or 0 end
+local function tickMsg() for _ = 1, 400 do Message.tick() end end
+local function run(n)
+  for _ = 1, n or 1 do
+    Message.tick()
+    Link.update(1 / 60)
+  end
+end
+local function settle(n)
+  for _ = 1, n or 2000 do
+    if Message.isOpen() and not Message.isWaiting() then Message.skipReveal() end
+    Message.tick()
+    Union.update(1 / 60)
+    if Choice.isOpen() or Screen.isOpen() then return true end
+    if Message.isOpen() and Message.isWaiting()
+        and (not Message._stay or (Message._page or 1) < #(Message._pages or {})) then
+      Message.advance()
+    end
+  end
+  return false
+end
+local function answer(yes)
+  Choice.cursor = yes and 1 or 2
+  Choice.confirm()
+end
+local function drain()
+  for _ = 1, 400 do
+    if Message.isOpen() and not Message.isWaiting() then Message.skipReveal() end
+    if Message.isOpen() and Message.isWaiting() and not Choice.isOpen() then Message.advance() end
+    run(1)
+    if not Message.isOpen() and not Union.flow then run(1) end
+  end
+end
+local function page() return Message.isOpen() and Message.currentPage() or nil end
+local function shows(text)
+  local p = page()
+  return p ~= nil and p ~= "" and text:find(p, 1, true) == 1
+end
+local function ascii(key) return RomText.ascii(key) end
+local function member(id, slot, name, trainerId, gender)
+  return { id = id, name = name, slot = slot, online = true, status = "idle",
+    avatar = { name = name, trainerId = trainerId, gender = gender, version = "firered" } }
+end
+
+print("[test] 1. RunUnionRoom joins the union plaza when the adapter is connected")
+Link.reset()
+Space.mapId = UNION_MAP
+session.map = UNION_MAP
+Natives.special(ctx, NativesLink.SPECIAL.RunUnionRoom, adapters)
+eq(Union.relay, true, "the union room runs over the relay")
+local join = Client.last("joinPlaza")
+eq(join and join[1], "union", "joinPlaza union")
+eq(join and join[2] and join[2].rulesetId, "g3_link", "with the live g3_link profile")
+eq(join and join[3] and join[3].name, "RED", "and the avatar")
+eq(Client.status, "idle", "presence status goes idle in the Union Room")
+
+print("[test] 2. plaza members fill the leader slots in slot order, self excluded")
+Client._plaza = { kind = "union", instance = 1, you = 2, members = {
+  member("0000beef", 2, "RED", 0x1234, 0),
+  member("aaaa0001", 5, "BLUE", 0x2222, 0),
+  member("aaaa0002", 1, "GREEN", 3, 1),
+} }
+run(1)
+eq(Union.playerCount(), 2, "two other trainers")
+eq(Union.players[1] and Union.players[1].name, "GREEN", "the lowest relay slot takes cart slot 1")
+eq(Union.players[2] and Union.players[2].name, "BLUE", "the next takes cart slot 2")
+eq(Union.players[1] and Union.players[1].id, "aaaa0002", "the slot remembers the relay id")
+eq(objectCalls.added[1], Union.LOCAL_IDS[1], "slot 1's avatar spawned on the scheduled refresh")
+eq(getVar(Union.VAR_OBJ_GFX_ID_0), Union.graphicsIdFor(1, 3), "with the class graphics id")
+local green = liveObjects[Union.LOCAL_IDS[1]]
+eq(green and green.raiseY, -Union.FLY_HEIGHT, "UNION_ROOM_SPAWN_IN starts 160 px up (FLY_DOWN)")
+run(10)
+eq(green.raiseY, -Union.FLY_HEIGHT + 10 * Union.FLY_STEP, "and drops 8 px a frame")
+run(10)
+eq(green.raiseY, 0, "landing after 20 frames")
+eq(Union.leaderObj(1).state, 1, "the leader is shown")
+eq(Union.avatarData().leader_coords[1][1], 4, "leader slot 1 sits at sUnionRoomPlayerCoords[0]")
+
+print("[test] 3. refreshes are throttled like the cart, departures fly out")
+table.remove(Client._plaza.members, 2)
+run(1)
+eq(Union.playerCount(), 2, "not refreshed on the next frame")
+check(Union.players[2] and Union.players[2].gone, "BLUE is marked gone")
+local frames = 0
+while Union.playerCount() == 2 and frames < Union.REFRESH_FRAMES + 5 do
+  run(1)
+  frames = frames + 1
+end
+eq(Union.playerCount(), 1, "BLUE left on the periodic refresh")
+check(frames > 200, "which waits for the 300-frame refresh (" .. frames .. ")")
+eq(Union.players[1] and Union.players[1].name, "GREEN", "GREEN keeps slot 1 (sticky)")
+local blue = liveObjects[Union.LOCAL_IDS[2]]
+check(blue ~= nil and blue.raiseY < 0, "UNION_ROOM_SPAWN_OUT flies the avatar up")
+run(Union.FLY_HEIGHT / Union.FLY_STEP)
+eq(objectCalls.removed[#objectCalls.removed], Union.LOCAL_IDS[2], "then removes the object")
+eq(liveObjects[Union.LOCAL_IDS[2]], nil, "slot 2's avatar is gone")
+
+print("[test] 3b. a busy pair is one group: leader and member at the cart offsets, facing each other")
+local pink = member("aaaa0003", 3, "PINK", 5, 1)
+pink.status = "chatting"
+pink.group = { leader = "aaaa0003", members = { "aaaa0003", "aaaa0004" }, activity = "chat" }
+local yellow = member("aaaa0004", 4, "YELLOW", 6, 0)
+yellow.status = "chatting"
+yellow.group = pink.group
+table.insert(Client._plaza.members, pink)
+table.insert(Client._plaza.members, yellow)
+run(1)
+eq(Union.playerCount(), 2, "the member rides with its leader instead of taking a slot")
+eq(Union.players[2] and Union.players[2].name, "PINK", "the leader takes the free slot")
+eq(Union.players[2] and #Union.players[2].partners, 1, "with YELLOW as its group member")
+eq(Union.players[2].activity, Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM, "the group is chatting")
+local vl = Union.vobj(2, 0)
+local vm = Union.vobj(2, 1)
+check(vl and vl.visible, "the leader is a virtual object")
+check(vm and vm.visible, "and so is the member")
+eq(vl and vl.x, 13, "leader at sUnionRoomPlayerCoords[1].x")
+eq(vl and vl.y, 8, "leader at sUnionRoomPlayerCoords[1].y")
+eq(vm and vm.x, 14, "member at offset (1,0)")
+eq(vl and vl.dir, Union.DIR.SOUTH, "a chat leader faces south")
+eq(vm and vm.dir, Union.DIR.WEST, "the member faces the leader")
+eq(VirtualObjects.count(), 2, "both are in the virtual object pool")
+check((VirtualObjects.get(Union.vobjId(2, 0)) or {}).y2 < 0, "flying in")
+run(20)
+eq((VirtualObjects.get(Union.vobjId(2, 0)) or {}).y2, 0, "and landed")
+eq(liveObjects[Union.LOCAL_IDS[2]], nil, "no object event for a busy leader")
+
+print("[test] 3c. talking to a chatting group offers to join; a member gives a reaction")
+Union.toMain()
+Message.reset()
+Player.cellX, Player.cellY, Player.facing = 13, 9, "up"
+input.pressed = { a = true }
+run(1)
+input.pressed = {}
+eq(Union.state, "recv_join_chat_request", "A in front of the chat leader")
+check(settle(), "the join prompt asks YES/NO")
+if romBundle then
+  check(shows(RomText.ascii("sText_JoinChatFemale")), "gTexts_UR_JoinChat for a female leader")
+end
+answer(true)
+local jinv = Client.last("invite")
+eq(jinv and jinv[1], "aaaa0003", "joining asks the leader")
+eq(jinv and jinv[2], "chat", "for the chat")
+eq(jinv and jinv[3] and jinv[3].join, true, "as a join")
+eq(Union.state, "send_activity_request", "waiting for the relay")
+local jh = Client.handles[#Client.handles]
+jh.state, jh.why = "closed", "busy"
+run(1)
+eq(Union.state, "print_and_exit", "a refused join")
+if romBundle then
+  check(shows(RomText.ascii(RomText.key("gTexts_UR_ChatDeclined", 1))), "reads gTexts_UR_ChatDeclined")
+end
+drain()
+eq(Union.state, "main", "back to the main loop")
+Player.cellX, Player.cellY, Player.facing = 14, 9, "up"
+input.pressed = { a = true }
+run(1)
+input.pressed = {}
+eq(Union.state, "print_and_exit", "A in front of a group member")
+eq(vm.dir, Union.DIR.SOUTH, "the member turns to face the player")
+run(2)
+check(Message.isOpen(), "a reaction line")
+drain()
+eq(vm.dir, Union.DIR.WEST, "and turns back to its leader")
+Player.cellX, Player.cellY, Player.facing = 7, 11, "down"
+
+print("[test] 4. talking to a trainer: HiDoSomething, the invite menu, the cart's reject")
+run(1)
+local held = ctx.stateWait
+eq(held, Union.scriptWaitTask, "the Union Room holds the next waitstate (UnionRoom_EventScript_Player#)")
+ctx.stateWait = nil
+Flags.setVar(store, ctx, 0x800D, 1)
+eq(held(), false, "setvar VAR_RESULT, 1 then waitstate: the script waits")
+Flags.setVar(store, ctx, 0x800D, 0)
+run(1)
+eq(Union.state, "do_something_prompt", "talking to GREEN")
+check(settle(), "the activity menu opens")
+eq(Screen.mode, "activity", "GREETINGS / BATTLE / CHAT / EXIT")
+if romBundle then
+  check(shows(RomText.ascii("sText_HiDoSomethingFemale")), "gTexts_UR_HiDoSomething for a stranger")
+end
+Screen.cursor = 2
+Screen.confirm()
+local inv = Client.last("invite")
+eq(inv and inv[1], "aaaa0002", "invites the member by relay id")
+eq(inv and inv[2], "battle_single", "BATTLE is battle_single")
+eq(inv and inv[3] and inv[3].ruleset, "g3_single", "with the g3_single ruleset")
+eq(inv and inv[4] and inv[4].rulesetId, "g3_single", "and a g3_single profile")
+eq(Union.state, "send_activity_request", "waiting for the answer")
+if romBundle then
+  check(shows(RomText.ascii(RomText.key("gTexts_UR_WaitOrShowCard", 1, 0))), "the partner's wait line")
+end
+local h = Client.handles[#Client.handles]
+Union.update(5)
+eq(Union.state, "send_activity_request", "no local timeout: the relay decides")
+h.state, h.why = "closed", "declined"
+run(1)
+eq(Union.lastResult, "declined", "declined")
+check(shows(RomText.ascii(RomText.key("gTexts_UR_BattleDeclined", 1))),
+  "the partner's gendered battle refusal (GetURoomActivityRejectMsg)")
+drain()
+eq(Union.state, "main", "back to the main loop")
+eq(held(), true, "and the talk script is released")
+
+Union.partnerId = 1
+Union.chooseActivity(3)
+h = Client.handles[#Client.handles]
+h.state, h.why = "closed", "busy"
+run(1)
+check(shows(ascii("gText_UR_TrainerAppearsBusy")), "busy reads The TRAINER appears to be busy")
+drain()
+
+Union.partnerId = 1
+Union.chooseActivity(3)
+h = Client.handles[#Client.handles]
+check(h ~= nil and h.state ~= "closed", "an open invite")
+Client._state = "reconnecting"
+run(30)
+eq(Union.state, "send_activity_request", "a reconnecting relay keeps the invite wait")
+Client._state = "error"
+run(1)
+eq(Union.lastResult, "busy", "the relay dropping for good ends the invite")
+check(shows(ascii("gText_UR_TrainerBattleBusy")), "with gText_UR_TrainerBattleBusy (!gReceivedRemoteLinkPlayers)")
+check(not Message._stay, "the stay-open wait line is gone")
+drain()
+eq(Union.state, "main", "back to the main loop")
+eq(Union.invite, nil, "the dead handle is dropped")
+Client._state = "online"
+run(1)
+
+Union.partnerId = 1
+Union._partner = Union.players[1]
+Union.chooseActivity(4)
+eq(Union.state, "print_and_exit", "EXIT")
+run(1)
+if romBundle then
+  check(shows(RomText.ascii(RomText.key("gTexts_UR_IfYouWantToDoSomething", 1))),
+    "EXIT reads gTexts_UR_IfYouWantToDoSomething")
+end
+drain()
+eq(Union.state, "main", "back to main")
+
+print("[test] 5. an accepted CHAT starts the chat on the room session")
+Union.partnerId = 1
+Union.chooseActivity(3)
+eq(Client.last("invite")[2], "chat", "CHAT is chat")
+h = Client.handles[#Client.handles]
+local room = FakeRelay.room({ seats = 2, intent = "chat", names = { "RED", "GREEN" } })
+local rs0 = room:session(0)
+h.state, h.why, h.room = "accepted", "accepted", room.id
+run(1)
+eq(Union.state, "await_room", "accepted: waiting for the room")
+run(1)
+eq(Union.state, "await_room", "still no room")
+Client.bindRoom(room, 0)
+run(3)
+eq(Union.state, "in_activity", "room_state + match_start: the chat started")
+eq(Link.link, nil, "no Game3Link handshake for a chat")
+check(Chat.isActive(), "chat is live")
+local joinMsg = room.inbox[1][1]
+eq(joinMsg and joinMsg.type, "game3_union_hello", "RED announced itself to the room")
+room:push(1, { type = "game3_union_hello", name = "GREEN", gender = 1, trainerId = 3, activity = 0x45 })
+room:push(1, { type = "game3_chat_line", name = "GREEN", text = "HI RED" })
+run(1)
+eq(#Chat.lines, 2, "GREEN joined and spoke")
+eq(Chat.lines[2] and Chat.lines[2].seat, 1, "GREEN's lines use seat 1's colour")
+Chat.stop("left")
+run(2)
+eq(Union.state, "main", "chat over, back in the room")
+eq(rs0.closeCalls, 1, "and the private room was left")
+eq(Client.status, "idle", "presence back to idle")
+
+print("[test] 6. an incoming invite rings, asks, and answers the relay")
+Client.bindRoom(nil, nil)
+Client._invites = { { id = "i0000000000000001", from = { id = "aaaa0002", name = "GREEN" },
+  activity = "card", detail = {}, expiresAt = 0 } }
+Union.state = "main"
+Union.pollIncoming()
+eq(Union.state, "player_contacted_you", "the request lands")
+eq(Union.activity, Union.ACTIVITY.CARD, "as GREETINGS")
+eq(Union._requestName, "GREEN", "from GREEN")
+eq(Union.partnerId, 1, "who is in slot 1")
+Union.answerRequest(false)
+eq(Client.last("replyInvite")[1], "i0000000000000001", "the reply names the invite")
+eq(Client.last("replyInvite")[2], false, "and declines it")
+eq(Union.state, "main", "back to main")
+
+Client._invites = { { id = "i0000000000000002", from = { id = "aaaa0002", name = "GREEN" },
+  activity = "chat", detail = {} } }
+Union.state = "do_something_prompt"
+Union.pollIncoming()
+eq(Client.last("replyInvite")[1], "i0000000000000002", "an invite outside the main loop")
+eq(Client.last("replyInvite")[2], false, "is refused at once")
+
+Client._invites = { { id = "i0000000000000003", from = { id = "aaaa0002", name = "GREEN" },
+  activity = "card", detail = {} } }
+Union.state = "main"
+Union.pollIncoming()
+Union.answerRequest(true)
+eq(Client.last("replyInvite")[2], true, "YES accepts")
+eq(Union.state, "await_room", "and waits for the room")
+local room2 = FakeRelay.room({ seats = 2, intent = "card" })
+Client.bindRoom(room2, 1)
+Union.update(1 / 60)
+local host2 = Game3Link.attach(FakeRelay.transport(room2, 0), { game = game, seat = 0, seats = 2 })
+Link.update(1 / 60)
+host2:update(0)
+Link.update(1 / 60)
+eq(Union.state, "await_link", "GREETINGS waits for the partner's card")
+host2:send({ type = Link.MSG.CARD, card = { name = "GREEN", trainerId = 3 } })
+Link.update(1 / 60)
+Link.update(1 / 60)
+eq(Link.peerCard and Link.peerCard.name, "GREEN", "the card arrived")
+eq(Union.lastResult, "card_shown", "and the card was shown")
+Link.reset()
+Client.bindRoom(nil, nil)
+Union.state = "main"
+Union.relay = true
+
+print("[test] 6b. the GREETINGS card is text first (ViewURoomPartnerTrainerCard)")
+local card = { name = "GREEN", trainerId = 3, gender = 1, stars = 2, caughtMonsCount = 41,
+  playTimeHours = 12, playTimeMinutes = 5, linkBattleWins = 7, linkBattleLosses = 2, pokemonTrades = 3 }
+local childText = Union.cardText(card, false)
+local parentText = Union.cardText(card, true)
+if romBundle then
+  check(childText:find("GREEN", 1, true) ~= nil, "names the partner")
+  check(childText:find("41", 1, true) ~= nil, "with the POKeDEX count")
+  check(childText:find("12:05", 1, true) ~= nil, "and the play time")
+  check(childText:find(RomText.plain(RomText.key("gTexts_UR_CardColor", 2)), 1, true) ~= nil, "and the card colour")
+  check(childText:find("7", 1, true) ~= nil, "battle wins on page two")
+  check(childText:find(RomText.plain(RomText.key("gTexts_UR_GladToMeetYou", 1)):sub(3), 1, true) ~= nil,
+    "the child ends on gTexts_UR_GladToMeetYou")
+  check(parentText:find("GREEN", 1, true) ~= nil, "the parent reads the same card")
+end
+local lc = Link.localTrainerCard()
+eq(type(lc.stars), "number", "the card we send carries the star count")
+eq(type(lc.caughtMonsCount), "number", "and the POKeDEX count")
+
+print("[test] 7. the trading board: register at the attendant, browse at (2,1), offer a mon")
+local pickSlot = 1
+package.loaded["src.ui.game3.party_menu"] = {
+  show = function(_, _, opts) opts.onSelect(pickSlot) end,
+  close = function() end,
+}
+Client.calls = {}
+Flags.setVar(store, ctx, 0x800D, Union.INTERACT_ATTENDANT)
+run(1)
+eq(Union.state, "register_prompt", "the attendant offers the board")
+check(settle(), "REGISTER / INFO / EXIT")
+eq(Screen.mode, "register", "the register menu")
+eq(#Screen.list.items, 3, "three rows")
+if romBundle then
+  local p = page()
+  check(p ~= nil and RomText.ascii("gText_UR_RegisterMonAtTradingBoard", { playerName = "RED" }):find(p, 1, true) ~= nil,
+    "gText_UR_RegisterMonAtTradingBoard")
+end
+Screen.cursor = 1
+Screen.confirm()
+drain()
+check(settle(), "the type list opens after choosing a POKeMON")
+eq(Screen.mode, "types", "the requested type list")
+eq(#Screen.list.items, 18, "17 types and EXIT")
+eq(Screen.list.items[2].id, 10, "row 2 is FIRE (TYPE_FIRE)")
+Screen.cursor = 2
+Screen.confirm()
+local pres = Client.last("setPresence")
+local board = pres and pres[1] and pres[1].board
+eq(board and board.species, 1, "the board shows the registered species")
+eq(board and board.level, 12, "and its level")
+eq(board and board.wantType, 10, "wanting a FIRE type")
+drain()
+eq(Union.state, "main", "registration complete")
+
+local greenMember = Client._plaza.members[2]
+eq(greenMember.name, "GREEN", "GREEN's plaza row")
+greenMember.board = { species = 4, level = 9, wantType = 12 }
+run(1)
+eq(Union.players[1].board and Union.players[1].board.species, 4, "GREEN's board offer is on the member row")
+local offers = Union.boardOffers()
+eq(#offers, 1, "one offer on the board")
+Player.cellX, Player.cellY, Player.facing = 2, 2, "up"
+input.pressed = { a = true }
+run(1)
+input.pressed = {}
+eq(Union.state, "check_trading_board", "A at the board")
+check(settle(), "the board list opens")
+eq(Screen.mode, "board", "the trading board")
+eq(#Screen.list.items, 10, "header, eight offers, EXIT")
+check(Screen.list.items[1].disabled, "the header row cannot be picked")
+eq(Screen.list.items[1].entry and Screen.list.items[1].entry.species, 1, "and shows our own registration")
+eq(Screen.cursor, 2, "the cursor starts on the first offer")
+if romBundle then
+  Screen.confirm()
+  check(settle(), "asked whether to ask GREEN")
+  check(shows(RomText.ascii("gText_UR_AskTrainerToMakeTrade", { stringVars = { "GREEN" } })),
+    "gText_UR_AskTrainerToMakeTrade")
+  pickSlot = 1
+  answer(true)
+  drain()
+  local tinv = Client.last("invite")
+  eq(tinv and tinv[1], "aaaa0002", "the offer goes to GREEN")
+  eq(tinv and tinv[2], "trade", "as a trade")
+  eq(tinv and tinv[3] and tinv[3].board and tinv[3].board.species, 1, "carrying the offered mon")
+  eq(Union.state, "send_activity_request", "waiting for GREEN")
+  local th = Client.handles[#Client.handles]
+  th.state, th.why = "closed", "declined"
+  run(1)
+  check(shows(RomText.ascii("gText_UR_TradeOfferRejected")), "a declined offer reads gText_UR_TradeOfferRejected")
+  drain()
+else
+  Screen.cancel()
+  run(1)
+end
+eq(Union.state, "main", "back from the board")
+Player.cellX, Player.cellY, Player.facing = 7, 11, "down"
+
+Union.trade().playerSpecies, Union.trade().playerLevel = 1, 12
+Flags.setVar(store, ctx, 0x800D, Union.INTERACT_ATTENDANT)
+run(1)
+eq(Union.state, "cancel_registration_prompt", "a registered player is asked to cancel")
+check(settle(), "YES/NO")
+answer(true)
+pres = Client.last("setPresence")
+eq(pres and pres[1] and pres[1].board, false, "cancelling clears the board")
+eq(Union.trade().playerSpecies, 0, "and the registration")
+drain()
+eq(Union.state, "main", "back to main")
+
+print("[test] 7. leaving the Union Room leaves the plaza and goes busy")
+Space.mapId = CENTER_MAP
+session.map = CENTER_MAP
+Union.update(1 / 60)
+eq(Union.state, "off", "the union room stopped")
+eq(Client.last("leavePlaza")[1], "union", "leavePlaza union")
+eq(Client.status, "busy", "presence busy outside the plazas")
+Link.reset()
+Client.bindRoom(nil, nil)
+
+print("[test] 8. Direct Corner JOIN queues AUTO, B cancels")
+Message.reset()
+ctx.nativePoll = nil
+Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.SINGLE_BATTLE)
+local y = Natives.special(ctx, NativesLink.SPECIAL.TryJoinLinkGroup, adapters)
+eq(y, true, "the script waits")
+local q = Client.last("queueDirect")[1]
+eq(q and q.activity, "battle_single", "queues battle_single")
+eq(q and q.ruleset, "g3_single", "ruleset g3_single")
+eq(q and q.auto, true, "AUTO")
+eq(q and q.pin, nil, "no PIN")
+eq(q and q.profile and q.profile.rulesetId, "g3_single", "profile matches the ruleset")
+eq(q and q.avatar and q.avatar.name, "RED", "with the avatar")
+eq(q and q.preview and q.preview[1], 1, "and a party preview")
+check(shows(ascii("CableClub_Text_PleaseWaitBCancel")), "Please wait. B Button: Cancel")
+eq(Client.status, "idle", "queued players are invitable")
+eq(ctx.nativePoll(), false, "still waiting")
+local Direct = require("src.ui.game3.link_menu").Direct
+check(Direct.isOpen() and Direct.view == "wait", "the Direct Corner wait layer owns the input")
+input.pressed = { b = true }
+Direct.handleInput(input)
+eq(ctx.nativePoll(), true, "B resumes the script")
+input.pressed = {}
+check(not Direct.isOpen(), "the wait layer closed")
+eq(Client.count("leaveDirect"), 1, "and leaves the queue")
+eq(getVar(Link.VAR_RESULT), Link.LINKUP.FAILED, "LINKUP_FAILED goes back to the menu")
+check(not Message.isOpen(), "the wait box closed")
+
+print("[test] 9. Direct Corner LEAD hosts, pairs, and walks into the Trade Center")
+Space.mapId = CENTER_MAP
+session.map = CENTER_MAP
+Player.cellX, Player.cellY = 9, 1
+Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.TRADE)
+ctx.nativePoll, ctx.stateWait = nil, nil
+Natives.special(ctx, NativesLink.SPECIAL.TryBecomeLinkLeader, adapters)
+q = Client.last("queueDirect")[1]
+eq(q and q.activity, "trade", "queues trade")
+eq(q and q.auto, false, "LEAD hosts an open room")
+local room3 = FakeRelay.room({ seats = 2, intent = "trade" })
+local rs3 = room3:session(0)
+Client.bindRoom(room3, 0)
+eq(ctx.nativePoll(), true, "match_start resumes the script")
+eq(getVar(Link.VAR_RESULT), Link.LINKUP.SUCCESS, "LINKUP_SUCCESS")
+check(Link.link ~= nil and Link.link.seat == 0, "the link is attached at seat 0")
+eq(Link.link and Link.link.linkType, Game3Link.LINKTYPE.TRADE_SETUP, "as a trade link")
+check(type(ctx.stateWait) == "function", "the activity is armed for the script's waitstate")
+local first = ctx.stateWait
+ctx.stateWait = nil
+eq(first(), true, "the waitstate right after the special passes")
+check(type(ctx.stateWait) == "function", "and re-arms for EnterWirelessLinkRoom's waitstate")
+mapLoads = {}
+eq(ctx.stateWait(), true, "the final waitstate warps and finishes")
+eq(mapLoads[1] and mapLoads[1].map, "FR_TRADE_CENTER", "into the Trade Center")
+eq(mapLoads[1] and mapLoads[1].x, 5, "at x 5")
+eq(mapLoads[1] and mapLoads[1].y, 8, "at y 8")
+eq(getVar(Link.VAR_0x8004), Link.USING.TRADE_CENTER, "VAR_0x8004 = USING_TRADE_CENTER")
+eq(getVar(Link.VAR_CABLE_CLUB_STATE), Link.USING.TRADE_CENTER, "VAR_CABLE_CLUB_STATE too")
+eq(session.warpDestination and session.warpDestination.map, "FR_TRADE_CENTER",
+  "SetCableClubWarp ran at the door")
+Link.closeLink("done")
+eq(rs3.closeCalls, 1, "closing the link leaves the room")
+Link.reset()
+Client.bindRoom(nil, nil)
+
+print("[test] 10. SET PIN hosts a locked room")
+Union.direct = { mode = "pin", pin = "0420", auto = true }
+Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.DOUBLE_BATTLE)
+ctx.nativePoll, ctx.stateWait = nil, nil
+Natives.special(ctx, NativesLink.SPECIAL.TryBecomeLinkLeader, adapters)
+q = Client.last("queueDirect")[1]
+eq(q and q.activity, "battle_double", "battle_double")
+eq(q and q.pin, "0420", "with the PIN")
+eq(q and q.auto, true, "letting AUTO players in")
+eq(q and q.ruleset, "g3_double", "ruleset g3_double")
+eq(Union.direct.mode, nil, "the mode is consumed")
+input.pressed = { b = true }
+Direct.handleInput(input)
+ctx.nativePoll()
+input.pressed = {}
+Message.reset()
+
+print("[test] 11. a minigame leader accepts joiners and starts the group")
+local Lobby = require("src.ui.game3.minigames.common_lobby")
+Screen = Lobby
+Screen.reset()
+Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.BERRY_CRUSH)
+ctx.nativePoll, ctx.stateWait = nil, nil
+Natives.special(ctx, NativesLink.SPECIAL.TryBecomeLinkLeader, adapters)
+local og = Client.last("openGroup")
+eq(og and og[1], "minigame_crush", "openGroup minigame_crush")
+eq(og and og[2] and og[2].rulesetId, "g3_link", "with the g3_link profile")
+check(Screen.isOpen() and Screen.mode == "leader", "the leader list is up")
+eq(Lobby.group and Lobby.group.min, 2, "the lobby knows Berry Crush needs 2")
+eq(Lobby.group and Lobby.group.max, 5, "and takes up to 5")
+check(Lobby._onTick ~= nil, "the lobby ticks the flow while the VM is paused")
+Client._group = { leader = "0000beef", activity = "minigame_crush", min = 2, max = 5,
+  members = { { id = "0000beef", name = "RED", seat = 0, avatar = { name = "RED", trainerId = 0x1234, gender = 0 } },
+              { id = "aaaa0001", name = "BLUE", seat = 1, avatar = { name = "BLUE", trainerId = 0x2222, gender = 0 } } },
+  pending = { { id = "aaaa0003", name = "GOLD", avatar = { name = "GOLD" } } } }
+eq(ctx.nativePoll(), false, "waiting")
+check(not Screen.isOpen(), "the list steps aside for the request")
+check(Message.isOpen(), "a request prompt is up")
+tickMsg()
+ctx.nativePoll()
+local Choice = require("src.ui.game3.choice")
+check(Choice.isOpen(), "YES/NO")
+Choice.cursor = 1
+Choice.confirm()
+eq(Client.last("acceptGroup")[1], "aaaa0003", "the joiner is accepted")
+eq(Client.last("acceptGroup")[2], true, "YES")
+check(Screen.isOpen() and Screen.mode == "leader", "back on the list")
+Client._group.pending = {}
+Screen.update(1 / 60)
+eq(#Screen.players, 1, "the list shows the accepted member")
+check(Screen.confirm(), "START with enough members")
+eq(Client.count("startGroup"), 1, "startGroup sent")
+local room4 = FakeRelay.room({ seats = 2, intent = "minigame", names = { "RED", "BLUE" } })
+room4.players[1].id = "0000beef"
+room4.players[2].id = "aaaa0001"
+Client.bindRoom(room4, 0)
+eq(ctx.nativePoll(), true, "match_start resumes the script")
+eq(getVar(Link.VAR_RESULT), Link.LINKUP.SUCCESS, "LINKUP_SUCCESS")
+eq(Link.link, nil, "minigames do not attach a Game3Link")
+local arm = ctx.stateWait
+ctx.stateWait = nil
+check(type(arm) == "function", "MG.arm waits for the script's waitstate")
+eq(#mgCalls, 0, "not armed yet")
+eq(arm(), true, "the waitstate after the special arms it")
+eq(#mgCalls, 1, "MG.arm ran once")
+local spec = mgCalls[1] and mgCalls[1].spec or {}
+eq(spec.game, "crush", "Berry Crush")
+eq(spec.seat, 0, "seat 0")
+eq(spec.seats, 2, "two seats")
+eq(spec.seed, room4.seed, "the relay seed")
+eq(spec.partySlot, 1, "the chosen party slot")
+eq(spec.players and spec.players[2] and spec.players[2].trainerId, 0x2222,
+  "players carry trainer ids from the group avatars")
+eq(spec.session, room4:session(0), "and the room session")
+Client.bindRoom(nil, nil)
+Client._group = nil
+
+print("[test] 12. a minigame joiner picks a group, can back out, and cancel")
+Screen.reset()
+Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.POKEMON_JUMP)
+ctx.nativePoll = nil
+Client._groups = { { leader = "aaaa0001", name = "BLUE", avatar = { name = "BLUE" }, joined = 1, min = 2, max = 5 } }
+Natives.special(ctx, NativesLink.SPECIAL.TryJoinLinkGroup, adapters)
+local gl = Client.last("groupList")
+eq(gl and gl[1], "minigame_jump", "subscribes to minigame_jump groups")
+check(Screen.isOpen() and Screen.mode == "group", "the group list is up")
+eq(#Screen.players, 1, "listing BLUE's group")
+Screen.confirm()
+eq(Client.last("joinGroup")[1], "aaaa0001", "asks to join BLUE")
+check(shows(ascii("CableClub_Text_PleaseWaitBCancel")), "waits")
+input.pressed = { b = true }
+ctx.nativePoll()
+input.pressed = {}
+eq(Client.count("leaveGroup"), 1, "B withdraws the request")
+check(Screen.isOpen(), "back on the list")
+Screen.cancel()
+eq(ctx.nativePoll(), true, "cancel resumes the script")
+eq(getVar(Link.VAR_RESULT), Link.LINKUP.FAILED, "LINKUP_FAILED")
+eq(Client.last("groupList")[1], nil, "and unsubscribes")
+
+Link.reset()
+if failed == 0 then
+  print("[pass] relay union room")
+  os.exit(0)
+end
+print("[fail] relay union room: " .. failed)
+os.exit(1)
