@@ -30,6 +30,12 @@ if not romBundle then
   }
 end
 
+local fanfares = {}
+package.loaded["src.core.game3.audio"] = setmetatable({
+  playFanfare = function(id) fanfares[#fanfares + 1] = id return true end,
+  waitFanfare = function(cb) if cb then cb() end end,
+}, { __index = function() return function() end end })
+
 local Schema = require("src.core.game3.save_schema_firered")
 
 local session = Schema.newGame({ rngSeed = 0x1234 })
@@ -226,7 +232,7 @@ do
   local mystic = builtin("mystic_ticket")
   MysteryGift.receiveCard(session, mystic.card)
   local vm2, shown2 = runMan()
-  eq(shown2, 1, "a saved card opens the delivery message")
+  eq(shown2, 2, "a saved card opens the delivery message, then the obtained line")
   eq(Bag.get(session.bag, MysteryGift.ITEM_MYSTIC_TICKET), 1, "the opcode put the ticket in the bag")
   check(MysteryGift.getFlag(session, FLAG_ENABLE_SHIP_NAVEL_ROCK),
     "and set FLAG_ENABLE_SHIP_NAVEL_ROCK")
@@ -234,6 +240,55 @@ do
   check(not Flags.getFlag(session.store, vm2.ctx, FALL_THROUGH),
     "the card script jumped away instead of falling through")
   check(not vm2:isRunning(), "and the deliveryman script finished")
+end
+
+print("[test] 7. A shiny custom mon gift arrives shiny, with its fanfare")
+if not romBundle then
+  print("[skip] no FireRed cache for the species data")
+else
+  session.party = {}
+  session.bag = Bag.new()
+  MysteryGift.clear(session)
+  session.store.flags = {}
+  local otId = 0x12345678
+  local hi = 0xABCD
+  local lo = bit.bxor(bit.bxor(0x5678, 0x1234), hi)
+  local card = {}
+  for k, v in pairs(builtin("surf_pichu").card) do card[k] = v end
+  card.gift = { kind = "mon", species = 241, level = 20, personality = hi * 65536 + lo,
+    otName = "AURA", otId = otId }
+  check(MysteryGift.receiveCard(session, card), "the custom MILTANK card saves")
+  local shown = {}
+  local adapters = {
+    log = function() end,
+    playerName = "RED",
+    openMessageAsync = function(text, done)
+      shown[#shown + 1] = text
+      done()
+    end,
+  }
+  Gift.runWonderCardScript(newCtx(), adapters)
+  eq(Gift.lastDelivery, MysteryGift.DELIVER_GIVEN, "the deliveryman hands the MILTANK over")
+  local mon = session.party[#session.party]
+  eq(mon and mon.species, 241, "a MILTANK joined the party")
+  eq(mon and mon.otId, 0x5678, "its OT ID is the low half of the card's otId")
+  eq(mon and mon.otSecretId, 0x1234, "its secret ID is the high half")
+  local Pokemon = require("src.core.game3.pokemon")
+  check(mon and Pokemon.isShiny(mon), "and it is shiny")
+  eq(#shown, 2, "the card text is followed by an obtained line")
+  check(type(Gift.lastObtained) == "string" and Gift.lastObtained:find("obtained", 1, true) ~= nil,
+    "which says what was obtained")
+  -- pokefirered/include/constants/songs.h:264 MUS_LEVEL_UP
+  eq(fanfares[#fanfares], 257, "with the gift-mon fanfare")
+end
+
+print("[test] 8. A gift mon saved with the whole otId is split on load")
+do
+  local SaveMon = require("src.core.game3.save_mon")
+  local mon = { otId = 0x12345678, otSecretId = 999 }
+  SaveMon.normalize(mon)
+  eq(mon.otId, 0x5678, "the OT ID keeps the low half")
+  eq(mon.otSecretId, 0x1234, "the secret ID takes the high half")
 end
 
 if failed == 0 then

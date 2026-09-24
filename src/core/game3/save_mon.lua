@@ -35,6 +35,12 @@ end
 
 function M.normalize(mon)
   if type(mon) ~= "table" then return mon end
+  local otId = tonumber(mon.otId)
+  if otId and otId >= 65536 then
+    -- pokefirered/src/pokemon.c:6062 IsShinyOtIdPersonality
+    mon.otSecretId = math.floor(otId / 65536) % 65536
+    mon.otId = otId % 65536
+  end
   local species = Pokemon.speciesOf(mon)
   if not species and tonumber(mon.speciesId) then
     species = Pokemon.speciesOf({ species = mon.speciesId, speciesNumbering = mon.speciesNumbering })

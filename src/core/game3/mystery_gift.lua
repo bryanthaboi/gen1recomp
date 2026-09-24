@@ -894,7 +894,11 @@ local function createEventMon(session, gift)
     mon.ot = gift.otName
     mon.otName = gift.otName
   end
-  if gift.otId then mon.otId = num(gift.otId) end
+  if gift.otId then
+    -- pokefirered/src/pokemon.c:6062 IsShinyOtIdPersonality
+    mon.otId = num(gift.otId) % 65536
+    mon.otSecretId = math.floor(num(gift.otId) / 65536) % 65536
+  end
   if gift.heldItem and num(gift.heldItem) > 0 then
     mon.item, mon.heldItem = num(gift.heldItem), num(gift.heldItem)
   end

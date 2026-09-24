@@ -78,6 +78,34 @@ local function textBox(ascii, adapters)
 end
 Gift.textBox = textBox
 
+-- pokefirered/include/constants/songs.h:264
+local MUS_LEVEL_UP = 257
+local MUS_OBTAIN_ITEM = 258
+local MUS_OBTAIN_KEY_ITEM = 318
+
+function Gift.obtainedLine(session, code)
+  if code ~= MysteryGift.DELIVER_GIVEN then return nil end
+  local card = MysteryGift.getSavedCard(session)
+  local gift = card and card.gift or {}
+  local Strings = require("src.core.Strings")
+  local player = type(session) == "table" and (session.name or session.playerName) or ""
+  if gift.kind == "mon" then
+    local Pokemon = require("src.core.game3.pokemon")
+    local ok, name = pcall(Pokemon.name, tonumber(gift.species))
+    -- pokefirered/data/maps/CeladonCity_Condominiums_RoofRoom/scripts.inc:21
+    return Strings("%s obtained %s!", player, ok and name or ""), MUS_LEVEL_UP
+  elseif gift.kind == "egg" then
+    -- pokefirered/data/mystery_event_msg.s:55
+    return Strings("%s received an EGG!", player), MUS_OBTAIN_ITEM
+  elseif gift.kind == "item" then
+    local Items = require("src.core.game3.items_data")
+    local id = tonumber(gift.item)
+    local key = Items.pocketOf(id) == "KEY_ITEMS"
+    return Strings("%s obtained the %s!", player, Items.displayName(id)), key and MUS_OBTAIN_KEY_ITEM or MUS_OBTAIN_ITEM
+  end
+  return nil
+end
+
 -- pokefirered/src/scrcmd.c:275 ScrCmd_trywondercardscript
 function Gift.runWonderCardScript(ctx, adapters)
   local session = sessionOf()
@@ -85,17 +113,30 @@ function Gift.runWonderCardScript(ctx, adapters)
   local code = MysteryGift.deliverGift(session)
   Gift.lastDelivery = code
   local text = textBox(Gift.deliveryText(session, code), adapters)
+  local line, song = Gift.obtainedLine(session, code)
+  Gift.lastObtained = line
   if not (adapters and (adapters.openMessageAsync or adapters.openMessage)) then
     return false, true
   end
   local Natives = require("src.core.game3.scripting.natives")
-  local yield = Natives.yieldHost(ctx, adapters, function(done)
+  local function show(msg, after)
     if adapters.openMessageAsync then
-      adapters.openMessageAsync(text, done)
+      adapters.openMessageAsync(msg, after)
     else
-      adapters.openMessage(text)
-      done()
+      adapters.openMessage(msg)
+      after()
     end
+  end
+  local yield = Natives.yieldHost(ctx, adapters, function(done)
+    show(text, function()
+      if not line then return done() end
+      local Audio = require("src.core.game3.audio")
+      Audio.playFanfare(song)
+      show(textBox(line, adapters), function()
+        if adapters.waitFanfare then return adapters.waitFanfare(done) end
+        Audio.waitFanfare(done)
+      end)
+    end)
   end)
   return yield, true
 end
