@@ -5,7 +5,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
-local Xbrz = require("src.render.Xbrz")
+local PixelFilter = require("src.render.PixelFilter")
 local Performance = require("src.core.Performance")
 
 T.eq(require("src.core.SaveData").newGame().options.pixelFilter, "off",
@@ -15,70 +15,88 @@ T.eq(require("src.core.gen2.Save").DEFAULT_OPTIONS.pixelFilter, "off",
 
 -- ------------------------------------------------------------ the ladder
 
-T.eq(Xbrz.normalize(nil), "off", "no stored value is OFF")
-T.eq(Xbrz.normalize("nonsense"), "off", "and so is a value we cannot read")
-T.eq(Xbrz.cycle("off", 1), "xbrz", "right steps onto XBRZ")
-T.eq(Xbrz.cycle("xbrz", 1), "off", "and wraps at the end")
-T.eq(Xbrz.cycle("off", -1), "xbrz", "left wraps back")
-for _, id in ipairs(Xbrz.MODES) do
-  T.check(Xbrz.label(id) ~= nil, id .. " has a label")
+T.eq(PixelFilter.normalize(nil), "off", "no stored value is OFF")
+T.eq(PixelFilter.normalize("nonsense"), "off", "and so is a value we cannot read")
+T.eq(PixelFilter.cycle("off", 1), "xbrz", "right steps onto XBRZ")
+T.eq(PixelFilter.cycle("xbrz", 1), "off", "and wraps at the end")
+T.eq(PixelFilter.cycle("off", -1), "xbrz", "left wraps back")
+for _, id in ipairs(PixelFilter.MODES) do
+  T.check(PixelFilter.label(id) ~= nil, id .. " has a label")
 end
 
-Xbrz.applyOptions({ pixelFilter = "xbrz" })
-T.eq(Xbrz.mode, "xbrz", "applyOptions installs the saved mode")
-Xbrz.applyOptions({})
-T.eq(Xbrz.mode, "off", "and an options table without one is OFF")
+-- Every registered filter keeps the pass contract src/render/PixelFilter.lua
+-- documents: named source passes, then exactly one output pass, last.
+for i = 2, #PixelFilter.MODES do
+  local id = PixelFilter.MODES[i]
+  local def = require("src.render.pixel_filters." .. id)
+  T.eq(def.id, id, id .. " is registered under its own id")
+  local passes = def.passes or {}
+  T.check(#passes > 0 and passes[#passes].scope == "output",
+    id .. " ends on its output pass")
+  for p = 1, #passes - 1 do
+    T.check(passes[p].scope == "source" and type(passes[p].name) == "string",
+      id .. " pass " .. p .. " is a named source pass")
+  end
+  for p = 1, #passes do
+    T.check(type(passes[p].source) == "string", id .. " pass " .. p .. " has GLSL")
+  end
+end
+
+PixelFilter.applyOptions({ pixelFilter = "xbrz" })
+T.eq(PixelFilter.mode, "xbrz", "applyOptions installs the saved mode")
+PixelFilter.applyOptions({})
+T.eq(PixelFilter.mode, "off", "and an options table without one is OFF")
 
 -- ------------------------------------------------------------ gating
 
-T.check(not Xbrz.active(), "OFF is never active")
-T.eq(Performance.CAPS.high.xbrz, true, "HIGH allows it")
-T.eq(Performance.CAPS.balanced.xbrz, true, "so does BALANCED")
-T.eq(Performance.CAPS.low.xbrz, false, "LOW holds it off")
+T.check(not PixelFilter.active(), "OFF is never active")
+T.eq(Performance.CAPS.high.pixelFilter, true, "HIGH allows it")
+T.eq(Performance.CAPS.balanced.pixelFilter, true, "so does BALANCED")
+T.eq(Performance.CAPS.low.pixelFilter, false, "LOW holds it off")
 
 -- A stand-in newShader, so active() can get past the shader build headless.
 local realLove = _G.love
 _G.love = { graphics = { newShader = function() return {} end } }
-package.loaded["src.render.Xbrz"] = nil
-Xbrz = require("src.render.Xbrz")
+package.loaded["src.render.PixelFilter"] = nil
+PixelFilter = require("src.render.PixelFilter")
 local tier = Performance.tier
-Xbrz.setMode("xbrz")
+PixelFilter.setMode("xbrz")
 Performance.tier = "high"
-T.check(Xbrz.active(), "XBRZ on a HIGH tier is active")
+T.check(PixelFilter.active(), "XBRZ on a HIGH tier is active")
 Performance.tier = "low"
-T.check(not Xbrz.active(), "LOW clamps it without touching the choice")
-T.eq(Xbrz.mode, "xbrz", "the stored choice survives the clamp")
+T.check(not PixelFilter.active(), "LOW clamps it without touching the choice")
+T.eq(PixelFilter.mode, "xbrz", "the stored choice survives the clamp")
 Performance.tier = tier
-Xbrz.setMode("off")
+PixelFilter.setMode("off")
 
 -- A driver that refuses the shader degrades to the plain blit, once.
 _G.love = { graphics = { newShader = function() error("no glsl") end } }
-package.loaded["src.render.Xbrz"] = nil
-Xbrz = require("src.render.Xbrz")
-Xbrz.setMode("xbrz")
-T.check(not Xbrz.active(), "a shader the driver rejects reports inactive")
-Xbrz.setMode("off")
+package.loaded["src.render.PixelFilter"] = nil
+PixelFilter = require("src.render.PixelFilter")
+PixelFilter.setMode("xbrz")
+T.check(not PixelFilter.active(), "a shader the driver rejects reports inactive")
+PixelFilter.setMode("off")
 _G.love = realLove
-package.loaded["src.render.Xbrz"] = nil
-Xbrz = require("src.render.Xbrz")
+package.loaded["src.render.PixelFilter"] = nil
+PixelFilter = require("src.render.PixelFilter")
 
 -- ------------------------------------------------------------ the grid
 
 -- 160 source pixels at 7x from x = 100: exactly the span, no overhang.
-local gx, n = Xbrz._gridSpan(100, 1120, 100, 7)
+local gx, n = PixelFilter._gridSpan(100, 1120, 100, 7)
 T.eq(gx, 100, "an aligned rect starts on its own origin")
 T.eq(n, 160, "and covers exactly its pixels")
 
 -- The whole 1920 window around that letterbox: the grid reaches back past 0
 -- and on past the right edge, a whole pixel at a time.
-gx, n = Xbrz._gridSpan(0, 1920, 100, 7)
+gx, n = PixelFilter._gridSpan(0, 1920, 100, 7)
 T.eq(gx, 100 - 15 * 7, "the window's grid starts a whole pixel left of 0")
 T.check(gx <= 0 and gx > -7, "and within one pixel of it")
 T.check(gx + n * 7 >= 1920, "the grid reaches the right edge")
 T.check(gx + (n - 1) * 7 < 1920, "without a spare column")
 
 -- BATTLE SIZE "fill" scales fractionally; the grid still lands on it.
-gx, n = Xbrz._gridSpan(0, 1000, 12.5, 6.25)
+gx, n = PixelFilter._gridSpan(0, 1000, 12.5, 6.25)
 T.eq(gx, 12.5 - 2 * 6.25, "a fractional scale steps whole source pixels")
 T.check(gx + n * 6.25 >= 1000, "and still covers the window")
 

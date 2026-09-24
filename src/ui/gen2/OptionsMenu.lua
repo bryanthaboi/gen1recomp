@@ -312,16 +312,16 @@ local ROWS = {
       local Letterbox = require("src.render.Letterbox")
       return Strings(Letterbox.label(options.uiLetterbox))
     end },
-  -- xBRZ upscaling of the finished frame; see src/ui/OptionsMenu.lua's row.
+  -- Upscaling of the finished frame; see src/ui/OptionsMenu.lua's row.
   { id = "pixelFilter", label = Strings.source("PIXEL FILTER"), port = true,
     cycle = function(options, delta)
-      local Xbrz = require("src.render.Xbrz")
-      options.pixelFilter = Xbrz.cycle(options.pixelFilter, delta)
-      Xbrz.setMode(options.pixelFilter)
+      local PixelFilter = require("src.render.PixelFilter")
+      options.pixelFilter = PixelFilter.cycle(options.pixelFilter, delta)
+      PixelFilter.setMode(options.pixelFilter)
     end,
     text = function(options)
-      local Xbrz = require("src.render.Xbrz")
-      return Strings(Xbrz.label(options.pixelFilter))
+      local PixelFilter = require("src.render.PixelFilter")
+      return Strings(PixelFilter.label(options.pixelFilter))
     end },
   { id = "shaderfx", label = Strings.source("SHADER FX"), port = true,
     text = function(options)

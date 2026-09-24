@@ -316,7 +316,7 @@ function SaveData.defaultOptions()
     -- OVERWORLD beyond-edge fill: trees | water | black
     voidFill = "trees",
     uiLetterbox = "auto",
-    -- PIXEL FILTER: off | xbrz (src/render/Xbrz.lua)
+    -- PIXEL FILTER: off | xbrz (src/render/PixelFilter.lua)
     pixelFilter = "off",
     -- windowed | borderless (desktop fullscreen); ignored on mobile
     videoMode = "windowed",

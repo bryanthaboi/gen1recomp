@@ -171,13 +171,13 @@ function Rows.build(ctx)
   add({
     id = "pixelFilter", label = Strings("PIXEL FILTER"),
     value = function(c)
-      local Xbrz = require("src.render.Xbrz")
-      return Strings(Xbrz.label(c.options.pixelFilter))
+      local PixelFilter = require("src.render.PixelFilter")
+      return Strings(PixelFilter.label(c.options.pixelFilter))
     end,
     step = function(c, dir)
-      local Xbrz = require("src.render.Xbrz")
-      c.options.pixelFilter = Xbrz.cycle(c.options.pixelFilter, dir)
-      Xbrz.setMode(c.options.pixelFilter)
+      local PixelFilter = require("src.render.PixelFilter")
+      c.options.pixelFilter = PixelFilter.cycle(c.options.pixelFilter, dir)
+      PixelFilter.setMode(c.options.pixelFilter)
       return true
     end,
   })

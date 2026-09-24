@@ -1569,10 +1569,10 @@ function Game2:drawViewportFrame()
   local Pipelines = require("src.render.Pipelines")
   -- Same dispatch src/render/Renderer.lua:1185 already uses for Gen 1
   -- (ShaderFX replaced GBCFX's slot; GBCFX.lua itself is removed).  PIXEL
-  -- FILTER's xBRZ takes the same render() call and stands in when no preset
+  -- FILTER takes the same render() call and stands in when no preset
   -- is set, so everything below that asks "is a final filter on" means both.
-  local Xbrz = require("src.render.Xbrz")
-  local fx = (ShaderFX.active() and ShaderFX) or (Xbrz.active() and Xbrz) or nil
+  local PixelFilter = require("src.render.PixelFilter")
+  local fx = (ShaderFX.active() and ShaderFX) or (PixelFilter.active() and PixelFilter) or nil
   local shaderfx = fx ~= nil
 
   -- render.zones, at the instant Gen 1 raises it: the palette list is settled
@@ -2350,7 +2350,7 @@ function Game2:applyOptions()
   if not caps.survey and Zoom.offset < 0 then Zoom.offset = 0 end
   require("src.render.Tilt").applyOptions(options)
   require("src.render.Letterbox").applyOptions(options)
-  require("src.render.Xbrz").applyOptions(options)
+  require("src.render.PixelFilter").applyOptions(options)
   require("src.render.GbcPalette").applyOptions(options)
   -- engine/gfx/load_font.asm:29 LoadFrame, off options.lua's wTextboxFrame.
   Font.setFrame(options.frame or 1)

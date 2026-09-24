@@ -885,10 +885,10 @@ function Renderer:endFrame(zones, worldZones)
   local uvpw, uvph, uox, uoy = R.uvpw, R.uvph, R.uox, R.uoy
   local Up = R.Up
   local ShaderFX = require("src.render.ShaderFX")
-  -- The final-frame filter: a SHADER FX preset, else PIXEL FILTER's xBRZ.
+  -- The final-frame filter: a SHADER FX preset, else PIXEL FILTER.
   -- Both take the same render() call, so the present below needs no fork.
-  local Xbrz = require("src.render.Xbrz")
-  local fx = (ShaderFX.active() and ShaderFX) or (Xbrz.active() and Xbrz) or nil
+  local PixelFilter = require("src.render.PixelFilter")
+  local fx = (ShaderFX.active() and ShaderFX) or (PixelFilter.active() and PixelFilter) or nil
   -- Forced mono/Classic modes still need a whole-screen zone when a state
   -- exposes no SGB packets (raw DMG canvas), so sendColors can remap.
   zones = PaletteFX.ensureZones(zones)
@@ -1092,11 +1092,11 @@ function Renderer:endFrame(zones, worldZones)
     local woxPx = vx + math.floor((pw - wvw * sp) / 2)
     local woyPx = vy + math.floor((ph - wvh * sp) / 2) - R.lift
     local wox, woy = woxPx / dpiX, woyPx / dpiY
-    -- xBRZ reads the frame back down to ONE pixel grid, so a world whose
+    -- PIXEL FILTER reads the frame back down to ONE pixel grid, so a world whose
     -- pixels sit off the UI's grid (a padded world canvas centres on its own
     -- origin) is split off even at the same scale, as Game2:fxSplitsUi does.
     local offGrid = false
-    if fx == Xbrz and sp == Up then
+    if fx == PixelFilter and sp == Up then
       local uoxPx = vx + math.floor((pw - uiw * Up) / 2)
       local uoyPx = vy + math.max(0, math.floor((ph - uih * Up) / 2) - R.lift)
       offGrid = (woxPx - uoxPx) % sp ~= 0 or (woyPx - uoyPx) % sp ~= 0

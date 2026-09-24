@@ -17,7 +17,7 @@ local Tilt = require("src.render.Tilt")
 local ShaderFX = require("src.render.ShaderFX")
 local Zoom = require("src.render.Zoom")
 local Letterbox = require("src.render.Letterbox")
-local Xbrz = require("src.render.Xbrz")
+local PixelFilter = require("src.render.PixelFilter")
 local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
@@ -391,17 +391,17 @@ local function buildRows(game)
         Letterbox.setMode(o.uiLetterbox)
         return true
       end },
-    -- xBRZ upscaling of the finished frame (src/render/Xbrz.lua).  A SHADER
+    -- Upscaling of the finished frame (src/render/PixelFilter.lua).  A SHADER
     -- FX preset takes precedence while one is set, and the LOW performance
     -- tier holds it off without rewriting the choice.
     { id = "pixelFilter", label = Strings("PIXEL FILTER"),
       value = function(g)
-        return Strings(Xbrz.label(g.save.options.pixelFilter))
+        return Strings(PixelFilter.label(g.save.options.pixelFilter))
       end,
       step = function(g, dir)
         local o = g.save.options
-        o.pixelFilter = Xbrz.cycle(o.pixelFilter, dir)
-        Xbrz.setMode(o.pixelFilter)
+        o.pixelFilter = PixelFilter.cycle(o.pixelFilter, dir)
+        PixelFilter.setMode(o.pixelFilter)
         return true
       end },
     { id = "shaderfx", label = Strings("SHADER FX"),
