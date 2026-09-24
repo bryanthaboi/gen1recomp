@@ -545,8 +545,8 @@ jobs:
           retention-days: 7
 
   desktop:
-    name: build macOS + Windows + Linux
-    needs: [version, love-payload, native-tls-win, shaderfx-bridge]
+    name: build macOS + Linux
+    needs: [version, love-payload, shaderfx-bridge]
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     concurrency:
       group: mac-signing-keychain
@@ -560,12 +560,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Download Windows gen1tls dialer
-        uses: actions/download-artifact@v8
-        with:
-          name: gen1tls-win-x64
-          path: dist/native/win-x64
 
       - name: Download ShaderFX bridge libraries
         uses: actions/download-artifact@v8
@@ -603,26 +597,15 @@ jobs:
         if: github.repository == 'bryanthaboi/gen1recomp'
         uses: ./.github/actions/mac-signing-keychain
 
-      - name: Build macOS + Windows + Linux
+      - name: Build macOS + Linux
         env:
-          GEN1TLS_DLL: ${{ github.workspace }}/dist/native/win-x64/gen1tls.dll
           SHADERFX_BRIDGE_REQUIRED: "1"
         run: |
           set -euo pipefail
-          # Sign in-build (identity auto-detected from the temp keychain);
-          # notarize separately below so it uses secret credentials, not a
-          # login-keychain profile. "all" also builds the Linux AppImage,
-          # which needs no signing/notarization.
-          if [ ! -f "$GEN1TLS_DLL" ]; then
-            echo "::error::gen1tls.dll missing at $GEN1TLS_DLL (native-tls-win job)"
-            exit 1
-          fi
-          scripts/build.sh all --version "${{ needs.version.outputs.version }}" --no-notarize \
+          scripts/build.sh mac --version "${{ needs.version.outputs.version }}" --no-notarize \
             --game-love dist/payload/game.love
-          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll \
-            || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
-          unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll \
-            || { echo "::error::Windows zip is missing librashader_bridge.dll"; exit 1; }
+          scripts/build.sh linux --version "${{ needs.version.outputs.version }}" \
+            --game-love dist/payload/game.love
 
       - name: Notarize & staple macOS app
         if: github.repository == 'bryanthaboi/gen1recomp'
@@ -665,7 +648,6 @@ jobs:
           name: gen1recomp-desktop-release
           path: |
             dist/mac/gen1recomp-macos.zip
-            dist/win/gen1recomp-win64.zip
             dist/linux/gen1recomp-linux-x86_64.AppImage
           if-no-files-found: error
           retention-days: 7
@@ -673,6 +655,70 @@ jobs:
       - name: Clean up signing keychain
         if: ${{ always() && github.repository == 'bryanthaboi/gen1recomp' }}
         run: security delete-keychain "$RUNNER_TEMP/pokemon-signing.keychain-db" 2>/dev/null || true
+
+  windows:
+    name: build Windows
+    needs: [version, love-payload, native-tls-win, shaderfx-bridge]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download Windows gen1tls dialer
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1tls-win-x64
+          path: dist/native/win-x64
+
+      - name: Download the Windows ShaderFX bridge
+        uses: actions/download-artifact@v8
+        with:
+          name: shaderfx-bridge-win-x64
+          path: dist/native/win-x64
+
+      - name: Download shared payload
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-love
+          path: dist/payload
+
+      - name: Install icon tools
+        run: |
+          set -euo pipefail
+          command -v convert >/dev/null 2>&1 || { sudo apt-get update; sudo apt-get install -y imagemagick; }
+          if ! command -v magick >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/bin"
+            printf '#!/bin/sh\nexec convert "$@"\n' > "$RUNNER_TEMP/bin/magick"
+            chmod +x "$RUNNER_TEMP/bin/magick"
+            echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          fi
+          pipx install pe_tools
+
+      - name: Build Windows
+        env:
+          GEN1TLS_DLL: ${{ github.workspace }}/dist/native/win-x64/gen1tls.dll
+          SHADERFX_BRIDGE_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          if [ ! -f "$GEN1TLS_DLL" ]; then
+            echo "::error::gen1tls.dll missing at $GEN1TLS_DLL (native-tls-win job)"
+            exit 1
+          fi
+          command -v peresed >/dev/null || { echo "::error::peresed missing, the exe would ship with the stock LÖVE icon"; exit 1; }
+          scripts/build.sh win --version "${{ needs.version.outputs.version }}" \
+            --game-love dist/payload/game.love
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F gen1tls.dll \
+            || { echo "::error::Windows zip is missing gen1tls.dll"; exit 1; }
+          unzip -l dist/win/gen1recomp-win64.zip | grep -F librashader_bridge.dll \
+            || { echo "::error::Windows zip is missing librashader_bridge.dll"; exit 1; }
+
+      - name: Upload gen1recomp-windows-release
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp-windows-release
+          path: dist/win/gen1recomp-win64.zip
+          if-no-files-found: error
+          retention-days: 7
 
   android:
     name: build Android
@@ -1045,15 +1091,15 @@ jobs:
 
   sign-windows:
     name: sign Windows build (SignPath)
-    needs: [version, desktop]
+    needs: [version, windows]
     if: github.repository == 'bryanthaboi/gen1recomp'
     runs-on: ubuntu-latest
     steps:
-      - name: Download desktop builds
+      - name: Download the Windows build
         uses: actions/download-artifact@v8
         with:
-          name: gen1recomp-desktop-release
-          path: dist
+          name: gen1recomp-windows-release
+          path: dist/win
 
       - name: Unpack the Windows zip
         run: |
@@ -1101,7 +1147,7 @@ jobs:
           retention-days: 7
 
   release:
-    needs: [version, notes, love-payload, xbox-uwp, linux-arm64, linux-flatpak, desktop, sign-windows, android, ios, switch, rg34xxsp, linux-arm-sbc]
+    needs: [version, notes, love-payload, xbox-uwp, linux-arm64, linux-flatpak, desktop, windows, sign-windows, android, ios, switch, rg34xxsp, linux-arm-sbc]
     if: github.repository == 'bryanthaboi/gen1recomp'
     runs-on: ubuntu-latest
     steps:

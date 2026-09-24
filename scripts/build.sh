@@ -386,11 +386,11 @@ PY
     if peresed "${args[@]}" "$exe_branded" >/dev/null; then
       cat "$exe_branded" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
     else
-      warn "peresed failed to patch the exe icon,  shipping stock LÖVE icon"
+      warn "peresed failed to patch the exe icon, shipping stock LÖVE icon"
       cat "$love_dir/love.exe" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
     fi
   else
-    warn "peresed not found (pipx install pe_tools),  shipping stock LÖVE exe icon"
+    warn "peresed not found (pipx install pe_tools), shipping stock LÖVE exe icon"
     cat "$love_dir/love.exe" "$LOVE_FILE" > "$out_dir/$APP_NAME.exe"
   fi
 
