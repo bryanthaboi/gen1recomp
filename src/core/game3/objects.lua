@@ -171,6 +171,7 @@ local function newEventObject(def, neighbor)
     sprite = sprite or "SPRITE_YOUNGSTER",
     graphicsId = resolvedGfx,
     elevation = elev,
+    currentElevation = tonumber(def.elevation) or 0,
     movementType = mt,
     movement = spec.movement,
     range = spec.range,
@@ -586,13 +587,20 @@ function Objects.at(tx, ty)
   return nil
 end
 
+-- pokefirered/src/event_object_movement.c:8432 AreElevationsCompatible
+function Objects.elevationsCompatible(a, b)
+  a, b = tonumber(a) or 0, tonumber(b) or 0
+  return a == 0 or b == 0 or a == b
+end
+
 --- True if any non-passable EO occupies (tx,ty) or is stepping onto it.
-function Objects.blocks(tx, ty, exceptLocalId)
+function Objects.blocks(tx, ty, exceptLocalId, elevation)
   exceptLocalId = tonumber(exceptLocalId)
   for _, lid in ipairs(Objects._order) do
     if lid ~= exceptLocalId then
       local eo = Objects._byId[lid]
-      if eo and eo.visible and not eo.hidden and not eo.passable then
+      if eo and eo.visible and not eo.hidden and not eo.passable
+          and Objects.elevationsCompatible(elevation, eo.currentElevation) then
         if eo.cellX == tx and eo.cellY == ty then return true end
         if eo.moving and eo.targetX == tx and eo.targetY == ty then
           return true
@@ -610,9 +618,10 @@ function Objects.blocks(tx, ty, exceptLocalId)
 end
 
 -- pokefirered/src/event_object_movement.c:4899
-function Objects.playerBlocks(tx, ty)
+function Objects.playerBlocks(tx, ty, elevation)
   local P = Player()
   if not P then return false end
+  if not Objects.elevationsCompatible(elevation, P.currentElevation) then return false end
   if P.cellX == tx and P.cellY == ty then return true end
   if P.moving and P.targetX == tx and P.targetY == ty then return true end
   return false
@@ -632,11 +641,23 @@ function Objects.walkPhase(eo)
   return walkPhaseOf(eo)
 end
 
+-- pokefirered/src/event_object_movement.c:8400
+function Objects.updateElevation(eo)
+  local Coll = Collision()
+  if not (eo and Coll and Coll.nextElevation) then return end
+  local mapDef = eo.mapDef or Coll._mapDef
+  local cx, cy = eo.cellX, eo.cellY
+  if eo.moving then cx, cy = eo.targetX, eo.targetY end
+  eo.currentElevation = Coll.nextElevation(mapDef, eo.currentElevation or 0,
+    cx, cy, eo.cellX, eo.cellY)
+end
+
 local function beginStep(eo, tx, ty)
   eo.moving = true
   eo.progress = 0
   eo.targetX = tx
   eo.targetY = ty
+  Objects.updateElevation(eo)
   eo.stepFrames = WALK_FRAMES
   eo.animClock = 0
 end
@@ -696,6 +717,7 @@ local function stepOffset(frames, progress, cells)
 end
 
 local function tickMotion(eo, game)
+  Objects.updateElevation(eo)
   if not eo.moving then return false end
   eo.progress = eo.progress + 1
   eo.animClock = eo.animClock + 1
@@ -1039,15 +1061,21 @@ local function stepCollision(eo, game, ctx, dir)
         eo.mapDef, eo.cellX, eo.cellY, tx, ty, dir) then
       ok = false
     end
+    -- pokefirered/src/event_object_movement.c:4839
+    if ok and eo.mapDef and Coll.elevationMismatchOn(eo.mapDef, eo.currentElevation, tx, ty) then
+      ok = false
+    end
   else
     local Coll = Collision()
     -- pokefirered/src/event_object_movement.c:8346 IsElevationMismatchAt
     local onWater = Coll.isWater(eo.cellX, eo.cellY)
     ok = Coll.canEnter(game, tx, ty,
-      { fromX = eo.cellX, fromY = eo.cellY, dir = dir, surfing = onWater })
+      { fromX = eo.cellX, fromY = eo.cellY, dir = dir, surfing = onWater,
+        elevation = eo.currentElevation })
     if ok and Coll.isWater(tx, ty) ~= onWater then ok = false end
-    if Objects.playerBlocks(tx, ty) then ok = false end
-    if Objects.blocks(tx, ty, eo.localId) then ok = false end
+    -- pokefirered/src/event_object_movement.c:4841 DoesObjectCollideWithObjectAt
+    if Objects.playerBlocks(tx, ty, eo.currentElevation) then ok = false end
+    if Objects.blocks(tx, ty, eo.localId, eo.currentElevation) then ok = false end
   end
   if not ok then return "blocked" end
   return nil

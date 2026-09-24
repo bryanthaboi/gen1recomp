@@ -7,16 +7,15 @@
 return function(game)
   local U = dofile("tests/drivers/util.lua")
 
-  -- pokered data/maps/objects/ViridianForest.asm: YOUNGSTER2 (the first
-  -- Bug Catcher) stands at (30, 33) facing LEFT, so his sight line runs
-  -- west; the cell below him, (30, 34), is outside it and lets us talk
-  -- our way into the battle instead of being spotted.
+  -- data/maps/objects/ViridianForest.asm:32
   local MAP = "VIRIDIAN_FOREST"
   local TRAINER = "VIRIDIANFOREST_YOUNGSTER2"
-  local STAND = { x = 30, y = 34, facing = "up" }
+  local STAND = { x = 30, y = 32, facing = "down" }
 
+  local failed = false
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then failed = true end
     return ok
   end
 
@@ -30,12 +29,15 @@ return function(game)
     return realPlay(data, song, ...)
   end
 
-  U.newGame(game)
+  check("new game reached the overworld", U.newGame(game))
   check("music volume is audible (save.options.musicVol)",
         (game.save.options.musicVol or 0) > 0)
 
+  local Pokemon = require("src.pokemon.Pokemon")
+  game.save.party = { Pokemon.new(game.data, "PIKACHU", 30, function(_, b) return b end) }
+
   U.teleport(game, MAP, STAND.x, STAND.y, STAND.facing)
-  U.wait(30)
+  U.wait(90)
 
   local ow = game.overworld
   local npc
@@ -43,25 +45,23 @@ return function(game)
     if n.def and n.def.name == TRAINER then npc = n end
   end
   check("Bug Catcher object loaded on " .. MAP, npc ~= nil)
+  check(string.format("teleport kept the stand cell (%d,%d)", STAND.x, STAND.y),
+        ow.player.cellX == STAND.x and ow.player.cellY == STAND.y)
   if npc then
     check("standing on his blind side, facing him",
           ow:npcAtCell(ow.player:facingCell()) == npc)
     check("he did not spot us on the way in", not ow.engaging)
   end
 
-  -- talk; the sting must start only once the before-battle text closes
-  -- (TalkToTrainer prints first, then engages)
+  -- home/trainers.asm:109
   played = {}
   U.tap(game, "a")
   U.wait(30)
   check("no sting while the dialogue is up", #played == 0)
-  local SHOT_DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
-  U.shot(game, SHOT_DIR .. "/bug764_dialogue.png")
+  local SHOT_DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR") or "/tmp/shots"
+  U.shot(game, SHOT_DIR .. "/764_bugcatcher_talk_dialogue.png")
 
-  -- close the text; a Bug Catcher is neither female-list nor evil-list,
-  -- so PlayTrainerMusic lands on the male sting.  A presses both finish
-  -- the typewriter and turn pages, so keep tapping until the sting lands
-  -- or the drain gives up.
+  -- home/trainers.asm:123
   local sting
   for _ = 1, 8 do
     U.tap(game, "a")
@@ -71,19 +71,24 @@ return function(game)
     end
     if sting then break end
   end
-  check("closing the text started an encounter sting", sting ~= nil)
+  check("the last page started an encounter sting", sting ~= nil)
   check("it is the male trainer sting", sting == "Music_MeetMaleTrainer")
-  U.shot(game, SHOT_DIR .. "/bug764_transition.png")
+  U.still(game, SHOT_DIR .. "/764_bugcatcher_sting_last_page.png")
   U.log("songs started since the A press:", table.concat(played, ", "))
 
-  U.log("The Bug Catcher's line has just closed and the battle is opening.")
-  U.log("You should have heard the male trainer sting begin the moment the")
-  U.log("text box shut, carrying over the battle transition.  Before #764")
-  U.log("the forest theme played straight through into the fight.  To hear")
-  U.log("the sight path for comparison, lose or run, step west across his")
-  U.log("eyeline, and the same sting should fire once at the \"!\" bubble.")
-
-  while true do
-    coroutine.yield()
+  -- home/text_script.asm:93
+  U.tap(game, "a")
+  local left = false
+  for _ = 1, 300 do
+    U.wait(1)
+    if game.stack:top() ~= ow then left = true break end
   end
+  check("A on the last page opens the battle", left)
+
+  U.log("The male trainer sting should begin as the Bug Catcher's last page")
+  U.log("(\"Let's battle 'em!\") lands, before A is pressed, and carry into")
+  U.log("the battle transition.  Before #764 the forest theme played straight")
+  U.log("through into the fight.")
+
+  love.event.quit(failed and 1 or 0)
 end

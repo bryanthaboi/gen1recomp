@@ -302,14 +302,24 @@ local function egg_origin_index(mon, heldByOt)
   return idx
 end
 
+function SummaryData.eggCycles(mon)
+  return tonumber(mon and (mon.eggCycles or mon.friendship)) or 40
+end
+
 -- src/pokemon_summary_screen.c:2483
 local function egg_hatch_index(mon)
   if mon.isBadEgg then return 0 end
-  local cycles = tonumber(mon.eggCycles or mon.friendship) or 40
+  local cycles = SummaryData.eggCycles(mon)
   if cycles <= 5 then return 3 end
   if cycles <= 10 then return 2 end
   if cycles <= 40 then return 1 end
   return 0
+end
+
+-- src/pokemon_summary_screen.c:2495
+function SummaryData.eggHatchText(mon)
+  if not mon then return "" end
+  return RomText.at("sEggHatchTimeTexts", egg_hatch_index(mon))
 end
 
 --- Trainer Memo formatting (pokefirered/src/pokemon_summary_screen.c PokeSum_PrintTrainerMemo)
@@ -320,10 +330,8 @@ function SummaryData.formatTrainerMemo(mon, playerState, opts)
   local heldByOt = held_by_ot(mon, (opts and opts.owner) or playerState)
 
   if mon.isEgg then
-    return {
-      RomText.at("sEggOriginTexts", egg_origin_index(mon, heldByOt)),
-      RomText.at("sEggHatchTimeTexts", egg_hatch_index(mon)),
-    }
+    -- src/pokemon_summary_screen.c:2839
+    return { RomText.at("sEggOriginTexts", egg_origin_index(mon, heldByOt)) }
   end
 
   local _, natureName = SummaryData.nature(mon)

@@ -4,7 +4,7 @@
 -- worker thread (src/core/chip_worker.lua), which is where map/battle music is
 -- synthesized so a song change never stutters the render thread.
 --
--- Deliberately depends ONLY on `bit`, love.sound and love.filesystem: no
+-- Deliberately depends ONLY on `bit`, src.core.WorkerFs, love.sound and love.filesystem: no
 -- love.audio (Sources are a playback concern the caller owns) and no
 -- src.render.Assets (hot-reload registration stays in ChipAudio).  Both of
 -- those are unavailable or main-thread-only inside a love.thread worker, so
@@ -178,28 +178,19 @@ local cachedBanks
 
 local function loadBanks(data)
   local audio = data.audio
-  if cachedProgramFile == audio.programFile and cachedBanks then
+  local WorkerFs = require("src.core.WorkerFs")
+  local key = (WorkerFs.normalize(audio.programPrefix) or "") .. tostring(audio.programFile)
+  if cachedProgramFile == key and cachedBanks then
     return cachedBanks
   end
-  local raw, readError
-  -- The chip worker runs in a separate Lua state without the NX overlay;
-  -- ChipAudio hands it the versioned cache prefix explicitly.  On the main
-  -- thread the NX overlay (or desktop mountVersion) makes the plain read
-  -- resolve, so no platform branching belongs here.
-  local prefix = audio.programPrefix
-  if prefix and prefix ~= "" then
-    raw, readError = love.filesystem.read(prefix .. audio.programFile)
-  end
-  if not raw then
-    raw, readError = love.filesystem.read(audio.programFile)
-  end
+  local raw, readError = WorkerFs.read(audio.programPrefix, audio.programFile)
   if not raw then error("could not read sound programs: " .. tostring(readError)) end
   local banks = {}
   for index, bank in ipairs(audio.bankOrder) do
     local first = (index - 1) * 0x4000 + 1
     banks[bank] = raw:sub(first, first + 0x3FFF)
   end
-  cachedProgramFile, cachedBanks = audio.programFile, banks
+  cachedProgramFile, cachedBanks = key, banks
   return banks
 end
 

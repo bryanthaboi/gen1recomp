@@ -258,12 +258,6 @@ function ItemsExtract.run(rom, cache, opts)
     pcall(love.filesystem.write, outRel, outputText)
   end
 
-  local f = io.open(outRel, "wb")
-  if f then
-    f:write(outputText)
-    f:close()
-  end
-
   return {
     ok = true,
     count = itemCount,

@@ -1055,7 +1055,8 @@ local function findPendingSav(preferAny, skip)
   end
   if not preferAny then return nil end
   for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
-    if name:lower():match("%.sav$") and not (skip and skip[name])
+    if name:lower():match("%.sav$") and name:lower() ~= "pending_export.sav"
+        and not (skip and skip[name])
         and love.filesystem.getInfo(name, "file") then
       return name
     end
@@ -1291,13 +1292,13 @@ local function chooseSav()
   local platform = love.system.getOS()
   if platform == "OS X" then
     return commandOutput(
-      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"sav"})' 2>/dev/null]])
+      ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {"sav", "lua"})' 2>/dev/null]])
         :format(prompt))
   elseif platform == "Windows" then
     local script = table.concat({
       HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
-      "$d.Filter='Game Boy save (*.sav)|*.sav|All files (*.*)|*.*';",
+      "$d.Filter='Save file (*.sav;*.lua)|*.sav;*.lua|All files (*.*)|*.*';",
       -- copy the pick to a plain-ASCII temp name: io.open on Windows
       -- needs ANSI bytes, so a non-ASCII path (Pokémon -> Pok\x82mon)
       -- could never have been opened (#325, #665)
@@ -1311,11 +1312,11 @@ local function chooseSav()
       'powershell -NoProfile -STA -Command "' .. script .. '"')
   elseif platform == "Linux" then
     local path = commandOutput(
-      ([[zenity --file-selection --title="%s" --file-filter="Game Boy save | *.sav" 2>/dev/null]])
+      ([[zenity --file-selection --title="%s" --file-filter="Save file | *.sav *.lua" 2>/dev/null]])
         :format(prompt))
     if path then return path end
     return commandOutput(
-      [[kdialog --getopenfilename "$HOME" "*.sav|Game Boy save" 2>/dev/null]])
+      [[kdialog --getopenfilename "$HOME" "*.sav *.lua|Save file" 2>/dev/null]])
   end
   return nil
 end
@@ -2348,7 +2349,8 @@ function RomImporter:filedropped(file)
   -- A dropped .sav is a battery save: import it to a new slot for the active
   -- game tab (see _savedropTarget for the tab-selection rule).  It never steals
   -- .gb/.zip routing above.
-  if name:lower():match("%.sav$") then
+  if name:lower():match("%.sav$")
+      or (name:lower():match("%.lua$") and GameVersion.VERSIONS[self.tab]) then
     self:_importSave(self:_savedropTarget(), file)
     return
   end
@@ -2919,7 +2921,8 @@ function RomImporter:_importSave(version, source, force)
     self:_refreshSlots(version)
     self.activeSlot[version] = res
     self.slotScroll[version] = math.huge   -- pin the new row on screen (clamped in draw)
-    self.saveNotice[version] = { ok = true, text = "Imported save into " .. tostring(res) .. "." }
+    self.saveNotice[version] = { ok = true, text = "Imported save into " .. tostring(res) .. "."
+      .. (info and info.note and (" " .. info.note) or "") }
     return
   end
   if res == nil and info and info.needsConfirm then
@@ -2995,7 +2998,7 @@ function RomImporter:chooseSaveImport(version)
     if okKit and Kit.FileBrowser then
       self._padCursorActive = false
       Kit.FileBrowser.open({
-        title = "Select Save (.sav)",
+        title = "Select Save (.sav / .lua)",
         mode = "save",
         onSelect = function(pickedPath)
           self:_importSave(version, pickedPath)
@@ -3014,7 +3017,7 @@ function RomImporter:chooseSaveImport(version)
   if okKit and Kit.FileBrowser then
     self._padCursorActive = false
     Kit.FileBrowser.open({
-      title = "Select Save (.sav)",
+      title = "Select Save (.sav / .lua)",
       mode = "save",
       onSelect = function(pickedPath)
         self:_importSave(version, pickedPath)

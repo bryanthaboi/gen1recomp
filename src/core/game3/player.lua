@@ -75,6 +75,8 @@ Player.walkInPlace = false
 Player.walkInPlaceFast = false
 Player.visible = true
 Player.elevation = 3
+-- pokefirered/src/field_player_avatar.c:1296
+Player.currentElevation = 0
 Player._logged = false
 
 function Player.setVisible(vis)
@@ -154,6 +156,7 @@ function Player.reset(x, y, facing)
   Player.walkInPlace = false
   Player.walkInPlaceFast = false
   Player.boulderPush = nil
+  Player.currentElevation = 0
   if not Player._logged then
     log(string.format("avatar ready @ %d,%d %s",
       Player.cellX, Player.cellY, Player.facing))
@@ -278,7 +281,16 @@ function Player.jumpSpriteY()
   return JUMP_Y_HIGH[idx + 1]
 end
 
+-- pokefirered/src/event_object_movement.c:8400
+function Player.updateElevation(curX, curY, prevX, prevY)
+  local cur, prev = Collision.nextElevation(Collision._mapDef, Player.currentElevation or 0,
+    curX, curY, prevX or curX, prevY or curY)
+  Player.currentElevation = cur
+  if prev then Player.elevation = prev end
+end
+
 local function beginStep(tx, ty, run, ledge)
+  Player.updateElevation(tx, ty, Player.cellX, Player.cellY)
   Player.prevCellX = Player.cellX
   Player.prevCellY = Player.cellY
   Player.moving = true
@@ -426,6 +438,7 @@ function Player.tryMove(dir, game, run)
     fromY = Player.cellY,
     dir = dir,
     surfing = Player.surfing,
+    elevation = Player.currentElevation,
   })
 
   if not ok then
@@ -442,7 +455,8 @@ function Player.tryMove(dir, game, run)
           local canPush, destBx, destBy = FieldMoves.canPushBoulder(obj, dir, function(bx, by)
             local beh = Collision.behavior(bx, by)
             if Collision.isFallWarp(beh) then return true end
-            return Collision.canEnter(game, bx, by, { fromX = tx, fromY = ty, dir = dir }) == true
+            return Collision.canEnter(game, bx, by,
+              { fromX = tx, fromY = ty, dir = dir, elevation = obj.currentElevation }) == true
               and not Collision.isNonAnimDoor(beh)
           end)
           if canPush and not obj.moving then
@@ -502,6 +516,7 @@ local function bikeCanMove(game, dir)
   if not d then return false end
   return Collision.canEnter(game, Player.cellX + d[1], Player.cellY + d[2], {
     fromX = Player.cellX, fromY = Player.cellY, dir = dir, surfing = Player.surfing,
+    elevation = Player.currentElevation,
   }) == true
 end
 
@@ -654,10 +669,7 @@ local function finishStep(game)
   Player.running = false
   Player.jumping = false
   Player.spriteYOffset = 0
-  local curElev = Collision.elevationAt and Collision.elevationAt(Player.cellX, Player.cellY)
-  if curElev and curElev ~= 0 and curElev ~= 15 then
-    Player.elevation = curElev
-  end
+  Player.updateElevation(Player.cellX, Player.cellY)
   Player.syncSavePosition(game)
 
   -- Surf landing / dismount state transitions
@@ -778,6 +790,11 @@ local function finishStep(game)
 end
 
 function Player.tick(game)
+  if Player.moving then
+    Player.updateElevation(Player.targetX, Player.targetY, Player.cellX, Player.cellY)
+  else
+    Player.updateElevation(Player.cellX, Player.cellY)
+  end
   if Player.fieldMoveAnim and Player.fieldMoveAnim > 0 then
     Player.fieldMoveAnim = Player.fieldMoveAnim - 1
   end

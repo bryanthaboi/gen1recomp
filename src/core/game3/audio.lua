@@ -87,6 +87,15 @@ local function filesystem_cache()
   }
 end
 
+local function push_install()
+  Audio._cmdCh:push({
+    cmd = "install",
+    root = Audio._root,
+    prefix = require("src.core.WorkerFs").prefix(),
+    sampleRate = Mix.SAMPLE_RATE,
+  })
+end
+
 local function ensure_worker()
   if Audio._worker ~= nil then return Audio._worker end
   if not (love and love.thread and love.thread.newThread) then
@@ -101,20 +110,18 @@ local function ensure_worker()
   Audio._cmdCh = love.thread.getChannel("game3_m4a_cmd")
   Audio._outCh = love.thread.getChannel("game3_m4a_out")
   Audio._fanfareCh = love.thread.getChannel("game3_m4a_fanfare")
+  Audio._statusCh = love.thread.getChannel("game3_m4a_status")
   Audio._cmdCh:clear()
   Audio._outCh:clear()
   Audio._fanfareCh:clear()
+  Audio._statusCh:clear()
   local started = pcall(function() thread:start() end)
   if not started then
     Audio._worker = false
     return false
   end
   Audio._worker = thread
-  Audio._cmdCh:push({
-    cmd = "install",
-    root = Audio._root,
-    sampleRate = Mix.SAMPLE_RATE,
-  })
+  push_install()
   return true
 end
 
@@ -149,11 +156,7 @@ function Audio.install(cache, opts)
     Audio._fanfareRoot = Audio._root
   end
   if ensure_worker() then
-    Audio._cmdCh:push({
-      cmd = "install",
-      root = Audio._root,
-      sampleRate = Mix.SAMPLE_RATE,
-    })
+    push_install()
   end
   log("installed root=" .. Audio._root)
   return true
@@ -397,6 +400,13 @@ function Audio.playSong(id, opts)
     -- Sync fallback
     Audio._bgmLocal = { voices = {}, songId = id }
     Player.start(Audio._pack, Audio._cache, Audio._bgmLocal, id, { forceSeq = true })
+    local src = ensure_bgm_source()
+    if src then
+      pcall(function()
+        src:stop()
+        src:setVolume(bgm_gain())
+      end)
+    end
   end
   log(string.format("playsong id=%s", tostring(id)))
   return true
@@ -1244,8 +1254,44 @@ function Audio.update(dt)
   end
 end
 
+local function check_worker_status()
+  local ch = Audio._statusCh
+  if not (ch and Audio._worker) then return end
+  local msg = ch:pop()
+  while msg do
+    if type(msg) == "table" and msg.installFailed and msg.root == Audio._root then
+      warn_once("worker", "bgm worker could not load pack at " .. tostring(msg.root)
+        .. ": " .. tostring(msg.err))
+      if Audio._cmdCh then Audio._cmdCh:push({ cmd = "quit" }) end
+      if Audio._outCh then Audio._outCh:clear() end
+      if Audio._fanfareCh then Audio._fanfareCh:clear() end
+      ch:clear()
+      Audio._worker = false
+      Audio._cmdCh = nil
+      Audio._outCh = nil
+      Audio._fanfareCh = nil
+      Audio._statusCh = nil
+      Audio._pendingBgm = nil
+      Audio._bgmQueuedAt = {}
+      local gen = Audio._bgmGen
+      if gen and Audio.isReady() then
+        Audio._bgmLocal = { voices = {}, songId = gen }
+        Player.start(Audio._pack, Audio._cache, Audio._bgmLocal, gen, { forceSeq = true })
+        ensure_bgm_source()
+      end
+      local p = Audio._fanfarePending
+      if p and Audio._fanfareActive and Audio.isReady() then
+        start_fanfare_source(p.id, p.player)
+      end
+      return
+    end
+    msg = ch:pop()
+  end
+end
+
 --- Drain worker → QueueableSource. Safe to call from focus/resume hooks.
 function Audio.pumpBgm()
+  check_worker_status()
   if Audio._suspended then return end
   if not (Audio._outCh and Audio._bgmSource) or Audio._bgmPaused then return end
   local src = Audio._bgmSource
@@ -1396,10 +1442,12 @@ function Audio.shutdown()
   if Audio._cmdCh then Audio._cmdCh:clear() end
   if Audio._outCh then Audio._outCh:clear() end
   if Audio._fanfareCh then Audio._fanfareCh:clear() end
+  if Audio._statusCh then Audio._statusCh:clear() end
   Audio._worker = nil
   Audio._cmdCh = nil
   Audio._outCh = nil
   Audio._fanfareCh = nil
+  Audio._statusCh = nil
 end
 
 pcall(function()

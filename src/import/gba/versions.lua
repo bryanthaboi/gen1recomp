@@ -43,7 +43,7 @@ Versions.ROM_SIZE = 16777216
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
 -- v121: chrome/fonts/japanese_{normal,small}_* and japanese_widths.lua, the
 --       cart's Japanese fonts, for text a Japanese translation mod prints.
-Versions.CACHE_VERSION = 122
+Versions.CACHE_VERSION = 125
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
@@ -1480,6 +1480,9 @@ Versions.BALL_OPEN = {
   particle_palettes = 0x40BFA8,   -- pokefirered/src/battle_anim_special.c:133
   fade_colors = 0x40C1C4,         -- pokefirered/src/battle_anim_special.c:345
   sine_table = 0x25E074,          -- pokefirered/src/trig.c:4
+  sprite_sheets = 0x26056C,       -- pokefirered/src/pokeball.c:59
+  sprite_palettes = 0x2605CC,     -- pokefirered/src/pokeball.c:75
+  open_ball_gfx = 0xD022E8,       -- pokefirered/src/data/graphics/interface_pokeballs.h:37
 }
 
 -- Battle field→battle transitions (FireRed USA 1.0; uncompressed INCBINs in
@@ -1569,6 +1572,10 @@ Versions.SUMMARY_POKERUS_GFX = 0x463B20          -- sPokerus_Gfx (64 bytes)
 Versions.SUMMARY_POKERUS_PAL = 0x463B00          -- sPokerus_Pal (32 bytes)
 Versions.SUMMARY_HP_BAR_YELLOW_PAL = 0x463AAC    -- sHpBar_Yellow_Pal (32 bytes)
 Versions.SUMMARY_HP_BAR_RED_PAL = 0x463ACC       -- sHpBar_Red_Pal (32 bytes)
+Versions.SUMMARY_MARKING_PAL = 0x4636E0
+Versions.SUMMARY_TEXT_MOVES_PAL = 0x463700
+Versions.SUMMARY_MON_PIC_BOUNCE = 0x463FBE
+Versions.MON_MARKINGS_GFX = 0x3EE028
 Versions.MENU_INFO_GFX = 0xE95DDC                -- gMenuInfoElements_Gfx (4bpp 128x128, 8192 bytes)
 Versions.MENU_INFO_PAL = 0xE95D9C                -- gMenuInfoElements1_Pal + gMenuInfoElements2_Pal (64 bytes)
 

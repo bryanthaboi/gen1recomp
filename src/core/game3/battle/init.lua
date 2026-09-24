@@ -3403,7 +3403,10 @@ update_body = function(dt, game)
       and not Battle._auto and game and game.input then
     local EvolutionScene = package.loaded["src.ui.game3.evolution_scene"]
     if EvolutionScene and EvolutionScene.isOpen and EvolutionScene.isOpen() then
-      EvolutionScene.handleInput(game.input)
+      local EvoSummary = package.loaded["src.ui.game3.summary_menu"]
+      if EvoSummary and EvoSummary.isOpen and EvoSummary.isOpen() then
+        EvoSummary.handleInput(game.input)
+      end
       return
     end
     local StatGrowth = package.loaded["src.ui.game3.stat_growth"]
@@ -3628,9 +3631,6 @@ update_body = function(dt, game)
   if Battle._phase == "evolving" then
     local EvolutionScene = package.loaded["src.ui.game3.evolution_scene"]
     if EvolutionScene and EvolutionScene.isOpen and EvolutionScene.isOpen() then
-      if not Battle._auto and game and game.input then
-        EvolutionScene.handleInput(game.input)
-      end
       return
     end
     if Ui.choiceActive and Ui.choiceActive() then return end
@@ -3746,6 +3746,39 @@ end
 
 function Battle.abort(result)
   if Battle._active then finish(result or "run") end
+end
+
+-- pokefirered/src/main.c:480
+function Battle.reset()
+  stop_low_hp_song()
+  require("src.core.game3.battle.link_guard").disarm()
+  Battle._active = false
+  Battle._st = nil
+  Battle._adapter = nil
+  Battle._phase = nil
+  Battle._onDone = nil
+  Battle._onExpDone = nil
+  Battle._pendingEnd = nil
+  Battle._pendingChoice = nil
+  Battle._actions = nil
+  Battle._actionI = 1
+  Battle._metaAct = nil
+  Battle._auto = false
+  Battle._headless = false
+  Battle._fade = true
+  Battle._residualEvents = nil
+  Battle._residualIndex = 1
+  Battle._residualStepState = nil
+  D.reset()
+  AnimSeq.reset()
+  CatchSeq.reset()
+  ExpSeq.reset()
+  EvoSeq.reset()
+  IntroSeq.reset()
+  LearnMove.reset()
+  SwitchSeq.reset()
+  Anim.reset({ headless = true })
+  if Ui.clearLinger then Ui.clearLinger() end
 end
 
 function Battle.linkEnd(result, text, reason)

@@ -2,6 +2,7 @@
 -- Separate from AnimSeq (hit loop); same contract as ExpSeq.
 
 local Anim = require("src.core.game3.battle.anim")
+local BallOpen = require("src.core.game3.battle.ball_open")
 local State = require("src.core.game3.battle.state")
 local Audio = require("src.core.game3.audio")
 local SE = require("src.core.game3.se_ids")
@@ -84,14 +85,22 @@ local function battler_of(st, key)
   return st[key]
 end
 
-local function ball_for(s, key)
-  if type(key) ~= "number" then return s.ball end
-  s.balls = s.balls or {}
-  local b = s.balls[key]
-  if not b then
-    b = { visible = false, x = 0, y = 0, frame = 0, rot = 0, battler = key, side = State.sideOf(key) }
-    s.balls[key] = b
+local function ball_for(s, key, st)
+  local b
+  if type(key) ~= "number" then
+    b = s.ball
+  else
+    s.balls = s.balls or {}
+    b = s.balls[key]
+    if not b then
+      b = { visible = false, x = 0, y = 0, frame = 0, rot = 0, battler = key, side = State.sideOf(key) }
+      s.balls[key] = b
+    end
   end
+  local mon = battler_of(st, key)
+  mon = mon and mon.mon
+  -- pokefirered/src/pokeball.c:373
+  b.ballId = BallOpen.ballIdForItem(mon and mon.pokeball)
   return b
 end
 
@@ -665,7 +674,7 @@ local function run_step(step)
     local mons = {}
     for n, key in ipairs(keys) do
       local cx, cy = center_of(st, key)
-      local ball = ball_for(s, key)
+      local ball = ball_for(s, key, st)
       ball.visible = true
       ball.frame = 0
       ball.rot = 0
@@ -763,7 +772,7 @@ local function run_step(step)
     local mons = {}
     for n, key in ipairs(keys) do
       local pcx, pcy = center_of(st, key)
-      mons[n] = { key = key, ball = ball_for(s, key), tx = pcx, ty = pcy + 24 }
+      mons[n] = { key = key, ball = ball_for(s, key, st), tx = pcx, ty = pcy + 24 }
     end
     local threwSe, openedSe = false, false
     wait_busy()

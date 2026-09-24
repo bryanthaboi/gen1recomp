@@ -2046,6 +2046,7 @@ function Game2:hotkey(key)
     if self.save then self.save.options = options end
     self:persistOptions()
   end
+  local hk = Input.hotkeyKey(key)
   if key == "f1" then
     if not self:quickSaveAllowed() then return true end
     self:writeSave()
@@ -2055,19 +2056,19 @@ function Game2:hotkey(key)
     local loaded = Save.load()
     if loaded then self:continueGame(loaded) end
     return true
-  elseif key == "1" then
+  elseif hk == "1" then
     local GameSpeed = require("src.core.GameSpeed")
     options.speed = GameSpeed.cycle(options.speed, 1)
     persist()
     return true
-  elseif key == "2" then
+  elseif hk == "2" then
     local GbcPalette = require("src.render.GbcPalette")
     GbcPalette.setMode(options.color or "gbc")
     options.color = GbcPalette.cycle(1)
     options.palette = ""
     persist()
     return true
-  elseif key == "3" then
+  elseif hk == "3" then
     local Tilt = require("src.render.Tilt")
     options.tilt = Tilt.cycle()
     persist()
@@ -2082,7 +2083,7 @@ function Game2:hotkey(key)
   elseif key == "=" or key == "kp+" then
     self:zoomStep(1)
     return true
-  elseif key == "4" then
+  elseif hk == "4" then
     self.world:zoomCycle()
     self:storeZoom()
     return true
@@ -2451,6 +2452,7 @@ end
 -- own comment (src/core/Game.lua) for why, and for the precedent this
 -- restores.
 function Game2:gamepadpressed(joystick, button)
+  Input:padEventSeen(button)
   local function vanilla()
     padPressedBody(self, joystick, button)
   end

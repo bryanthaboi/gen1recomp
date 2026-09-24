@@ -2085,6 +2085,49 @@ local function draw_player_trainer(stage)
   end
 end
 
+-- pokefirered/src/pokeball.c:59
+function Ui.ballSheet()
+  if Ui._ballSheet == nil then
+    Ui._ballSheet = false
+    local d = BallOpen.data()
+    if d and d.ballSheet and love and love.image and love.graphics then
+      local okE, Extract = pcall(require, "src.import.gba.extract_island1")
+      local root = (okE and Extract and Extract.CACHE_ROOT or "data/generated/gba") .. "/" .. BallOpen.CACHE_SUB
+      local okD, Dataset = pcall(require, "src.core.game3.dataset")
+      local c = okD and Dataset and Dataset.cache and Dataset.cache()
+      local rgba = c and c.read and c:read(root .. "/" .. d.ballSheet)
+      local w, h = d.ballSheetW, d.ballSheetH
+      if type(rgba) == "string" and w and h and #rgba >= w * h * 4 then
+        local ok, id = pcall(love.image.newImageData, w, h, "rgba8", rgba)
+        local okI, img = false, nil
+        if ok and id then okI, img = pcall(love.graphics.newImage, id) end
+        if okI and img then
+          img:setFilter("nearest", "nearest")
+          Ui._ballSheet = img
+        end
+      end
+    end
+  end
+  return Ui._ballSheet or nil
+end
+
+function Ui.ballQuad(ballId, frame)
+  local img = Ui.ballSheet()
+  if not img then return nil end
+  local id = math.floor(tonumber(ballId) or 0)
+  if id < 0 or id > 11 then id = 0 end
+  frame = math.max(0, math.min(2, math.floor(tonumber(frame) or 0)))
+  Ui._ballQuads = Ui._ballQuads or {}
+  local key = id * 3 + frame
+  local q = Ui._ballQuads[key]
+  if not q then
+    local iw, ih = img:getDimensions()
+    q = love.graphics.newQuad(id * 16, frame * 16, 16, 16, iw, ih)
+    Ui._ballQuads[key] = q
+  end
+  return img, q, id
+end
+
 local function draw_ball_entry(ball)
   if not ball or not ball.visible then return end
   local bx = (ball.x or 0) + (ball.ox or 0)
@@ -2102,35 +2145,11 @@ local function draw_ball_entry(ball)
     love.graphics.setColor(shade, shade, shade, alpha)
   end
 
-  Ui._ballPoke = Ui._ballPoke or nil
-  local img = Ui._ballPoke
-  if img == nil then
-    local candidates = {
-      "data/generated/gba/intro/ball_poke.png",
-    }
-    for _, rel in ipairs(candidates) do
-      if love and love.filesystem and love.filesystem.getInfo(rel) then
-        local ok, loaded = pcall(love.graphics.newImage, rel)
-        if ok and loaded then
-          if loaded.setFilter then loaded:setFilter("nearest", "nearest") end
-          img = loaded
-          break
-        end
-      end
-    end
-    Ui._ballPoke = img or false
-  end
-
+  local img, quad = Ui.ballQuad(ball.ballId, frame)
   if img then
-    Ui._ballQuads = Ui._ballQuads or {}
-    local key = "ball_" .. frame
-    if not Ui._ballQuads[key] then
-      local iw, ih = img:getDimensions()
-      Ui._ballQuads[key] = love.graphics.newQuad(0, frame * 16, 16, 16, iw, ih)
-    end
     local blend = ball.blend
     local blended = blend and BallOpen.setBlendShader(blend.coeff, blend.r, blend.g, blend.b)
-    love.graphics.draw(img, Ui._ballQuads[key], bx, by, rot, 1, 1, 8, 8)
+    love.graphics.draw(img, quad, bx, by, rot, 1, 1, 8, 8)
     if blended then love.graphics.setShader() end
   end
 

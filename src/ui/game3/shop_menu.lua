@@ -94,6 +94,7 @@ function ShopMenu.show(opts)
   ShopMenu.yesNoCursor = 1
   ShopMenu._pending = nil
   ShopMenu._shopSe = nil
+  ShopMenu._fading = false
   ShopMenu._items = opts.items or {}
   ShopMenu._rowsGen = (ShopMenu._rowsGen or 0) + 1
   ShopMenu._session = opts.session
@@ -116,6 +117,17 @@ function ShopMenu.close()
   local cb = ShopMenu._onClose
   ShopMenu._onClose = nil
   if cb then cb() end
+end
+
+-- pokefirered/src/main.c:480
+function ShopMenu.reset()
+  ShopMenu.open = false
+  ShopMenu._fading = false
+  ShopMenu.mode = "root"
+  ShopMenu._onClose = nil
+  ShopMenu._pending = nil
+  ShopMenu._shopSe = nil
+  ShopMenu._session = nil
 end
 
 function ShopMenu.isOpen()

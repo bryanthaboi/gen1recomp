@@ -172,8 +172,7 @@ for _, version in ipairs({"red","yellow","gold","silver","crystal","firered","le
   local labels = {}
   for _, rect in ipairs(draw(subject)) do labels[rect.label or ""] = true end
   T.check(labels["Original save (.lua)"], version .. " offers original export")
-  T.eq(labels["Cartridge save (.sav)"] == true,
-    version ~= "firered" and version ~= "leafgreen", version .. " conversion capability")
+  T.eq(labels["Cartridge save (.sav)"] == true, true, version .. " conversion capability")
   subject.exportSave = function(self, v, format, scope, id)
     self.exported = {v,format,scope,id}
   end
@@ -239,7 +238,8 @@ T.eq(ok,false,"empty slot cannot be exported")
 for key,fn in pairs(saved)do SaveData[key]=fn end
 local bytes,err=Convert.exportSav({},"firered")
 T.eq(bytes,nil,"Gen 3 never falls through to Gen 1 encoder")
-T.check(err and err:find("not implemented",1,true),"unsupported converter explains why")
+local Gen3Save=require("src.save_convert.Gen3Save")
+T.check(err==Gen3Save.MSG.noData or err==Gen3Save.MSG.noMap,"an empty Gen 3 table is refused with a reason")
 
 -- Settings keep a fixed footer while touch and keyboard reach long lists.
 width,height=390,844

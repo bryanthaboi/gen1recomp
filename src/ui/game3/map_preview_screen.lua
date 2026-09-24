@@ -308,6 +308,14 @@ function MapPreviewScreen.dismiss()
   if wasActive and onDone then onDone() end
 end
 
+-- pokefirered/src/main.c:480
+function MapPreviewScreen.reset()
+  MapPreviewScreen._onDone = nil
+  MapPreviewScreen.dismiss()
+  MapPreviewScreen._cave = nil
+  CaveTransition.clear()
+end
+
 function MapPreviewScreen.isForestActive()
   return MapPreviewScreen._active == true
 end

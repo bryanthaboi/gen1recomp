@@ -727,6 +727,8 @@ local function start_ball(d)
   end
   local stage = Anim.stage().ball
   stage.visible, stage.darken, stage.flash, stage.side = false, 0, 0, "enemy"
+  -- pokefirered/src/battle_anim_special.c:668
+  stage.ballId = BallOpen.ballIdForItem(d.itemId)
   local b = {
     x = 32, y = 80, x2 = 0, y2 = 0,
     data = { [0] = 34, base.x, base.y - 16, 0, 0, 0, 0, 0 },

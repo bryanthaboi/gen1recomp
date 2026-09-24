@@ -31,6 +31,8 @@ end
 
 -- Load the synth explicitly via love.filesystem (a fresh thread Lua state does
 -- not necessarily carry the package searcher that resolves "src.core..."):
+package.loaded["src.core.WorkerFs"] = package.loaded["src.core.WorkerFs"]
+  or assert(love.filesystem.load("src/core/WorkerFs.lua"))()
 local ChipSynth = assert(love.filesystem.load("src/core/ChipSynth.lua"))()
 
 local cmdCh = love.thread.getChannel("chipaudio_cmd")

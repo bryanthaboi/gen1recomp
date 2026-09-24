@@ -2268,6 +2268,9 @@ function SaveData.save(data, mods)
   end
   remove(fs, TMP_FILENAME)
   stampActiveCartHash(fs)
+  local slot = data.version and GameVersion.VERSIONS[data.version]
+    and GameVersion.generation(data.version) == 3 and SaveData.activeSlot(data.version)
+  if slot then pcall(function() require("src.import.SaveFileIO").dropStaleCart(data.version, slot, data) end) end
   Logger.info("saved game")
   return true
 end

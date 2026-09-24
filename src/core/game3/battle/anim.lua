@@ -287,6 +287,12 @@ function Anim.ballOpen(key, x, y)
   return BallOpen.start(id, x, y, b and b.mon and b.mon.pokeball)
 end
 
+-- pokefirered/src/pokeball.c:373
+function Anim.ballIdOf(key)
+  local b = AnimCoords.battler(nil, Anim.idOf(key) or 1)
+  return BallOpen.ballIdForItem(b and b.mon and b.mon.pokeball)
+end
+
 local function play_se(name, pan)
   pcall(function()
     local SE = require("src.core.game3.se_ids")
@@ -312,7 +318,8 @@ function Anim.sendOutMon(key, opts)
   local base = Anim.coords(nil, id) or Anim.ENEMY_MON
   local stage = Anim.stage()
   stage.balls = stage.balls or {}
-  local ball = { visible = true, frame = 0, rot = 0, side = side, battler = id, x = 0, y = 0 }
+  local ball = { visible = true, frame = 0, rot = 0, side = side, battler = id, x = 0, y = 0,
+    ballId = Anim.ballIdOf(id) }
   stage.balls[id] = ball
   local pan = (side == "player") and -64 or 63
   local function reveal()

@@ -558,4 +558,11 @@ function BattleBridge.finishPending(result)
   end
 end
 
+-- pokefirered/src/main.c:480
+function BattleBridge.reset()
+  BattleBridge._finish = nil
+  BattleBridge._remap = nil
+  BattleBridge._battleParty = nil
+end
+
 return BattleBridge

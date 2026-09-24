@@ -59,6 +59,12 @@ local STICK_OFF = 0.3
 
 Input.PAD_ACTIONS = { speedUp = true, speedDown = true }
 
+local POLLABLE_PAD_BUTTONS = {
+  a = true, b = true, x = true, y = true, back = true, guide = true, start = true,
+  leftstick = true, rightstick = true, leftshoulder = true, rightshoulder = true,
+  dpup = true, dpdown = true, dpleft = true, dpright = true,
+}
+
 local HAT_DIRECTIONS = {
   u = { "up" }, d = { "down" }, l = { "left" }, r = { "right" },
   lu = { "left", "up" }, ru = { "right", "up" },
@@ -99,11 +105,13 @@ function Input:applyBindings(overlay)
         if action == actionId then acts[button] = nil end
       end
       if type(binding) == "table" and binding.pad then
-        acts[binding.pad] = actionId
+        acts[GamepadMap.TRIGGER_AXES[binding.pad] or binding.pad] = actionId
       end
     elseif type(binding) == "table" then
       if binding.key then keys[binding.key] = actionId end
-      if binding.pad then pads[binding.pad] = actionId end
+      if binding.pad then
+        pads[GamepadMap.TRIGGER_AXES[binding.pad] or binding.pad] = actionId
+      end
     elseif type(binding) == "string" then
       keys[binding] = actionId
     end
@@ -124,11 +132,37 @@ function Input:applyBindings(overlay)
     local n = tonumber(padName:match("^joy(%d+)$"))
     if n then joyActs[n] = action end
   end
+  local poll = {}
+  local canPoll = GamepadMap.gamepadBindings() ~= GamepadMap.NX_GAMEPAD_BINDINGS
+  for button, action in pairs(pads) do
+    if canPoll and POLLABLE_PAD_BUTTONS[button] then
+      poll[#poll + 1] = { button = button, btn = action, source = "pad:" .. button,
+        chord = GamepadMap.displayChordDigit(button) ~= nil }
+    end
+  end
   self.keyBindings = keys
   self.padBindings = pads
   self.joyBindings = joys
   self.padActions = acts
   self.joyActions = joyActs
+  self.padPoll = poll
+end
+
+function Input.hotkeyKey(key)
+  if type(key) ~= "string" then return key end
+  if key:match("^%d$") then return key end
+  local bound = Input.keyBindings
+  if bound and bound[key] then return key end
+  local digit = key:match("^kp(%d)$")
+  if digit then return digit end
+  local kb = love and love.keyboard
+  if kb and kb.getScancodeFromKey then
+    local ok, scancode = pcall(kb.getScancodeFromKey, key)
+    if ok and type(scancode) == "string" and scancode:match("^%d$") then
+      return scancode
+    end
+  end
+  return key
 end
 
 function Input:padAction(button)
@@ -157,6 +191,22 @@ function Input:reset()
   self.captureEvents = nil
   self.aliases = nil
   self.aliasHeld = nil
+  local suppress = {}
+  local poll = self.padPoll
+  if poll then
+    for i = 1, #poll do suppress[poll[i].button] = true end
+  end
+  self.padSuppress = suppress
+end
+
+function Input:padEventSeen(button)
+  if type(button) ~= "string" then return end
+  local suppress = self.padSuppress
+  if not suppress then
+    suppress = {}
+    self.padSuppress = suppress
+  end
+  suppress[button] = true
 end
 
 -- pokefirered/src/main.c:325
@@ -256,7 +306,85 @@ end
 -- button stuck on after the queue drains.
 -- Synthetic injects (tests/drivers writing pressQueue directly, with no
 -- source entry) still set state so scripted holds keep working.
+local function modOwnsPad()
+  local Runtime = package.loaded["src.mods.Runtime"]
+  return type(Runtime) == "table" and Runtime.wantsHook ~= nil
+    and Runtime.wantsHook("input.gamepad") == true
+end
+
+local function notePadRepair(fix, button)
+  local Diag = package.loaded["src.debug.SwitchDiagnostics"]
+  if type(Diag) == "table" and Diag.onEvent then
+    Diag.onEvent("padwatch", { fix = fix, button = button })
+  end
+end
+
+local function anyPadDown(pads, button)
+  for k = 1, #pads do
+    local j = pads[k]
+    local ok, down = pcall(j.isGamepadDown, j, button)
+    if ok and down then return true end
+  end
+  return false
+end
+
+-- pokefirered/src/main.c:296
+function Input:pollPads()
+  local js = love and love.joystick
+  if not (js and js.getJoystickCount and js.getJoysticks) then return end
+  local okC, count = pcall(js.getJoystickCount)
+  if not okC or type(count) ~= "number" or count == 0 then
+    self._pollPadCount = 0
+    return
+  end
+  local pads = self._pollPads
+  if not pads or self._pollPadCount ~= count then
+    pads = {}
+    local ok, list = pcall(js.getJoysticks)
+    if ok and type(list) == "table" then
+      for _, j in ipairs(list) do
+        if j.isGamepadDown and GamepadMap.ignoreRawForJoystick(j)
+            and not GamepadMap.isAccelerometer(j) then
+          pads[#pads + 1] = j
+        end
+      end
+    end
+    self._pollPads = pads
+    self._pollPadCount = count
+  end
+  local list = self.padPoll
+  if #pads == 0 or not list then return end
+  local mute = self.captureArmed or modOwnsPad()
+  local suppress = self.padSuppress
+  if not suppress then
+    suppress = {}
+    self.padSuppress = suppress
+  end
+  local backDown = nil
+  for i = 1, #list do
+    local e = list[i]
+    local down = anyPadDown(pads, e.button)
+    local sources = self.sources[e.btn]
+    local held = sources ~= nil and sources[e.source] == true
+    if not down then suppress[e.button] = nil end
+    if held and not down then
+      release(self, e.btn, e.source)
+      notePadRepair("release", e.button)
+    elseif down and not held and not mute and not suppress[e.button]
+        and not self.padActions[e.button] then
+      if e.chord and backDown == nil then
+        backDown = self.state.select == true or anyPadDown(pads, "back")
+      end
+      if not (e.chord and backDown) then
+        press(self, e.btn, e.source)
+        notePadRepair("press", e.button)
+      end
+    end
+  end
+end
+
 function Input:step()
+  self:pollPads()
   self.pressed = {}
   for _, btn in ipairs(self.pressQueue) do
     self.pressed[btn] = true
@@ -317,6 +445,7 @@ function Input:sourceRelease(btn, source)
 end
 
 function Input:gamepadpressed(joystick, button)
+  if self.padSuppress then self.padSuppress[button] = nil end
   noteCapture(self, "pad", "pressed", button)
   local btn = self.padBindings[button]
   if btn then
@@ -473,6 +602,8 @@ end
 -- Game:step needs the clean slate (re-arming A there would read it as a
 -- title-menu choice).
 function Input:reconcile()
+  local okD, Diag = pcall(require, "src.debug.SwitchDiagnostics")
+  if okD and Diag.onPadReconcile then pcall(Diag.onPadReconcile) end
   local kb = love and love.keyboard
   if kb and kb.isDown then
     for key, btn in pairs(self.keyBindings) do

@@ -61,6 +61,7 @@ package.loaded["src.core.game3.collision"] = {
   behavior = function(cx, cy) return behaviors[cx .. "," .. cy] end,
   behaviorOn = function(cx, cy) return behaviors[cx .. "," .. cy] end,
   canEnter = function(_, cx, cy) return behaviors[cx .. "," .. cy] ~= nil end,
+  nextElevation = function(_, cur) return cur, nil end,
   isWater = function() return false end,
   isSurfable = function() return false end,
   isGrass = function() return false end,

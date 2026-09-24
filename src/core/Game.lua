@@ -844,6 +844,7 @@ function Game:keypressed(key)
       end
       return
     end
+    local hk = Input.hotkeyKey(key)
     if key == "f1" then
       if not self:quickSaveAllowed() then return end
       self:writeSave()
@@ -864,12 +865,12 @@ function Game:keypressed(key)
     elseif key == "=" then
       self:zoomStep(1)
       return
-    elseif key == "1" then
+    elseif hk == "1" then
       -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
       -- shoulders/triggers on gamepad do the same (see gamepadpressed)
       self:_cycleSpeed(1)
       return
-    elseif key == "2" then
+    elseif hk == "2" then
       -- cycle COLORS (GBC / OG / OG INV / GBC INV / CLASSIC); the pack change
       -- forces Game.overworld:reloadMap, which rebuilds the live NPC array, so
       -- hold it while a warp/transition or an on-screen scripted cutscene is
@@ -887,7 +888,7 @@ function Game:keypressed(key)
         self:writeOptions()
       end
       return
-    elseif key == "3" then
+    elseif hk == "3" then
       -- cycle TILT OFF → 15 → 35 → 50 → OFF (mnemonic: 3D), free-roam only
       local Tilt = require("src.render.Tilt")
       if Tilt.gateOK(self.stack:top(), self.overworld) then
@@ -895,7 +896,7 @@ function Game:keypressed(key)
         self:writeOptions()
       end
       return
-    elseif key == "4" then
+    elseif hk == "4" then
       -- cycle ZOOM through every integer level (survey → FIT → close-up → wrap)
       local Zoom = require("src.render.Zoom")
       if Zoom.gateOK(self.stack:top(), self.overworld) then
@@ -1002,6 +1003,7 @@ end
 -- Game:keypressed; see its comment and RFC 0020 for the precedent this
 -- restores.
 function Game:gamepadpressed(joystick, button)
+  Input:padEventSeen(button)
   local function vanilla()
     padPressedBody(self, joystick, button)
   end

@@ -9,6 +9,7 @@ local W, H = 240, 160
 local SE_SHIP = 19 -- pokefirered/include/constants/songs.h:23
 local SE_EXIT = 9  -- pokefirered/include/constants/songs.h:13
 local CROSSING_FRAMES = 140
+local MUSIC_FADE_FRAMES = 64
 
 local DIRN_WESTBOUND = 0
 local DIRN_EASTBOUND = 1
@@ -207,26 +208,32 @@ local function stepTick(run)
   -- pokefirered/src/seagallop.c:286
   if run.tick >= CROSSING_FRAMES and run.state == "running" then
     run.state = "fading"
+    run.waited = 0
     local okA, Audio = pcall(require, "src.core.game3.audio")
     if okA and Audio and Audio.fadeOutBgm then
       pcall(Audio.fadeOutBgm, 4)
     end
-    Fade.begin(Fade.MODE.TO_BLACK, 0.35, function()
-      run.state = "warping"
-      if Audio and Audio.playSe then
-        pcall(Audio.playSe, SE_EXIT)
-      end
-      if run.onWarp then
-        run.onWarp()
-      end
-      Fade.begin(Fade.MODE.FROM_BLACK, 0.35, function()
-        run.state = "done"
-        Seagallop.stop()
-        if run.onDone then
-          run.onDone()
-        end
-      end)
-    end)
+    Fade.begin(Fade.MODE.TO_BLACK, 1)
+    return
+  end
+  if run.state ~= "fading" then return end
+  -- pokefirered/src/seagallop.c:297
+  run.waited = run.waited + 1
+  if Fade.isActive() then return end
+  local okA, Audio = pcall(require, "src.core.game3.audio")
+  if not okA then Audio = nil end
+  if Audio and Audio._fadeOut and run.waited < MUSIC_FADE_FRAMES then return end
+  -- pokefirered/src/seagallop.c:305
+  run.state = "done"
+  Seagallop.stop()
+  if Audio and Audio.playSe then
+    pcall(Audio.playSe, SE_EXIT)
+  end
+  if run.onWarp then
+    run.onWarp()
+  end
+  if run.onDone then
+    run.onDone()
   end
 end
 

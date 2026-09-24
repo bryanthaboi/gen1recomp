@@ -188,23 +188,18 @@ function TrainerSight.checkLineOfSight(eo, P, game)
     return false, 0
   end
 
-  local function normElevation(e)
-    local n = tonumber(e) or 0
-    if n == 0 or n == 3 then
-      return 3
-    end
-    return n
-  end
-
-  -- Elevation tier check: trainer and player must share the exact same elevation tier
-  local eoElev = normElevation(eo.elevation or (eo.def and eo.def.elevation))
-  local pElev = normElevation(P.elevation)
-  if eoElev ~= pElev then
-    return false, 0
-  end
-
   local Coll = Collision()
   local Objs = Objects()
+  local eoElev = tonumber(eo.currentElevation) or 0
+  local mapDef = eo.mapDef or Coll._mapDef
+
+  -- pokefirered/src/trainer_see.c:225
+  if Objs.elevationsCompatible and not Objs.elevationsCompatible(eoElev, P.currentElevation) then
+    return false, 0
+  end
+  if Coll.elevationMismatchOn and Coll.elevationMismatchOn(mapDef, eoElev, px, py) then
+    return false, 0
+  end
 
   -- Raycast intermediate tiles strictly between trainer and player
   for step = 1, dist - 1 do
@@ -214,7 +209,11 @@ function TrainerSight.checkLineOfSight(eo, P, game)
     local fromY = ey + dy * (step - 1)
 
     -- 1. Collision check: must be passable along raycast direction
-    if Coll.canEnter and not Coll.canEnter(game, cx, cy, { fromX = fromX, fromY = fromY, dir = facing }) then
+    if Coll.canEnter and not Coll.canEnter(game, cx, cy, { fromX = fromX, fromY = fromY, dir = facing, elevation = eoElev }) then
+      return false, 0
+    end
+    -- pokefirered/src/trainer_see.c:214
+    if Coll.elevationMismatchOn and Coll.elevationMismatchOn(mapDef, eoElev, cx, cy) then
       return false, 0
     end
 
@@ -224,10 +223,11 @@ function TrainerSight.checkLineOfSight(eo, P, game)
     end
 
     -- 3. Intermediary NPCs block vision
-    if Objs.blocks and Objs.blocks(cx, cy, eo.localId) then
+    if Objs.blocks and Objs.blocks(cx, cy, eo.localId, eoElev) then
       return false, 0
     end
-    if Objs.at and Objs.at(cx, cy) then
+    local other = Objs.at and Objs.at(cx, cy)
+    if other and (not Objs.elevationsCompatible or Objs.elevationsCompatible(eoElev, other.currentElevation)) then
       return false, 0
     end
   end

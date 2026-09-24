@@ -74,7 +74,9 @@ check(okUp == false, "(8,1) above ladder is solid wall")
 
 -- 1. Arrival facing on ladder
 local arrivalFace = Collision.destArrivalFacing(game, mapId, 8, 2, "up")
-check(arrivalFace == "down", "arrival facing on ladder is down (was " .. tostring(arrivalFace) .. ")")
+check(arrivalFace == "up", "arrival facing on ladder keeps the stored direction (was " .. tostring(arrivalFace) .. ")")
+local scriptedFace = Collision.destArrivalFacing(game, mapId, 8, 2, "down")
+check(scriptedFace == "down", "a scripted warp onto a ladder faces south after ResetInitialPlayerAvatarState (was " .. tostring(scriptedFace) .. ")")
 
 -- 2. Standing on ladder at (8, 2) facing down
 Player.cellX = 8

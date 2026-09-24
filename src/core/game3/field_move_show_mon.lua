@@ -48,6 +48,11 @@ function ShowMon.isActive()
   return ShowMon._fx ~= nil
 end
 
+-- pokefirered/src/main.c:480
+function ShowMon.reset()
+  ShowMon._fx = nil
+end
+
 -- pokefirered/src/fldeff_rocksmash.c:44
 function ShowMon.start(mon, opts, onDone)
   opts = opts or {}

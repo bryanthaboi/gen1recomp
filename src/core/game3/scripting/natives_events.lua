@@ -555,6 +555,9 @@ function Events.pollWalkaway(vm, input)
     if okF and Field and Field.unlock then Field.unlock() end
   end
   clearWalkaway()
+  -- pokefirered/src/script.c:353
+  local HudW = package.loaded["src.ui.game3.hud"]
+  if HudW and HudW.clearWaitButton then HudW.clearWaitButton() end
   vm:halt(true)
   if started then
     -- pokefirered/src/field_control_avatar.c:329

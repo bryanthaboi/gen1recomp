@@ -239,7 +239,8 @@ function Hud.update(game, _dt, inputTop)
   -- When battle is active, overlays like EvolutionScene or modal stack menus still receive input.
   if Stack.busy() then
     local top = Stack.top()
-    if (not inBattle) or (top and (top.id == "evolution_scene" or top.id == "naming" or top.id == "summary_menu")) then
+    local evoTop = top and top.id == "evolution_scene" and (inputTop == nil or top == inputTop)
+    if (not inBattle) or evoTop or (top and top.id == "naming") then
       if update_top_menu(input) then
         return
       end

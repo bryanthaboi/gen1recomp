@@ -89,12 +89,15 @@ function U.newGame(game)
   -- Oak speech: mash through text + naming (presets pick first = RED).
   -- The closing shrink-away beat (~103 frames) is not skippable, like
   -- the DelayFrames chain it ports, so leave headroom.
-  for _ = 1, 400 do
+  local reached = false
+  for _ = 1, 2000 do
     U.tap(game, "a")
     U.wait(2)
-    if game.overworld and game.stack:top() == game.overworld then break end
+    if game.overworld and game.stack:top() == game.overworld then reached = true break end
   end
+  if not reached then print("FAIL newGame never reached the overworld") end
   U.wait(10)
+  return reached
 end
 
 -- jump straight into the overworld at a position, bypassing the intro

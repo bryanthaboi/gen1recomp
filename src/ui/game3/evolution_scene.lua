@@ -319,10 +319,11 @@ function EvolutionScene.handleInput(input)
 
   local Choice = package.loaded["src.ui.game3.choice"]
   if Choice and Choice.active then
+    -- pokefirered/src/evolution_scene.c:925
     if input:wasPressed("up") then
-      Choice.move(-1)
+      if Choice.cursor ~= 1 then Choice.move(-1) end
     elseif input:wasPressed("down") then
-      Choice.move(1)
+      if Choice.cursor == 1 then Choice.move(1) end
     elseif input:wasPressed("a") then
       Choice.confirm()
     elseif input:wasPressed("b") then

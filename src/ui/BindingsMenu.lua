@@ -57,6 +57,7 @@ local PAD_SHORT = {
   dpup = "D-UP", dpdown = "D-DN", dpleft = "D-LT", dpright = "D-RT",
   leftshoulder = "LB", rightshoulder = "RB",
   triggerleft = "L2", triggerright = "R2",
+  lefttrigger = "L2", righttrigger = "R2",
   leftstick = "LS", rightstick = "RS", guide = "GUIDE",
 }
 local function shortName(name, shorts)

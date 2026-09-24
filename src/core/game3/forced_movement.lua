@@ -104,6 +104,7 @@ local function doForcedMovement(game, dir, frames, opts)
   local tx, ty = P.cellX + d[1], P.cellY + d[2]
   local ok = Collision.canEnter(game, tx, ty, {
     fromX = P.cellX, fromY = P.cellY, dir = dir, surfing = P.surfing,
+    elevation = P.currentElevation,
   })
   if not ok then
     -- pokefirered/src/field_player_avatar.c:299

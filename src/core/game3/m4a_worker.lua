@@ -40,13 +40,13 @@ package.loaded["src.core.game3.m4a_seq"] = Seq
 local Player = load_mod("src/core/game3/m4a_player.lua", "src.core.game3.m4a_player")
 package.loaded["src.core.game3.m4a_player"] = Player
 
+local WorkerFs = load_mod("src/core/WorkerFs.lua", "src.core.WorkerFs")
+package.loaded["src.core.WorkerFs"] = WorkerFs
+
 local pack = nil
-local cache = {
-  read = function(_, rel)
-    return love.filesystem.read(rel)
-  end,
-}
+local cache = WorkerFs.cache(nil)
 local fanfareCh = love.thread.getChannel("game3_m4a_fanfare")
+local statusCh = love.thread.getChannel("game3_m4a_status")
 
 local bgm = { voices = {}, seq = nil, songId = nil, muted = false, volume = 1, abs = 0 }
 local snaps = {}
@@ -76,7 +76,12 @@ local function apply_cmd(msg)
       BUFFER = Player.BUFFER_SAMPLES or 8192
       TARGET_QUEUED = Player.CHANNEL_TARGET or 12
     end
-    pack = Player.loadPack(cache, msg.root)
+    cache:setPrefix(msg.prefix)
+    local err
+    pack, err = Player.loadPack(cache, msg.root)
+    if not pack then
+      statusCh:push({ installFailed = true, root = msg.root, err = tostring(err) })
+    end
     if msg.root ~= packRoot then
       packRoot = msg.root
       baked = {}

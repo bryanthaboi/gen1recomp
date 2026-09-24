@@ -1453,6 +1453,8 @@ return {
   [0x25F862] = 0x25F842, -- daycare.o:sEggHatchTiles + 0
   [0x260062] = 0x260042, -- daycare.o:sEggShardTiles + 0
   [0x260556] = 0x260536, -- battle_interface.o:sText_HealthboxNickname + 0
+  [0x26056C] = 0x26054C, -- :gBallSpriteSheets + 0
+  [0x2605CC] = 0x2605AC, -- :gBallSpritePalettes + 0
   [0x260834] = 0x260814, -- trade.o:sTradeMovesBoxTilemap + 0
   [0x260A32] = 0x260A12, -- trade.o:sTradePartyBoxTilemap + 0
   [0x260C30] = 0x260C10, -- trade.o:sTradeStripesBG2Tilemap + 0
@@ -1694,6 +1696,7 @@ return {
   [0x3E2280] = 0x3E20BC, -- naming_screen.o:sTransferredToPCMessages + 0
   [0x3ECED4] = 0x3ECD10, -- easy_chat.o:sEasyChatGroups + 0
   [0x3EDF98] = 0x3EDDD4, -- easy_chat.o:sEasyChatGroupNamePointers + 0
+  [0x3EE028] = 0x3EDE64, -- mon_markings.o:sMonMarkings_Gfx + 0
   [0x3EE828] = 0x3EE664, -- mon_markings.o:sJPText_Confirm + 0
   [0x3EEBF8] = 0x3EEA34, -- heal_location.o:sHealLocations + 0
   [0x3EEC98] = 0x3EEAD4, -- heal_location.o:sWhiteoutRespawnHealCenterMapIdxs + 0
@@ -4295,6 +4298,8 @@ return {
   [0x4633D8] = 0x462DF8, -- menu_indicators.o:sRedArrowGfx + 0
   [0x46343C] = 0x462E5C, -- pokedex_area_markers.o:sMarkerTiles + 0
   [0x463580] = 0x462FA0, -- pokedex_area_markers.o:sAreaMarkers + 0
+  [0x4636E0] = 0x463100, -- pokemon_summary_screen.o:sMonMarkingSpritePalette + 0
+  [0x463700] = 0x463120, -- pokemon_summary_screen.o:sTextMovesPalette + 0
   [0x463720] = 0x463140, -- pokemon_summary_screen.o:sMoveSelectionCursorPals + 0
   [0x463740] = 0x463160, -- pokemon_summary_screen.o:sMoveSelectionCursorTiles_Left + 0
   [0x46386C] = 0x46328C, -- pokemon_summary_screen.o:sMoveSelectionCursorTiles_Right + 0
@@ -4309,6 +4314,7 @@ return {
   [0x463E60] = 0x463880, -- :gNatureNamePointers + 0
   [0x463EC4] = 0x4638E4, -- pokemon_summary_screen.o:sEggHatchTimeTexts + 0
   [0x463ED4] = 0x4638F4, -- pokemon_summary_screen.o:sEggOriginTexts + 0
+  [0x463FBE] = 0x4639DE, -- pokemon_summary_screen.o:sMonPicBounceYDelta_Under60 + 0
   [0x464148] = 0x463B68, -- wild_pokemon_area.o:sDexAreas_Kanto + 0
   [0x464224] = 0x463C44, -- wild_pokemon_area.o:sDexAreas_Sevii1 + 0
   [0x464234] = 0x463C54, -- wild_pokemon_area.o:sDexAreas_Sevii2 + 0
@@ -4605,6 +4611,7 @@ return {
   [0xD0170C] = 0xD0170C, -- :gSmokescreenImpactPalette + 0
   [0xD01724] = 0xD01724, -- :gBallGfx_Poke + 0
   [0xD017E0] = 0xD017E0, -- :gBallPal_Poke + 0
+  [0xD022E8] = 0xD022E8, -- :gOpenPokeballGfx + 0
   [0xD11B84] = 0xD11B84, -- :gBattleInterface_Healthbox_Pal + 0
   [0xD11BA4] = 0xD11BA4, -- :gBattleInterface_Healthbar_Pal + 0
   [0xD11BC4] = 0xD11BC4, -- :gBattleInterface_Gfx + 0

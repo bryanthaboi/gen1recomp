@@ -329,6 +329,7 @@ do
     guard = guard + 1
     Battle.update(1 / 60, mockGame)
     if EvolutionScene.isOpen() then
+      EvolutionScene.handleInput(mockGame.input)
       EvolutionScene.update(1 / 60)
     end
   end
@@ -439,9 +440,116 @@ do
   Audio.playCry = origPlayCry
 end
 
+print("=== [TEST 11] In-Battle Evolution Scene Has One Input Owner ===")
+do
+  local Battle = require("src.core.game3.battle")
+  local saved = {
+    active = Battle._active, phase = Battle._phase, auto = Battle._auto, headless = Battle._headless,
+    open = EvolutionScene.open, handleInput = EvolutionScene.handleInput,
+    summary = package.loaded["src.ui.game3.summary_menu"],
+  }
+  local evoCalls, summaryCalls, summaryOpen = 0, 0, false
+  EvolutionScene.handleInput = function() evoCalls = evoCalls + 1 end
+  package.loaded["src.ui.game3.summary_menu"] = {
+    isOpen = function() return summaryOpen end,
+    handleInput = function() summaryCalls = summaryCalls + 1 end,
+  }
+  local mockGame = {
+    input = {
+      wasPressed = function(_, k) return k == "down" end,
+      isDown = function() return false end,
+    }
+  }
+  Battle._active, Battle._phase, Battle._auto, Battle._headless = true, "evolving", false, true
+  EvolutionScene.open = true
+
+  Battle.update(1 / 60, mockGame)
+  check(evoCalls == 0, "Battle.update leaves the evolution scene yes/no to Hud (" .. evoCalls .. " calls)")
+
+  summaryOpen = true
+  Battle.update(1 / 60, mockGame)
+  check(evoCalls == 0 and summaryCalls == 1,
+    "forget-move summary over the evolution scene gets the press (" .. summaryCalls .. " calls)")
+
+  Battle._auto = true
+  summaryOpen = false
+  Battle.update(1 / 60, mockGame)
+  check(evoCalls == 0, "auto battle does not drive the evolution scene either (" .. evoCalls .. " calls)")
+
+  Battle._active, Battle._phase, Battle._auto, Battle._headless =
+    saved.active, saved.phase, saved.auto, saved.headless
+  EvolutionScene.open = saved.open
+  EvolutionScene.handleInput = saved.handleInput
+  package.loaded["src.ui.game3.summary_menu"] = saved.summary
+end
+
+print("=== [TEST 12] Hud Drives The Evolution Scene Once, Only From The Frame's Input Top ===")
+do
+  local Battle = require("src.core.game3.battle")
+  local Hud = require("src.ui.game3.hud")
+  local Stack = require("src.ui.game3.stack")
+  local savedActive, savedLayers = Battle._active, Stack._layers
+  local calls = 0
+  local fakeScene = { handleInput = function() calls = calls + 1 end }
+  local game = {
+    input = {
+      wasPressed = function(_, k) return k == "a" end,
+      isDown = function() return false end,
+    }
+  }
+  local function run(active, sameTop)
+    Stack._layers = {}
+    Battle._active = active
+    Stack.push("summary", { handleInput = function() end })
+    local summaryLayer = Stack.top()
+    Stack.pop("summary")
+    Stack.push("evolution_scene", fakeScene, { hideBelow = true, fullscreen = true })
+    calls = 0
+    Hud.update(game, 1 / 60, sameTop and Stack.top() or summaryLayer)
+    return calls
+  end
+
+  check(run(false, true) == 1, "field evolution scene gets the press from Hud")
+  check(run(false, false) == 1, "field evolution scene still gets the press when it opened this frame")
+  check(run(true, true) == 1, "in-battle evolution scene gets the press from Hud once")
+  local leaked = run(true, false)
+  check(leaked == 0, "in-battle summary close press is not replayed into the evolution scene (" .. leaked .. " calls)")
+
+  Battle._active = savedActive
+  Stack._layers = savedLayers
+end
+
+print("=== [TEST 13] Learn-Move Yes/No Cursor Does Not Wrap ===")
+do
+  local Choice = require("src.ui.game3.choice")
+  local savedOpen = EvolutionScene.open
+  local answer
+  EvolutionScene.open = true
+  Choice.yesNo(function(yes) answer = yes end, { left = 24, top = 9, style = "battle" })
+  local function press(key)
+    EvolutionScene.handleInput({
+      wasPressed = function(_, k) return k == key end,
+      isDown = function() return false end,
+    })
+  end
+  press("up")
+  check(Choice.cursor == 1, "UP on YES stays on YES (cursor " .. tostring(Choice.cursor) .. ")")
+  press("down")
+  check(Choice.cursor == 2, "DOWN on YES moves to NO (cursor " .. tostring(Choice.cursor) .. ")")
+  press("down")
+  check(Choice.cursor == 2, "DOWN on NO stays on NO (cursor " .. tostring(Choice.cursor) .. ")")
+  press("up")
+  check(Choice.cursor == 1, "UP on NO moves to YES (cursor " .. tostring(Choice.cursor) .. ")")
+  press("down")
+  press("a")
+  check(answer == false, "A on NO answers no")
+  Choice.active = false
+  EvolutionScene.open = savedOpen
+end
+
 if failed > 0 then
   print(string.format("\n[FAILED] %d test(s) failed", failed))
   os.exit(1)
 else
-  print("\nALL 10 EVOLUTION SCENE TESTS PASSED CLEANLY!")
+  print("\nALL 13 EVOLUTION SCENE TESTS PASSED CLEANLY!")
 end

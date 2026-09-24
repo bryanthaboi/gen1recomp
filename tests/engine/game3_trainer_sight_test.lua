@@ -127,16 +127,16 @@ eo.facing = "down"
 Player.reset(10, 13, "up")
 
 -- Different elevation (eo on bridge elevation 4 vs player on ground 3)
-eo.elevation = 4
-Player.elevation = 3
+eo.currentElevation = 4
+Player.currentElevation = 3
 spotted, dist = TrainerSight.checkLineOfSight(eo, Player, dummyGame)
 check(spotted == false, "Blocked by elevation mismatch (eo=4 bridge, player=3 ground)")
-eo.elevation = 3
-Player.elevation = 3
+eo.currentElevation = 3
+Player.currentElevation = 3
 spotted, dist = TrainerSight.checkLineOfSight(eo, Player, dummyGame)
 check(spotted == true, "Spotted when elevations match (eo=3, player=3)")
-eo.elevation = 0
-Player.elevation = 0
+eo.currentElevation = 0
+Player.currentElevation = 0
 spotted, dist = TrainerSight.checkLineOfSight(eo, Player, dummyGame)
 check(spotted == true, "Spotted when default ground elevations match (eo=0, player=0)")
 

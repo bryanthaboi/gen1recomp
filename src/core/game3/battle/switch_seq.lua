@@ -623,6 +623,7 @@ local function run_step(step)
     s.ball.frame = 0
     s.ball.rot = 0
     s.ball.side = "player"
+    s.ball.ballId = Anim.ballIdOf(d.id ~= nil and d.id or "player")
     local sx, sy = require("src.core.game3.battle.pokedude").sendOutOrigin(st)
     s.ball.x = sx
     s.ball.y = sy
@@ -665,6 +666,7 @@ local function run_step(step)
     s.ball.visible = true
     s.ball.frame = 0
     s.ball.side = "enemy"
+    s.ball.ballId = Anim.ballIdOf(d.id ~= nil and d.id or "enemy")
     s.ball.x = cx
     s.ball.y = cy + 24
     wait_busy()

@@ -122,6 +122,7 @@ return function(game)
   result(Player.cellX == 8 and Player.cellY == 5,
     "landed on the sSeag berth (8,5), got (" .. tostring(Player.cellX) ..
     "," .. tostring(Player.cellY) .. ")")
+  result(not require("src.ui.game3.seagallop").isActive(), "the ferry overlay cleared on One Island Harbor")
   U.shot(game, DIR .. "/seagallop_03_one_island_harbor.png")
 
   local spoke2 = talkTo(8, 5, "down")
@@ -133,6 +134,7 @@ return function(game)
   print("[driver] after the island hop: map=" .. tostring(mapId()) ..
     " at (" .. tostring(Player.cellX) .. "," .. tostring(Player.cellY) .. ")")
   result(mapId() == TWO_HARBOR, "One Island -> Two Island Harbor, map=" .. tostring(mapId()))
+  result(not require("src.ui.game3.seagallop").isActive(), "the ferry overlay cleared on Two Island Harbor")
   U.shot(game, DIR .. "/seagallop_05_two_island_harbor.png")
 
   local spoke3 = talkTo(8, 5, "down")
@@ -141,6 +143,7 @@ return function(game)
   runScript(TWO_HARBOR, 1800)
   U.wait(120)
   result(mapId() == ONE_HARBOR, "Two Island -> One Island Harbor, map=" .. tostring(mapId()))
+  result(not require("src.ui.game3.seagallop").isActive(), "the ferry overlay cleared back on One Island")
   U.shot(game, DIR .. "/seagallop_06_back_on_one_island.png")
 
   goTo(CINNABAR, 20, 5, "down")
@@ -174,6 +177,7 @@ return function(game)
 
   local Fade = require("src.ui.game3.fade")
   result((Fade.t or 0) <= 0, "the ferry fade was undone, veil t=" .. tostring(Fade.t))
+  result(not require("src.ui.game3.seagallop").isActive(), "the Bill ferry overlay cleared on One Island")
   U.shot(game, DIR .. "/seagallop_08_one_island.png")
 
   finish()

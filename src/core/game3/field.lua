@@ -55,6 +55,8 @@ function Field.start(mod, game, session)
   Field.clearMetatiles()
   local PcAnim = package.loaded["src.core.game3.pc_anim"]
   if PcAnim then PcAnim.reset() end
+  local SeagallopUi = package.loaded["src.ui.game3.seagallop"]
+  if SeagallopUi and SeagallopUi.stop then SeagallopUi.stop() end
   if session then
     Player.syncFromSession(session)
   else
@@ -1496,6 +1498,7 @@ function Field.forcedMovementPending()
   -- pokefirered/src/field_player_avatar.c:295
   return Collision.canEnter(Field._game, x, y + 1, {
     fromX = x, fromY = y, dir = "down", surfing = true,
+    elevation = Player.currentElevation,
   }) == true
 end
 
@@ -1591,6 +1594,7 @@ function Field.updateWaterfall(game)
   -- pokefirered/src/field_player_avatar.c:295
   if not Collision.canEnter(game or Field._game, tx, ty, {
     fromX = Player.cellX, fromY = Player.cellY, dir = "down", surfing = true,
+    elevation = Player.currentElevation,
   }) then return end
   if Player.moving then
     -- pokefirered/src/field_player_avatar.c:147

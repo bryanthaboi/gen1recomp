@@ -144,7 +144,26 @@ return function(game)
   result(log_has(Ui, "sent\nout ") and log_has(Ui, " and "), "intro used the two-mon send-out line")
   result(log_has(Ui, "Go! ") and log_has(Ui, " and\n"), "intro used Go! X and Y!")
 
-  local sawFaint, sawReplacement = false, false
+  local Commands = require("src.core.game3.battle.commands")
+  local Moves = require("src.core.game3.battle.moves")
+  local StatGrowth = require("src.ui.game3.stat_growth")
+  local function pick_move(state, id)
+    local b = state and state.battlers and state.battlers[id]
+    local mon = b and b.mon
+    if not mon then return nil end
+    local best, bestPow
+    for slot = 1, 4 do
+      local mv = mon.moves and mon.moves[slot]
+      if mv and mv ~= 0 and mv ~= "" and Commands.moveUsable(state, slot, id) then
+        local def = Moves.get(mv)
+        local pow = def and tonumber(def.power) or 0
+        if not best or pow > bestPow then best, bestPow = slot, pow end
+      end
+    end
+    return best
+  end
+
+  local sawFaint, sawReplacement, sawSelErr = false, false, false
   local guard = 0
   while Battle.isActive() and guard < 20000 do
     guard = guard + 1
@@ -189,10 +208,45 @@ return function(game)
       U.tap(game, "a")
       U.wait(8)
     elseif phase == "command" and Ui._mode == "moves" then
+      local who = Ui.activeBattler and Ui.activeBattler() or 0
+      local slot
+      if not shots.target then
+        for s = 1, 4 do
+          if not slot and Commands.moveUsable(st, s, who) and Ui.targetSelection(st, who, s) then slot = s end
+        end
+      end
+      slot = slot or pick_move(st, who)
+      if slot then
+        for _ = 1, 6 do
+          local cur = (Ui._moveIndex or 1) - 1
+          local want = slot - 1
+          if cur == want then break end
+          local key = (cur % 2 ~= want % 2) and "right" or "down"
+          U.tap(game, key)
+          U.wait(4)
+          if (Ui._moveIndex or 1) - 1 == cur then
+            U.tap(game, key == "right" and "down" or "right")
+            U.wait(4)
+          end
+        end
+      end
+      U.tap(game, "a")
+      U.wait(8)
+    elseif phase == "command" and Ui._mode == "selmsg" then
+      sawSelErr = true
       U.tap(game, "a")
       U.wait(8)
     elseif phase == "command" and Ui._mode == "target" then
-      shot_once("target", "03_target_select")
+      if not shots.target then
+        shots.target = true
+        local cur = Ui.targetCursor()
+        for _ = 1, 40 do
+          if Ui.targetHidden(cur) then break end
+          U.wait(1)
+        end
+        result(Ui._mode == "target" and Ui.targetHidden(cur), "target cue blink is on for battler " .. tostring(cur))
+        result(U.still(game, DIR .. "/03_target_select.png"), "screenshot 03_target_select")
+      end
       U.tap(game, "a")
       U.wait(8)
     elseif phase == "animating" or phase == "residuals" then
@@ -201,12 +255,22 @@ return function(game)
         shot_once("mid", "04_mid_turn")
       end
       if Ui.dialogPending and Ui.dialogPending() then U.tap(game, "a") else U.wait(1) end
+    elseif StatGrowth.isOpen() then
+      shot_once("statgrowth", "05b_level_up_stats")
+      U.tap(game, "a")
+      U.wait(4)
     else
       if Ui.dialogPending and Ui.dialogPending() then U.tap(game, "a") else U.wait(1) end
       if Ui.choiceActive and Ui.choiceActive() then U.tap(game, "b") U.wait(4) end
     end
   end
 
+  if Battle.isActive() then
+    local lg = Ui.log and Ui.log() or {}
+    print(string.format("[driver] stuck guard=%d phase=%s mode=%s active=%s last=%q", guard,
+      tostring(Battle._phase), tostring(Ui._mode), tostring(Ui.activeBattler and Ui.activeBattler()),
+      tostring(lg[#lg])))
+  end
   local res = Battle.getResult() or (st and st.result)
   result(not Battle.isActive(), "battle ended within " .. TURN_CAP .. " turns (turn=" .. tostring(st and st.turn) .. ")")
   result(res == "win", "player won the double battle (result=" .. tostring(res) .. ")")
@@ -216,6 +280,7 @@ return function(game)
   else
     print("NOTE no player replacement was needed this run")
   end
+  if sawSelErr then print("NOTE a move selection was refused this run") end
   for _ = 1, 600 do
     if not (Space.vm and Space.vm:isRunning()) and not (Message.isOpen and Message.isOpen()) then break end
     U.tap(game, "a")

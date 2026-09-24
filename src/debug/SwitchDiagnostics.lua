@@ -9,7 +9,9 @@ local ERROR_LOG = "lua-error.log"
 local ERROR_LOG_ROTATED = "lua-error.log.1"
 local ERROR_LOG_MAX = 32 * 1024
 local FLUSH_INTERVAL = 1.0
-local RING_SIZE = 64
+local RING_SIZE = 256
+local FOCUS_LOG = "pad-reconcile.log"
+local FOCUS_LOG_MAX = 256 * 1024
 
 local enabled = nil
 local buffer = {}
@@ -114,11 +116,86 @@ function SwitchDiagnostics.identityOverlay()
   return identityLine
 end
 
+local function now()
+  return love and love.timer and love.timer.getTime and love.timer.getTime() or 0
+end
+
 function SwitchDiagnostics.onEvent(kind, payload)
   if not SwitchDiagnostics.isEnabled() then return end
   bufCount = bufCount + 1
   local slot = ((bufCount - 1) % RING_SIZE) + 1
-  buffer[slot] = ("%s %s"):format(tostring(kind), encodePayload(payload))
+  buffer[slot] = ("t=%.3f %s %s"):format(now(), tostring(kind), encodePayload(payload))
+end
+
+local function ringLines(lines)
+  local start = math.max(1, bufCount - RING_SIZE + 1)
+  for i = start, bufCount do
+    local slot = ((i - 1) % RING_SIZE) + 1
+    if buffer[slot] then lines[#lines + 1] = buffer[slot] end
+  end
+  return lines
+end
+
+local SNAPSHOT_BUTTONS = {
+  "a", "b", "x", "y", "back", "start", "leftshoulder", "rightshoulder",
+  "dpup", "dpdown", "dpleft", "dpright",
+}
+local SNAPSHOT_AXES = { "leftx", "lefty", "triggerleft", "triggerright" }
+
+local function padSnapshot(j)
+  local parts = {}
+  local function call(name, ...)
+    local fn = j[name]
+    if type(fn) ~= "function" then return nil end
+    local ok, v = pcall(fn, j, ...)
+    if ok then return v end
+    return nil
+  end
+  parts[#parts + 1] = "name=" .. tostring(redactString(tostring(call("getName"))))
+  parts[#parts + 1] = "guid=" .. tostring(call("getGUID"))
+  parts[#parts + 1] = "connected=" .. tostring(call("isConnected"))
+  parts[#parts + 1] = "isGamepad=" .. tostring(call("isGamepad"))
+  if call("isGamepad") then
+    local down = {}
+    for _, button in ipairs(SNAPSHOT_BUTTONS) do
+      if call("isGamepadDown", button) then down[#down + 1] = button end
+    end
+    parts[#parts + 1] = "down=" .. table.concat(down, ",")
+    for _, axis in ipairs(SNAPSHOT_AXES) do
+      local v = call("getGamepadAxis", axis)
+      if type(v) == "number" then parts[#parts + 1] = ("%s=%.2f"):format(axis, v) end
+    end
+  end
+  return table.concat(parts, " ")
+end
+
+function SwitchDiagnostics.onPadReconcile()
+  if not SwitchDiagnostics.isEnabled() then return end
+  local filesystem = fs()
+  if not filesystem then return end
+  local lines = {
+    ("=== reconcile t=%.3f at=%s focus=%s"):format(now(), os.date("!%Y-%m-%dT%H:%M:%SZ"),
+      tostring(love and love.window and love.window.hasFocus and love.window.hasFocus())),
+    SwitchDiagnostics.identityOverlay(),
+  }
+  local js = love and love.joystick
+  local ok, list = false, nil
+  if js and js.getJoysticks then ok, list = pcall(js.getJoysticks) end
+  if ok and type(list) == "table" then
+    for i, j in ipairs(list) do
+      lines[#lines + 1] = ("pad%d %s"):format(i, padSnapshot(j))
+    end
+  end
+  lines[#lines + 1] = "--- last events"
+  ringLines(lines)
+  local existing = filesystem.read(FOCUS_LOG) or ""
+  if #existing > FOCUS_LOG_MAX then
+    filesystem.write(FOCUS_LOG .. ".1", existing)
+    existing = ""
+  end
+  filesystem.write(FOCUS_LOG, existing .. table.concat(lines, "\n") .. "\n")
+  SwitchDiagnostics.onEvent("reconcile", nil)
+  SwitchDiagnostics.maybeFlush(true)
 end
 
 function SwitchDiagnostics.onJoystickEvent(kind, joystick, button, extra)
@@ -162,12 +239,7 @@ function SwitchDiagnostics.maybeFlush(force, now)
   local filesystem = fs()
   if not filesystem then return end
 
-  local lines = { SwitchDiagnostics.identityOverlay(), "---" }
-  local start = math.max(1, bufCount - RING_SIZE + 1)
-  for i = start, bufCount do
-    local slot = ((i - 1) % RING_SIZE) + 1
-    if buffer[slot] then lines[#lines + 1] = buffer[slot] end
-  end
+  local lines = ringLines({ SwitchDiagnostics.identityOverlay(), "---" })
   filesystem.write(LOG_FILE, table.concat(lines, "\n") .. "\n")
 end
 

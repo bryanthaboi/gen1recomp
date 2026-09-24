@@ -97,7 +97,7 @@ local function isMatchingFilter(name, isDir, mode)
   if mode == "rom" then
     return (ext == "gb" or ext == "gbc" or ext == "zip")
   elseif mode == "save" then
-    return (ext == "sav")
+    return (ext == "sav" or ext == "lua")
   elseif mode == "mod" then
     return (ext == "zip")
   end

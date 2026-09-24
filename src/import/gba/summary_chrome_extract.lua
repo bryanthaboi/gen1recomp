@@ -98,9 +98,15 @@ end
 --- Bake a BG tilemap to RGBA.
 -- On GBA, palette index 0 is transparent (shows lower BGs / backdrop).
 -- When transparent0 is true, index 0 is written with alpha 0.
-local function bake_bg_rgba(gfx, palBytes, map, W, H, transparent0)
+local function bake_bg_rgba(gfx, palBytes, map, W, H, transparent0, slots)
   local tileCount = math.floor(byte_len(gfx) / 32)
   local banks = load_pal_banks(palBytes, math.max(1, math.floor(byte_len(palBytes) / 32)))
+  if slots then
+    local src = banks
+    banks = {}
+    for k, v in pairs(src) do banks[k] = v end
+    for slot, bank in pairs(slots) do banks[slot] = src[bank] or src[slot] end
+  end
   local mapW = 32
   local indices, pals = {}, {}
   for i = 1, W * H do indices[i] = 0; pals[i] = 0 end
@@ -170,10 +176,7 @@ local function composite_rgba(bottom, top)
   return table.concat(out)
 end
 
---- Pret uses BG3 base tilemaps under the page overlays:
----   INFO/SKILLS/EGG → sBgTilemap_MovesInfoPage (ROM 0x463B88, LZ 1280 B)
----   MOVES/MOVES_INFO → sBgTilemap_MovesPage (ROM 0x463C80, LZ 2048 B)
---- First try ROM decompress (works on Android), then fall back to external .bin files.
+-- pokefirered/src/pokemon_summary_screen.c:1862
 local function load_base_tilemap(kind, get)
   -- ROM path (always works on Android, iOS, etc.)
   if get then
@@ -209,6 +212,17 @@ local function bake_page_composited(gfx, palBytes, pageMap, baseMap, W, H)
   end
   -- No base: replace chromakey with opaque so Love does not clear to magenta.
   return bake_bg_rgba(gfx, palBytes, pageMap, W, H, false)
+end
+
+local PROGRESS_X, PROGRESS_Y, PROGRESS_W, PROGRESS_H = 104, 0, 48, 16
+
+local function crop_rgba(rgba, W, x, y, w, h)
+  local rows = {}
+  for row = 0, h - 1 do
+    local start = ((y + row) * W + x) * 4 + 1
+    rows[#rows + 1] = rgba:sub(start, start + w * 4 - 1)
+  end
+  return table.concat(rows)
 end
 
 --- Bake tile strip (e.g. 12 tiles in a horizontal line: 96x8 px).
@@ -357,6 +371,14 @@ local function apply_page_progress_tiles(baseMapBytes, pageKind)
     set_tilemap_rect(map, 66 + BASE, 17, 1, 1, 1)
     set_tilemap_rect(map, 48 + BASE, 18, 0, 1, 1)
     set_tilemap_rect(map, 64 + BASE, 18, 1, 1, 1)
+  elseif pageKind == "moves_info_select" then
+    -- pokefirered/src/pokemon_summary_screen.c:3334
+    set_tilemap_rect(map,  1 + BASE, 13, 0, 4, 1)
+    set_tilemap_rect(map, 19 + BASE, 13, 1, 4, 1)
+    set_tilemap_rect(map, 50 + BASE, 17, 0, 1, 1)
+    set_tilemap_rect(map, 66 + BASE, 17, 1, 1, 1)
+    set_tilemap_rect(map, 48 + BASE, 18, 0, 1, 1)
+    set_tilemap_rect(map, 64 + BASE, 18, 1, 1, 1)
   elseif pageKind == "egg" then
     set_tilemap_rect(map, 17 + BASE, 13, 0, 1, 1)
     set_tilemap_rect(map, 33 + BASE, 13, 1, 1, 1)
@@ -402,17 +424,103 @@ function SummaryChromeExtract.run(rom, cache, opts)
   local baseMoves = load_base_tilemap("moves", get)
 
   if bgGfx and bgPal and mapInfo then
-    local baseInfoP1 = apply_page_progress_tiles(baseInfo, "info")
-    local baseSkillsP2 = apply_page_progress_tiles(baseInfo, "skills")
-    local baseMovesP3 = apply_page_progress_tiles(baseMoves, "moves")
-    local baseMovesInfoP4 = apply_page_progress_tiles(baseMoves, "moves_info")
-    local baseEggPEgg = apply_page_progress_tiles(baseInfo, "egg")
+    cache:write(root .. "/page_info.rgba",
+      bake_page_composited(bgGfx, bgPal, mapInfo, apply_page_progress_tiles(baseInfo, "info"), W, H))
 
-    cache:write(root .. "/page_info.rgba", bake_page_composited(bgGfx, bgPal, mapInfo, baseInfoP1, W, H))
-    cache:write(root .. "/page_skills.rgba", bake_page_composited(bgGfx, bgPal, mapSkills, baseSkillsP2, W, H))
-    cache:write(root .. "/page_moves.rgba", bake_page_composited(bgGfx, bgPal, mapMoves, baseMovesP3, W, H))
-    cache:write(root .. "/page_moves_info.rgba", bake_page_composited(bgGfx, bgPal, mapMovesInfo, baseMovesInfoP4, W, H))
-    cache:write(root .. "/page_egg.rgba", bake_page_composited(bgGfx, bgPal, mapEgg, baseEggPEgg, W, H))
+    -- pokefirered/src/pokemon_summary_screen.c:2009
+    local variants = { { suffix = "", slots = nil }, { suffix = "_shiny", slots = { [0] = 6, [1] = 5 } } }
+    local bases = { info = baseInfo, moves = baseMoves }
+    local progress = {
+      info = baseInfo, skills = baseInfo, moves = baseInfo, egg = baseInfo,
+      moves_info = baseMoves, moves_info_select = baseMoves,
+    }
+    local layers = { info = mapInfo, skills = mapSkills, moves = mapMoves, moves_info = mapMovesInfo, egg = mapEgg }
+    for _, v in ipairs(variants) do
+      local shiny = v.slots ~= nil
+      for kind, map in pairs(bases) do
+        cache:write(root .. "/bg3_" .. kind .. v.suffix .. ".rgba", bake_bg_rgba(bgGfx, bgPal, map, W, H, false, v.slots))
+      end
+      for kind, map in pairs(progress) do
+        if not (shiny and kind == "egg") then
+          local full = bake_bg_rgba(bgGfx, bgPal, apply_page_progress_tiles(map, kind), W, H, false, v.slots)
+          cache:write(root .. "/progress_" .. kind .. v.suffix .. ".rgba",
+            crop_rgba(full, W, PROGRESS_X, PROGRESS_Y, PROGRESS_W, PROGRESS_H))
+        end
+      end
+      for kind, map in pairs(layers) do
+        if map and not (shiny and kind == "egg") then
+          cache:write(root .. "/layer_" .. kind .. v.suffix .. ".rgba", bake_bg_rgba(bgGfx, bgPal, map, W, H, true, v.slots))
+        end
+      end
+    end
+  end
+
+  local markGfx = rom and Versions.MON_MARKINGS_GFX and read_bytes(Versions.MON_MARKINGS_GFX, 2048)
+  local markPal = rom and Versions.SUMMARY_MARKING_PAL and read_bytes(Versions.SUMMARY_MARKING_PAL, 32)
+  if markGfx and markPal then
+    cache:write(root .. "/markings.rgba", (bake_sheet_rgba(markGfx, markPal, 4, 16, 0)))
+  end
+
+  local function rgb_of(bank, idx)
+    local r, g, b = bgr555_to_rgb8(bank[idx] or 0)
+    return string.format("{ %d, %d, %d }", r, g, b)
+  end
+  local moveTextColors = "{}"
+  if rom and Versions.SUMMARY_TEXT_MOVES_PAL then
+    local bank = load_pal_banks(read_bytes(Versions.SUMMARY_TEXT_MOVES_PAL, 32), 1)[0]
+    -- pokefirered/src/pokemon_summary_screen.c:645
+    local pairsIdx = { { 7, 8 }, { 1, 2 }, { 3, 4 }, { 5, 6 } }
+    local rows = {}
+    for i, p in ipairs(pairsIdx) do
+      rows[i] = string.format("[%d] = { fg = %s, shadow = %s }", i - 1, rgb_of(bank, p[1]), rgb_of(bank, p[2]))
+    end
+    moveTextColors = "{ " .. table.concat(rows, ", ") .. " }"
+  end
+
+  local monPicBounce = "{}"
+  if rom and Versions.SUMMARY_MON_PIC_BOUNCE then
+    local lens = { 3, 5, 7, 7 }
+    local off = Versions.SUMMARY_MON_PIC_BOUNCE
+    local rows = {}
+    for i, n in ipairs(lens) do
+      local vals = {}
+      for j = 1, n do
+        local b = get(off + j - 1)
+        vals[j] = tostring(b >= 128 and b - 256 or b)
+      end
+      rows[i] = "{ " .. table.concat(vals, ", ") .. " }"
+      off = off + n
+    end
+    monPicBounce = "{ " .. table.concat(rows, ", ") .. " }"
+  end
+
+  local eggPicShake = "{}"
+  if rom and Versions.SUMMARY_MON_PIC_BOUNCE then
+    -- pokefirered/src/pokemon_summary_screen.c:944
+    local off = Versions.SUMMARY_MON_PIC_BOUNCE + 3 + 5 + 7 + 7
+    local rows = {}
+    for i, n in ipairs({ 11, 11, 15 }) do
+      local vals = {}
+      for j = 1, n do
+        local b = get(off + j - 1)
+        vals[j] = tostring(b >= 128 and b - 256 or b)
+      end
+      rows[i] = "{ " .. table.concat(vals, ", ") .. " }"
+      off = off + n
+    end
+    eggPicShake = "{ " .. table.concat(rows, ", ") .. " }"
+  end
+
+  local noFlip = "{}"
+  if rom and Versions.SPECIES_INFO and Versions.SPECIES_INFO_SIZE and Versions.NUM_SPECIES then
+    local ids = {}
+    for sp = 1, Versions.NUM_SPECIES - 1 do
+      -- pokefirered/include/pokemon.h:235
+      if get(Versions.SPECIES_INFO + sp * Versions.SPECIES_INFO_SIZE + 0x19) >= 128 then
+        ids[#ids + 1] = "[" .. sp .. "] = true"
+      end
+    end
+    noFlip = "{ " .. table.concat(ids, ", ") .. " }"
   end
 
   -- HP Bar & EXP Bar
@@ -539,13 +647,25 @@ return {
     -- WIN_SKILLS_5 ability pane at (8,128)
     abilityName = { x = 74, y = 129 },
     abilityDesc = { x = 10, y = 143, w = 232, h = 16 },
-    status = { x = 16, y = 38 },
-    statusMovesInfo = { x = 16, y = 45 },
+    -- src/pokemon_summary_screen.c:4387
+    status = { x = 0, y = 34 },
+    statusMovesInfo = { x = 0, y = 41 },
     -- src/pokemon_summary_screen.c:4800, :4830, :4716
     shinyStar = { x = 102, y = 36 },
     shinyStarMovesInfo = { x = 4, y = 20 },
     pokerus = { x = 110, y = 88 },
+    -- src/pokemon_summary_screen.c:4888
+    markings = { x = 4, y = 87 },
+    -- src/pokemon_summary_screen.c:4152
+    monIcon = { x = 8, y = 16 },
+    -- src/pokemon_summary_screen.c:3377
+    movesInfoType1 = { x = 48, y = 35 },
+    movesInfoType2 = { x = 84, y = 35 },
   },
+  moveTextColors = %s,
+  monPicBounce = %s,
+  eggPicShake = %s,
+  noFlip = %s,
   -- WIN_MOVES_5 types at (120,16); WIN_MOVES_3 names/PP at (160,16)
   -- GetMoveNamePrinterYpos(i)=i*28+5, GetMovePpPrinterYpos(i)=i*28+16
   moveSlots = {
@@ -561,7 +681,7 @@ return {
     desc = { x = 7, y = 98, w = 112, h = 48 },
   },
 }
-]], W, H)
+]], W, H, moveTextColors, monPicBounce, eggPicShake, noFlip)
   cache:write(root .. "/manifest.lua", manifest)
 
   return {

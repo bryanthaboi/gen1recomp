@@ -18,8 +18,8 @@ GamepadMap.TRIGGER_ON = 0.4
 GamepadMap.TRIGGER_OFF = 0.2
 
 GamepadMap.DEFAULT_PAD_ACTIONS = {
-  rightshoulder = "speedUp", righttrigger = "speedUp",
-  leftshoulder = "speedDown", lefttrigger = "speedDown",
+  rightshoulder = "speedUp", triggerright = "speedUp",
+  leftshoulder = "speedDown", triggerleft = "speedDown",
   -- FRLG: shoulders also drive l/r via Input dual-emit (see Input:gamepadpressed).
 }
 
