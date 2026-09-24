@@ -46,6 +46,7 @@ local function helloFor(game, linkType, player)
   local hello = Handshake.hello(handshakeView(game), nil)
   hello.generation = Game3Link.GENERATION
   hello.type = Game3Link.HELLO
+  hello.ruleset = Handshake.DEFAULT_RULESET
   local name, trainerId, gender = localPlayer(game)
   if type(player) == "table" then
     if player.name ~= nil then name = player.name end

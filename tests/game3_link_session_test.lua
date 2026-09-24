@@ -250,6 +250,18 @@ strict:update(0)
 check(not strict:isOpen(), "a peer built on another cache is refused")
 eq(strict.reason, "cache_version_mismatch", "and says why")
 
+local Handshake = require("src.link.Handshake")
+local realRuleset = Handshake.ruleset
+Handshake.ruleset = function() return "gen1_modern" end
+local r7c = FakeRelay.room({ seats = 2 })
+local mixed = Game3Link.attach(FakeRelay.transport(r7c, 0), { game = game })
+local otherHello = Game3Link.hello(game, Game3Link.LINKTYPE.BATTLE)
+Handshake.ruleset = realRuleset
+eq(otherHello.ruleset, Handshake.DEFAULT_RULESET, "the Gen 1 RULESET option never reaches a FireRed hello")
+r7c:session(1):send(otherHello)
+mixed:update(0)
+check(mixed:isOpen() and mixed:isReady(), "so two players with different Gen 1 rulesets still link")
+
 print("[test] 8. CloseLink tears the session down and the peer hears it")
 Link.reset()
 Link.attach(host)
