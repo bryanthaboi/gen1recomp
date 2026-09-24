@@ -885,6 +885,10 @@ function Renderer:endFrame(zones, worldZones)
   local uvpw, uvph, uox, uoy = R.uvpw, R.uvph, R.uox, R.uoy
   local Up = R.Up
   local ShaderFX = require("src.render.ShaderFX")
+  -- The final-frame filter: a SHADER FX preset, else PIXEL FILTER's xBRZ.
+  -- Both take the same render() call, so the present below needs no fork.
+  local Xbrz = require("src.render.Xbrz")
+  local fx = (ShaderFX.active() and ShaderFX) or (Xbrz.active() and Xbrz) or nil
   -- Forced mono/Classic modes still need a whole-screen zone when a state
   -- exposes no SGB packets (raw DMG canvas), so sendColors can remap.
   zones = PaletteFX.ensureZones(zones)
@@ -932,7 +936,7 @@ function Renderer:endFrame(zones, worldZones)
   -- to the screen exactly as it always did.
   local hasOutputHook = Runtime.wantsHook("render.output")
     and Runtime.call("render.output_enabled", function() return false end) == true
-  local needPresent = ShaderFX.active() or Pipelines.wantsPresent() or hasOutputHook
+  local needPresent = fx ~= nil or Pipelines.wantsPresent() or hasOutputHook
   local present = nil
   if needPresent then
     if not self.presentCanvas or self.presentCanvas:getWidth() ~= ww
@@ -1088,7 +1092,16 @@ function Renderer:endFrame(zones, worldZones)
     local woxPx = vx + math.floor((pw - wvw * sp) / 2)
     local woyPx = vy + math.floor((ph - wvh * sp) / 2) - R.lift
     local wox, woy = woxPx / dpiX, woyPx / dpiY
-    if present and ShaderFX.active() and sp ~= Up then
+    -- xBRZ reads the frame back down to ONE pixel grid, so a world whose
+    -- pixels sit off the UI's grid (a padded world canvas centres on its own
+    -- origin) is split off even at the same scale, as Game2:fxSplitsUi does.
+    local offGrid = false
+    if fx == Xbrz and sp == Up then
+      local uoxPx = vx + math.floor((pw - uiw * Up) / 2)
+      local uoyPx = vy + math.max(0, math.floor((ph - uih * Up) / 2) - R.lift)
+      offGrid = (woxPx - uoxPx) % sp ~= 0 or (woyPx - uoyPx) % sp ~= 0
+    end
+    if present and fx and (sp ~= Up or offGrid) then
       fxWorldScale, fxWorldOx, fxWorldOy = sp, woxPx, woyPx
     end
     -- Tilt mode projects the ground world pass through the perspective mesh
@@ -1382,16 +1395,16 @@ function Renderer:endFrame(zones, worldZones)
       }) == true
     if not outputHandled then
       if cut then love.graphics.setScissor(vux, vuy, vuw, vuh) end
-      if ShaderFX.active() then
+      if fx then
         -- Shades the whole window, letterbox included, not just the game rect.
         local fxPxW, fxPxH = ww * dpiX, wh * dpiY
         local worldScale = fxWorldScale or fxScale
-        ShaderFX.render(composed,
+        fx.render(composed,
           { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = worldScale },
           { w = fxPxW / worldScale, h = fxPxH / worldScale },
           dpiX, dpiY, { originX = fxWorldOx or uox * dpiX, originY = fxWorldOy or uoy * dpiY })
         if uiLayer then
-          ShaderFX.render(uiLayer,
+          fx.render(uiLayer,
             { x = 0, y = 0, w = fxPxW, h = fxPxH, scale = fxScale },
             { w = fxPxW / fxScale, h = fxPxH / fxScale },
             dpiX, dpiY, { layer = "ui", mask = true, originX = uox * dpiX, originY = uoy * dpiY })

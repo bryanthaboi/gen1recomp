@@ -169,6 +169,19 @@ function Rows.build(ctx)
     end,
   })
   add({
+    id = "pixelFilter", label = Strings("PIXEL FILTER"),
+    value = function(c)
+      local Xbrz = require("src.render.Xbrz")
+      return Strings(Xbrz.label(c.options.pixelFilter))
+    end,
+    step = function(c, dir)
+      local Xbrz = require("src.render.Xbrz")
+      c.options.pixelFilter = Xbrz.cycle(c.options.pixelFilter, dir)
+      Xbrz.setMode(c.options.pixelFilter)
+      return true
+    end,
+  })
+  add({
     id = "videoMode", label = Strings("VIDEO MODE"),
     value = function(c)
       local VideoMode = require("src.core.VideoMode")
@@ -402,7 +415,7 @@ Rows.GROUPS = {
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
                 "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.graphics", label = "GRAPHICS",
-    members = { "uiLetterbox", "frameType" } },
+    members = { "uiLetterbox", "pixelFilter", "frameType" } },
   { id = "group.audio", label = "AUDIO",
     members = { "sound", "musicVol", "sfxVol", "musicFilter" } },
   { id = "group.battle", label = "BATTLE OPTIONS",

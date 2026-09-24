@@ -312,6 +312,17 @@ local ROWS = {
       local Letterbox = require("src.render.Letterbox")
       return Strings(Letterbox.label(options.uiLetterbox))
     end },
+  -- xBRZ upscaling of the finished frame; see src/ui/OptionsMenu.lua's row.
+  { id = "pixelFilter", label = Strings.source("PIXEL FILTER"), port = true,
+    cycle = function(options, delta)
+      local Xbrz = require("src.render.Xbrz")
+      options.pixelFilter = Xbrz.cycle(options.pixelFilter, delta)
+      Xbrz.setMode(options.pixelFilter)
+    end,
+    text = function(options)
+      local Xbrz = require("src.render.Xbrz")
+      return Strings(Xbrz.label(options.pixelFilter))
+    end },
   { id = "shaderfx", label = Strings.source("SHADER FX"), port = true,
     text = function(options)
       local ShaderFX = require("src.render.ShaderFX")
@@ -499,7 +510,7 @@ local GROUPS = {
     members = { "videoMode", "faithfulRes", "screenPos", "fpsCap", "vsync",
       "logicClock" } },
   { id = "group.graphics", label = Strings.source("GRAPHICS"),
-    members = { "color", "uiLetterbox", "shaderfx", "shaderfx2", "frame" } },
+    members = { "color", "uiLetterbox", "pixelFilter", "shaderfx", "shaderfx2", "frame" } },
   { id = "group.audio", label = Strings.source("AUDIO"),
     members = { "sound", "musicVol", "sfxVol", "musicFilter" } },
   { id = "group.battle", label = Strings.source("BATTLE OPTIONS"),
