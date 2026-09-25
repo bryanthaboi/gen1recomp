@@ -443,6 +443,22 @@ function Ui.refuseItems()
   Ui.push(BattleText.get("STRINGID_ITEMSCANTBEUSEDNOW"))
 end
 
+-- pokeemerald/data/battle_scripts_1.s:4547 BattleScript_AskIfWantsToForfeitMatch
+local function confirm_link_forfeit(act)
+  if Ui._headless or not Choice then
+    Ui._pendingCommand = act
+    Ui._mode = "none"
+    return
+  end
+  Ui._selCmd = nil
+  Ui._selReturn = "menu"
+  Ui._mode = "selmsg"
+  -- pokeemerald/src/battle_message.c:1422
+  Ui.askYesNo(Strings("Would you like to forfeit the match\nand quit now?"), function(yes)
+    if yes then Ui._selCmd = act end
+  end)
+end
+
 local function open_battle_bag()
   if Ui._st and Ui._st.link then return Ui.refuseItems() end
   local BagMenu = require("src.ui.game3.bag_menu")
@@ -700,13 +716,17 @@ end
 
 function Ui.selectionPump()
   if Ui._mode ~= "selmsg" then return false end
+  if Choice and Choice.active then return false end
   if not Ui.pump() then return true end
   if Ui._selCmd then
     Ui._pendingCommand = Ui._selCmd
     Ui._selCmd = nil
     Ui._mode = "none"
   else
-    Ui._mode = Ui._selReturn or "moves"
+    -- pokefirered/src/battle_main.c:3370
+    local ret = Ui._selReturn or "moves"
+    restore_action_menu()
+    Ui._mode = ret
   end
   Ui._selReturn = nil
   return true
@@ -1401,6 +1421,8 @@ local function handle_double_input(input)
           Ui.push(why)
           -- pokefirered/src/battle_controller_oak_old_man.c:1782
           Oak.say(st, "noRunning")
+        elseif st and st.link then
+          confirm_link_forfeit(Commands.playerAction(st, Ui._menuIndex, nil, id))
         else
           Ui._pendingCommand = Commands.playerAction(st, Ui._menuIndex, nil, id)
           Ui._mode = "none"
@@ -1570,6 +1592,8 @@ function Ui.handleInput(input)
           Ui.push(why)
           -- pokefirered/src/battle_controller_oak_old_man.c:1782
           Oak.say(Ui._st, "noRunning")
+        elseif Ui._st and Ui._st.link then
+          confirm_link_forfeit(Commands.playerAction(Ui._st, Ui._menuIndex, nil))
         else
           Ui._pendingCommand = Commands.playerAction(Ui._st, Ui._menuIndex, nil)
           Ui._mode = "none"

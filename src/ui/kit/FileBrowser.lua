@@ -24,7 +24,7 @@ end
 local FileBrowser = {
   active = false,
   title = "Select File",
-  mode = "rom", -- "rom", "save", "mod", "all"
+  mode = "rom", -- "rom", "save", "mod", "cart", "all"
   currentDir = "/",
   entries = {},
   selectedIdx = 1,
@@ -100,6 +100,8 @@ local function isMatchingFilter(name, isDir, mode)
     return (ext == "sav" or ext == "lua")
   elseif mode == "mod" then
     return (ext == "zip")
+  elseif mode == "cart" then
+    return (ext == "g1rcart")
   end
   return true
 end

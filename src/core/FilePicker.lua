@@ -60,14 +60,18 @@ function FilePicker.matches(name, kind)
   return false
 end
 
-function FilePicker.open(prompt, kind)
+-- Shell commands for one pick, in the order this OS should try them. Windows
+-- copies the pick to a plain-ASCII temp name: the console codepage would
+-- mangle a non-ASCII path, and io.open there needs ANSI bytes.
+function FilePicker.commands(prompt, kind)
   if not Platform.canSpawnProcess() then return nil end
   local title = shellSafe(prompt)
   local platform = love.system.getOS()
   if platform == "OS X" then
-    return commandOutput(
+    return {
       ([[osascript -e 'POSIX path of (choose file with prompt "%s" of type {%s})' 2>/dev/null]])
-        :format(title, appleTypes(kind.exts)))
+        :format(title, appleTypes(kind.exts)),
+    }
   elseif platform == "Windows" then
     local script = table.concat({
       HostPicker.WIN_OPEN_DIALOG,
@@ -81,15 +85,22 @@ function FilePicker.open(prompt, kind)
       "[Console]::OutputEncoding=[Text.Encoding]::UTF8;",
       "[Console]::Write($t)}",
     })
-    return commandOutput(
-      'powershell -NoProfile -STA -Command "' .. script .. '"')
+    return { 'powershell -NoProfile -STA -Command "' .. script .. '"' }
   elseif platform == "Linux" then
-    local path = commandOutput(
+    return {
       ([[zenity --file-selection --title="%s" --file-filter="%s | %s" 2>/dev/null]])
-        :format(title, kind.label, globPatterns(kind.exts)))
+        :format(title, kind.label, globPatterns(kind.exts)),
+      ([[kdialog --getopenfilename "$HOME" "%s|%s" 2>/dev/null]])
+        :format(globPatterns(kind.exts), kind.label),
+    }
+  end
+  return nil
+end
+
+function FilePicker.open(prompt, kind)
+  for _, command in ipairs(FilePicker.commands(prompt, kind) or {}) do
+    local path = commandOutput(command)
     if path then return path end
-    return commandOutput(([[kdialog --getopenfilename "$HOME" "%s|%s" 2>/dev/null]])
-      :format(globPatterns(kind.exts), kind.label))
   end
   return nil
 end

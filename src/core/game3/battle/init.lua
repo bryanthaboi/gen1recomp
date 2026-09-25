@@ -1239,7 +1239,7 @@ local function begin_turn_with(playerAct)
   if st and st.double then return D.startSelection() end
   if st and st.link and playerAct and playerAct.kind == "bag" then
     -- pokefirered/src/battle_main.c:3182
-    Ui.push(BattleText.get("STRINGID_ITEMSCANTBEUSEDNOW"))
+    Ui.refuseItems()
     Battle._phase = "command"
     return
   end

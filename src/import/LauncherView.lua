@@ -4642,8 +4642,7 @@ local function buildCartModal(imp, m)
   end
   local available = inner - Kit.scrollGutter(m.s) - 2 * gap
   local cols = math.max(1, math.min(3, math.floor((available + gap) / (actionMin + gap))))
-  local FilePicker = require("src.core.FilePicker")
-  local importLabel = FilePicker.available() and Strings("Import a cart") or Strings("Get more carts")
+  local importLabel = imp:_cartImportButtonLabel()
   local importW = chipWidth(importLabel, m) + iconExtra
   local closeW = chipWidth(Strings("Close"), m)
   local footerStacked = importW + gap + closeW > inner

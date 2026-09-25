@@ -141,9 +141,9 @@ check(picker:find("Johto Lite", 1, true) == nil,
 check(picker:find("v1.2.0", 1, true) ~= nil, "a cart row carries its version")
 check(picker:find("sealed", 1, true) ~= nil, "a cart row carries its seal state")
 check(picker:find("open", 1, true) ~= nil, "including an open one")
-check(picker:find("Import a cart", 1, true) ~= nil
-    or picker:find("Get more carts", 1, true) ~= nil,
-  "the last row imports a cart, by picker or by folder")
+check(picker:find("Import .g1rcart", 1, true) ~= nil
+    or picker:find("Scan again", 1, true) ~= nil,
+  "the last row imports a .g1rcart, by picker or by inbox scan")
 
 imp._cartPopup = nil
 local vanillaColors = drawColors(imp)
@@ -1115,7 +1115,7 @@ for _, size in ipairs(SIZES) do
       auditFrame(("%dx%d picker"):format(W, H), "Export")
       for _, r in ipairs(Kit.audit or {}) do
         local label = tostring(r.label)
-        if label == "Get more carts" or label == "Close" then
+        if label == "Import .g1rcart" or label == "Scan again" or label == "Close" then
           check(r.y >= -0.5 and r.y + r.h <= H + 0.5,
             ("%dx%d picker: %q stays inside the window"):format(W, H, label))
         end

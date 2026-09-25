@@ -610,8 +610,8 @@ public class GameActivity extends SDLActivity {
      * stays picker-agnostic and unchanged.
      *
      * @param destFilename basename under the app save identity (e.g.
-     *                     picked_rom.gb, picked_mod.zip, picked_save.sav, or
-     *                     picked_required_import.bin)
+     *                     picked_rom.gb, picked_mod.zip, picked_save.sav,
+     *                     picked_cart.g1rcart, or picked_required_import.bin)
      */
     private static boolean isTelevision(Context context) {
         if (context == null) return false;

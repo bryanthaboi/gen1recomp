@@ -113,6 +113,7 @@ public:
 	 *
 	 * @param kind Optional pick kind: nullptr/"rom" -> picked_rom.gb,
 	 *             "mod" -> picked_mod.zip, "sav"/"save" -> picked_save.sav,
+	 *             "cart" -> picked_cart.g1rcart,
 	 *             "required_import" -> picked_required_import.bin.
 	 * @return Whether the picker was shown.
 	 **/

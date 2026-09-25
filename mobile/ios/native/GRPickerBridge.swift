@@ -5,9 +5,9 @@
 // without updating that patch (see mobile/ios/patch_love_src.py).
 //
 // Contract (mirrors love-android's GameActivity.showFilePicker):
-//   love.system.pickFile("rom"|"mod"|"sav"|"required_import") -> copies the user's pick into
+//   love.system.pickFile("rom"|"mod"|"sav"|"cart"|"required_import") -> copies the user's pick into
 //   the LÖVE save directory as picked_rom.gb / picked_mod.zip /
-//   picked_save.sav; RomImporter's pending-file scan consumes it.
+//   picked_save.sav / picked_cart.g1rcart; RomImporter's pending-file scan consumes it.
 //   love.system.createFile(name) -> exports save dir's pending_export.sav
 //   through the system picker, then writes export_done.flag.
 
@@ -330,6 +330,9 @@ public final class GRPickerBridge: NSObject {
             types = [.zip]
         case "sav":
             destName = "picked_save.sav"
+        case "cart":
+            destName = "picked_cart.g1rcart"
+            if let t = UTType(filenameExtension: "g1rcart") { types.append(t) }
         case "required_import":
             if let requestedDestination,
                isDirectRequiredDestination(requestedDestination),
@@ -396,7 +399,7 @@ public final class GRPickerBridge: NSObject {
     // Kept beside the switch it describes, because the two drifting apart is
     // the only way this can lie.
     @objc public static func supportedPickerKinds() -> NSString {
-        return "rom,mod,sav,stadium,required_import" as NSString
+        return "rom,mod,sav,cart,stadium,required_import" as NSString
     }
 
     @objc(presentExportWithName:saveDir:)

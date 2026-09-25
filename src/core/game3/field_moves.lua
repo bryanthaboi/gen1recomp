@@ -75,10 +75,10 @@ FieldMoves.SE = {
   USE_ITEM    = 1,   -- SE_USE_ITEM
   BANG        = 20,
   WARP_OUT    = 40,  -- SE_WARP_OUT
-  CUT         = 143, -- SE_M_CUT
-  ROCK_SMASH  = 146, -- SE_M_ROCK_THROW
-  FLASH       = 175, -- SE_M_REFLECT
-  SWEET_SCENT = 197, -- SE_M_SWEET_SCENT
+  CUT         = 121, -- SE_M_CUT
+  ROCK_SMASH  = 124, -- SE_M_ROCK_THROW
+  FLASH       = 200, -- SE_M_REFLECT
+  SWEET_SCENT = 229, -- SE_M_SWEET_SCENT
 }
 
 -- pokefirered/src/field_specials.c:2296 CutMoveRuinValleyCheck

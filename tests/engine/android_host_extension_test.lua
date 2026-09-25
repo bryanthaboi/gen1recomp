@@ -120,7 +120,9 @@ systemFile:close()
 check(system:find('strcmp(kind, "required_import")', 1, true)
     and system:find('destination != nullptr', 1, true)
     and system:find('"picked_required_import.bin"', 1, true)
-    and system:find('return "rom,mod,sav,required_import"', 1, true),
+    and system:find('strcmp(kind, "cart")', 1, true)
+    and system:find('"picked_cart.g1rcart"', 1, true)
+    and system:find('return "rom,mod,sav,cart,required_import"', 1, true),
   "native Android bridge advertises and routes required imports")
 check(source:find('normalized.startsWith("mods/")', 1, true)
     and source:find('/baseroms/', 1, true)

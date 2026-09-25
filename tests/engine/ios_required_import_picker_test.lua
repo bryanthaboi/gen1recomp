@@ -19,7 +19,10 @@ check(bridge:find('case "required_import":', 1, true)
 check(bridge:find("types.append(.data)", 1, true)
     and bridge:find("types.append(.item)", 1, true),
   "iOS required imports accept user-owned binary ROM files")
-check(bridge:find('"rom,mod,sav,stadium,required_import"', 1, true),
+check(bridge:find('case "cart":', 1, true)
+    and bridge:find('destName = "picked_cart.g1rcart"', 1, true),
+  "iOS routes cart files to their own staged filename")
+check(bridge:find('"rom,mod,sav,cart,stadium,required_import"', 1, true),
   "iOS advertises required_import to Lua before opening the picker")
 
 local patch = read("mobile/ios/patch_love_src.py")

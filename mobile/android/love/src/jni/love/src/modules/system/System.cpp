@@ -192,6 +192,8 @@ bool System::pickFile(const char *kind, const char *destination) const
 			dest = "picked_mod.zip";
 		else if (strcmp(kind, "sav") == 0 || strcmp(kind, "save") == 0)
 			dest = "picked_save.sav";
+		else if (strcmp(kind, "cart") == 0)
+			dest = "picked_cart.g1rcart";
 		else if (strcmp(kind, "required_import") == 0)
 			dest = (destination != nullptr && destination[0] != '\0')
 				? destination : "picked_required_import.bin";
@@ -212,7 +214,7 @@ bool System::pickFile(const char *kind, const char *destination) const
 const char *System::pickFileKinds() const
 {
 #ifdef LOVE_ANDROID
-	return "rom,mod,sav,required_import";
+	return "rom,mod,sav,cart,required_import";
 #else
 	return "";
 #endif

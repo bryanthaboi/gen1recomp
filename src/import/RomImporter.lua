@@ -450,6 +450,8 @@ local IMPORTS_DIR = "imports"
 local BASE_ROMS_DIR = "baseroms"
 local MODS_INBOX_DIR = "imports/mods"
 local SAVES_INBOX_DIR = "imports/saves"
+local CARTS_INBOX_DIR = "imports/carts"
+local PICKED_CART = "picked_cart.g1rcart"
 local ROM_BYTES_GEN1 = 1024 * 1024
 local ROM_BYTES_GEN2 = 2 * 1024 * 1024
 local ROM_BYTES_GEN3 = 16 * 1024 * 1024
@@ -517,6 +519,17 @@ end
 
 -- NX mod zip inbox (separate from ROM imports/). Parent imports/ first --
 -- love.filesystem.createDirectory does not create nested parents.
+function RomImporter:ensureCartsInboxDir()
+  self:ensureImportsDir()
+  local info = love.filesystem.getInfo(CARTS_INBOX_DIR)
+  if info and info.type == "directory" then return true end
+  if info then return false end
+  if love.filesystem.createDirectory then
+    return love.filesystem.createDirectory(CARTS_INBOX_DIR)
+  end
+  return false
+end
+
 function RomImporter:ensureModsInboxDir()
   self:ensureImportsDir()
   local info = love.filesystem.getInfo(MODS_INBOX_DIR)
@@ -565,6 +578,15 @@ function RomImporter:_setNxInboxNotice(version)
     status = Strings("Copy your .gb/.gbc/.gba into:"),
     detail = Strings("%s/imports/\nDBI MTP → 1: SD Card/%simports/", saveDir, rel),
   }
+end
+
+function RomImporter:_setNxCartsInboxNotice()
+  local saveDir = love.filesystem.getSaveDirectory()
+  local rel = RomImporter.mtpHintPath(saveDir)
+  if rel ~= "" and rel:sub(-1) ~= "/" then rel = rel .. "/" end
+  self._cartNotice = Strings(
+    "Copy your .g1rcart into:\n%s/imports/carts/\nDBI MTP → 1: SD Card/%simports/carts/",
+    saveDir, rel)
 end
 
 function RomImporter:_setNxModsInboxNotice()
@@ -722,6 +744,26 @@ end
 function RomImporter:scanModsInbox()
   self:ensureModsInboxDir()
   return listZipPaths(MODS_INBOX_DIR)
+end
+
+local function listCartPaths(dir)
+  local paths = {}
+  for _, name in ipairs(love.filesystem.getDirectoryItems(dir) or {}) do
+    if name:sub(1, 1) ~= "." then
+      local path = (dir == "" or dir == "/") and name or (dir .. "/" .. name)
+      if name:lower():match("%.g1rcart$")
+          and love.filesystem.getInfo(path, "file") then
+        paths[#paths + 1] = path
+      end
+    end
+  end
+  return paths
+end
+
+-- NX cart inbox: only *.g1rcart under imports/carts/.
+function RomImporter:scanCartsInbox()
+  self:ensureCartsInboxDir()
+  return listCartPaths(CARTS_INBOX_DIR)
 end
 
 -- NX saves inbox: only non-hidden *.sav under imports/saves/<version>/.
@@ -1048,6 +1090,24 @@ local function findPendingMod(preferAny, skip)
 end
 
 -- Same pattern as findPendingMod for battery saves (picked_save.sav / *.sav).
+-- Android/iOS SAF writes a cart pick to picked_cart.g1rcart. USB copies may
+-- use any .g1rcart basename at the save-dir root. preferAny=true also accepts
+-- those copies (Import). Focus only consumes the SAF basename so a leftover
+-- cart file is never auto-installed on every refocus.
+local function findPendingCart(preferAny, skip)
+  if love.filesystem.getInfo(PICKED_CART, "file") then
+    return PICKED_CART
+  end
+  if not preferAny then return nil end
+  for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
+    if name:lower():match("%.g1rcart$") and not (skip and skip[name])
+        and love.filesystem.getInfo(name, "file") then
+      return name
+    end
+  end
+  return nil
+end
+
 local function findPendingSav(preferAny, skip)
   local preferred = "picked_save.sav"
   if love.filesystem.getInfo(preferred, "file") then
@@ -1751,6 +1811,11 @@ function RomImporter:focus(f)
       local version = self.androidPendingVersion or self:_savedropTarget()
       self.androidPendingVersion = nil
       self.saveNotice[version] = { ok = false, text = text }
+    elseif pickError:find("picked_cart", 1, true)
+        or self.pickerPendingKind == "cart" then
+      self.pickerPendingKind = nil
+      self.pickerPendingVersion = nil
+      self._cartNotice = text
     else
       self:setError(text)
     end
@@ -1817,6 +1882,15 @@ function RomImporter:focus(f)
     self:_installMod(modName)
     consumePick(self, modName, "picked_mod.zip",
       self.modNotice and self.modNotice.ok)
+    return
+  end
+  local cartName = findPendingCart(false, self.pickSkip)
+  if cartName then
+    local version = self.pickerPendingVersion or self._cartPopup or self.tab
+    self.pickerPendingKind = nil
+    self.pickerPendingVersion = nil
+    local installed = self:_installCartFile(cartName, version)
+    consumePick(self, cartName, PICKED_CART, installed)
     return
   end
   local savName = findPendingSav(false, self.pickSkip)
@@ -2354,6 +2428,10 @@ function RomImporter:filedropped(file)
     self:_importSave(self:_savedropTarget(), file)
     return
   end
+  if name:lower():match("%.g1rcart$") then
+    self:_installCartFile(file, self._cartPopup or self.tab)
+    return
+  end
   local data, readError = readDroppedFile(file)
   if not data then
     self:setError("Could not read the dropped file: " .. tostring(readError))
@@ -2538,12 +2616,18 @@ function RomImporter:_pumpHostPick()
   local state, output, err = HostPicker.poll(job.id)
   if state == "pending" then return end
   self._hostPick = nil
-  if self.modNotice == job.notice then self.modNotice = nil end
+  if job.kind == "cart" then
+    if self._cartNotice == job.notice then self._cartNotice = nil end
+  elseif self.modNotice == job.notice then
+    self.modNotice = nil
+  end
   output = trim(output)
   if output ~= "" then
-    self:_installMod(output)
+    if job.kind == "cart" then self:_installCartFile(output, job.version)
+    else self:_installMod(output) end
   elseif err then
-    self:_openModBrowser()
+    if job.kind == "cart" then self:_openCartBrowser(job.version)
+    else self:_openModBrowser() end
   end
 end
 
@@ -3269,9 +3353,15 @@ function RomImporter:_pollPickedFiles(dt)
   if pickError then
     love.filesystem.remove("pick_error.txt")
     self.pickPending = nil
-    self.modNotice = { ok = false, text = pickError }
-    self.notice = { version = self.chooseVersion or "red",
-                    status = "File import failed:", detail = pickError }
+    if self.pickerPendingKind == "cart" then
+      self.pickerPendingKind = nil
+      self.pickerPendingVersion = nil
+      self._cartNotice = pickError
+    else
+      self.modNotice = { ok = false, text = pickError }
+      self.notice = { version = self.chooseVersion or "red",
+                      status = "File import failed:", detail = pickError }
+    end
     return
   end
   local found = love.filesystem.getInfo("export_done.flag", "file") ~= nil
@@ -3281,6 +3371,7 @@ function RomImporter:_pollPickedFiles(dt)
     for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
       local n = name:lower()
       if isRomFilename(n) or n == "picked_mod.zip" or n == "picked_save.sav"
+          or n == PICKED_CART
           or n == "picked_required_import.bin" or n == "picked_stadium.z64"
           or n:match("^picked_importer_[%l%d_%-]+%.bin$") then
         found = true
@@ -3507,6 +3598,13 @@ function RomImporter:update(dt)
         if Platform.isUWP() and self.saveNotice[target] and self.saveNotice[target].ok then
           os.remove(path)
         end
+      elseif kind == "cart" then
+        if Platform.isUWP() then
+          local installed = self:_installCartFile(path, version)
+          if installed then os.remove(path) end
+        else
+          self:_installCartFile(path, version)
+        end
       else
         self:startPath(path)
         if Platform.isUWP() then os.remove(path) end
@@ -3527,6 +3625,8 @@ function RomImporter:update(dt)
           self._skinNotice = { ok = false, text = errorText }
         elseif kind == "sav" then
           self.saveNotice[version] = { ok = false, text = errorText }
+        elseif kind == "cart" then
+          self._cartNotice = errorText
         else
           self:setError(errorText)
         end
@@ -5157,8 +5257,6 @@ end
 
 -- The view's open-folder affordance needs the same file:// encoding the old
 -- notice line used.
--- Desktop picks a .cart file; everywhere else CartStore's stray scan already
--- adopts anything dropped in the folder, so we just point at it.
 function RomImporter:_resyncPointerAfterDialog()
   self._mouseAt = nil
   self._clickPt = nil
@@ -5166,23 +5264,60 @@ function RomImporter:_resyncPointerAfterDialog()
     and love.mouse.isDown(1)) and true or false
 end
 
-function RomImporter:importCartFile(version)
-  local CartStore = require("src.carts.CartStore")
-  local FilePicker = require("src.core.FilePicker")
-  if not FilePicker.available() then
-    local dir = self:cartsDir()
-    self._cartNotice = dir
-      and Strings("Drop .cart files in %s, then reopen this list.", dir)
-      or Strings("No filesystem available to import from.")
-    return false
+local CART_PICK = { label = "Cart", exts = { "g1rcart" } }
+
+local function hostAbsolute(path)
+  return type(path) == "string" and (
+      path:match("^/")
+      or path:match("^%a:[/\\]")
+      or path:match("^[Ss][Dd][Mm][Cc]:"))
+end
+
+local function readCartSource(source)
+  local t = type(source)
+  if (t == "userdata" or t == "table") and type(source.open) == "function" then
+    return readDroppedFile(source)
   end
-  local path = FilePicker.open("Choose a cart",
-    { label = "Cart", exts = { CartStore.EXT:gsub("^%.", "") } })
-  self:_resyncPointerAfterDialog()
-  if not path then return false end
-  local bytes = FilePicker.read(path)
+  if t ~= "string" then return nil end
+  if not hostAbsolute(source) and love and love.filesystem then
+    local data = love.filesystem.read(source)
+    if type(data) == "string" and data ~= "" then return data end
+  end
+  local file = io.open(source, "rb")
+  if file then
+    local data = file:read("*a")
+    file:close()
+    if type(data) == "string" and data ~= "" then return data end
+  end
+  if love and love.filesystem then
+    local data = love.filesystem.read(source)
+    if type(data) == "string" and data ~= "" then return data end
+  end
+  return nil
+end
+
+local function cartSourceName(source)
+  if type(source) == "string" then
+    return source:match("([^/\\]+)$") or source
+  end
+  if source and source.getFilename then
+    return source:getFilename() or "cart"
+  end
+  return "cart"
+end
+
+local function handheldHost()
+  return os.getenv("HANDHELD") == "1" or os.getenv("PORTMASTER") == "1"
+    or os.getenv("POKEPORT_HANDHELD") == "1" or os.getenv("TRIMUI") == "1"
+    or os.getenv("MUOS") == "1" or os.getenv("KNULLI") == "1"
+end
+
+function RomImporter:_installCartFile(source, version)
+  local CartStore = require("src.carts.CartStore")
+  local name = cartSourceName(source)
+  local bytes = readCartSource(source)
   if not bytes then
-    self._cartNotice = Strings("Could not read %s", FilePicker.basename(path))
+    self._cartNotice = Strings("Could not read %s", name)
     return false
   end
   local cart, err = CartStore.install(bytes)
@@ -5191,10 +5326,136 @@ function RomImporter:importCartFile(version)
       tostring(err))
     return false
   end
-  self:_refreshCarts(version)
-  self._cartNotice = Strings("Imported %s. It is in this list now.",
-    tostring(cart.title or cart.id))
+  if cart.base then self:_refreshCarts(cart.base) end
+  if version and version ~= cart.base then self:_refreshCarts(version) end
+  local title = tostring(cart.title or cart.id)
+  if version and cart.base and cart.base ~= version then
+    local info = GameVersion.info(cart.base)
+    self._cartNotice = Strings("Imported %s for %s.", title,
+      (info and info.displayName) or cart.base)
+  else
+    self._cartNotice = Strings("Imported %s. It is in this list now.", title)
+  end
   return true
+end
+
+function RomImporter:_openCartBrowser(version)
+  local okKit, Kit = pcall(require, "src.ui.kit.Kit")
+  if okKit and Kit.FileBrowser then
+    self._padCursorActive = false
+    Kit.FileBrowser.open({
+      title = "Select Cart (.g1rcart)",
+      mode = "cart",
+      onSelect = function(pickedPath)
+        self:_installCartFile(pickedPath, version)
+      end,
+    })
+    return true
+  end
+  return false
+end
+
+function RomImporter:rescanCartsAction(version)
+  if self.workState == "working" then return false end
+  self:ensureCartsInboxDir()
+  local candidates = self:scanCartsInbox()
+  if #candidates == 0 then
+    self:_setNxCartsInboxNotice()
+    return false
+  end
+  local anyOk, fails = false, 0
+  local lastOk, lastFail
+  for _, path in ipairs(candidates) do
+    if self:_installCartFile(path, version) then
+      anyOk = true
+      lastOk = self._cartNotice
+    else
+      fails = fails + 1
+      lastFail = self._cartNotice
+    end
+  end
+  if anyOk and lastFail then
+    self._cartNotice = Strings("%s (%d could not be imported.)", lastOk, fails)
+  elseif not anyOk then
+    self._cartNotice = lastFail
+  end
+  return anyOk
+end
+
+function RomImporter:_cartImportButtonLabel()
+  if self.isNX then return Strings("Scan again") end
+  return Strings("Import .g1rcart")
+end
+
+-- "Import .g1rcart" on the Custom Carts modal. Same platform split as ROM,
+-- mod, and save import: NX rescans imports/carts/, Android and iOS stage
+-- picked_cart.g1rcart through love.system.pickFile("cart"), UWP returns the
+-- pick from getPickedFile, handhelds use the in-launcher browser, and desktop
+-- opens the OS dialog (async on Windows so the window keeps drawing).
+function RomImporter:importCartFile(version)
+  if self.workState == "working" then return false end
+  if self._hostPick then return false end
+  if self.isNX then
+    self:ensureCartsInboxDir()
+    return self:rescanCartsAction(version)
+  end
+  if self.nativePicker and love.system.getPickedFile then
+    if pickerHasKind("cart") and pickFile("cart") then
+      self.pickerPendingKind = "cart"
+      self.pickerPendingVersion = version
+      return true
+    end
+    self.pickerPendingKind = nil
+    local dir = self:cartsDir()
+    self._cartNotice = dir
+      and Strings("Drop .g1rcart files in %s, then reopen this list.", dir)
+      or Strings("Could not open the file picker.")
+    return false
+  end
+  if self.android then
+    local name = findPendingCart(true, self.pickSkip)
+    if name then
+      local installed = self:_installCartFile(name, version)
+      consumePick(self, name, PICKED_CART, installed)
+      return installed
+    end
+    if pickerHasKind("cart") and pickFile("cart") then
+      self.pickerPendingKind = "cart"
+      self.pickerPendingVersion = version
+      self.pickPending = true
+      self.pickTimer = 0
+      return true
+    end
+    local dir = love.filesystem.getSaveDirectory()
+    self._cartNotice = Strings(
+      "Could not open the file picker. Copy a .g1rcart into:\n%s", dir)
+    return false
+  end
+  if handheldHost() and self:_openCartBrowser(version) then return true end
+  local FilePicker = require("src.core.FilePicker")
+  if love.system.getOS() == "Windows" and Platform.canSpawnProcess() then
+    local id = HostPicker.start(FilePicker.commands(
+      Strings("Choose a .g1rcart cart"), CART_PICK))
+    if id then
+      local notice = Strings(
+        "Choose a .g1rcart in the file dialog. The launcher waits until it closes.")
+      self._hostPick = { id = id, kind = "cart", version = version, notice = notice }
+      self._cartNotice = notice
+      return true
+    end
+  end
+  if FilePicker.available() then
+    local path = FilePicker.open(Strings("Choose a .g1rcart cart"), CART_PICK)
+    self:_resyncPointerAfterDialog()
+    if not path then return false end
+    return self:_installCartFile(path, version)
+  end
+  if self:_openCartBrowser(version) then return true end
+  local dir = self:cartsDir()
+  self._cartNotice = dir
+    and Strings("Drop .g1rcart files in %s, then reopen this list.", dir)
+    or Strings("No filesystem available to import from.")
+  return false
 end
 
 -- The real OS path of the cart folder, so the launcher can open it and so a
