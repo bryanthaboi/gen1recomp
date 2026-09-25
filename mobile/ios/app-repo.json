@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.15",
+          "date": "2026-09-25",
+          "size": 38575791,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.15/gen1recomp++-0.3.15-ios.ipa",
+          "localizedDescription": "This one's for the bois\n\n## Issues closed\n\n- #2347 Pikachu's Flash interaction in Rock Tunnel is missing\n- #2384 Two small issues with the mart menu\n- #2456 Six island disappear\n- #2460 Youngster Dave hiding behind pokemart\n- #2461 Firered save import shows 0 caught, fine in game\n- #2468 Save files generated on the recomp client don't work when I transfer them into original cartridges\n- #2470 Grass not cutting\n- #2471 Speed modifiers incorrectly \"capped\" on Android\n- #2472 Following an NPC out of bounds in Pewter City\n- #2473 Previous pokemon getting exp when switched out\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.14",
           "date": "2026-09-24",
           "size": 37794320,
