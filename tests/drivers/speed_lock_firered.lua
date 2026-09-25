@@ -39,7 +39,7 @@ return function(game)
   local o = game.options
 
   game.speedOverride = nil
-  o.speedOverworld, o.speedBattle, o.speedMenu = 10, 200, 1
+  o.speedOverworld, o.speedBattle, o.speedMenu = 10, 4, 1
   U.wait(2)
   if game:logicSpeed() ~= 10 then
     fail(("field at OVERWORLD SPEED 10 reads %s"):format(tostring(game:logicSpeed())))
@@ -55,27 +55,27 @@ return function(game)
   local Ui = require("src.core.game3.battle.ui")
   for f = 1, 20000 do
     if not Battle.isActive() then break end
-    if game:logicSpeed() ~= 1 then
-      fail(("battle ran at %sX with speedBattle 200"):format(tostring(game:logicSpeed())))
+    if game:logicSpeed() ~= 4 then
+      fail(("local battle ran at %sX with speedBattle 4"):format(tostring(game:logicSpeed())))
     end
     checked = checked + 1
     if checked == 30 then
+      local st = Battle.getState()
+      st.link = true
       key("1")
       game:gamepadaxis(nil, "triggerright", 1)
       game:gamepadaxis(nil, "triggerright", 0)
-      if o.speedOverworld ~= 10 or o.speedBattle ~= 200 or o.speedMenu ~= 1 then
-        fail(("speed presses in battle changed options (%s/%s/%s)"):format(
+      if o.speedOverworld ~= 10 or o.speedBattle ~= 4 or o.speedMenu ~= 1 then
+        fail(("speed presses in a link battle changed options (%s/%s/%s)"):format(
           tostring(o.speedOverworld), tostring(o.speedBattle), tostring(o.speedMenu)))
       end
       game.speedOverride = 200
-      if game:logicSpeed() ~= 1 then fail("speedOverride 200 defeated the battle lock") end
+      if game:logicSpeed() ~= 1 then fail("a link battle was not locked to 1X") end
       game.speedOverride = nil
-      if game.touchSkinHotkey then game:touchSkinHotkey("fast_forward_hold", true) end
-      if game:logicSpeed() ~= 1 then fail("skin FF hold defeated the battle lock") end
-      if game.touchSkinHotkey then game:touchSkinHotkey("fast_forward_hold", false) end
+      st.link = false
     end
     if checked == 200 and not shot then
-      shot = U.shot(game, DIR .. "/firered_battle_locked.png")
+      shot = U.shot(game, DIR .. "/firered_battle_speed.png")
     end
     local st = Battle.getState and Battle.getState()
     if st and Battle._phase == "command" and Ui._mode == "menu" and not Ui._pendingCommand then
@@ -96,7 +96,7 @@ return function(game)
   if Battle.isActive() then
     fail(("battle never ended (phase %s, ui %s)"):format(tostring(Battle._phase), tostring(Ui._mode)))
   end
-  U.log("battle frames checked at 1X", checked)
+  U.log("battle frames checked at 4X", checked)
   U.wait(120)
   if game:logicSpeed() ~= 10 then
     fail(("after the battle logic speed is %s, want 10"):format(tostring(game:logicSpeed())))
@@ -144,6 +144,6 @@ return function(game)
   end
   U.shot(game, DIR .. "/firered_union_locked.png")
   U.log("union room frames checked at 1X", seen, "union state", tostring(Union.state))
-  U.log("PASS firered battle and Union Room locked to 1X, OVERWORLD SPEED 10 back after the battle")
+  U.log("PASS firered local battle at BATTLE SPEED 4, link battle and Union Room locked to 1X")
   love.event.quit(0)
 end

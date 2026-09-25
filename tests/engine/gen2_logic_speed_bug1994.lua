@@ -31,11 +31,11 @@ local world = {}
 
 eq(game({ options = { speed = 10 }, stack = stack(world) }):logicSpeed(), 10,
   "the overworld under a plain stack honors GAME SPEED")
-eq(game({ options = { speed = 10 }, stack = stack(world, battle) }):logicSpeed(), 1,
-  "a battle on the stack is locked to 1X")
-eq(game({ options = { speed = 10 }, speedOverride = 20,
-          stack = stack(world, battle, {}) }):logicSpeed(), 1,
-  "even with speedOverride and a menu over the battle")
+eq(game({ options = { speed = 10 }, stack = stack(world, battle) }):logicSpeed(), 10,
+  "a local battle honors GAME SPEED")
+eq(game({ options = { speed = 10 }, linkNet = { closed = false },
+          stack = stack(world, battle) }):logicSpeed(), 1,
+  "a link battle is locked to 1X")
 eq(game({ options = { speed = 10 }, linkNet = { closed = false } }):logicSpeed(), 1,
   "an open linkNet (online arena, LinkBattle2) is locked to 1X")
 eq(game({ options = { speed = 10 }, linkNet = { closed = true } }):logicSpeed(), 10,
@@ -48,10 +48,12 @@ eq(require("src.ui.gen2.BattleState").isBattle, true,
 do
   local persisted = 0
   local g = game({ options = { speed = 1 }, stack = stack(world, battle),
+                   linkNet = { closed = false },
                    persistOptions = function() persisted = persisted + 1 end })
   g:_cycleSpeed(1)
-  eq(g.options.speed, 1, "SPEED + in battle is ignored")
+  eq(g.options.speed, 1, "SPEED + in a link battle is ignored")
   eq(persisted, 0, "and persists nothing")
+  g.linkNet = nil
   g.stack = stack(world)
   g:_cycleSpeed(1)
   eq(g.options.speed, 2, "SPEED + on the overworld still cycles")

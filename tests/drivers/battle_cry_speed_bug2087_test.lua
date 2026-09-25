@@ -25,19 +25,6 @@ return function(game)
   ow:pushBattle(battle)
 
   U.log("logic speed", game:logicSpeed(), "sfx rate", Sound.rate())
-  local function inBattle()
-    for _, st in ipairs(game.stack.states) do
-      if st == battle then return true end
-    end
-    return false
-  end
-  local function assertLocked(where)
-    if inBattle() and game:logicSpeed() ~= 1 then
-      error(("speed lock: %s ran at %sX with speedOverride 4")
-        :format(where, tostring(game:logicSpeed())))
-    end
-  end
-  assertLocked("battle start")
   if Sound.rate() ~= 1 then
     error(("bug2087: Game:update pitched SFX off battle speed (rate %s at 4X)")
       :format(tostring(Sound.rate())))
@@ -71,11 +58,8 @@ return function(game)
     end
   end
 
-  local lockedFrames = 0
   local shot = false
   for _ = 1, 2400 do
-    assertLocked("entrance")
-    if inBattle() then lockedFrames = lockedFrames + 1 end
     poll("entrance cry")
     if battle.phase == "menu" then break end
     if battle.waitingSound and not shot then
@@ -103,7 +87,6 @@ return function(game)
   for _ = 1, 2400 do
     poll("post-move sfx")
     if game.stack:top() ~= battle then break end
-    assertLocked("post-move")
     if #gates > before and cur and not shotLevel then
       shotLevel = U.shot(game, DIR .. "/bug2087_levelup.png")
     end
@@ -122,12 +105,11 @@ return function(game)
       fail = ("bug2087: %s was pitched with battle speed (%s)"):format(
         g.label, tostring(g.pitch))
     elseif g.dur and g.held < g.dur * 0.9 then
-      fail = ("bug2087: %s cut short (%.3fs of %.3fs)"):format(
+      fail = ("bug2087: %s cut short at 4X (%.3fs of %.3fs)"):format(
         g.label, g.held, g.dur)
     end
   end
   if fail then error(fail) end
-  if lockedFrames == 0 then error("speed lock: the battle never reached the stack") end
-  U.log("PASS every battle sfx gate held for its real length, battle locked to 1X under a 4X override")
+  U.log("PASS every battle sfx gate held for its real length at 4X")
   love.event.quit(0)
 end

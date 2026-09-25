@@ -18,7 +18,7 @@ return function(game)
 
   local o = game.save.options
   game.speedOverride = nil
-  o.speedOverworld, o.speedBattle, o.speedMenu = 10, 200, 1
+  o.speedOverworld, o.speedBattle, o.speedMenu = 10, 4, 1
   U.wait(2)
   if game:logicSpeed() ~= 10 then
     fail(("overworld at OVERWORLD SPEED 10 reads %s"):format(tostring(game:logicSpeed())))
@@ -46,34 +46,32 @@ return function(game)
   local checked, shot = 0, false
   for _ = 1, 2400 do
     if not inBattle() then break end
-    if game:logicSpeed() ~= 1 then
-      fail(("battle ran at %sX with speedBattle 200"):format(tostring(game:logicSpeed())))
+    if game:logicSpeed() ~= 4 then
+      fail(("local battle ran at %sX with speedBattle 4"):format(tostring(game:logicSpeed())))
     end
     checked = checked + 1
     if checked == 20 then
+      game.linkSession = true
       key("1")
       game:gamepadaxis(nil, "triggerright", 1)
       game:gamepadaxis(nil, "triggerright", 0)
-      game:touchSkinHotkey("fast_forward_toggle", true)
-      if o.speedOverworld ~= 10 or o.speedBattle ~= 200 or o.speedMenu ~= 1 then
-        fail(("speed presses in battle changed options (%s/%s/%s)"):format(
+      if o.speedOverworld ~= 10 or o.speedBattle ~= 4 or o.speedMenu ~= 1 then
+        fail(("speed presses in a link battle changed options (%s/%s/%s)"):format(
           tostring(o.speedOverworld), tostring(o.speedBattle), tostring(o.speedMenu)))
       end
-      game:touchSkinHotkey("fast_forward_hold", true)
-      if game:logicSpeed() ~= 1 then fail("skin FF hold defeated the battle lock") end
-      game:touchSkinHotkey("fast_forward_hold", false)
       game.speedOverride = 200
-      if game:logicSpeed() ~= 1 then fail("speedOverride 200 defeated the battle lock") end
+      if game:logicSpeed() ~= 1 then fail("a link battle was not locked to 1X") end
       game.speedOverride = nil
+      game.linkSession = nil
     end
     if battle.phase == "menu" and not shot then
-      shot = U.shot(game, DIR .. "/red_battle_locked.png")
+      shot = U.shot(game, DIR .. "/red_battle_speed.png")
     end
     U.tap(game, "a")
     U.wait(2)
   end
   if inBattle() then fail("battle never ended") end
-  U.log("battle frames checked at 1X", checked)
+  U.log("battle frames checked at 4X", checked)
   U.wait(10)
   if game:logicSpeed() ~= 10 then
     fail(("after the battle logic speed is %s, want 10"):format(tostring(game:logicSpeed())))
@@ -82,6 +80,6 @@ return function(game)
   if game:logicSpeed() ~= 1 then fail("a link session did not lock 1X") end
   game.linkSession = nil
   U.shot(game, DIR .. "/red_after_battle.png")
-  U.log("PASS red battle and link locked to 1X, OVERWORLD SPEED 10 back after")
+  U.log("PASS red local battle at BATTLE SPEED 4, link locked to 1X")
   love.event.quit(0)
 end

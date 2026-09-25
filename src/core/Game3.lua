@@ -595,11 +595,8 @@ function Game3:speedLocked()
   if self:isFixedSpeed() then return true, "link" end
   local Battle = package.loaded["src.core.game3.battle"]
   if type(Battle) == "table" and Battle.isActive and Battle.isActive() then
-    return true, "battle"
-  end
-  local Transition = package.loaded["src.core.game3.battle_transition"]
-  if type(Transition) == "table" and Transition.isActive and Transition.isActive() then
-    return true, "battle"
+    local st = Battle.getState and Battle.getState()
+    if type(st) == "table" and st.link then return true, "link" end
   end
   local Union = package.loaded["src.core.game3.link.union_room"]
   if type(Union) == "table" and Union.isActive and Union.isActive() then

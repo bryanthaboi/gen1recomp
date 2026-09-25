@@ -2980,7 +2980,11 @@ do
   -- bug when the cycling is fine and the row is simply one longer.
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
   eq(og.save.options.speedOverworld, 1, "OVERWORLD SPEED wraps back to NORMAL")
-  check(not seek("speedBattle"), "no BATTLE SPEED row: battles always run 1X")
+  check(seek("speedBattle"), "cursor reaches BATTLE SPEED")
+  press("a")
+  eq(og.save.options.speedBattle, 2, "A cycles BATTLE SPEED to 2X")
+  for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
+  eq(og.save.options.speedBattle, 1, "BATTLE SPEED wraps back to NORMAL")
   check(seek("speedMenu"), "cursor reaches MENU SPEED")
   press("a")
   eq(og.save.options.speedMenu, 2, "A cycles MENU SPEED to 2X")

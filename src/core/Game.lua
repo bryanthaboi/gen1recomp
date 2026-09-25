@@ -387,9 +387,6 @@ function Game:speedLocked()
   if Game.isFixedSpeedInStack and Game.isFixedSpeedInStack(self.stack) then
     return true, "minigame"
   end
-  if Game.speedCategoryInStack(self.stack) == "battle" then
-    return true, "battle"
-  end
   return false
 end
 

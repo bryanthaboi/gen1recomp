@@ -350,6 +350,12 @@ local function coreRows(opts, hooks)
         opts.speedOverworld = GameSpeed.cycle(opts.speedOverworld, dir)
         return true
       end)
+    add(Strings("BATTLE SPEED"),
+      function() return GameSpeed.levelLabel(opts.speedBattle) end,
+      function(dir)
+        opts.speedBattle = GameSpeed.cycle(opts.speedBattle, dir)
+        return true
+      end)
     add(Strings("MENU SPEED"),
       function() return GameSpeed.levelLabel(opts.speedMenu) end,
       function(dir)

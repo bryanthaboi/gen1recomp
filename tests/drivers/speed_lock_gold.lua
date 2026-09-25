@@ -50,25 +50,25 @@ return function(game)
   local checked, shot = 0, false
   for _ = 1, 2000 do
     if not inBattle() then break end
-    if game:logicSpeed() ~= 1 then
-      return fail(("battle ran at %sX with GAME SPEED 10"):format(tostring(game:logicSpeed())))
+    if game:logicSpeed() ~= 10 then
+      return fail(("local battle ran at %sX with GAME SPEED 10"):format(tostring(game:logicSpeed())))
     end
     checked = checked + 1
     if checked == 30 then
-      game:hotkey("1")
-      game:_cycleSpeed(1)
-      game:_cycleSpeed(-1)
-      if game.options.speed ~= 10 then
-        return fail(("speed presses in battle moved GAME SPEED to %s"):format(tostring(game.options.speed)))
-      end
+      game.linkNet = { closed = false }
       game.speedOverride = 200
       if game:logicSpeed() ~= 1 then
-        return fail("speedOverride 200 defeated the battle lock")
+        return fail("a link battle was not locked to 1X")
+      end
+      game:_cycleSpeed(1)
+      if game.options.speed ~= 10 then
+        return fail(("speed press in a link battle moved GAME SPEED to %s"):format(tostring(game.options.speed)))
       end
       game.speedOverride = nil
+      game.linkNet = nil
     end
     if battle.phase == "menu" and not shot then
-      shot = U.shot(game, DIR .. "/gold_battle_locked.png")
+      shot = U.shot(game, DIR .. "/gold_battle_speed.png")
     end
     if battle.battle and battle.battle.over then
       tap("a", 3)
@@ -85,7 +85,7 @@ return function(game)
       tostring(battle.phase), tostring(battle.battle and battle.battle.over),
       tostring(top and (top.screenId or top.name) or top)))
   end
-  U.log("battle frames checked at 1X", checked)
+  U.log("battle frames checked at 10X", checked)
   U.wait(30)
   if game:logicSpeed() ~= 10 then
     return fail(("after the battle logic speed is %s, want 10"):format(tostring(game:logicSpeed())))
@@ -97,6 +97,6 @@ return function(game)
   if game:logicSpeed() ~= 1 then return fail("a linkSession did not lock 1X") end
   game.linkSession = nil
   U.shot(game, DIR .. "/gold_after_battle.png")
-  U.log("PASS gold battle and link locked to 1X, GAME SPEED 10 back after")
+  U.log("PASS gold local battle at GAME SPEED 10, link locked to 1X")
   love.event.quit(0)
 end

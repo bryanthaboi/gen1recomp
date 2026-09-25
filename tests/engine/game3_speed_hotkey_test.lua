@@ -39,12 +39,9 @@ do
   battleActive = true
   eq(g:speedCategory(), "battle", "battle stays battle")
   g.options.speedBattle = 10
-  eq(g:logicSpeed(), 1, "a gen3 battle runs 1X whatever BATTLE SPEED says")
-  g.speedOverride = 20
-  eq(g:logicSpeed(), 1, "and whatever speedOverride says")
-  g.speedOverride = nil
+  eq(g:logicSpeed(), 10, "a local gen3 battle runs at BATTLE SPEED")
   g:keypressed("1")
-  eq(g.options.speedBattle, 10, "1 in battle is ignored")
+  check(g.options.speedBattle ~= 10, "1 in battle cycles BATTLE SPEED")
   eq(g.options.speedOverworld, 2, "and leaves OVERWORLD SPEED alone")
   battleActive = false
   eq(newGame3("boot"):speedCategory(), "menu", "boot phase stays menu")

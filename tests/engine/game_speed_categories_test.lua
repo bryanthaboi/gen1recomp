@@ -1,5 +1,5 @@
 -- Per-category GAME SPEED (RFC 0007): Game.speedCategoryInStack's stack
--- walk, Game:logicSpeed()'s precedence (battle/link lock / run-argument override /
+-- walk, Game:logicSpeed()'s precedence (link lock / run-argument override /
 -- the core.logic_speed hook), Game:_cycleSpeed's per-category cycling, and
 -- the core.logic_speed hook itself exercised through the public mod API
 -- (Hooks.new() + bus:wrap, the same idiom other hooks' tests use -- not a
@@ -66,7 +66,7 @@ do
   local g = gameWith({ battle },
     { speedOverworld = 4, speedBattle = 10, speedMenu = 2 })
   eq(g:_resolveLogicSpeed(), 10, "battle reads speedBattle")
-  eq(g:logicSpeed(), 1, "but a battle always runs 1X whatever speedBattle says")
+  eq(g:logicSpeed(), 10, "and a local battle runs at BATTLE SPEED")
 end
 do
   local g = gameWith({ overlay },
@@ -105,9 +105,8 @@ end
 do
   local g = gameWith({ overworld, battle }, { speedOverworld = 50, speedBattle = 50 })
   g.speedOverride = 20
-  eq(g:logicSpeed(), 1, "a battle forces 1X over speedOverride too")
-  local locked, why = g:speedLocked()
-  check(locked and why == "battle", "speedLocked reports the battle")
+  eq(g:logicSpeed(), 20, "speedOverride wins in a local battle")
+  check(not g:speedLocked(), "a local battle is not speed locked")
 end
 do
   local g = gameWith({ overworld }, { speedOverworld = 4 })
@@ -180,10 +179,10 @@ do
     { speedOverworld = 1, speedBattle = 1, speedMenu = 1 })
   function g:writeOptions() writeOptions.calls = writeOptions.calls + 1 end
   g:_cycleSpeed(1)
-  eq(g.save.options.speedBattle, 1, "cycling during battle is ignored")
+  eq(g.save.options.speedBattle, 2, "cycling during battle bumps speedBattle")
   eq(g.save.options.speedOverworld, 1, "...and leaves speedOverworld alone")
   eq(g.save.options.speedMenu, 1, "...and leaves speedMenu alone")
-  eq(writeOptions.calls, 0, "and persists nothing")
+  eq(writeOptions.calls, 1, "a successful cycle persists the option")
 end
 do
   local calls = 0

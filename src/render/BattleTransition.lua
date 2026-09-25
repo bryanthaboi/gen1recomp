@@ -14,7 +14,6 @@ local Runtime = require("src.mods.Runtime")
 local BattleTransition = {}
 BattleTransition.__index = BattleTransition
 BattleTransition.isOpaque = false -- draws over the frozen overworld
-BattleTransition.isFixedSpeed = true
 
 -- BattleTransition_FlashScreenPalettes: fade to black and back, then to
 -- white and back; each palette held 2 frames, whole sequence played 3

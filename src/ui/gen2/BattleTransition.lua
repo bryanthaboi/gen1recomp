@@ -35,7 +35,6 @@ local Tilt = require("src.render.Tilt")
 local BattleTransition = {}
 BattleTransition.__index = BattleTransition
 BattleTransition.isOpaque = false
-BattleTransition.isFixedSpeed = true
 
 local COLS, ROWS = 20, 18 -- SCREEN_WIDTH x SCREEN_HEIGHT, in tiles
 

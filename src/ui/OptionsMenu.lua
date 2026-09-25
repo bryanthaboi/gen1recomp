@@ -539,6 +539,15 @@ local function buildRows(game)
         o.speedOverworld = GameSpeed.cycle(o.speedOverworld, dir)
         return true
       end },
+    { id = "speedBattle", label = Strings("BATTLE SPEED"),
+      value = function(g)
+        return gameSpeedLabel(g.save.options.speedBattle)
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.speedBattle = GameSpeed.cycle(o.speedBattle, dir)
+        return true
+      end },
     { id = "speedMenu", label = Strings("MENU SPEED"),
       value = function(g)
         return gameSpeedLabel(g.save.options.speedMenu)
@@ -714,7 +723,7 @@ local GROUPS = {
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
                 "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.speed", label = "SPEED",
-    members = { "textSpeed", "speedOverworld", "speedMenu" } },
+    members = { "textSpeed", "speedOverworld", "speedBattle", "speedMenu" } },
   { id = "group.graphics", label = "GRAPHICS",
     members = { "colors", "uiLetterbox", "shaderfx", "shaderfx2" } },
   -- A mod's Pipelines row splices in after TILT and is in no group, so it

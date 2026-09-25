@@ -1291,7 +1291,6 @@ function Game2:speedLocked()
   local states = self.stack and self.stack.states
   for i = #(states or {}), 1, -1 do
     local state = states[i]
-    if state and state.isBattle then return true, "battle" end
     if state and (state.isFixedSpeed or state.isMinigame) then
       return true, "minigame"
     end

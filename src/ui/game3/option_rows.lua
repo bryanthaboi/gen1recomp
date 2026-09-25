@@ -70,6 +70,7 @@ function Rows.build(ctx)
     step = function(c, dir) return cartCycle(c, "textSpeed", 3, dir) end,
   })
   add(speedRow("speedOverworld", "OVERWORLD SPEED", "speedOverworld"))
+  add(speedRow("speedBattle", "BATTLE SPEED", "speedBattle"))
   add(speedRow("speedMenu", "MENU SPEED", "speedMenu"))
 
   add({
@@ -396,7 +397,7 @@ end
 
 Rows.GROUPS = {
   { id = "group.speed", label = "SPEED",
-    members = { "textSpeed", "speedOverworld", "speedMenu" } },
+    members = { "textSpeed", "speedOverworld", "speedBattle", "speedMenu" } },
   { id = "group.video", label = "VIDEO",
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
                 "screenPos", "fpsCap", "vsync", "logicClock" } },

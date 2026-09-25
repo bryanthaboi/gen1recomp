@@ -1251,13 +1251,13 @@ level is part of a row label rather than a drawn field. Both are noted in
 RFC 0019 as follow-ups.
 
 `core.logic_speed` receives `(next, game)` once per `Game:logicSpeed()` call
-(once per frame), but only on frames where the speed is not locked. Every
-battle (wild, trainer, link, online, tournament, spectate), link play and a
+(once per frame), but only on frames where the speed is not locked. Link
+play (link, online, tournament and spectate battles included) and a
 fixed-speed minigame lock the logic clock to 1X, and `Game:speedLocked()`
 is checked before anything else: the hook is never called on those frames,
-so it cannot fast-forward a battle. On every other frame vanilla behavior
-resolves the per-category GAME SPEED option (`speedOverworld` or
-`speedMenu`) for whichever category `Game.speedCategoryInStack` says is
+so it cannot fast-forward a link battle. On every other frame vanilla
+behavior resolves the per-category GAME SPEED option (`speedOverworld`,
+`speedBattle` or `speedMenu`) for whichever category `Game.speedCategoryInStack` says is
 active. A mod may call `next(game)` and return its result to pass that
 resolution through, or return a different number outright to override it
 for that frame (a bot mod forcing 1X for one route segment, say). The

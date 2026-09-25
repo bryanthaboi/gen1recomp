@@ -53,7 +53,7 @@ end
 
 for _, spec in ipairs({
   { "group.battle", 6 }, { "group.audio", 3 }, { "group.video", 5 },
-  { "group.speed", 3 }, { "group.graphics", 4 }, { "group.extras", 3 },
+  { "group.speed", 4 }, { "group.graphics", 4 }, { "group.extras", 3 },
 }) do
   local row = find(menu.view, spec[1])
   T.check(row, spec[1] .. " has an opener row")
@@ -100,7 +100,7 @@ game.stack:pop()
 local speed = find(menu.view, "group.speed")
 speed.activate(game)
 T.eq(ids(game.stack:top().view),
-  "textSpeed,speedOverworld,speedMenu",
+  "textSpeed,speedOverworld,speedBattle,speedMenu",
   "TEXT SPEED heads the SPEED page")
 game.stack:pop()
 
