@@ -76,6 +76,19 @@ local CONTINUE_GAME_WARP = 0x01
 -- pokefirered/data/maps/PokemonLeague_HallOfFame/scripts.inc:40
 local HALL_OF_FAME_MAP = "FR_POKEMON_LEAGUE_HALL_OF_FAME"
 
+local UNION_ROOMS = { FR_UNION_ROOM = true, FR_UNION_ROOM_PLAZA = true }
+-- pokefirered/data/maps/ViridianCity_PokemonCenter_2F/map.json:84
+local UNION_DOOR_X, UNION_DOOR_Y = 5, 1
+local FIRST_CENTER_2F = "FR_VIRIDIAN_CITY_POKEMON_CENTER_2F"
+
+local function union_room_door_map(session)
+  local heal = type(session.healMap) == "string" and session.healMap or ""
+  local city = heal:match("^(.+_POKEMON_CENTER)_1F$")
+  if city then return city .. "_2F" end
+  if heal:match("_POKECENTER$") then return heal .. "_2F" end
+  return FIRST_CENTER_2F
+end
+
 -- pokefirered/src/overworld.c:1706 CB2_ContinueSavedGame
 local function use_continue_game_warp(session, mounted)
   local Bit = require("bit")
@@ -87,6 +100,11 @@ local function use_continue_game_warp(session, mounted)
     return
   end
   session._continueWarpDeferred = nil
+  if UNION_ROOMS[session.map] then
+    session.map, session.x, session.y, session.facing =
+      union_room_door_map(session), UNION_DOOR_X, UNION_DOOR_Y, "down"
+    return
+  end
   if session.map == HALL_OF_FAME_MAP then
     local Field = require("src.core.game3.field")
     if not mounted and not Field.flyDestinationsMounted() then
@@ -111,6 +129,7 @@ local LINK_ROOMS = {
   FR_RECORD_CORNER = true,
   FR_BATTLE_COLOSSEUM_4P = true,
   FR_UNION_ROOM = true,
+  FR_UNION_ROOM_PLAZA = true,
 }
 
 -- pokefirered/src/load_save.c:149 SetContinueGameWarpStatusToDynamicWarp

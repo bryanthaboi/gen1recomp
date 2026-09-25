@@ -2,7 +2,8 @@ local U = require("tests.drivers.util")
 local DIR = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/g3link"
 
 local CENTER_2F = "FR_VIRIDIAN_CITY_POKEMON_CENTER_2F"
-local UNION_ROOM = "FR_UNION_ROOM"
+local Plaza = require("src.core.game3.link.union_plaza_map")
+local UNION_ROOM = Plaza.MAP_ID
 -- pokefirered/include/constants/flags.h:1375
 local FLAG_SYS_POKEDEX_GET = 0x829
 -- pokefirered/include/constants/species.h:5
@@ -69,16 +70,6 @@ return function(game)
   Party.giveMon(session, PIDGEY, 9)
 
   local relay = Relay.new({ clock = function() return now() end })
-  local plazaState = relay.plazaStateMsg
-  relay.plazaStateMsg = function(self, s)
-    local msg = plazaState(self, s)
-    for _, m in ipairs(msg.members or {}) do
-      local ss = self.sessions[m.id]
-      if ss and ss.group then m.group = ss.group end
-      if ss and ss.status then m.status = ss.status end
-    end
-    return msg
-  end
   local me = relay:seat("a0000001", "RED")
   Client.configure({ relayAddress = "fake:1", connect = function() return me.transport end })
 
@@ -125,9 +116,6 @@ return function(game)
       return cond()
     end
   end
-  local function pushPlaza()
-    relay:to(me, relay:plazaStateMsg(me))
-  end
 
   local live = Link.liveProfile()
   if not result(live ~= nil, "the live g3 profile computes (vanilla game)") then return finish() end
@@ -163,32 +151,34 @@ return function(game)
   local yellow = peer("d0000004", "YELLOW", 6, 0, "firered")
   for _, s in ipairs({ green, pink, yellow }) do
     s.presence.where = "union"
-    relay:handle(s, { type = "plaza_join", kind = "union", profile = live, avatar = s.avatar })
+    relay:handle(s, { type = "plaza_join", kind = "union", cap = 40, profile = live, avatar = s.avatar })
   end
   local group = { leader = pink.id, members = { pink.id, yellow.id }, activity = "chat" }
   pink.group, pink.status = group, "chatting"
   yellow.group, yellow.status = group, "chatting"
-  pushPlaza()
-  result(waitFor(function() return Union.playerCount() == 2 end, 10, 60),
-    "GREEN takes a leader slot and PINK's chat group another")
+  relay:plazaChanged(pink)
+  relay:plazaChanged(yellow)
+  result(waitFor(function() return Union.playerCount() == 3 end, 10, 60),
+    "GREEN, PINK and YELLOW each take their own plaza slot")
   local slotG = Union.slotForId(green.id)
   local slotP = Union.slotForId(pink.id)
-  result(slotG ~= nil and slotP ~= nil, "both have slots")
-  result(waitFor(function() return slotG and Union.leaderObj(slotG).state == 1 end, 5, 60),
-    "GREEN flew down onto her spot")
-  result(slotP and Union.vobjVisible(slotP, 0) and Union.vobjVisible(slotP, 1),
-    "PINK and YELLOW stand at the group offsets")
-  result(slotP and Union.vobj(slotP, 0).dir == Union.DIR.SOUTH, "the chat leader faces south")
-  place(7, 9, "up")
+  local slotY = Union.slotForId(yellow.id)
+  result(slotG ~= nil and slotP ~= nil and slotY ~= nil, "all three have slots")
+  result(waitFor(function() return slotG and Union.vobjVisible(slotG) and Union.vobj(slotG).anim == nil end, 5, 60),
+    "GREEN flew down onto her cell")
+  local gx, gy = Plaza.cellFor(slotG)
+  result(Union.vobj(slotG).x == gx and Union.vobj(slotG).y == gy, "on her slot's cell")
+  result(slotP and Union.vobjVisible(slotP) and Union.vobjVisible(slotY), "PINK and YELLOW stand on their own cells")
+  result(slotP and Union.vobj(slotP).dir == Union.DIR.SOUTH, "a chatter faces south")
+  place(12, 22, "up")
   wait(40)
   U.still(game, DIR .. "/g3link_union_room_avatars.png")
 
   print("[driver] 2. talking to a trainer opens the invite menu")
-  local Objects = require("src.core.game3.objects")
   local opened = false
   for _ = 1, 20 do
-    local eo = Objects.find(Union.LOCAL_IDS[slotG])
-    if eo and not eo.moving then
+    local eo = { cellX = gx, cellY = gy }
+    do
       place(eo.cellX, eo.cellY + 1, "up")
       wait(2)
       U.tap(game, "a")
@@ -217,7 +207,7 @@ return function(game)
   drive(function() return Union.state == "main" and not Message.isOpen() end, 8)
 
   print("[driver] 3. an incoming invite rings")
-  place(7, 9, "up")
+  place(12, 22, "up")
   wait(6)
   relay:handle(green, { type = "invite", to = me.id, activity = "chat", detail = {}, profile = live })
   result(waitFor(function() return Union.state == "player_contacted_you" or Union.state == "handle_activity_request" end,
@@ -319,8 +309,8 @@ return function(game)
   end
   local asked = false
   for _ = 1, 20 do
-    local eo = Objects.find(Union.LOCAL_IDS[slotG])
-    if eo and not eo.moving then
+    local eo = { cellX = gx, cellY = gy }
+    do
       place(eo.cellX, eo.cellY + 1, "up")
       wait(2)
       U.tap(game, "a")
@@ -351,7 +341,7 @@ return function(game)
   U.still(game, DIR .. "/g3link_union_request_declined.png")
   drive(function() return Union.state == "main" and not Message.isOpen() end, 8)
 
-  place(7, 9, "up")
+  place(12, 22, "up")
   wait(6)
   relay:handle(green, { type = "invite", to = me.id, activity = "chat", detail = {}, profile = live })
   result(waitFor(pageThrough(function() return Choice.active end), 8, 600), "GREEN asks to chat again")
@@ -368,7 +358,6 @@ return function(game)
   print("[driver] 5. the trading board")
   relay:handle(green, { type = "presence", board = { species = BULBASAUR, level = 14, wantType = 10 } })
   relay:handle(yellow, { type = "presence", board = { species = PIDGEY, level = 5, wantType = 12 } })
-  pushPlaza()
   result(waitFor(function() return #Union.boardOffers() >= 1 end, 5, 120), "GREEN's offer is on the board")
   Union.trade().playerSpecies, Union.trade().playerLevel, Union.trade().type = CHARMANDER, 10, 11
   place(2, 2, "up")
@@ -395,7 +384,7 @@ return function(game)
   drive(function() return Union.state == "main" and not Message.isOpen() end, 8)
 
   print("[driver] 6. a minigame group recruiting")
-  place(7, 9, "up")
+  place(12, 22, "up")
   wait(6)
   Flags.setVar(Space.store, ctx(), Link.VAR_0x8004, Union.LINK_GROUP.BERRY_CRUSH)
   local c = ctx()

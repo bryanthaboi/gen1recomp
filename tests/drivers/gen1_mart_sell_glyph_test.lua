@@ -77,7 +77,7 @@ return function(game)
       U.tap(game, "a")
       U.wait(20)
     end
-    list = waitForList(60)
+    list = waitForList(300)
     if list then break end
     closeAll()
   end

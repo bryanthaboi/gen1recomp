@@ -27,6 +27,8 @@ Features intentionally added beyond the original Pokémon Red, Blue, and Yellow 
 * **Filter Find mods by game**, a generation or single-game filter of its own, with every listing showing the games and tags it declares
 * **Update all** in one press from the MODS tab, installing every outdated mod and every installed cart the index lists ahead of it, with a summary of what failed
 * **Rebindable GAME SPEED shortcuts**, SPEED - / SPEED + rows in CONTROLS that move the shoulder hotkeys to any pad button or switch them off
+* **Fast-forward locks to 1X in battles and link rooms**, every battle, link session and the FireRed/LeafGreen Union Room on every game
+* **40-player Union Room** on FireRed and LeafGreen online, a larger square room where every trainer keeps a fixed spot and anyone can be talked to
 * **Key bar on the touch pad**, a corner toggle that slides out SAVE, LOAD, SPEED, COLOR, TILT and ZOOM for phones with no keyboard
 * **Save editor item verbs**, sorting the bag and PC by item number or name, filling one stack or every stack to x99, and a coin editor on every game
 * **Save editor bag / PC move**, a PC / BAG button on every item row that moves the stack across, clamped to the stack and slot caps

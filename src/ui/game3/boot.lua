@@ -159,16 +159,7 @@ function Boot.continueInfoFromSave(save)
   local store = { flags = type(save.flags) == "table" and save.flags or {} }
   local pt = type(save.playTime) == "table" and save.playTime
     or type(save.playtime) == "table" and save.playtime or {}
-  local dex = type(save.dex) == "table" and save.dex or {}
-  local caught = dex.caught or dex.owned or {}
-  local counted, n = {}, 0
-  for sp, on in pairs(caught) do
-    local id = tonumber(sp)
-    if id and on and on ~= 0 and not counted[id] and (dex.national or id <= 151) then
-      counted[id] = true
-      n = n + 1
-    end
-  end
+  local n = require("src.core.game3.dex").summaryCount(save)
   local name = tostring(save.name or save.playerName or "")
   return {
     name = FrlgFont.truncate(name, 7),

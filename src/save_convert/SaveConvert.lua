@@ -94,6 +94,7 @@ local DATA_MODULES = {
   -- rebuild the current map's engine state on export (#889)
   tilesets   = { "data.generated.tilesets",         "data/generated/tilesets.lua" },
   audio      = { "data.generated.audio",            "data/generated/audio.lua" },
+  encounters = { "data.generated.encounters",       "data/generated/encounters.lua" },
   charmap    = { "src.save_convert.data.charmap",   "src/save_convert/data/charmap.lua" },
   eventFlags = { "src.save_convert.data.event_flags", "src/save_convert/data/event_flags.lua" },
   toggleObjects = { "src.save_convert.data.toggle_objects", "src/save_convert/data/toggle_objects.lua" },
@@ -253,14 +254,6 @@ local function defaultsSave()
     defeatedTrainers = {},
     repelSteps = 0,
     modData = {},
-    options = {
-      textSpeed = 3, animations = true, battleStyle = "shift",
-      battleLayout = "og",
-      ruleset = "gen1_faithful", musicVol = 7, sfxVol = 7, pikaVol = 7,
-      musicFilter = 0,
-      speed = 1, colors = "gbc", tilt = 0,
-      videoMode = "windowed", mods = {},
-    },
   }
 end
 

@@ -31,14 +31,15 @@ local function find_edge_item(game)
   table.sort(names)
   for _, id in ipairs(names) do
     local def = maps[id]
-    for dir, conn in pairs(def.connections or {}) do
-      local nid = type(conn) == "table" and conn.map or conn
+    for _, conn in ipairs(require("src.core.game3.connections").each(def)) do
+      local dir = conn.dir
+      local nid = conn.map
       local ndef = maps[nid]
       if ndef and (dir == "north" or dir == "up") then
         for _, ev in ipairs(ndef.bgEvents or {}) do
           if is_hidden(ev) and not ev.underfoot then
             local L = Map.ensureMidLayout(game, nid, ndef)
-            local off = tonumber(type(conn) == "table" and conn.offset) or 0
+            local off = tonumber(conn.offset) or 0
             local fromBottom = L and (L.height - 1 - ev.y)
             if fromBottom and fromBottom <= 2 then
               return id, nid, ev, ev.x + off, fromBottom

@@ -38,6 +38,7 @@ function FakeRelay.new(opts)
     invites = {},
     tokens = {},
     plazas = { union = {} },
+    plazaRev = 0,
     wireless = {},
     groups = {},
     groupWatch = {},
@@ -369,9 +370,9 @@ end
 
 local function memberOf(s, slot)
   return { id = s.id, name = s.name, verified = true, slot = slot,
-           online = s.online, status = s.recruiting and "recruiting" or "idle",
+           online = s.online, status = s.status or (s.recruiting and "recruiting" or "idle"),
            avatar = copy(s.avatar), recruiting = copy(s.recruiting),
-           board = copy(s.presence.board) }
+           board = copy(s.presence.board), group = copy(s.group) }
 end
 
 function FakeRelay:plazaInstance(s)
@@ -381,8 +382,12 @@ function FakeRelay:plazaInstance(s)
   return nil
 end
 
+FakeRelay.PLAZA_CAP = 40
+
 function FakeRelay:plazaDelta(inst, index, fields, except)
-  local msg = { type = "plaza_delta", kind = "union", instance = index,
+  self.plazaRev = self.plazaRev + 1
+  inst.rev = self.plazaRev
+  local msg = { type = "plaza_delta", kind = "union", instance = index, rev = inst.rev,
                 joined = fields.joined or {}, left = fields.left or {},
                 changed = fields.changed or {} }
   for id in pairs(inst.slots) do
@@ -397,8 +402,8 @@ function FakeRelay:plazaStateMsg(s)
     members[#members + 1] = memberOf(self.sessions[id], slot)
   end
   table.sort(members, function(a, b) return a.slot < b.slot end)
-  return { type = "plaza_state", kind = "union", instance = index,
-           you = inst.slots[s.id], members = members }
+  return { type = "plaza_state", kind = "union", instance = index, cap = FakeRelay.PLAZA_CAP,
+           rev = inst.rev, you = inst.slots[s.id], members = members }
 end
 
 function FakeRelay:plazaJoin(s, msg)
@@ -409,6 +414,12 @@ function FakeRelay:plazaJoin(s, msg)
   if type(msg.profile) ~= "table" or msg.profile.engine ~= 3 then
     return self:joinError(s, "bad_profile")
   end
+  if not (math.floor(tonumber(msg.cap) or 0) >= FakeRelay.PLAZA_CAP) then
+    self:to(s, { type = "upgrade_required", protocol = self.minProtocol, minBuild = nil,
+                 text = "This build is too old for online play. Please update." })
+    s.transport.closed = true
+    return
+  end
   s.avatar = copy(msg.avatar)
   s.where = "union"
   if self:plazaInstance(s) then return self:to(s, self:plazaStateMsg(s)) end
@@ -416,13 +427,13 @@ function FakeRelay:plazaJoin(s, msg)
   for i, inst in ipairs(self.plazas.union) do
     local n = 0
     for _ in pairs(inst.slots) do n = n + 1 end
-    if n < 9 and (not best or n > best.n) then best, bestIndex = { inst = inst, n = n }, i end
+    if n < FakeRelay.PLAZA_CAP and (not best or n > best.n) then best, bestIndex = { inst = inst, n = n }, i end
   end
   local inst, index
   if best then
     inst, index = best.inst, bestIndex
   else
-    inst = { slots = {} }
+    inst = { slots = {}, rev = 0 }
     self.plazas.union[#self.plazas.union + 1] = inst
     index = #self.plazas.union
   end
@@ -431,8 +442,8 @@ function FakeRelay:plazaJoin(s, msg)
   local slot = 1
   while used[slot] do slot = slot + 1 end
   inst.slots[s.id] = slot
-  self:to(s, self:plazaStateMsg(s))
   self:plazaDelta(inst, index, { joined = { memberOf(s, slot) } }, s.id)
+  self:to(s, self:plazaStateMsg(s))
 end
 
 function FakeRelay:plazaLeave(s, kind)

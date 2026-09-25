@@ -32,6 +32,13 @@ end
 
 do
   local plain = SaveData.buildMeta({})
+  T.eq(plain.modCount, 0, "vanilla saves explicitly record zero mods")
+  local modded = SaveData.buildMeta({ { id = "one" }, { id = "two" } })
+  T.eq(modded.modCount, 2, "the count reflects the mods that wrote the save")
+  T.eq(SaveData.buildMeta(nil, modded).modCount, 2,
+    "a headless rewrite preserves the saved mod count")
+  T.eq(SaveData.buildMeta({}, modded).modCount, 0,
+    "disabling all mods clears the previous count")
   T.check(type(plain.savedAt) == "number", "a save still records when it ended")
   T.eq(plain.sessionStart, nil,
     "and records no session start when nobody supplied one")
@@ -106,8 +113,21 @@ do
   T.eq(entries[1].meta.summary.name, "ASH",
     "with the launcher summary the conflict prompt shows")
   T.check(entries[1].meta.sessionStart ~= nil, "and the session start")
+  T.eq(entries[1].meta.modCount, 0, "sync metadata explicitly reports vanilla")
+  T.eq(SaveData.decode(entries[1].blob).meta.modCount, 0,
+    "the saved blob also carries the count")
   T.check(entries[1].blob:find("ASH", 1, true) ~= nil,
     "the blob is the encoded save itself")
+
+  save.meta.mods = { { id = "one" }, { id = "two" } }
+  save.meta.modCount = nil
+  SaveData.writeSlot("red", slotId, save)
+  T.eq(provider.list()[1].meta.modCount, 2,
+    "older saves derive their sync count from their own mod list")
+  save.meta.modCount = 99
+  SaveData.writeSlot("red", slotId, save)
+  T.eq(provider.list()[1].meta.modCount, 2,
+    "a stale count cannot override the saved mod list")
 
   local other = SaveData.newGame()
   other.player.name = "BLUE"

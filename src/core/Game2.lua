@@ -1208,7 +1208,12 @@ function Game2:load(opts)
     self:showCopyright()
   end
 
+  local stepBody
   FixedStep:init(function(dt)
+    stepBody(dt)
+    self:_speedLockEdge()
+  end)
+  stepBody = function(dt)
     -- Tool mods (autoplay, accessibility drivers, input visualizers) act on the
     -- same fixed-step boundary a physical controller does.  Raised HERE, ahead
     -- of both the AUTO_INPUT arm and Input:step, for the reason Gen 1 raises it
@@ -1270,7 +1275,7 @@ function Game2:load(opts)
       self.world:interact()
     end
     self.world:step()
-  end)
+  end
 end
 
 function Game2:inFillBoot()
@@ -1279,7 +1284,29 @@ function Game2:inFillBoot()
   return self.phase == "boot" and self.stack:top() ~= nil
 end
 
+function Game2:speedLocked()
+  if self.linkSession or (self.linkNet and not self.linkNet.closed) then
+    return true, "link"
+  end
+  local states = self.stack and self.stack.states
+  for i = #(states or {}), 1, -1 do
+    local state = states[i]
+    if state and state.isBattle then return true, "battle" end
+    if state and (state.isFixedSpeed or state.isMinigame) then
+      return true, "minigame"
+    end
+  end
+  return false
+end
+
+function Game2:_speedLockEdge()
+  if (self._frameSpeed or 1) > 1 and self:speedLocked() then
+    FixedStep:endFrame()
+  end
+end
+
 function Game2:logicSpeed()
+  if self:speedLocked() then return 1 end
   return math.max(1,
     tonumber(self.speedOverride) or tonumber(self.options and self.options.speed)
     or 1)
@@ -1310,13 +1337,14 @@ function Game2:update(dt)
   -- driver/CLI hook and wins over the saved option.
   -- pokegold engine/menus/intro_menu.asm:848 IntroSequence: boot cinema runs on the same clock as the overworld
   local speed = self:logicSpeed()
+  self._frameSpeed = speed
   if self.phase == "boot" then
-    FixedStep.maxAccum = FixedStep.catchupLimit(speed)
+    FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
     FixedStep:update(dt, speed)
     return
   end
   if not self.world or not self.world.map then return end
-  FixedStep.maxAccum = FixedStep.catchupLimit(speed)
+  FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
   FixedStep:update(dt, speed)
 end
 
@@ -2057,6 +2085,7 @@ function Game2:hotkey(key)
     if loaded then self:continueGame(loaded) end
     return true
   elseif hk == "1" then
+    if self:speedLocked() then return true end
     local GameSpeed = require("src.core.GameSpeed")
     options.speed = GameSpeed.cycle(options.speed, 1)
     persist()
@@ -2391,6 +2420,7 @@ function Game2:applyOptions()
 end
 
 function Game2:_cycleSpeed(dir)
+  if self:speedLocked() then return end
   local GameSpeed = require("src.core.GameSpeed")
   self.options.speed = GameSpeed.cycle(self.options.speed, dir)
   if self.save then self.save.options = self.options end

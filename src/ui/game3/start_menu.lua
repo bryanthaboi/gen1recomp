@@ -40,7 +40,7 @@ end
 local function in_union_room(session)
   local Map = package.loaded["src.core.game3.map"]
   local cur = (Map and type(Map.current) == "string" and Map.current) or (session and session.map)
-  return cur == "FR_UNION_ROOM"
+  return require("src.core.game3.link.union_room").isUnionMap(cur)
 end
 
 local function safari_active(session)

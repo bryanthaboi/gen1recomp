@@ -3,6 +3,7 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SLOW_DRIVERS="game3_daycare_egg game3_daycare_menu game3_daycare_deposit game3_import2_fresh_cache game3_import2_town_map game3_trade_scene game3_u8c_yesno_frame game3_u9c_catch_ball_open"
+REALTIME_DRIVERS="battle_fanfare_speed_bug1952_test"
 
 help_text() {
   cat <<HELP
@@ -64,9 +65,12 @@ NAME="$(basename "$DRIVER" .lua)"
 if [ -n "${POKEPORT_SPEED:-}" ]; then
   SPEED="$POKEPORT_SPEED"
 else
-  case " $SLOW_DRIVERS " in
-    *" $NAME "*) SPEED=10; [ -n "${RUN_DRIVER_LIMIT:-${RUN_DRIVER_ALARM:-}}" ] || LIMIT=180 ;;
-    *) SPEED=200 ;;
+  case " $REALTIME_DRIVERS " in
+    *" $NAME "*) SPEED=1; [ -n "${RUN_DRIVER_LIMIT:-${RUN_DRIVER_ALARM:-}}" ] || LIMIT=300 ;;
+    *) case " $SLOW_DRIVERS " in
+         *" $NAME "*) SPEED=10; [ -n "${RUN_DRIVER_LIMIT:-${RUN_DRIVER_ALARM:-}}" ] || LIMIT=180 ;;
+         *) SPEED=200 ;;
+       esac ;;
   esac
 fi
 

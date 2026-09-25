@@ -295,8 +295,8 @@ check(scSave and scSave.player and scSave.player.id == 12345,
 check(scSave and scSave.inventory and scSave.inventory.POKE_BALL == 5,
       "SaveConvert.importSav: decoded bag items survive the merge")
 -- merge over new-game defaults
-check(scSave and type(scSave.options) == "table" and scSave.options.ruleset == "gen1_faithful",
-      "SaveConvert.importSav: new-game default options merged in")
+check(scSave and scSave.options == nil,
+      "SaveConvert.importSav: no options table rides the imported save")
 check(scSave and type(scSave.defeatedTrainers) == "table" and type(scSave.modData) == "table"
       and scSave.repelSteps == 0,
       "SaveConvert.importSav: default defeatedTrainers/modData/repelSteps merged in")

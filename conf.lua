@@ -132,6 +132,7 @@ function love.conf(t)
     t.accelerometerjoystick = false
   else
     t.window.resizable = true
+    pcall(function() require("src.core.PadHints").apply(osName) end)
     if os.getenv("POKEPORT_BACKGROUND") == "1" and osName == "OS X" then
       pcall(function()
         local ffi = require("ffi")

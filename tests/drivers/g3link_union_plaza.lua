@@ -2,7 +2,9 @@ local U = require("tests.drivers.util")
 local DIR = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/g3link"
 
 local CENTER_2F = "FR_VIRIDIAN_CITY_POKEMON_CENTER_2F"
-local UNION_ROOM = "FR_UNION_ROOM"
+local Plaza = require("src.core.game3.link.union_plaza_map")
+local UNION_ROOM = Plaza.MAP_ID
+local OTHERS = Plaza.CAP - 1
 -- pokefirered/include/constants/flags.h:1375
 local FLAG_SYS_POKEDEX_GET = 0x829
 -- pokefirered/include/constants/metatile_behaviors.h:104
@@ -135,13 +137,82 @@ return function(game)
   me.presence.where = "union"
 
   local blue = peer("b0000002", "BLUE", 0x2222, 0, "leafgreen")
-  local leaf = peer("c0000003", "LEAF", 0x3131, 1, "firered")
-  relay:handle(blue, { type = "plaza_join", kind = "union", profile = live, avatar = blue.avatar })
-  relay:handle(leaf, { type = "plaza_join", kind = "union", profile = live, avatar = leaf.avatar })
-  result(waitFor(function() return Union.playerCount() == 2 end, 10, Union.REFRESH_FRAMES + 30),
-    "both plaza members appear as union room avatars")
+  relay:handle(blue, { type = "plaza_join", kind = "union", cap = 40, profile = live, avatar = blue.avatar })
+  local crowd = { blue }
+  for i = 2, OTHERS do
+    local s = peer(string.format("c%07x", i), "T" .. i, 0x100 + i * 13, i % 2, i % 3 == 0 and "leafgreen" or "firered")
+    relay:handle(s, { type = "plaza_join", kind = "union", cap = 40, profile = live, avatar = s.avatar })
+    crowd[#crowd + 1] = s
+  end
+  result(waitFor(function() return Union.playerCount() == OTHERS end, 10, 120),
+    "all 39 other plaza members appear as avatars")
+  result(waitFor(function()
+    local VirtualObjects = require("src.core.game3.virtual_objects")
+    return VirtualObjects.count() == OTHERS
+  end, 5, 60), "39 virtual objects, no cart map objects")
+  local mySlot = Client.plaza() and Client.plaza().you
+  result(mySlot ~= nil and Union.players[mySlot] == nil, "our own slot is not drawn")
+  local cellsOk = true
+  for slot = 1, Plaza.CAP do
+    if slot ~= mySlot then
+      local v = Union.vobj(slot)
+      local x, y = Plaza.cellFor(slot)
+      if not (v and v.visible and v.x == x and v.y == y) then cellsOk = false end
+    end
+  end
+  result(cellsOk, "every avatar stands on its slot's cell")
   wait(60)
-  U.shot(game, DIR .. "/g3link_union_plaza_avatars.png")
+  U.still(game, DIR .. "/g3link_union_plaza_entrance.png")
+  place(12, 12, "down")
+  wait(20)
+  U.still(game, DIR .. "/g3link_union_plaza_full_room.png")
+  place(22, 3, "left")
+  wait(20)
+  U.still(game, DIR .. "/g3link_union_plaza_far_corner.png")
+
+  local far = crowd[#crowd]
+  local farSlot = Union.slotForId(far.id)
+  if farSlot ~= Plaza.CAP then
+    for _, s in ipairs(crowd) do
+      if Union.slotForId(s.id) == Plaza.CAP then far, farSlot = s, Plaza.CAP end
+    end
+  end
+  local fx, fy = Plaza.cellFor(Plaza.CAP)
+  result(farSlot == Plaza.CAP, "someone holds slot 40 at " .. tostring(fx) .. "," .. tostring(fy))
+  place(12, 22, "up")
+  wait(10)
+  local function walk(dir, axis, target)
+    for _ = 1, 600 do
+      local v = axis == "x" and Player.cellX or Player.cellY
+      if v == target then
+        waitFor(function() return not Player.moving end, 2, 60)
+        return (axis == "x" and Player.cellX or Player.cellY) == target
+      end
+      if Player.moving then wait(1) else U.hold(game, dir, 1) end
+    end
+    return false
+  end
+  local walked = walk("up", "y", 18) and walk("left", "x", fx + 1) and walk("up", "y", fy)
+  if walked and Player.facing ~= "left" then
+    U.tap(game, "left")
+    wait(6)
+  end
+  print("[driver] walked to " .. tostring(Player.cellX) .. "," .. tostring(Player.cellY) .. " " .. tostring(Player.facing))
+  result(walked and Player.cellX == fx + 1 and Player.cellY == fy, "walked through the crowd to slot 40's cell")
+  U.tap(game, "a")
+  local prompt = waitFor(function()
+    if Message.isOpen() and Message.isWaiting() and (Message._page or 1) < #(Message._pages or {}) then
+      U.tap(game, "a")
+    end
+    local Screen = require("src.ui.game3.union_room")
+    return Screen.isOpen() and Screen.mode == "activity"
+  end, 8, 600)
+  result(prompt, "talking to slot 40 opens the do-something prompt")
+  result(Union.vobj(Plaza.CAP).dir == Union.DIR.EAST, "slot 40 turned to face the player")
+  wait(10)
+  U.still(game, DIR .. "/g3link_union_plaza_slot40_prompt.png")
+  U.tap(game, "b")
+  drive(function() return Union.state == "main" and not Message.isOpen() end, 8)
 
   relay:handle(blue, { type = "invite", to = "a0000001", activity = "chat", detail = {}, profile = live })
   result(waitFor(function() return Union.state == "player_contacted_you" or Union.state == "handle_activity_request" end,
@@ -170,8 +241,16 @@ return function(game)
     "leaving the chat ends it")
   result(Client.room() == nil, "and leaves the private room")
 
-  Map.load(nil, game, CENTER_2F, { x = 7, y = 5, facing = "down" })
-  wait(90)
+  place(12, 22, "down")
+  wait(10)
+  for _ = 1, 20 do
+    if Map.current == CENTER_2F then break end
+    U.hold(game, "down", 8)
+    relay:pump()
+  end
+  result(waitFor(function() return Map.current == CENTER_2F end, 8, 300), "the exit pad warps back to the PC 2F")
+  wait(60)
+  U.still(game, DIR .. "/g3link_union_plaza_exit_2f.png")
   result(Union.state == "off", "leaving the Union Room stops it")
   result(Client.plaza() == nil, "and leaves the plaza")
 
@@ -194,9 +273,9 @@ return function(game)
   local rows = LinkMenu.rows
   print("[driver] rows trade=" .. tostring(rows[1] and rows[1].count) .. " battle=" .. tostring(rows[2] and rows[2].count)
     .. " union=" .. tostring(rows[3] and rows[3].count) .. " total=" .. tostring(rows[4] and rows[4].count))
-  result(rows[Status.GROUPTYPE.UNION] and rows[Status.GROUPTYPE.UNION].count == 2,
-    "UNION ROOM counts the two plaza members")
-  result(rows[Status.GROUPTYPE.TOTAL] and rows[Status.GROUPTYPE.TOTAL].count == 2, "TOTAL = trade + battle + union")
+  result(rows[Status.GROUPTYPE.UNION] and rows[Status.GROUPTYPE.UNION].count == OTHERS,
+    "UNION ROOM counts the 39 plaza members")
+  result(rows[Status.GROUPTYPE.TOTAL] and rows[Status.GROUPTYPE.TOTAL].count == OTHERS, "TOTAL = trade + battle + union")
   result(relay.wireless["a0000001"] == true, "the monitor subscribed to wireless counts")
   U.shot(game, DIR .. "/g3link_wireless_monitor_counts.png")
   U.tap(game, "a")

@@ -26,5 +26,6 @@ return function(data, mapId)
   data.audio.mapSongs[mapId] = data.audio.mapSongs[mapId] or "Music_Fixture"
   data.audio.songs.Music_Fixture = data.audio.songs.Music_Fixture
     or { address = 0x4000 + 3 * 0xBD, bank = 2 }
+  data.encounters = data.encounters or {}
   return data
 end

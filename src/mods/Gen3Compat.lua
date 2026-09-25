@@ -903,6 +903,7 @@ COVERAGE["src.core.Game"] = {
 -- ------- src.world.Map
 
 local MapView = {}
+local connViews = setmetatable({}, { __mode = "k" })
 
 local function collision()
   return package.loaded["src.core.game3.collision"]
@@ -919,7 +920,21 @@ function MapView.__index(self, key)
   if key == "widthCells" then return def and def.width end
   if key == "heightCells" then return def and def.height end
   if key == "warps" then return def and def.warps end
-  if key == "connections" then return def and def.connections end
+  if key == "connections" then
+    if not def then return nil end
+    local hit = connViews[def]
+    if hit and hit.src == def.connections then return hit.view end
+    local list = require("src.core.game3.connections").each(def)
+    local view = setmetatable(list, { __index = function(t, dir)
+      if type(dir) ~= "string" then return nil end
+      for i = 1, #t do
+        if t[i].dir == dir then return t[i] end
+      end
+      return nil
+    end })
+    connViews[def] = { src = def.connections, view = view }
+    return view
+  end
   return nil
 end
 

@@ -111,16 +111,6 @@ local function getVar(id)
   return tonumber(Flags.getVar(store, ctx, id)) or 0
 end
 
-local function peerHello(name, trainerId, gender)
-  return {
-    type = Union.MSG.HELLO,
-    name = name,
-    trainerId = trainerId,
-    gender = gender or 0,
-    activity = Union.ACTIVITY.SEARCH + Union.IN_UNION_ROOM,
-  }
-end
-
 print("[test] 1. the union room specials answer to their pret index")
 local EXPECTED = {
   TryBecomeLinkLeader = 0x16B,
@@ -153,7 +143,7 @@ end
 eq(#logs, 0, "nothing reached the unknown-special log")
 Link.reset()
 
-print("[test] 3. RunUnionRoom starts the session and announces to the peer")
+print("[test] 3. RunUnionRoom always opens the relay plaza, never a cable room")
 local host, guest = FakeRelay.pair({ game = game })
 host:update(0)
 guest:update(0)
@@ -164,74 +154,17 @@ Flags.setVar(store, ctx, Link.VAR_RESULT, 5)
 Natives.special(ctx, NativesLink.SPECIAL.RunUnionRoom, adapters)
 eq(Union.state, "init", "RunUnionRoom armed the union room task")
 eq(getVar(Link.VAR_RESULT), 0, "VAR_RESULT is cleared on entry")
+eq(Union.relay, true, "with a cable link up and no relay the room is still the plaza")
+eq(Union.capacity(), 40, "holding 40 players")
 Union.update(0)
 eq(Union.state, "main", "the session reached the main loop")
 guest:update(0)
-local heard = guest:take(Union.MSG.HELLO)
-check(heard ~= nil, "the peer heard this player enter the union room")
-eq(heard and heard.name, "RED", "with the player's name")
-
-print("[test] 4. the player list fills from the transport and spawns an avatar")
-guest:send(peerHello("BLUE", 0x2222, 0))
+eq(guest:take("game3_union_hello"), nil, "nothing is announced over the cable")
+guest:send({ type = "game3_union_hello", name = "BLUE", trainerId = 0x2222, gender = 0, activity = 0x4C })
 host:update(0)
 Union.update(0)
-eq(Union.playerCount(), 1, "one other player is in the room")
-local listed = Union.list()[1]
-eq(listed and listed.name, "BLUE", "the list names the peer")
-eq(listed and listed.slot, 1, "in the first leader slot")
-eq(objectCalls.added[1], Union.LOCAL_IDS[1], "the slot 1 union room object was spawned")
-eq(Flags.getFlag(store, ctx, Union.FLAG_HIDE_PLAYER_1), false,
-  "FLAG_HIDE_UNION_ROOM_PLAYER_1 was cleared")
-eq(getVar(Union.VAR_OBJ_GFX_ID_0), Union.graphicsIdFor(0, 0x2222),
-  "VAR_OBJ_GFX_ID_0 holds the trainer-class graphics id")
-
-print("[test] 5. BufferUnionRoomPlayerName hands the nurse the name once")
-local _, first = NativesLink.HANDLERS[NativesLink.SPECIAL.BufferUnionRoomPlayerName](ctx, adapters)
-eq(first, 1, "the first call reports TRUE")
-eq(ctx.stringVars[1], "BLUE", "and buffers the name into STR_VAR_1")
-local _, second = NativesLink.HANDLERS[NativesLink.SPECIAL.BufferUnionRoomPlayerName](ctx, adapters)
-eq(second, 0, "the second call reports FALSE")
-
-print("[test] 6. talking to a player opens the activity chooser")
-Flags.setVar(store, ctx, Link.VAR_RESULT, 1)
-Union.update(0)
-eq(Union.partnerId, 1, "the interaction picked the player in slot 1")
-Union.update(0)
-check(Screen.isOpen(), "the union room screen opened")
-eq(Screen.mode, "activity", "in activity-chooser mode")
-eq(#Screen.items, 4, "with the four pret entries")
-teq(Screen.labelFor(Screen.items[1]), "GREETINGS", "GREETINGS first")
-teq(Screen.labelFor(Screen.items[4]), "EXIT", "EXIT last")
-
-print("[test] 7. BATTLE has no level limit")
-session.party = { { species = 1, level = 42 }, { species = 4, level = 60 } }
-Screen.cursor = 2
-Screen.confirm()
-eq(Union.activity, Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM,
-  "the battle request carries ACTIVITY_BATTLE_SINGLE | IN_UNION_ROOM")
-eq(Union.state, "send_activity_request", "and the request went out")
-guest:update(0)
-local request = guest:take(Union.MSG.REQUEST)
-check(request ~= nil, "the peer received the activity request")
-eq(request and request.activity, Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM,
-  "with the same activity id")
-
-print("[test] 8. a partner that never answers frees the room again")
-eq(Union.state, "send_activity_request", "the request is still outstanding")
-Union.update(Union.RESPONSE_SECONDS + 0.1)
-eq(Union.lastResult, "busy", "the partner is reported busy")
-Union.update(0)
-eq(Union.state, "main", "and the union room goes back to its main loop")
-eq(Union.activity, nil, "with no pending activity")
-
-print("[test] 9. EXIT leaves the chooser without contacting anybody")
-Union.state = "do_something_prompt"
-Union.partnerId = 1
-Union.update(0)
-Screen.cursor = 4
-Screen.confirm()
-eq(Union.activity, nil, "EXIT clears the pending activity")
-eq(Union.state, "main", "and returns to the union room main loop")
+eq(Union.playerCount(), 0, "and a cable hello adds nobody")
+eq(#objectCalls.added, 0, "no cart player object is spawned")
 
 print("[test] 10. stepping on the union room pad returns the dynamic warp, not a header map")
 local pad = MAPS[UNION_MAP].warps[1]
@@ -243,29 +176,15 @@ eq(destX, 5, "at the counter door x")
 eq(destY, 3, "at the counter door y")
 
 print("[test] 11. leaving the union room map ends the session")
-objectCalls.removed = {}
 Space.mapId = CENTER_MAP
 session.map = CENTER_MAP
 local alive = Union.update(0)
 eq(alive, false, "the union room task stopped")
 eq(Union.state, "off", "the session is closed")
-eq(Union.playerCount(), 0, "the player list is empty")
-eq(objectCalls.removed[1], Union.LOCAL_IDS[1], "the spawned avatar was removed")
-guest:update(0)
-check(guest:take(Union.MSG.BYE) ~= nil, "the peer was told this player left")
 
-print("[test] 12. InitUnionRoom scans from the Pokemon Center without spawning avatars")
-objectCalls.added = {}
+print("[test] 12. InitUnionRoom has no cable to scan")
 Natives.special(ctx, NativesLink.SPECIAL.InitUnionRoom, adapters)
-eq(Union.state, "search", "the Pokemon Center ON_RESUME scan is running")
-guest:send(peerHello("GREEN", 0x3333, 1))
-host:update(0)
-Union.update(0)
-eq(Union.playerCount(), 1, "the scan found a union room player")
-eq(#objectCalls.added, 0, "and spawned nothing on the Pokemon Center map")
-local _, greeted = NativesLink.HANDLERS[NativesLink.SPECIAL.BufferUnionRoomPlayerName](ctx, adapters)
-eq(greeted, 1, "the nurse can greet the player it found")
-eq(ctx.stringVars[1], "GREEN", "by name")
+eq(Union.state, "off", "the Pokemon Center ON_RESUME call starts nothing")
 
 print("[test] 13. the link group flows answer LINKUP through VAR_RESULT")
 Link.reset()
@@ -275,11 +194,6 @@ local host2, guest2 = FakeRelay.pair({ game = game })
 host2:update(0)
 guest2:update(0)
 Link.attach(host2)
-Natives.special(ctx, NativesLink.SPECIAL.RunUnionRoom, adapters)
-Union.update(0)
-guest2:send(peerHello("BLUE", 0x2222, 0))
-host2:update(0)
-Union.update(0)
 
 Flags.setVar(store, ctx, Link.VAR_0x8004, Union.LINK_GROUP.SINGLE_BATTLE)
 local yielded = Natives.special(ctx, NativesLink.SPECIAL.TryBecomeLinkLeader, adapters)
@@ -330,90 +244,6 @@ else
     eq(tonumber(w and w.mapNum), 0x7F, "and it is MAP_DYNAMIC")
   end
 end
-
-print("[test] an incoming activity request is answered, never parked")
-Link.reset()
-Union.reset()
-local reqHost, reqGuest = FakeRelay.pair({ game = game })
-reqHost:update(0)
-reqGuest:update(0)
-Link.attach(reqHost)
-Space.mapId = UNION_MAP
-session.map = UNION_MAP
-Natives.special(ctx, NativesLink.SPECIAL.RunUnionRoom, adapters)
-Union.update(0)
-reqGuest:update(0)
-while reqGuest:take(Union.MSG.HELLO) do end
-reqGuest:send({ type = Union.MSG.REQUEST, name = "BLUE",
-  activity = Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM })
-reqHost:update(0)
-Union.update(1 / 60)
-eq(Union.activity, Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM,
-  "the request lands in UR_STATE_RECV_ACTIVITY_REQUEST with the activity asked for")
-eq(Union._requestName, "BLUE", "and the name of the trainer who asked")
--- pokefirered/src/union_room.c:4486
-local prompt = Union.requestPrompt()
-if romBundle then
-  eq(prompt, require("src.core.game3.rom_text").ascii("gText_UR_ChatInvitation"),
-    "the prompt is the cart's chat invitation")
-else
-  print("[skip] ROM text: the contact prompt reads gText_UR_ChatInvitation")
-end
-Union.update(1 / 60)
-reqHost:update(0)
-reqGuest:update(0)
-local answer = reqGuest:take(Union.MSG.RESPONSE)
-check(answer ~= nil, "the peer gets a RESPONSE instead of timing out on a parked room")
-check(Union.state ~= "player_contacted_you", "and the room leaves player_contacted_you")
-
-print("[test] the chooser's CHAT and GREETINGS start real activities")
-local Chat = require("src.core.game3.link.chat")
-Union.state = "main"
-Union.activity = nil
-Union.chooseActivity(3)
-eq(Union.state, "send_activity_request", "CHAT asks the partner first")
-reqGuest:update(0)
-reqGuest:take(Union.MSG.REQUEST)
-reqGuest:send({ type = Union.MSG.RESPONSE, accept = true })
-reqHost:update(0)
-Union.update(1 / 60)
-eq(Union.state, "in_activity", "an accepted CHAT enters the chat activity")
-check(Chat.isActive(), "and the chat session is live")
-Chat.say("HI")
-reqGuest:update(0)
-local said = reqGuest:take(Chat.MSG.LINE)
-eq(said and said.text, "HI", "a line the player writes goes out on the wire")
-reqGuest:send({ type = Chat.MSG.LINE, name = "BLUE", text = "HELLO" })
-reqHost:update(0)
-Chat.update(1 / 60)
-eq(#Chat.lines, 2, "and the peer's line lands in the log")
-check(Chat.lines[2] and Chat.lines[2].text:find("BLUE", 1, true) == 1
-  and Chat.lines[2].text:sub(-6) == ":HELLO", "with the peer's name and words")
-Chat.stop("left")
-Union.update(1 / 60)
-eq(Union.state, "main", "leaving the chat puts the room back in its main loop")
-
-Union.state = "main"
-Union.activity = nil
-Union.chooseActivity(1)
-eq(Union.state, "send_activity_request", "GREETINGS asks the partner first")
-reqGuest:update(0)
-reqGuest:take(Union.MSG.REQUEST)
-reqGuest:send({ type = Union.MSG.RESPONSE, accept = true })
-reqHost:update(0)
-Union.update(1 / 60)
--- pokefirered/src/union_room.c:1954 CB2_ShowCard
-eq(Union.state, "in_activity", "an accepted GREETINGS shows a trainer card")
-eq(Union.lastResult, "card_shown", "built from CreateTrainerCardInBuffer")
-local cardOut = nil
-reqGuest:update(0)
-local seen = reqGuest:take(Link.MSG.CARD)
-while seen do
-  cardOut = seen
-  seen = reqGuest:take(Link.MSG.CARD)
-end
-check(cardOut ~= nil, "and this machine's own card went out to the peer")
-eq(cardOut and cardOut.card and cardOut.card.name, session.name, "carrying the player's name")
 
 print("[test] the link group at the counter lists the machine on the cable")
 Link.reset()

@@ -61,7 +61,7 @@ end
 -- src/union_room.c:4558 InUnionRoom
 local function link_menus_active()
   local Map = package.loaded["src.core.game3.map"]
-  if Map and Map.current == "FR_UNION_ROOM" then return true end
+  if Map and require("src.core.game3.link.union_room").isUnionMap(Map.current) then return true end
   local Link = package.loaded["src.core.game3.link"]
   return type(Link) == "table" and Link.link ~= nil and Link.inLinkRoom() == true
 end

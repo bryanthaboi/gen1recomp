@@ -454,6 +454,80 @@ check(pacer.moving == false and pacer.cellX == 40 and pacer.cellY == 13, "Traine
 
 resetField()
 
+print("[test] 11. Neighbor-map pool trainers never engage (Route 11 Dave seen from Vermilion)")
+Objects.clear()
+local engagedBy = {}
+local realEngage = TrainerSight.engage
+TrainerSight.engage = function(_, e, dist) engagedBy[#engagedBy + 1] = { eo = e, dist = dist } end
+local ghostPool = Objects.spawnFromDefs({
+  { localId = 4, x = 29, y = 11, movementType = 0x08, trainerType = 1, sight = 1,
+    scriptKey = "trainer_battle_01", elevation = 3 },
+}, { midLayout = { width = 36, height = 10 } }, "FR_ROUTE_11")
+local dave = ghostPool.byId[4]
+check(dave ~= nil and dave.sight == 1 and TrainerSight.isTrainerType(dave), "ghost Dave spawned as a sight-1 trainer")
+Player.reset(29, 13, "up")
+Player.elevation = 3
+dave.moving, dave.progress, dave.targetX, dave.targetY, dave.facing = true, 0, 29, 12, "down"
+local ghostCtx = {
+  ox = 48, oy = 10,
+  canEnter = function() return false end,
+  blocks = function() return true end,
+}
+for _ = 1, 20 do Objects.tickPool(ghostPool, dummyGame, ghostCtx) end
+check(dave.cellX == 29 and dave.cellY == 12 and not dave.moving, "ghost Dave finished his step onto local (29,12)")
+check(TrainerSight.checkLineOfSight(dave, Player, dummyGame) == true,
+  "ghost-local cone lines up with the current-map player cell")
+check(#engagedBy == 0 and not Field.locked, "ghost step completion never engages")
+check(TrainerSight.check(dummyGame, dave) == false and #engagedBy == 0,
+  "TrainerSight.check refuses an object outside the current map")
+
+resetField()
+dave.cellY, dave.py, dave.homeY = 11, 11 * 16, 11
+dave.moving, dave.progress, dave.targetX, dave.targetY, dave.facing = true, 0, 29, 12, "down"
+Objects._byId[4] = dave
+Objects._order = { 4 }
+Player.reset(29, 13, "up")
+Player.elevation = 3
+for _ = 1, 20 do
+  Objects.update(dummyGame)
+  if #engagedBy > 0 then break end
+end
+check(#engagedBy == 1 and engagedBy[1].eo == dave and engagedBy[1].dist == 1,
+  "control: the same trainer on the current map engages at dist 1 after its step")
+TrainerSight.engage = realEngage
+Objects.clear()
+resetField()
+
+print("[test] 12. Pool step completion skips sight and current-map elevation even without the identity guard")
+local realCheck, realElevAt = TrainerSight.check, Collision.elevationAt
+local checkCalls = 0
+TrainerSight.check = function() checkCalls = checkCalls + 1 return false end
+Collision.elevationAt = function() return 7 end
+local pool2 = Objects.spawnFromDefs({
+  { localId = 4, x = 29, y = 11, movementType = 0x08, trainerType = 1, sight = 1,
+    scriptKey = "trainer_battle_01", elevation = 3 },
+}, { midLayout = { width = 36, height = 10 } }, "FR_ROUTE_11")
+local ghost = pool2.byId[4]
+Player.reset(29, 13, "up")
+Player.elevation = 3
+for _, ctxArg in ipairs({ ghostCtx, false }) do
+  ghost.cellX, ghost.cellY, ghost.px, ghost.py, ghost.homeY = 29, 11, 29 * 16, 11 * 16, 11
+  ghost.elevation = 3
+  ghost.moving, ghost.progress, ghost.targetX, ghost.targetY, ghost.facing = true, 0, 29, 12, "down"
+  local stepped = false
+  for _ = 1, 20 do
+    Objects.tickPool(pool2, dummyGame, ctxArg or nil)
+    if not ghost.moving then stepped = true break end
+  end
+  local label = ctxArg and "ctx" or "nil ctx"
+  check(stepped and ghost.cellY == 12, label .. ": ghost finished its step")
+  check(ghost.elevation == 3, label .. ": ghost elevation not read from the current map, got " .. tostring(ghost.elevation))
+end
+check(checkCalls == 0, "pool step never calls TrainerSight.check, got " .. checkCalls)
+TrainerSight.check, Collision.elevationAt = realCheck, realElevAt
+Objects.clear()
+resetField()
+
 if failed > 0 then
   print(string.format("\n%d FAILURE(S)", failed))
   os.exit(1)

@@ -179,6 +179,95 @@ check(Objects.find(AIDE).visible, "mid-map setflag leaves the in-view aide drawn
 Space.bundle, Space.vm, Space.store = saved.bundle, saved.vm, saved.store
 Space.mapId, Space.active = saved.mapId, saved.active
 
+local PEWTER = "FR_PEWTER_CITY"
+local GYM_GUIDE, MUSEUM_GUIDE = 5, 2
+local FLAG_HIDE_GYM_GUIDE, FLAG_HIDE_MUSEUM_GUIDE = 0x2E, 0x2F
+local function pewterDef()
+  return {
+    midLayout = { width = 50, height = 40 },
+    objects = {
+      { localId = MUSEUM_GUIDE, graphicsId = 30, x = 33, y = 17, movementType = 8, flag = FLAG_HIDE_MUSEUM_GUIDE },
+      { localId = GYM_GUIDE, graphicsId = 30, x = 42, y = 20, movementType = 8, flag = FLAG_HIDE_GYM_GUIDE },
+    },
+  }
+end
+local function freshPewter()
+  Objects.reset()
+  Objects.loadMap(nil, PEWTER, pewterDef())
+end
+local function strand(lid, x, y, facing)
+  local eo = Objects.find(lid)
+  eo.cellX, eo.cellY, eo.targetX, eo.targetY = x, y, x, y
+  eo.px, eo.py = x * 16, y * 16
+  eo.facing = facing
+  eo.frozen, eo.scriptBusy = true, true
+  if eo.def then eo.def.x, eo.def.y = x, y end
+  Objects._tracks[lid] = { done = false }
+  return eo
+end
+local function atTemplate(lid, x, y, label)
+  local eo = Objects.find(lid)
+  check(eo and eo.visible and not eo.hidden, label .. ": visible")
+  check(eo and eo.cellX == x and eo.cellY == y, label .. string.format(": at template (%d,%d), got (%s,%s)",
+    x, y, tostring(eo and eo.cellX), tostring(eo and eo.cellY)))
+  check(eo and eo.homeX == x and eo.homeY == y and eo.px == x * 16 and eo.py == y * 16, label .. ": home/px reset")
+  check(eo and eo.facing == "down", label .. ": template facing down, got " .. tostring(eo and eo.facing))
+  check(eo and not eo.moving and not eo.frozen and not eo.scriptBusy, label .. ": idle")
+  check(Objects._tracks[lid] == nil, label .. ": no stale track")
+end
+
+print("[test] 8. removeobject + clearflag respawns the Pewter gym guide at his template cell")
+freshPewter()
+placePlayer(15, 18)
+local stale = strand(GYM_GUIDE, 7, 19, "left")
+Objects.removeObject(GYM_GUIDE)
+Objects.syncFlagVisibility(FLAG_HIDE_GYM_GUIDE, false)
+atTemplate(GYM_GUIDE, 42, 20, "gym guide")
+check(Objects.find(GYM_GUIDE) ~= stale, "gym guide is a fresh object")
+
+print("[test] 9. museum guide sibling")
+freshPewter()
+placePlayer(20, 17)
+strand(MUSEUM_GUIDE, 24, 15, "up")
+Objects.removeObject(MUSEUM_GUIDE)
+Objects.syncFlagVisibility(FLAG_HIDE_MUSEUM_GUIDE, false)
+atTemplate(MUSEUM_GUIDE, 33, 17, "museum guide")
+
+print("[test] 10. removeobject + addobject respawns from the template too")
+freshPewter()
+placePlayer(15, 18)
+strand(GYM_GUIDE, 7, 19, "left")
+Objects.removeObject(GYM_GUIDE)
+check(Objects.addObject(GYM_GUIDE), "addobject ok")
+atTemplate(GYM_GUIDE, 42, 20, "addobject gym guide")
+local n = 0
+for _, id in ipairs(Objects._order) do if id == GYM_GUIDE then n = n + 1 end end
+check(n == 1, "gym guide listed once in draw order")
+
+print("[test] 11. a perm row still places the respawn (Oak's lab shape)")
+freshPewter()
+placePlayer(15, 18)
+strand(GYM_GUIDE, 7, 19, "left")
+Objects.removeObject(GYM_GUIDE)
+Objects.setObjectXY(GYM_GUIDE, 6, 3)
+Objects.setMovementType(GYM_GUIDE, 8)
+Objects.syncFlagVisibility(FLAG_HIDE_GYM_GUIDE, false)
+local permEo = Objects.find(GYM_GUIDE)
+check(permEo.visible and permEo.cellX == 6 and permEo.cellY == 3 and permEo.facing == "down",
+  "perm row wins over the template")
+
+print("[test] 12. clearflag leaves an active object where it is")
+freshPewter()
+placePlayer(15, 18)
+local live = strand(GYM_GUIDE, 16, 18, "left")
+live.frozen, live.scriptBusy = false, false
+Objects._tracks[GYM_GUIDE] = nil
+Objects.rememberPerm(PEWTER, GYM_GUIDE, { x = 6, y = 3, movementType = 7 })
+Objects.syncFlagVisibility(FLAG_HIDE_GYM_GUIDE, false)
+check(Objects.find(GYM_GUIDE) == live and live.cellX == 16 and live.cellY == 18 and live.facing == "left",
+  "active gym guide untouched by clearflag")
+check(Objects.addObject(GYM_GUIDE) and Objects.find(GYM_GUIDE) == live, "addobject on an active object is a no-op")
+
 if failed > 0 then
   print("[test] FAILED " .. failed)
   os.exit(1)

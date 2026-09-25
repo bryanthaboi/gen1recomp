@@ -58,7 +58,7 @@ return function(game)
     local menu = top()
 
     U.tap(game, "a")
-    if not check("BUY opens the list", waitFor(function() return topIs(ListMenu) end, 60)) then return end
+    if not check("BUY opens the list", waitFor(function() return topIs(ListMenu) end, 300)) then return end
     local list = top()
     local itemId = list.items[list.index].value
     local def = game.data.items[itemId]
@@ -109,12 +109,12 @@ return function(game)
     check("NO buys nothing", game.save.money == 3000)
 
     U.tap(game, "b")
-    if not check("B returns to BUY/SELL/QUIT", waitFor(function() return top() == menu end, 30)) then return end
+    if not check("B returns to BUY/SELL/QUIT", waitFor(function() return top() == menu end, 300)) then return end
     U.wait(4)
     U.tap(game, "down")
     U.wait(4)
     U.tap(game, "a")
-    if not check("SELL opens the sell list", waitFor(function() return topIs(ListMenu) end, 60)) then return end
+    if not check("SELL opens the sell list", waitFor(function() return topIs(ListMenu) end, 300)) then return end
     local sellList = top()
     for _ = 1, 20 do
       local row = sellList.items[sellList.index]

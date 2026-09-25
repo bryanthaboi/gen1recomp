@@ -8,8 +8,6 @@
 --      unknown rates fail closed.
 --   3. Fallback cascade — ungated / failed / abandoned waits force FrameCap
 --      immediately; logic never snaps to panel Hz unless sync is confirmed.
---   4. (FixedStep) catch-up debt is hard-capped so speed multipliers cannot
---      spiral into input-starving multi-frame dumps.
 
 local PresentSync = {}
 

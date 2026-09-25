@@ -327,7 +327,7 @@ local MAX_TEAM = 6
 local MAX_DEADLINES = 8
 local MAX_U32 = 4294967295
 local MAX_SEATS = 5
-local MAX_PLAZA = 9
+local MAX_PLAZA = 40
 local MAX_DIRECT = 64
 local MAX_GROUPS = 64
 local MAX_AVATAR_NAME = 16
@@ -979,6 +979,7 @@ end
 SCHEMAS.plaza_join = function(m)
   return {
     kind = Wire.str(m.kind, nil, MAX_NAME),
+    cap = Wire.num(m.cap, nil, 1, MAX_PLAZA),
     profile = profile(m.profile),
     avatar = Wire.avatar(m.avatar),
   }
@@ -992,6 +993,8 @@ SCHEMAS.plaza_state = function(m)
   return {
     kind = Wire.str(m.kind, nil, MAX_NAME),
     instance = Wire.num(m.instance, nil, 0, MAX_INT),
+    cap = Wire.num(m.cap, nil, 1, MAX_PLAZA),
+    rev = Wire.num(m.rev, nil, 0, MAX_INT),
     you = Wire.num(m.you, nil, 1, MAX_PLAZA),
     members = type(m.members) == "table" and Wire.list(m.members, MAX_PLAZA, Wire.member)
       or nil,
@@ -1002,6 +1005,7 @@ SCHEMAS.plaza_delta = function(m)
   return {
     kind = Wire.str(m.kind, nil, MAX_NAME),
     instance = Wire.num(m.instance, nil, 0, MAX_INT),
+    rev = Wire.num(m.rev, nil, 0, MAX_INT),
     joined = Wire.list(m.joined, MAX_PLAZA, Wire.member),
     left = idList(m.left, MAX_PLAZA),
     changed = Wire.list(m.changed, MAX_PLAZA, Wire.member),

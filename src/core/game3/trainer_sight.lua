@@ -379,6 +379,8 @@ function TrainerSight.check(game, specificTrainer)
 
   if specificTrainer then
     local eo = specificTrainer
+    -- src/trainer_see.c:94
+    if Objs.find(eo.localId) ~= eo then return false end
     if eo.visible and not eo.hidden and not eo.scriptBusy and not eo.frozen then
       local sight = tonumber(eo.sight or (eo.def and (eo.def.sight or eo.def.trainerRange))) or 0
       if sight > 0 and TrainerSight.isTrainerType(eo)

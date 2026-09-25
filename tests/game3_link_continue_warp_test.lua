@@ -51,6 +51,26 @@ for _, room in ipairs({ "FR_BATTLE_COLOSSEUM_2P", "FR_BATTLE_COLOSSEUM_4P", "FR_
   check(c.map == CENTER_2F and c.x == 9 and c.y == 1, room .. " save continues at the dynamic warp")
 end
 
+for _, room in ipairs({ "FR_UNION_ROOM_PLAZA", "FR_UNION_ROOM" }) do
+  for _, case in ipairs({
+    { heal = "FR_PEWTER_CITY_POKEMON_CENTER_1F", want = "FR_PEWTER_CITY_POKEMON_CENTER_2F" },
+    { heal = "SEVII_ONE_ISLAND_POKECENTER", want = "SEVII_ONE_ISLAND_POKECENTER_2F" },
+    { heal = "FR_PLAYERS_HOUSE_1F", want = CENTER_2F },
+  }) do
+    local s = linkSession(room)
+    s.dynamicWarp = nil
+    s.healMap = case.heal
+    local saved = Schema.toSaveTable(s)
+    check((tonumber(saved.specialSaveWarpFlags) or 0) == 0, room .. " save with no dynamic warp sets no continue warp")
+    local c = Schema.fromSaveTable(saved)
+    check(c.map == case.want and c.x == 5 and c.y == 1 and c.facing == "down",
+      room .. " save with no dynamic warp (heal " .. case.heal .. ") continues at the Union Room door (got "
+      .. tostring(c.map) .. " " .. tostring(c.x) .. "," .. tostring(c.y) .. ")")
+  end
+  local c = Schema.fromSaveTable(Schema.toSaveTable(linkSession(room)))
+  check(c.map == CENTER_2F and c.x == 9 and c.y == 1, room .. " save with a dynamic warp still uses it")
+end
+
 local outside = linkSession(CENTER_2F)
 outside.x, outside.y = 7, 4
 local o = Schema.fromSaveTable(Schema.toSaveTable(outside))

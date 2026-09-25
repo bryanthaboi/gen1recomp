@@ -5868,6 +5868,30 @@ function OverworldState:drawWorld()
     PaletteFX.setShadeMap((self.dark and not battleOverWorld)
                           and PaletteFX.DARK_BGP or self:poisonShadeMap())
   end
+  local tiles = self.map and self.map.renderer
+  self.boltBaked = nil
+  if tiles and tiles.setBgp then
+    local e = self.emote
+    -- engine/pikachu/pikachu_pic_animation.asm:790
+    local prebake = e and e.boltAt and not e.boltDone and (e.boltT or 0) > e.boltAt
+    local bolt = e and not battleOverWorld and e.bgp or nil
+    local neighbors = self.neighbors
+    for i = 1, neighbors and #neighbors or 0 do
+      local r = neighbors[i].map.renderer
+      if r and r.setBgp then
+        if prebake then
+          r:bgpImage(0xC0)
+          r:bgpImage(0xE4)
+        end
+        r:setBgp(bolt)
+      end
+    end
+    if prebake then
+      tiles:bgpImage(0xC0)
+      tiles:bgpImage(0xE4)
+    end
+    self.boltBaked = tiles:setBgp(bolt) and bolt or nil
+  end
   -- advance the water/flower tile animation (runs under dialogs too).
   -- TileRenderer.tick uses wall-clock 60Hz steps so display refresh rate
   -- does not speed or slow the cycle (issue #4).
@@ -6439,28 +6463,27 @@ function OverworldState:drawUI()
   -- TalkToPikachu's picture box (engine/pikachu/pikachu_pic_animation.asm
   -- PlacePikapicTextBoxBorder: TextBoxBorder at (6,5) with b,c = 5,5, so a
   -- 7x7 box holding the 5x5 pic at (7,6) -- PikaAnimTilemap_1).  The
-  -- script's base frame is ripped as pikachu/pikapic_N.png (#561) but the
-  -- pikaframe overlays on top of it are not, so PikachuFollower
-  -- .picLift lifts the base on the runs that draw the alternate pose, and the
   -- script's own duration times the beat (#407, #424).  Palette zone
   -- PAL_PIKACHU_PORTRAIT covers (7,6)-(11,10) via sgbPalettes above.
   if self.emote and self.emote.pikaPic then
     require("src.render.Font").drawBox(6, 5, 7, 7)
-    -- one image per path, cached: this draws every frame of the hold, and
-    -- a mod skin can move the path between talks
-    if self.pikaPicPath ~= self.emote.pikaPic then
-      local ok, loaded = pcall(love.graphics.newImage, self.emote.pikaPic)
-      self.pikaPicImg = ok and loaded or nil
-      self.pikaPicPath = self.emote.pikaPic
+    local path, lift = require("src.world.PikachuFollower").picFrame(self.emote)
+    self.pikaPicImgs = self.pikaPicImgs or {}
+    local img = path and self.pikaPicImgs[path]
+    if path and img == nil then
+      local ok, loaded = pcall(love.graphics.newImage, path)
+      img = ok and loaded or false
+      self.pikaPicImgs[path] = img
     end
-    local img = self.pikaPicImg
+    self.pikaPicDrawn = img and path or nil
     if img then
       love.graphics.setColor(1, 1, 1, 1)
       local w, h = img:getDimensions()
-      local lift = require("src.world.PikachuFollower").picLift(self.emote)
       love.graphics.draw(img, math.floor(56 + (40 - w) / 2),
-                         math.floor(48 + (40 - h) / 2) - lift)
+                         math.floor(48 + (40 - h) / 2) - (lift or 0))
     end
+  else
+    self.pikaPicDrawn = nil
   end
 
   -- engine/gfx/screen_effects.asm:1-12
@@ -6483,7 +6506,7 @@ function OverworldState:drawUI()
 
   -- engine/pikachu/pikachu_pic_animation.asm:847
   local bolt = self.emote and self.emote.bgp
-  if bolt and bolt ~= 0xE4 and Game and Game.renderer
+  if bolt and bolt ~= 0xE4 and Game and Game.renderer and self.boltBaked ~= bolt
      and (self:bakedWorldColors() or not PaletteFX.shader()) then
     Game.renderer.screenVeil = BOLT_WHITE_VEIL
   end

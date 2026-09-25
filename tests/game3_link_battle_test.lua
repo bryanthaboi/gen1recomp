@@ -847,6 +847,8 @@ check(Battle._refuseLinkItem(fakeInput), "A on BAG in a link battle is refused a
 local after = Ui.log() or {}
 check(#after > before and tostring(after[#after]):find("can't be used", 1, true) ~= nil,
   "and the refusal prints sText_ItemsCantBeUsedNow")
+eq(Ui._mode, "selmsg", "shown as a selection message so it stays on screen")
+eq(Ui._selReturn, "menu", "then returns to the action menu")
 Ui._mode = "menu"
 Ui._menuIndex = 1
 eq(Battle._refuseLinkItem(fakeInput), false, "FIGHT is not touched by the rule")

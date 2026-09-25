@@ -185,6 +185,7 @@ function Game3:load(opts)
   if opts.arena then
     FixedStep:init(function(dt)
       self:fixedUpdate(dt)
+      self:_speedLockEdge()
     end)
     pcall(function()
       require("src.core.PresentSync").applyFixedStepPeriod()
@@ -208,6 +209,7 @@ function Game3:load(opts)
 
   FixedStep:init(function(dt)
     self:fixedUpdate(dt)
+    self:_speedLockEdge()
   end)
   pcall(function()
     require("src.core.PresentSync").applyFixedStepPeriod()
@@ -414,7 +416,7 @@ function Game3:_handleRegisteredItem()
   if not item then return end
   -- src/item_menu.c:2025
   local Map = package.loaded["src.core.game3.map"]
-  if Map and Map.current == "FR_UNION_ROOM" then return end
+  if Map and require("src.core.game3.link.union_room").isUnionMap(Map.current) then return end
   -- src/overworld.c:2813
   local Link = package.loaded["src.core.game3.link"]
   if type(Link) == "table" and Link.link ~= nil and Link.inLinkRoom() == true then return end
@@ -585,8 +587,53 @@ function Game3:isFixedSpeed()
   return type(MG) == "table" and MG.isActive ~= nil and MG.isActive() == true
 end
 
+local function unionRoomMap(id)
+  return require("src.core.game3.link.union_room").isUnionMap(id)
+end
+
+function Game3:speedLocked()
+  if self:isFixedSpeed() then return true, "link" end
+  local Battle = package.loaded["src.core.game3.battle"]
+  if type(Battle) == "table" and Battle.isActive and Battle.isActive() then
+    return true, "battle"
+  end
+  local Transition = package.loaded["src.core.game3.battle_transition"]
+  if type(Transition) == "table" and Transition.isActive and Transition.isActive() then
+    return true, "battle"
+  end
+  local Union = package.loaded["src.core.game3.link.union_room"]
+  if type(Union) == "table" and Union.isActive and Union.isActive() then
+    return true, "link"
+  end
+  local LinkMenu = package.loaded["src.ui.game3.link_menu"]
+  if type(LinkMenu) == "table" then
+    if LinkMenu.isOpen and LinkMenu.isOpen() then return true, "link" end
+    local Direct = LinkMenu.Direct
+    if type(Direct) == "table" and Direct.isOpen and Direct.isOpen() then
+      return true, "link"
+    end
+  end
+  if self.phase ~= "field" then return false end
+  local Map = package.loaded["src.core.game3.map"]
+  if type(Map) == "table" and unionRoomMap(Map.current) then
+    return true, "link"
+  end
+  local Link = package.loaded["src.core.game3.link"]
+  if type(Link) == "table" and Link.inLinkRoom then
+    local ok, inRoom = pcall(Link.inLinkRoom)
+    if ok and inRoom == true then return true, "link" end
+  end
+  return false
+end
+
+function Game3:_speedLockEdge()
+  if (self._frameSpeed or 1) > 1 and self:speedLocked() then
+    FixedStep:endFrame()
+  end
+end
+
 function Game3:logicSpeed()
-  if self:isFixedSpeed() then return 1 end
+  if self:speedLocked() then return 1 end
   local override = tonumber(self.speedOverride)
   if override then return math.max(1, override) end
   local b = self.phase == "boot" and self.boot
@@ -603,6 +650,7 @@ end
 
 function Game3:_cycleSpeed(dir)
   if type(self.options) ~= "table" then return end
+  if self:speedLocked() then return end
   local GameSpeed = require("src.core.GameSpeed")
   local key = GameSpeed.optionKey(self:speedCategory())
   self.options[key] = GameSpeed.cycle(self.options[key], dir)
@@ -633,7 +681,8 @@ end
 
 function Game3:update(dt)
   local speed = self:logicSpeed()
-  FixedStep.maxAccum = FixedStep.catchupLimit(speed)
+  self._frameSpeed = speed
+  FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
   FixedStep:update(dt, speed)
   self._audioAccum = (self._audioAccum or 0) + dt
   local STEP = 1 / 60

@@ -57,6 +57,10 @@ local O = {
   currentMapHeight2 = 557,
   currentMapWidth2  = 558,
   tilesetHeader     = 564,   -- wTilesetBank .. wGrassTile (11)
+  grassRate         = 1424,  -- ram/wram.asm:2408 wGrassRate
+  grassMons         = 1425,
+  waterRate         = 1453,
+  waterMons         = 1454,
 }
 MapContext.OFFSETS = O
 
@@ -66,6 +70,7 @@ local MAX_OBJECT_EVENTS = 16
 local CONNECTION_STRUCT = 11   -- map_connection_struct (macros/ram.asm)
 local SPRITE_STRUCT = 16       -- one wSpriteStateData1/2 entry
 local NUM_SPRITE_STRUCTS = 16
+local NUM_WILDMONS = 10
 
 -- wOverworldMap, the tile-block map the view pointer indexes.  Recovered from
 -- the event_displacement formula below applied to a real save's coordinates,
@@ -226,6 +231,36 @@ function MapContext.build(data, mapId, x, y)
   end
   writes[O.mapMusicSoundID] = { id }
   writes[O.mapMusicROMBank] = { song.bank % 256 }
+
+  -- engine/overworld/wild_mons.asm:1
+  if type(data.encounters) ~= "table" then
+    return nil, "no wild encounter data (re-import the ROM)"
+  end
+  local enc = data.encounters[mapId]
+  local pokemon = data.pokemon or {}
+  local function wildRows(t)
+    local out = {}
+    for i = 1, NUM_WILDMONS do
+      local slot = t.slots and t.slots[i]
+      local def = slot and pokemon[slot.species]
+      if not (slot and def and def.index) then return nil end
+      out[#out + 1] = (tonumber(slot.level) or 0) % 256
+      out[#out + 1] = def.index % 256
+    end
+    return out
+  end
+  for _, kind in ipairs({ "grass", "water" }) do
+    local t = type(enc) == "table" and enc[kind] or nil
+    local rate = t and tonumber(t.rate) or 0
+    writes[O[kind .. "Rate"]] = { rate % 256 }
+    if rate ~= 0 then
+      local rows = wildRows(t)
+      if not rows then
+        return nil, ("bad %s wild data for %s (re-import the ROM)"):format(kind, tostring(mapId))
+      end
+      writes[O[kind .. "Mons"]] = rows
+    end
+  end
 
   -- Player position within its block, and the upper-left corner of the view.
   -- The pointer is the same expression the warp_to tables are assembled with

@@ -433,10 +433,19 @@ local function actorPriority(a)
   end
 end
 
+local function sortActors(a, b)
+  local ay = a.subpriority or a.sortY or a.y
+  local by = b.subpriority or b.sortY or b.y
+  if ay == by then return (a.i or 0) < (b.i or 0) end
+  return ay < by
+end
+
 -- event_object_movement.c:8379-8387, scrcmd.c:1130
-local function applyDrawOrder(actors)
-  local underActors = {}
-  local overActors = {}
+local function applyDrawOrder(actors, underActors, overActors)
+  underActors = underActors or {}
+  overActors = overActors or {}
+  for i = #underActors, 1, -1 do underActors[i] = nil end
+  for i = #overActors, 1, -1 do overActors[i] = nil end
   for _, a in ipairs(actors) do
     local obj = a.eventObject
     if obj and obj.fixedPriority then
@@ -454,17 +463,13 @@ local function applyDrawOrder(actors)
       underActors[#underActors + 1] = a
     end
   end
-  local function sortActors(a, b)
-    local ay = a.subpriority or a.sortY or a.y
-    local by = b.subpriority or b.sortY or b.y
-    if ay == by then return (a.i or 0) < (b.i or 0) end
-    return ay < by
-  end
   table.sort(underActors, sortActors)
   table.sort(overActors, sortActors)
   return underActors, overActors
 end
 FieldView.applyDrawOrder = applyDrawOrder
+
+local owOpts = {}
 
 local function drawSingleActor(game, mapDef, a, camX, camY)
   local daytime = daytimeFor(game, mapDef)
@@ -478,15 +483,14 @@ local function drawSingleActor(game, mapDef, a, camX, camY)
     drew = true
   end
   if not drew and useOw and a.graphicsId ~= nil then
-    local opts = {
-      bow = a.bow,
-      fieldMove = a.fieldMove,
-      fieldMoveFrame = a.fieldMoveFrame,
-      fishing = a.fishing,
-      fishFrame = a.fishFrame,
-      frame = a.frame,
-      running = a.running,
-    }
+    local opts = owOpts
+    opts.bow = a.bow
+    opts.fieldMove = a.fieldMove
+    opts.fieldMoveFrame = a.fieldMoveFrame
+    opts.fishing = a.fishing
+    opts.fishFrame = a.fishFrame
+    opts.frame = a.frame
+    opts.running = a.running
     drew = OwSprites.draw(
       a.graphicsId, a.x, a.y, camX, camY, a.facing, a.walkPhase, a.stepFlip, opts)
   end
@@ -509,11 +513,16 @@ local function drawSingleActor(game, mapDef, a, camX, camY)
   if billboarded then love.graphics.pop() end
 end
 
+local frameActors, frameUnder, frameOver = {}, {}, {}
+local npcActors = setmetatable({}, { __mode = "k" })
+local playerActor = {}
+
 local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walkPhase, stepFlip, playerYOff, playerXOff)
   local okO, Objects = pcall(require, "src.core.game3.objects")
   local okOw, OwSprites = pcall(require, "src.core.game3.ow_sprites")
   local useOw = okOw and OwSprites and OwSprites.ready and OwSprites.ready()
-  local actors = {}
+  local actors = frameActors
+  for i = #actors, 1, -1 do actors[i] = nil end
   local hasObjects = okO and Objects and Objects.hasMap and Objects.hasMap()
 
   if hasObjects then
@@ -522,23 +531,27 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
       if eo.moving and eo.targetY and eo.targetY > (eo.cellY or 0) then
         sortY = math.max(sortY, eo.targetY * CELL)
       end
-      actors[#actors + 1] = {
-        kind = "npc",
-        i = eo.localId,
-        obj = eo.def,
-        eventObject = eo,
-        elevation = eo.elevation or (eo.def and eo.def.elevation) or 0,
-        x = (eo.px or (eo.cellX * CELL)) + (eo.raiseX or 0),
-        y = (eo.py or (eo.cellY * CELL)) + (eo.raiseY or 0),
-        sortY = sortY,
-        facing = eo.facing or "down",
-        walkPhase = Objects.walkPhase(eo),
-        stepFlip = eo.stepFlip and true or false,
-        bow = (eo.bowFrames and eo.bowFrames > 0) or eo.raiseHand == true,
-        frame = eo.customFrame,
-        sprite = eo.sprite or spriteNameForObj(eo.def or {}),
-        graphicsId = eo.graphicsId or (eo.def and (eo.def.graphicsId or eo.def.graphics)),
-      }
+      local a = npcActors[eo]
+      if not a then
+        a = { kind = "npc", eventObject = eo }
+        npcActors[eo] = a
+      end
+      a.i = eo.localId
+      a.obj = eo.def
+      a.elevation = eo.elevation or (eo.def and eo.def.elevation) or 0
+      a.x = (eo.px or (eo.cellX * CELL)) + (eo.raiseX or 0)
+      a.y = (eo.py or (eo.cellY * CELL)) + (eo.raiseY or 0)
+      a.sortY = sortY
+      a.facing = eo.facing or "down"
+      a.walkPhase = Objects.walkPhase(eo)
+      a.stepFlip = eo.stepFlip and true or false
+      a.bow = (eo.bowFrames and eo.bowFrames > 0) or eo.raiseHand == true
+      a.frame = eo.customFrame
+      a.sprite = eo.sprite or spriteNameForObj(eo.def or {})
+      a.graphicsId = eo.graphicsId or (eo.def and (eo.def.graphicsId or eo.def.graphics))
+      a.priority = nil
+      a.subpriority = nil
+      actors[#actors + 1] = a
     end
     collectNeighborActors(actors, 10000, currentMapId(game),
       resolveMapDef(game, currentMapId(game)))
@@ -606,28 +619,30 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
     if not fieldMove and FieldMod and FieldMod.fishingPose then
       fishFrame, fishX2, fishY2 = FieldMod.fishingPose()
     end
-    actors[#actors + 1] = {
-      kind = "player",
-      elevation = PlayerMod and PlayerMod.elevation or 3,
-      x = px + (playerXOff or 0) + (fishX2 or 0),
-      y = py + (playerYOff or 0) + (fishY2 or 0),
-      sortY = playerSortY,
-      facing = facing or "down",
-      walkPhase = (walkPhase == 1 or walkPhase == true) and 1 or 0,
-      stepFlip = stepFlip and true or false,
-      fieldMove = fieldMove,
-      fieldMoveFrame = fieldMoveFrame,
-      fishing = fishFrame ~= nil,
-      fishFrame = fishFrame,
-      running = PlayerMod and PlayerMod.runPose and PlayerMod.runPose() or nil,
-      sprite = playerSpriteName(game),
-      graphicsId = useOw and OwSprites.playerGraphicsId(game) or nil,
-    }
+    local a = playerActor
+    a.kind = "player"
+    a.elevation = PlayerMod and PlayerMod.elevation or 3
+    a.x = px + (playerXOff or 0) + (fishX2 or 0)
+    a.y = py + (playerYOff or 0) + (fishY2 or 0)
+    a.sortY = playerSortY
+    a.facing = facing or "down"
+    a.walkPhase = (walkPhase == 1 or walkPhase == true) and 1 or 0
+    a.stepFlip = stepFlip and true or false
+    a.fieldMove = fieldMove
+    a.fieldMoveFrame = fieldMoveFrame
+    a.fishing = fishFrame ~= nil
+    a.fishFrame = fishFrame
+    a.running = PlayerMod and PlayerMod.runPose and PlayerMod.runPose() or nil
+    a.sprite = playerSpriteName(game)
+    a.graphicsId = useOw and OwSprites.playerGraphicsId(game) or nil
+    a.priority = nil
+    a.subpriority = nil
+    actors[#actors + 1] = a
   end
 
   local follower = require("src.world.game3.Follower").actor()
   if follower then actors[#actors + 1] = follower end
-  return applyDrawOrder(actors)
+  return applyDrawOrder(actors, frameUnder, frameOver)
 end
 
 --- Collect visible tile draws grouped by palette slot for batched GbcPalette.with.

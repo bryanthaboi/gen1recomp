@@ -159,8 +159,9 @@ local function switch_in_text(st, battler)
   return BattleText.get(BattleText.SWITCHINMON, SwitchSeq.switchInFill(st, battler))
 end
 
-local function apply_entry_triggers(st, side, pushMsg)
+local function apply_entry_triggers(st, side, pushMsg, opts)
   if not st then return end
+  opts = opts or {}
   local b = st[side]
   if not b or not b.mon or (tonumber(b.mon.hp) or 0) <= 0 then return end
 
@@ -168,7 +169,7 @@ local function apply_entry_triggers(st, side, pushMsg)
   local sideState = (side == "player") and st.playerSide or st.enemySide
   local hazards = sideState and sideState.hazards or {}
   local spikesLayers = tonumber(hazards.spikes or hazards.SPIKES) or 0
-  if spikesLayers > 0 and b and b.mon then
+  if not opts.noSpikes and spikesLayers > 0 and b and b.mon then
     local isFlying = (b.type1 == 2 or b.type2 == 2 or b.type1 == "FLYING" or b.type2 == "FLYING")
     local hasLevitate = (b.ability == "LEVITATE" or b.ability == 26)
     if not isFlying and not hasLevitate then
@@ -186,7 +187,7 @@ local function apply_entry_triggers(st, side, pushMsg)
   end
 
   -- Ability: Intimidate (ability 22 or "INTIMIDATE")
-  if (b.ability == 22 or b.ability == "INTIMIDATE") and (tonumber(b.mon.hp) or 0) > 0 then
+  if not opts.noIntimidate and (b.ability == 22 or b.ability == "INTIMIDATE") and (tonumber(b.mon.hp) or 0) > 0 then
     local oppSide = (side == "player") and "enemy" or "player"
     local opp = st[oppSide]
     if opp and opp.mon and (tonumber(opp.mon.hp) or 0) > 0 then
@@ -232,24 +233,45 @@ local function switch_out_effects(st, battler)
   capture_events(function(ad) Engine.switchOutEffects(st, ad, battler) end)
 end
 
+local function fallback_entry(st, sides, pushMsg, opts)
+  opts = opts or {}
+  local deferred = opts.deferred or {}
+  if not opts.deferIntimidate and #deferred == 0 then
+    for _, side in ipairs(sides) do apply_entry_triggers(st, side, pushMsg) end
+    return
+  end
+  for _, side in ipairs(sides) do apply_entry_triggers(st, side, pushMsg, { noIntimidate = true }) end
+  if opts.deferIntimidate then return end
+  for _, side in ipairs(deferred) do apply_entry_triggers(st, side, pushMsg, { noSpikes = true }) end
+  for _, side in ipairs(sides) do apply_entry_triggers(st, side, pushMsg, { noSpikes = true }) end
+end
+
 -- pokefirered/src/battle_script_commands.c:4960
-local function engine_entry_events(st, sides)
+local function engine_entry_events(st, sides, opts)
+  opts = opts or {}
   local Engine = package.loaded["src.core.game3.battle.engine"]
   if not (Engine and Engine.switchInEffects and battle_adapter()) then return nil end
   return capture_events(function(ad)
     for _, side in ipairs(sides) do
       local b = st and ((type(side) == "number") and State.battler(st, side) or st[side])
       if b and b.mon and (tonumber(b.mon.hp) or 0) > 0 then
-        Engine.switchInEffects(st, ad, b, { spikes = true })
+        Engine.switchInEffects(st, ad, b, { spikes = true, deferIntimidate = opts.deferIntimidate })
+      end
+    end
+    if opts.deferred and not opts.deferIntimidate then
+      local Abilities = require("src.core.game3.battle.abilities")
+      -- pokefirered/src/battle_util.c:1209
+      for _ = 1, 4 do
+        if not (Abilities.runIntimidate(ad) or Abilities.runTrace(ad)) then break end
       end
     end
   end)
 end
 
-local function headless_entry(st, sides)
-  local evs = engine_entry_events(st, sides)
+local function headless_entry(st, sides, opts)
+  local evs = engine_entry_events(st, sides, opts)
   if evs == nil then
-    for _, side in ipairs(sides) do apply_entry_triggers(st, side, SwitchSeq._pushMsg) end
+    fallback_entry(st, sides, SwitchSeq._pushMsg, opts)
     return
   end
   for _, e in ipairs(evs) do
@@ -442,7 +464,7 @@ function SwitchSeq.beginEventSwitchIn(st, side, opts)
   return true
 end
 
---- Retail Shift sequence: Player recalls active mon -> Enemy sends out replacement FIRST -> Player sends out replacement SECOND.
+-- pokefirered/data/battle_scripts_1.s:2856
 function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
   opts = opts or {}
   SwitchSeq.reset()
@@ -459,38 +481,39 @@ function SwitchSeq.beginShiftSwitch(st, playerSlot, enemySlot, opts)
     switch_out_effects(st, oldBattler)
     State.syncBattlerToParty(st.player, st.playerParty)
     State.wipeVolatilesAndStages(st.player)
-    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { partyIndex = enemySlot, st = st })
-    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.enemy)) end
     st.player = State.makeBattler(st.playerParty[playerSlot], "player", { partyIndex = playerSlot, st = st, state = st })
-    State.opponentSwitchInResetSentPokes(st, st.enemy)
-    State.trackParticipant(st, st.enemy, playerSlot)
-    Anim.syncDisplayFromState(st)
     if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.player)) end
-    headless_entry(st, { "enemy", "player" })
+    headless_entry(st, { "player" }, { deferIntimidate = true })
+    -- pokefirered/src/battle_script_commands.c:5945
+    State.resetSentPokes(st)
+    st.enemy = State.makeBattler(st.foeParty[enemySlot], "enemy", { partyIndex = enemySlot, st = st })
+    -- pokefirered/src/battle_util.c:254
+    State.opponentSwitchInResetSentPokes(st, st.enemy)
+    Anim.syncDisplayFromState(st)
+    if SwitchSeq._pushMsg then SwitchSeq._pushMsg(switch_in_text(st, st.enemy)) end
+    headless_entry(st, { "enemy" }, { deferred = { "player" } })
     finish()
     return false
   end
 
   local steps = {
-    -- 1. Player recall
     { kind = "msg", data = { text = withdrawMsg } },
     { kind = "withdraw", data = { side = "player" } },
-    -- 2. Enemy sendout first (retail FRLG order)
-    { kind = "swap_data", data = { side = "enemy", newSlot = enemySlot, isShift = true, reason = "shift" } },
-    { kind = "msg_sendout", data = { side = "enemy" } },
-    { kind = "sendout_enemy", data = { slot = enemySlot } },
-    { kind = "shiny_check", data = { side = "enemy" } },
-    { kind = "cry", data = { side = "enemy" } },
-    { kind = "healthbox", data = { side = "enemy" } },
-    -- 3. Player sendout second
     { kind = "swap_data", data = { side = "player", newSlot = playerSlot, isShift = true, reason = "shift" } },
     { kind = "msg_sendout", data = { side = "player" } },
     { kind = "sendout_player", data = { slot = playerSlot } },
     { kind = "shiny_check", data = { side = "player" } },
     { kind = "cry", data = { side = "player" } },
     { kind = "healthbox", data = { side = "player" } },
-    -- 4. Entry abilities and hazards in speed order
-    { kind = "entry_triggers", data = { sides = { "enemy", "player" } } },
+    { kind = "entry_triggers", data = { side = "player", deferIntimidate = true } },
+    -- pokefirered/data/battle_scripts_1.s:2874
+    { kind = "swap_data", data = { side = "enemy", newSlot = enemySlot, reason = "shift" } },
+    { kind = "msg_sendout", data = { side = "enemy" } },
+    { kind = "sendout_enemy", data = { slot = enemySlot } },
+    { kind = "shiny_check", data = { side = "enemy" } },
+    { kind = "cry", data = { side = "enemy" } },
+    { kind = "healthbox", data = { side = "enemy" } },
+    { kind = "entry_triggers", data = { side = "enemy", deferred = { "player" } } },
   }
 
   SwitchSeq._steps = steps
@@ -591,16 +614,22 @@ local function run_step(step)
       return
     end
     switch_out_effects(st, st and st[side])
+    local isShift = d.isShift or d.reason == "shift"
     if side == "player" then
       if st and st.player then
-        if not d.isShift and d.reason ~= "shift" then
+        if not isShift then
           State.trackParticipant(st, st.enemy, st.player.partyIndex or 1)
         end
         State.syncBattlerToParty(st.player, st.playerParty)
         State.wipeVolatilesAndStages(st.player, { batonPass = d.batonPass })
       end
       st.player = State.makeBattler(st.playerParty[newSlot], "player", { partyIndex = newSlot, st = st })
-      State.trackParticipant(st, st.enemy, newSlot)
+      if isShift then
+        -- pokefirered/src/battle_script_commands.c:5945
+        State.resetSentPokes(st)
+      else
+        State.trackParticipant(st, st.enemy, newSlot)
+      end
     else
       if st and st.enemy then
         State.syncBattlerToParty(st.enemy, st.foeParty)
@@ -608,9 +637,6 @@ local function run_step(step)
       end
       st.enemy = State.makeBattler(st.foeParty[newSlot], "enemy", { partyIndex = newSlot, st = st, state = st })
       State.opponentSwitchInResetSentPokes(st, st.enemy)
-      if d.isShift or d.reason == "shift" then
-        st.enemy.participants = {}
-      end
     end
     Anim.syncDisplayFromState(st)
     advance()
@@ -753,11 +779,10 @@ local function run_step(step)
       end)
       sides = sorted
     end
-    local evs = engine_entry_events(st, sides)
+    local entryOpts = { deferIntimidate = d.deferIntimidate, deferred = d.deferred }
+    local evs = engine_entry_events(st, sides, entryOpts)
     if evs == nil then
-      for _, sSide in ipairs(sides) do
-        apply_entry_triggers(st, sSide, SwitchSeq._pushMsg)
-      end
+      fallback_entry(st, sides, SwitchSeq._pushMsg, entryOpts)
     elseif #evs > 0 then
       local AnimSeq = require("src.core.game3.battle.anim_seq")
       local Ui = require("src.core.game3.battle.ui")

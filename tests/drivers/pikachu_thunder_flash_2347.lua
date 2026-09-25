@@ -163,15 +163,36 @@ return function(game)
   check("2347_talk1_pikapic_25", pic:find("pikapic_25", 1, true) ~= nil)
   local emote = ow.emote
   check("2347_talk1_bolt_spec", emote and emote.boltAt == 45)
-  local bgpSeq, shadeSeq, frames = {}, {}, 0
+  local bgpSeq, poseSeq, doneSeq, frames = {}, {}, {}, 0
   local prebolt = 0
-  while ow.emote == emote and frames < 900 do
+  local function poseName(e)
+    local path, lift = PikachuFollower.picFrame(e)
+    if (lift or 0) ~= 0 then return "lifted" end
+    return path and path:match("([^/]+)%.png$") or false
+  end
+  local PROBE = (os.getenv("TMPDIR") or "/tmp/") .. "2347_probe.png"
+  local function drawnShade()
+    U.still(game, PROBE)
+    os.remove(PROBE)
+    return PaletteFX.shadeMap()
+  end
+  local darkDuringPre, whiteDrawn, litTail
+  while ow.emote == emote and frames < 1500 do
     U.wait(1)
     frames = frames + 1
     if ow.emote ~= emote then break end
     bgpSeq[#bgpSeq + 1] = emote.bgp or false
-    shadeSeq[#bgpSeq] = PaletteFX.shadeMap() or false
+    poseSeq[#bgpSeq] = poseName(emote)
+    doneSeq[#bgpSeq] = emote.boltDone and true or false
     if not emote.bgp then prebolt = prebolt + 1 end
+    local k = (emote.boltT or 0) - emote.boltAt - 2
+    if darkDuringPre == nil and not emote.bgp and frames > 10 then
+      darkDuringPre = isDarkMap(drawnShade())
+    elseif whiteDrawn == nil and emote.bgp == 0xC0 then
+      whiteDrawn = isBoltMap(drawnShade())
+    elseif litTail == nil and k >= 81 and not emote.boltDone then
+      litTail = drawnShade() == nil
+    end
   end
   local strobeOk, seen = true, 0
   local first
@@ -190,28 +211,35 @@ return function(game)
   end
   U.log("prebolt frames", prebolt, "strobe start", tostring(first), "total", frames)
   check("2347_talk1_strobe_alternates_4f", first ~= nil and strobeOk and seen == 80)
-  local whiteDrawn, darkDuringPre = false, false
-  for i = 1, #bgpSeq do
-    if isBoltMap(shadeSeq[i]) then whiteDrawn = true end
-    if first and i < first and isDarkMap(shadeSeq[i]) then darkDuringPre = true end
-  end
-  check("2347_talk1_prebolt_dark", darkDuringPre)
-  check("2347_talk1_strobe_white_drawn", whiteDrawn)
-  local litTail = first and #bgpSeq > first + 82
-  if litTail then
-    for i = first + 82, #bgpSeq do
-      if shadeSeq[i] then litTail = false end
+  check("2347_talk1_prebolt_dark", darkDuringPre == true)
+  check("2347_talk1_strobe_white_drawn", whiteDrawn == true)
+  check("2347_talk1_lit_tail_while_box_up", litTail == true)
+  local boltPose, sawE7863, blank = first ~= nil, false, 0
+  for i = 1, #poseSeq do
+    if poseSeq[i] == "gfx_e7863" then sawE7863 = true end
+    if first and i >= first then
+      if poseSeq[i] == false then blank = blank + 1
+      elseif blank > 0 or poseSeq[i] ~= "gfx_e79f3" then boltPose = false end
     end
   end
-  check("2347_talk1_lit_tail_while_box_up", litTail and true or false)
+  U.log("pose at strobe start", tostring(first and poseSeq[first]), "blank close frames", blank)
+  check("2347_talk1_e7863_before_bolt", sawE7863)
+  check("2347_talk1_bolt_pose", boltPose)
+  local closeSeq = {}
+  for i = 1, #poseSeq do
+    if doneSeq[i] then closeSeq[#closeSeq + 1] = tostring(poseSeq[i]) end
+  end
+  U.log("close frames", table.concat(closeSeq, ","))
+  check("2347_talk1_empty_box_at_close",
+        table.concat(closeSeq, ",") == "gfx_e79f3,gfx_e79f3,gfx_e79f3,false,false,false")
   check("2347_talk1_thunderbolt_sound", moveSounds[1] == "Battle_2F")
   check("2347_talk1_music_muted", ducks == 1)
   U.wait(6)
-  check("2347_talk1_dark_after_close", isDarkMap(PaletteFX.shadeMap()))
+  check("2347_talk1_dark_after_close", ow.emote == nil and isDarkMap(drawnShade()))
   check("2347_modifier_survives_talk", game.save.pikachuEmotionModifier == 5)
 
   if not check("2347_talk2_emote", startTalk("2347_talk2")) then quit() end
-  U.shot(game, SHOT_DIR .. "/2347_02_bolt_bubble.png")
+  U.still(game, SHOT_DIR .. "/2347_02_bolt_bubble.png")
   for _ = 1, 200 do
     if ow.emote and ow.emote.pikaPic then break end
     U.wait(1)
@@ -219,28 +247,36 @@ return function(game)
   emote = ow.emote
   check("2347_talk2_replays_bolt", emote and emote.boltAt ~= nil)
   U.wait(20)
-  U.shot(game, SHOT_DIR .. "/2347_03_pikapic_prebolt.png")
+  U.still(game, SHOT_DIR .. "/2347_03_pikapic_prebolt.png")
   for _ = 1, 200 do
     if emote.bgp == 0xC0 then break end
     U.wait(1)
   end
-  U.shot(game, SHOT_DIR .. "/2347_04_strobe_white.png")
+  local function drawn()
+    return tostring(ow.pikaPicDrawn):match("([^/]+)%.png$")
+  end
+  U.still(game, SHOT_DIR .. "/2347_04_strobe_white.png")
+  check("2347_talk2_c0_draws_e79f3", emote.bgp == 0xC0 and drawn() == "gfx_e79f3")
   for _ = 1, 200 do
     if emote.bgp == 0xE4 then break end
     U.wait(1)
   end
-  U.shot(game, SHOT_DIR .. "/2347_05_strobe_lit.png")
+  U.still(game, SHOT_DIR .. "/2347_05_strobe_lit.png")
+  check("2347_talk2_e4_draws_e79f3", emote.bgp == 0xE4 and drawn() == "gfx_e79f3")
   for _ = 1, 400 do
-    if emote.boltDone or ow.emote ~= emote then break end
+    if (emote.boltT or 0) - emote.boltAt > 2 + 80 or ow.emote ~= emote then break end
     U.wait(1)
   end
-  if ow.emote == emote then U.shot(game, SHOT_DIR .. "/2347_06_lit_tail.png") end
-  for _ = 1, 200 do
+  if ow.emote == emote and not emote.boltDone then
+    U.still(game, SHOT_DIR .. "/2347_06_lit_tail.png")
+    check("2347_talk2_tail_draws_e79f3", drawn() == "gfx_e79f3")
+  end
+  for _ = 1, 1500 do
     if ow.emote ~= emote then break end
     U.wait(1)
   end
   U.wait(10)
-  U.shot(game, SHOT_DIR .. "/2347_07_after_close_dark.png")
+  U.still(game, SHOT_DIR .. "/2347_07_after_close_dark.png")
 
   for _ = 1, 3 do
     stepAndBack()
@@ -256,7 +292,7 @@ return function(game)
     U.wait(1)
   end
   U.wait(20)
-  U.shot(game, SHOT_DIR .. "/2347_08_after_steps_mood_talk.png")
+  U.still(game, SHOT_DIR .. "/2347_08_after_steps_mood_talk.png")
   check("2347_talk3_no_bolt", ow.emote and ow.emote.pikaPic and not ow.emote.boltAt
         and true or false)
   for _ = 1, 600 do
@@ -278,20 +314,124 @@ return function(game)
         U.wait(1)
       end
       emote = ow.emote
-      local veiled = false
-      for _ = 1, 400 do
+      local tiles = ow.map.renderer
+      local darkAtlas = tiles.image
+      local function atlasFor(byte)
+        local imgs = tiles.bgpImages or {}
+        return imgs[byte] and tiles.image == imgs[byte] and tiles.curBgp == byte
+               and tiles.baseImage == darkAtlas
+      end
+      local shotC0, shotE4 = false, false
+      local litOnE4, c0Atlas, veilOnC0 = true, true, false
+      for _ = 1, 1500 do
         if ow.emote ~= emote then break end
         U.wait(1)
-        local v = game.renderer and game.renderer.screenVeil
-        if emote.bgp == 0xC0 and v and v[1] == 1 then
-          if not veiled then U.shot(game, SHOT_DIR .. "/2347_09_baked_strobe_white.png") end
-          veiled = true
+        if ow.emote ~= emote then break end
+        if emote.bgp == 0xC0 and not shotC0 then
+          shotC0 = true
+          U.still(game, SHOT_DIR .. "/2347_09_baked_strobe_white.png")
+          local v = game.renderer and game.renderer.screenVeil
+          if v then veilOnC0 = true end
+          if not atlasFor(0xC0) then c0Atlas = false end
+          check("2347_baked_c0_draws_e79f3", drawn() == "gfx_e79f3")
+        elseif emote.bgp == 0xE4 and shotC0 and not shotE4 then
+          shotE4 = true
+          U.still(game, SHOT_DIR .. "/2347_10_baked_strobe_lit.png")
+          if not atlasFor(0xE4) then litOnE4 = false end
+          check("2347_baked_e4_draws_e79f3", drawn() == "gfx_e79f3")
         end
       end
-      check("2347_baked_white_veil", veiled)
+      check("2347_baked_strobe_seen", shotC0 and shotE4)
+      check("2347_baked_lit_atlas", shotE4 and litOnE4)
+      check("2347_baked_c0_atlas", shotC0 and c0Atlas)
+      check("2347_baked_no_white_veil", shotC0 and not veilOnC0)
+      U.wait(10)
+      U.still(game, SHOT_DIR .. "/2347_11_baked_after_close_dark.png")
+      check("2347_baked_dark_after_close", ow.emote == nil and tiles.image == darkAtlas
+            and tiles.curBgp == nil and tiles.baseImage == nil and ow.dark == true)
     end
   else
     U.log("SKIP 2347_baked (no gbc atlas in this cache)")
+  end
+
+  if PaletteFX.mode == "redpp" then
+    U.teleport(game, "PALLET_TOWN", 11, 11, "down")
+    U.wait(20)
+    ow = game.overworld
+    npc = follower()
+    local tiles = ow.map.renderer
+    local renderers = { tiles }
+    for _, nb in ipairs(ow.neighbors or {}) do
+      if nb.map.renderer and nb.map.renderer.gbcAtlas then
+        renderers[#renderers + 1] = nb.map.renderer
+      end
+    end
+    check("2347_outdoor_lit", ow.dark ~= true and ow:bakedWorldColors())
+    check("2347_outdoor_neighbors_baked", #renderers >= 2)
+    local animated = 0
+    for _, a in ipairs(tiles.anims or {}) do
+      if a.spec then animated = animated + 1 end
+    end
+    check("2347_outdoor_water_flower_anims", animated >= 2)
+    local function allOn(byte)
+      for _, r in ipairs(renderers) do
+        local img = r.bgpImages and r.bgpImages[byte]
+        if not (img and r.image == img and r.curBgp == byte) then return false end
+        for _, a in ipairs(r.anims or {}) do
+          if a.spec and not (a.bgpTextures and a.textures == a.bgpTextures[byte]) then
+            return false
+          end
+        end
+      end
+      return true
+    end
+    local function allBase()
+      for _, r in ipairs(renderers) do
+        if r.curBgp ~= nil or r.baseImage ~= nil then return false end
+        for _, a in ipairs(r.anims or {}) do
+          if a.baseTextures then return false end
+          for _, t in pairs(a.bgpTextures or {}) do
+            if a.textures == t then return false end
+          end
+        end
+      end
+      return true
+    end
+    PikachuFollower.onMoveLearned(game.save, pika, "THUNDERBOLT")
+    if npc then PikachuFollower.talk(game, ow, npc, function() end) end
+    for _ = 1, 200 do
+      if ow.emote and ow.emote.pikaPic then break end
+      U.wait(1)
+    end
+    emote = ow.emote
+    if check("2347_outdoor_emote", emote ~= nil) then
+      local onC0, onE4, sawC0, sawE4 = nil, nil, 0, 0
+      local last
+      for _ = 1, 2000 do
+        if ow.emote ~= emote then break end
+        U.wait(1)
+        if ow.emote ~= emote then break end
+        local bgp = emote.bgp
+        if bgp ~= last and (bgp == 0xC0 and sawC0 < 3 or bgp == 0xE4 and sawE4 < 3) then
+          if bgp == 0xC0 then
+            sawC0 = sawC0 + 1
+            U.still(game, SHOT_DIR .. "/2347_12_outdoor_strobe_white_" .. sawC0 .. ".png")
+            onC0 = (onC0 ~= false) and allOn(0xC0)
+          else
+            sawE4 = sawE4 + 1
+            U.still(game, SHOT_DIR .. "/2347_13_outdoor_strobe_lit_" .. sawE4 .. ".png")
+            onE4 = (onE4 ~= false) and allBase()
+          end
+        end
+        last = bgp
+      end
+      check("2347_outdoor_strobe_seen", sawC0 == 3 and sawE4 == 3)
+      check("2347_outdoor_c0_every_renderer_and_anim", onC0 == true)
+      check("2347_outdoor_e4_lit_base", onE4 == true)
+      U.wait(6)
+      U.still(game, SHOT_DIR .. "/2347_14_outdoor_after_close.png")
+      check("2347_outdoor_base_after_close", ow.emote == nil and allBase())
+    end
   end
 
   Sound.playMove, Music.duckForFanfare = realPlayMove, realDuck

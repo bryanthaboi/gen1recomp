@@ -367,7 +367,7 @@ end
 
 do
   local w = newWorld()
-  local A = w:add(0x30, "ANN")
+  local A, sA = w:add(0x30, "ANN")
   local B = w:add(0x31, "BEN")
   local Mon = w:add(0x32, "MON")
   w:pump()
@@ -379,8 +379,17 @@ do
   check(p ~= nil and p.kind == "union", "plaza_state lands")
   eq(p and p.you, 1, "the first member takes slot 1")
   eq(p and #p.members, 1, "and is alone")
+  eq(p and p.cap, 40, "plaza_state carries the 40 cap")
+  local sentJoin = w.relay:sent(sA, "plaza_join")[1]
+  eq(sentJoin and sentJoin.cap, 40, "a union plaza_join announces cap 40")
+  local inst0, rev0 = A.plazaRev()
+  check(inst0 ~= nil and type(rev0) == "number", "plazaRev reports (instance, rev)")
   B.joinPlaza("union", PROFILE3, avatar("BEN", 201, 0))
   w:pump()
+  local inst1, rev1 = A.plazaRev()
+  eq(inst1, inst0, "the joiner lands in the same instance")
+  check(rev1 > rev0, "a plaza_delta moves the rev forward")
+  eq(select(2, B.plazaRev()), rev1, "the joiner's plaza_state rev matches the delta rev")
   eq(#A.plaza().members, 2, "plaza_delta adds the joiner")
   eq(A.plaza().members[2].slot, 2, "members sort by slot")
   eq(A.plaza().members[2].avatar.trainerId, 201, "and carry their avatar")
@@ -681,6 +690,8 @@ do
                  "group_open", "group_list" }
   local seq = table.concat(order, ",")
   eq(seq, table.concat(want, ","), "a fresh welcome re-sends the session state in order")
+  local rejoin = w.relay:sent(sa, "plaza_join")
+  eq(rejoin[#rejoin] and rejoin[#rejoin].cap, 40, "the re-sent plaza_join keeps cap 40")
   local presence = w.relay:sent(sa, "presence")
   eq(presence[#presence].status, "busy", "the re-sent presence is the latest")
   local sp = w.relay:sent(sa, "set_profiles")

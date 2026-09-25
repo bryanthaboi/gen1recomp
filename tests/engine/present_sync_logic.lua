@@ -125,13 +125,18 @@ FixedStep.maxAccum = FixedStep.catchupLimit(2)
 FixedStep:update(1 / 60, 2)
 T.eq(steps, 2, "and 2X runs two")
 
--- Catch-up debt hard ceiling: high speed cannot raise maxAccum past MAX_ACCUM.
 T.eq(FixedStep.catchupLimit(1), FixedStep.STEP * 2,
   "1X catch-up floor is two steps")
 T.eq(FixedStep.catchupLimit(4), 4 * FixedStep.STEP * 1.5,
   "4X catch-up matches one frame of target work")
-T.eq(FixedStep.catchupLimit(200), FixedStep.MAX_ACCUM,
-  "200X catch-up is hard-capped at MAX_ACCUM (no input-starving spiral)")
+T.eq(FixedStep.catchupLimit(200), 200 * FixedStep.STEP * 1.5,
+  "200X catch-up scales with speed")
+T.check(FixedStep.catchupLimit(200) > FixedStep.MAX_ACCUM,
+  "200X catch-up is not pinned at MAX_ACCUM")
+T.eq(FixedStep.catchupLimit(4, 1 / 30), 4 * (1 / 30) * 1.5,
+  "a 30fps frame buys two frames of target work")
+T.eq(FixedStep.catchupLimit(4, 1 / 240), 4 * FixedStep.STEP * 1.5,
+  "a short frame keeps the one-step floor")
 FixedStep.refreshPeriod = nil
 
 love.window.getVSync, love.window.setVSync = nil, nil

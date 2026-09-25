@@ -29,9 +29,6 @@ Union.ACTIVITY = {
 
 -- pokefirered/include/constants/union_room.h:49
 Union.IN_UNION_ROOM = 0x40
--- pokefirered/include/constants/union_room.h:8
-Union.MAX_LEADERS = 8
-
 -- pokefirered/include/constants/union_room.h:51
 Union.LINK_GROUP = {
   SINGLE_BATTLE = 0,
@@ -79,8 +76,6 @@ Union.ACTIVITY_NAMES = RomText.lazy({
   [12] = "sLinkGroupActivityNameTexts[12]",
 })
 
--- pokefirered/src/union_room_player_avatar.c:97
-Union.LOCAL_IDS = { 9, 8, 7, 2, 6, 5, 4, 3 }
 Union.AVATARS_FILE = "data/generated/gba/union_room/avatars.lua"
 -- pokefirered/include/constants/global.h:110
 Union.DIR = { NONE = 0, SOUTH = 1, NORTH = 2, WEST = 3, EAST = 4 }
@@ -106,26 +101,16 @@ function Union.avatarData()
   return Union._avatars
 end
 
--- pokefirered/include/constants/flags.h:115
-Union.FLAG_HIDE_PLAYER_1 = 0x63
--- pokefirered/include/constants/vars.h:28
-Union.VAR_OBJ_GFX_ID_0 = 0x4010
 -- pokefirered/include/constants/union_room.h:82
 Union.INTERACT_ATTENDANT = 9
 Union.INTERACT_START_MENU = 10
 
 Union.MAP = "FR_UNION_ROOM"
-Union.RESPONSE_SECONDS = 3
 
 Union.MSG = {
   HELLO = "game3_union_hello",
-  BYE = "game3_union_bye",
-  REQUEST = "game3_union_request",
-  RESPONSE = "game3_union_response",
 }
 
--- pokefirered/src/union_room_player_avatar.c:566
-Union.REFRESH_FRAMES = 300
 Union.AWAIT_ROOM_SECONDS = 20
 Union.CARD_WAIT_SECONDS = 3
 
@@ -148,7 +133,6 @@ Union.activity = nil
 Union.lastResult = nil
 Union._name = nil
 Union._pump = nil
-Union._spawned = {}
 Union._trade = nil
 Union.relay = false
 Union.memberIds = {}
@@ -156,10 +140,8 @@ Union.invite = nil
 Union.incoming = nil
 Union.direct = {}
 Union._refresh = 0
-Union._refreshTimer = 0
 Union._answered = {}
 Union._await = nil
-Union._objs = {}
 Union._vobjs = {}
 Union._vobjDirty = false
 Union.flow = nil
@@ -194,10 +176,6 @@ local function objects()
   return package.loaded["src.core.game3.objects"]
 end
 
-local function flags()
-  return require("src.core.game3.scripting.flags")
-end
-
 local function ctxOf(extra)
   return Union.textCtx(extra)
 end
@@ -210,8 +188,23 @@ function Union.isActive()
   return Union.state ~= "off"
 end
 
+local function plazaMap()
+  return require("src.core.game3.link.union_plaza_map")
+end
+
+Union.plazaMap = plazaMap
+
+function Union.isUnionMap(id)
+  if type(id) ~= "string" then return false end
+  return id == Union.MAP or id == plazaMap().MAP_ID
+end
+
 function Union.onUnionRoomMap()
-  return link().currentMap() == Union.MAP
+  return Union.isUnionMap(link().currentMap())
+end
+
+function Union.capacity()
+  return plazaMap().CAP
 end
 
 -- pokefirered/src/union_room.c:114 URTRADE_STATE_*
@@ -256,14 +249,6 @@ function Union.graphicsIdFor(gender, trainerId)
   return row[((tonumber(trainerId) or 0) % 8) + 1]
 end
 
--- pokefirered/src/union_room_player_avatar.c:134
-function Union.memberCoords(slot, member)
-  local data = Union.avatarData()
-  local c = data.leader_coords[slot]
-  local o = data.group_offsets[(member or 0) + 1]
-  return c[1] + o[1], c[2] + o[2]
-end
-
 -- pokefirered/src/union_room_player_avatar.c:448
 function Union.memberFacing(member, activity)
   if (member or 0) ~= 0 then return Union.avatarData().member_facing[member + 1] end
@@ -272,62 +257,7 @@ function Union.memberFacing(member, activity)
   return Union.DIR.EAST
 end
 
--- pokefirered/src/union_room_player_avatar.c:169 CreateUnionRoomPlayerObjectEvent
-function Union.spawnLeader(slot, player)
-  if not (slot and slot >= 1 and slot <= Union.MAX_LEADERS) then return false end
-  local L = link()
-  local store = L.store()
-  local F = flags()
-  local gfx = Union.graphicsIdFor(player and player.gender, player and player.trainerId)
-  F.setVar(store, nil, Union.VAR_OBJ_GFX_ID_0 + (slot - 1), gfx)
-  -- pokefirered/src/union_room_player_avatar.c:159 ShowUnionRoomPlayer
-  F.setFlag(store, nil, Union.FLAG_HIDE_PLAYER_1 + (slot - 1), false)
-  local Objects = objects()
-  if Objects then
-    if Objects.addObject then Objects.addObject(Union.LOCAL_IDS[slot]) end
-    if Objects.refreshGraphics then Objects.refreshGraphics() end
-  end
-  Union._spawned[slot] = true
-  return true
-end
-
--- pokefirered/src/union_room_player_avatar.c:174 RemoveUnionRoomPlayerObjectEvent
-function Union.despawnLeader(slot)
-  if not (slot and slot >= 1 and slot <= Union.MAX_LEADERS) then return false end
-  local L = link()
-  local F = flags()
-  -- pokefirered/src/union_room_player_avatar.c:154 HideUnionRoomPlayer
-  F.setFlag(L.store(), nil, Union.FLAG_HIDE_PLAYER_1 + (slot - 1), true)
-  local Objects = objects()
-  if Objects and Objects.removeObject then Objects.removeObject(Union.LOCAL_IDS[slot]) end
-  Union._spawned[slot] = nil
-  return true
-end
-
-local function avatarLive(slot)
-  local Objects = objects()
-  local eo = Objects and Objects.find and Objects.find(Union.LOCAL_IDS[slot])
-  return eo ~= nil and eo.visible == true
-end
-
--- pokefirered/src/union_room_player_avatar.c:367 Task_AnimateUnionRoomPlayers
-function Union.refreshAvatars()
-  if not Union.onUnionRoomMap() then return 0 end
-  local n = 0
-  for slot = 1, Union.MAX_LEADERS do
-    if Union.players[slot] and not avatarLive(slot) then
-      Union.spawnLeader(slot, Union.players[slot])
-      n = n + 1
-    end
-  end
-  return n
-end
-
 function Union.despawnAll()
-  for slot = 1, Union.MAX_LEADERS do
-    if Union._spawned[slot] then Union.despawnLeader(slot) end
-  end
-  Union._objs = {}
   if next(Union._vobjs or {}) then
     Union._vobjs = {}
     local VirtualObjects = package.loaded["src.core.game3.virtual_objects"]
@@ -351,152 +281,106 @@ local function playerOn(x, y)
   return P.moving and tonumber(P.targetX) == x and tonumber(P.targetY) == y or false
 end
 
-local function leaderObj(slot)
-  Union._objs = Union._objs or {}
-  local o = Union._objs[slot]
-  if not o then
-    o = { state = 0, anim = 0, sched = nil, y2 = 0 }
-    Union._objs[slot] = o
-  end
-  return o
+local function plazaVobjId(slot)
+  return Union.VOBJ_BASE + slot
 end
 
-Union.leaderObj = leaderObj
+Union.vobjId = plazaVobjId
 
-local function setRaise(slot, y2)
-  local Objects = objects()
-  local eo = Objects and Objects.find and Objects.find(Union.LOCAL_IDS[slot])
-  if eo then eo.raiseY = y2 end
+function Union.vobj(slot)
+  return Union._vobjs and Union._vobjs[plazaVobjId(slot)] or nil
 end
 
--- pokefirered/src/union_room_player_avatar.c:265
-local function animateSpawn(slot, o)
-  if o.anim == 0 then
-    if not playerStandingStill() then return false end
-    local x, y = Union.memberCoords(slot, 0)
-    if playerOn(x, y) then return false end
-    Union.spawnLeader(slot, o.player)
-    o.y2 = -Union.FLY_HEIGHT
-    setRaise(slot, o.y2)
-    o.anim = 1
-    return false
-  end
-  o.y2 = math.min(0, o.y2 + Union.FLY_STEP)
-  setRaise(slot, o.y2)
-  if o.y2 >= 0 then
-    o.anim = 0
-    return true
-  end
-  return false
-end
-
--- pokefirered/src/union_room_player_avatar.c:236
-local function animateDespawn(slot, o)
-  if o.anim == 0 then
-    o.y2 = 0
-    o.anim = 1
-    flags().setFlag(link().store(), nil, Union.FLAG_HIDE_PLAYER_1 + (slot - 1), true)
-  end
-  o.y2 = o.y2 - Union.FLY_STEP
-  setRaise(slot, o.y2)
-  if o.y2 <= -Union.FLY_HEIGHT then
-    Union.despawnLeader(slot)
-    o.anim = 0
-    return true
-  end
-  return false
-end
-
--- pokefirered/src/union_room_player_avatar.c:325
-function Union.animatePlayer(slot)
-  local o = leaderObj(slot)
-  if o.state == 0 then
-    if o.sched ~= "in" then
-      o.sched = nil
-      return
-    end
-    o.state, o.anim = 2, 0
-  end
-  if o.state == 2 then
-    if o.sched == "out" then
-      o.state, o.anim = 0, 0
-      if Union._spawned[slot] then Union.despawnLeader(slot) end
-    elseif animateSpawn(slot, o) then
-      o.state = 1
-    end
-  elseif o.state == 1 then
-    if o.sched == "out" then
-      o.state, o.anim = 3, 0
-      if animateDespawn(slot, o) then o.state = 0 end
-    end
-  elseif o.state == 3 then
-    if animateDespawn(slot, o) then o.state = 0 end
-  end
-  o.sched = nil
-end
-
--- pokefirered/src/union_room_player_avatar.c:300
-function Union.scheduleLeaderIn(slot, player)
-  local o = leaderObj(slot)
-  o.sched = "in"
-  o.player = player
-end
-
--- pokefirered/src/union_room_player_avatar.c:313
-function Union.scheduleLeaderOut(slot)
-  leaderObj(slot).sched = "out"
-end
-
-local function vobjId(slot, member)
-  return Union.VOBJ_BASE + (slot - 1) * Union.GROUP_SIZE + member
-end
-
-Union.vobjId = vobjId
-
-function Union.vobj(slot, member)
-  Union._vobjs = Union._vobjs or {}
-  return Union._vobjs[vobjId(slot, member)]
-end
-
-function Union.vobjVisible(slot, member)
-  local v = Union.vobj(slot, member)
+function Union.vobjVisible(slot)
+  local v = Union.vobj(slot)
   return v ~= nil and v.visible == true
 end
 
+local function facingDir(facing)
+  if type(facing) == "number" then return facing end
+  return Union.FACE_DIR[facing] or Union.DIR.SOUTH
+end
+
+function Union.cellFor(slot)
+  local x, y, facing = plazaMap().cellFor(slot)
+  return x, y, facingDir(facing)
+end
+
+local function idleActivity(activity)
+  local raw = math.floor(tonumber(activity) or 0) % Union.IN_UNION_ROOM
+  return raw == Union.ACTIVITY.NONE or raw == Union.ACTIVITY.PLYRTALK or raw == Union.ACTIVITY.SEARCH
+end
+
+Union.idleActivity = idleActivity
+
+function Union.cellFacing(slot, p)
+  if p and not idleActivity(p.activity) then return Union.memberFacing(0, p.activity) end
+  local _, _, dir = Union.cellFor(slot)
+  return dir
+end
+
 -- pokefirered/src/union_room_player_avatar.c:463
-function Union.spawnMember(slot, member, gfx, activity)
-  Union._vobjs = Union._vobjs or {}
-  local id = vobjId(slot, member)
-  local v = Union._vobjs[id]
+function Union.showAvatar(slot, p)
+  local vobjs = Union._vobjs
+  local id = plazaVobjId(slot)
+  local v = vobjs[id]
   if not v then
-    v = { slot = slot, member = member, visible = false, y2 = 0 }
-    Union._vobjs[id] = v
+    v = { slot = slot, member = 0, visible = false, y2 = 0 }
+    vobjs[id] = v
   end
+  local x, y = Union.cellFor(slot)
   if not v.visible or v.anim == "out" then
+    if playerOn(x, y) then
+      v.waiting = true
+      Union._avatarWaiting = true
+      return false
+    end
     v.visible = true
     v.anim = "in"
     v.y2 = -Union.FLY_HEIGHT
   end
-  v.gfx = gfx
-  v.dir = Union.memberFacing(member, activity)
-  v.x, v.y = Union.memberCoords(slot, member)
+  v.waiting = nil
+  v.gfx = Union.graphicsIdFor(p.gender, p.trainerId)
+  v.x, v.y = x, y
+  if Union._talkSlot ~= slot then v.dir = Union.cellFacing(slot, p) end
   Union._vobjDirty = true
+  return true
 end
 
 -- pokefirered/src/union_room_player_avatar.c:478
-function Union.despawnMember(slot, member)
-  local v = Union.vobj(slot, member)
-  if v and v.visible and v.anim ~= "out" then
+function Union.hideAvatar(slot)
+  local v = Union.vobj(slot)
+  if not v then return end
+  v.waiting = nil
+  if v.visible and v.anim ~= "out" then
     v.anim = "out"
     v.y2 = v.y2 or 0
     Union._vobjDirty = true
   end
 end
 
+function Union.retryWaitingAvatars()
+  if not playerStandingStill() then return end
+  local waiting = false
+  for slot = 1, Union.capacity() do
+    local v = Union.vobj(slot)
+    if v and v.waiting then
+      local p = Union.players[slot]
+      if p and not p.gone then
+        if not Union.showAvatar(slot, p) then waiting = true end
+      else
+        v.waiting = nil
+      end
+    end
+  end
+  Union._avatarWaiting = waiting
+end
+
 -- pokefirered/src/event_object_movement.c:9354
 function Union.animateVobjs()
   local dirty = Union._vobjDirty
-  for _, v in pairs(Union._vobjs or {}) do
+  local vobjs = Union._vobjs
+  for _, v in pairs(vobjs) do
     if v.anim == "in" then
       v.y2 = math.min(0, v.y2 + Union.FLY_STEP)
       if v.y2 >= 0 then v.anim = nil end
@@ -507,128 +391,83 @@ function Union.animateVobjs()
         v.visible = false
         v.anim = nil
         v.y2 = 0
+        Union._vobjRebuild = true
       end
       dirty = true
     end
   end
   if not dirty then return end
   Union._vobjDirty = false
-  local okV, VirtualObjects = pcall(require, "src.core.game3.virtual_objects")
-  if not okV then return end
-  VirtualObjects.clear()
-  local ids = {}
-  for id, v in pairs(Union._vobjs or {}) do
-    if v.visible then ids[#ids + 1] = id end
+  local VirtualObjects = package.loaded["src.core.game3.virtual_objects"]
+  if not VirtualObjects then
+    local okV, mod = pcall(require, "src.core.game3.virtual_objects")
+    if not okV then return end
+    VirtualObjects = mod
   end
-  table.sort(ids)
-  for _, id in ipairs(ids) do
-    local v = Union._vobjs[id]
-    local rec = VirtualObjects.spawn(id, v.gfx, v.x, v.y, 3, v.dir)
-    if rec then
-      rec.y2 = v.y2
-      rec.solid = v.anim ~= "out"
-    end
+  if Union._vobjRebuild then
+    Union._vobjRebuild = false
+    VirtualObjects.clear()
   end
-end
-
--- pokefirered/src/union_room_player_avatar.c:486
-function Union.assembleGroup(slot, p)
-  if not Union.vobjVisible(slot, 0) then
-    local x, y = Union.memberCoords(slot, 0)
-    if playerOn(x, y) then return end
-    Union.spawnMember(slot, 0, Union.graphicsIdFor(p.gender, p.trainerId), p.activity)
-  end
-  for i = 1, Union.GROUP_SIZE - 1 do
-    local partner = p.partners and p.partners[i]
-    if not partner then
-      Union.despawnMember(slot, i)
-    else
-      local x, y = Union.memberCoords(slot, i)
-      if not playerOn(x, y) then
-        Union.spawnMember(slot, i, Union.graphicsIdFor(partner.gender, partner.trainerId), p.activity)
+  for id, v in pairs(vobjs) do
+    if v.visible then
+      local rec = VirtualObjects.get(id) or VirtualObjects.spawn(id, v.gfx, v.x, v.y, 3, v.dir)
+      if rec then
+        rec.graphicsId = v.gfx
+        rec.x, rec.y = v.x, v.y
+        rec.direction = v.dir
+        rec.y2 = v.y2
+        rec.solid = v.anim ~= "out"
       end
     end
   end
 end
 
--- pokefirered/src/union_room_player_avatar.c:510
-function Union.spawnGroup(slot, p)
-  local raw = math.floor(tonumber(p.activity) or 0) % Union.IN_UNION_ROOM
-  if raw == Union.ACTIVITY.NONE or raw == Union.ACTIVITY.PLYRTALK or raw == Union.ACTIVITY.SEARCH then
-    Union.scheduleLeaderIn(slot, p)
-    for i = 0, Union.GROUP_SIZE - 1 do Union.despawnMember(slot, i) end
-  else
-    Union.scheduleLeaderOut(slot)
-    Union.assembleGroup(slot, p)
-  end
-end
-
--- pokefirered/src/union_room_player_avatar.c:544
-function Union.despawnGroup(slot)
-  Union.scheduleLeaderOut(slot)
-  for i = 0, Union.GROUP_SIZE - 1 do Union.despawnMember(slot, i) end
-end
-
--- pokefirered/src/union_room_player_avatar.c:552
-function Union.updatePlayerSprites()
-  Union._refreshTimer = 0
-  for slot = 1, Union.MAX_LEADERS do
+function Union.refreshPlaza()
+  for slot = 1, Union.capacity() do
     local p = Union.players[slot]
     if p and p.gone then
-      Union.despawnGroup(slot)
+      Union.hideAvatar(slot)
       Union.players[slot] = nil
       Union.memberIds[slot] = nil
       if Union.partnerId == slot then Union.partnerId = nil end
     elseif p then
-      Union.spawnGroup(slot, p)
+      Union.showAvatar(slot, p)
     end
   end
 end
 
--- pokefirered/src/union_room_player_avatar.c:566
-function Union.scheduleRefresh()
-  Union._refreshTimer = Union.REFRESH_FRAMES
-end
-
--- pokefirered/src/union_room_player_avatar.c:571
-function Union.handleRefresh()
-  Union._refreshTimer = (Union._refreshTimer or 0) + 1
-  if Union._refreshTimer > Union.REFRESH_FRAMES then Union.updatePlayerSprites() end
-end
-
 function Union.animateAll()
-  for slot = 1, Union.MAX_LEADERS do Union.animatePlayer(slot) end
+  if Union._avatarWaiting then Union.retryWaitingAvatars() end
   Union.animateVobjs()
 end
+
+local FACING_DELTA = { down = { 0, 1 }, up = { 0, -1 }, left = { -1, 0 }, right = { 1, 0 } }
 
 -- pokefirered/src/union_room_player_avatar.c:577
 function Union.tryInteractWithMember()
   if not playerStandingStill() then return nil end
   local P = playerMod()
-  local d = P and ({ down = { 0, 1 }, up = { 0, -1 }, left = { -1, 0 }, right = { 1, 0 } })[P.facing or "down"]
+  local d = P and FACING_DELTA[P.facing or "down"]
   if not d then return nil end
   local fx, fy = (tonumber(P.cellX) or 0) + d[1], (tonumber(P.cellY) or 0) + d[2]
-  for slot = 1, Union.MAX_LEADERS do
-    local p = Union.players[slot]
-    for member = 0, Union.GROUP_SIZE - 1 do
-      local v = Union.vobj(slot, member)
-      if v and v.visible and v.anim == nil and p and not p.gone and v.x == fx and v.y == fy then
-        local opp = Union.avatarData().opposite_facing[(Union.FACE_DIR[P.facing] or 1) + 1]
-        v.dir = opp
-        Union._vobjDirty = true
-        return slot, member
-      end
-    end
-  end
-  return nil
+  local slot = plazaMap().slotAt(fx, fy)
+  if not slot then return nil end
+  local p = Union.players[slot]
+  local v = Union.vobj(slot)
+  if not (v and v.visible and v.anim == nil and p and not p.gone) then return nil end
+  v.dir = Union.avatarData().opposite_facing[(Union.FACE_DIR[P.facing] or 1) + 1]
+  Union._talkSlot = slot
+  Union._vobjDirty = true
+  return slot, 0
 end
 
 -- pokefirered/src/union_room_player_avatar.c:621
-function Union.updateMemberFacing(slot, member)
-  local v = slot and Union.vobj(slot, member or 0)
+function Union.updateMemberFacing(slot)
+  if slot == nil or Union._talkSlot == slot then Union._talkSlot = nil end
+  local v = slot and Union.vobj(slot)
   local p = slot and Union.players[slot]
   if not (v and p) then return end
-  v.dir = Union.memberFacing(member or 0, p.activity)
+  v.dir = Union.cellFacing(slot, p)
   Union._vobjDirty = true
 end
 
@@ -638,7 +477,7 @@ end
 
 function Union.playerCount()
   local n = 0
-  for slot = 1, Union.MAX_LEADERS do
+  for slot = 1, Union.capacity() do
     if Union.players[slot] then n = n + 1 end
   end
   return n
@@ -646,7 +485,7 @@ end
 
 function Union.list()
   local out = {}
-  for slot = 1, Union.MAX_LEADERS do
+  for slot = 1, Union.capacity() do
     local p = Union.players[slot]
     if p then out[#out + 1] = { slot = slot, name = p.name, activity = p.activity } end
   end
@@ -699,39 +538,6 @@ function Union.bufferPlayerName(ctx, adapters)
   return false, 1
 end
 
-local function addPlayer(hello)
-  for slot = 1, Union.MAX_LEADERS do
-    local p = Union.players[slot]
-    if p and p.trainerId == hello.trainerId and p.name == hello.name then
-      p.activity = hello.activity or p.activity
-      return slot, false
-    end
-  end
-  for slot = 1, Union.MAX_LEADERS do
-    if not Union.players[slot] then
-      Union.players[slot] = {
-        name = hello.name,
-        gender = tonumber(hello.gender) or 0,
-        trainerId = tonumber(hello.trainerId) or 0,
-        activity = tonumber(hello.activity) or Union.ACTIVITY.SEARCH,
-      }
-      return slot, true
-    end
-  end
-  return nil, false
-end
-
-Union.addPlayer = addPlayer
-
-function Union.removePlayer(slot)
-  if not Union.players[slot] then return false end
-  Union.players[slot] = nil
-  Union.memberIds[slot] = nil
-  Union.despawnLeader(slot)
-  if Union.partnerId == slot then Union.partnerId = nil end
-  return true
-end
-
 function Union.announce()
   local L = link()
   local lk = L.link
@@ -746,37 +552,28 @@ end
 -- pokefirered/src/union_room.c:3515 InitUnionRoom
 function Union.init(ctx)
   Union._name = nil
-  if Union.state ~= "off" then return false end
-  Union.players = {}
-  Union._spawned = {}
-  local lk = link().link
-  if lk and lk.isOpen and lk:isOpen() then
-    -- pokefirered/src/union_room.c:3536 Task_InitUnionRoom
-    Union.state = "search"
-    Union.startPump()
-  end
   return false
 end
 
 -- pokefirered/src/union_room.c:2579 RunUnionRoom
 function Union.run(ctx, adapters)
   link().setResult(ctx, 0)
-  if Union.state ~= "off" and Union.state ~= "search" and Union.onUnionRoomMap() then
-    if Union.relay then
-      Union._objs = {}
-      Union._spawned = {}
-      Union._vobjDirty = true
-      Union.scheduleRefresh()
-    end
+  if Union.state ~= "off" and Union.onUnionRoomMap() then
+    Union._vobjDirty = true
+    Union._vobjRebuild = true
     Union.startPump()
     return false
   end
   Union.players = {}
-  Union._spawned = {}
-  Union._objs = {}
   Union._vobjs = {}
+  Union._vobjDirty = false
+  Union._vobjRebuild = false
+  Union._avatarWaiting = false
+  Union._plazaSynced = false
+  Union._plazaInstance, Union._plazaRev = nil, nil
+  Union._offlineSince, Union._offlineWiped = nil, nil
+  Union._upgradeShown = nil
   Union.flow = nil
-  Union._refreshTimer = 0
   Union.memberIds = {}
   Union.partnerId = nil
   Union.activity = nil
@@ -787,13 +584,11 @@ function Union.run(ctx, adapters)
   Union._await = nil
   Union.state = "init"
   local L = link()
-  Union.relay = L.adapterConnected()
-  if Union.relay then
-    L.clientCall("joinPlaza", "union", L.liveProfile(), L.avatar())
-    L.setStatus("idle")
-    Union._refresh = 0
-    Union._synced = false
-  end
+  Union.relay = true
+  L.clientCall("joinPlaza", "union", L.liveProfile(), L.avatar(), plazaMap().CAP)
+  L.setStatus("idle")
+  Union._refresh = 0
+  Union._synced = false
   L.setResult(ctx, 0)
   Union.startPump()
   return false
@@ -802,20 +597,13 @@ end
 function Union.stop(reason)
   if Union.state == "off" then return false end
   local L = link()
-  if Union.relay then
-    if Union.incoming then L.clientCall("replyInvite", Union.incoming.id, false) end
-    L.clientCall("leavePlaza", "union")
-    L.setStatus("busy")
-    Union.relay = false
-    Union.invite = nil
-    Union.incoming = nil
-    Union._await = nil
-  else
-    local lk = L.link
-    if lk and lk.isOpen and lk:isOpen() then
-      lk:send({ type = Union.MSG.BYE, reason = tostring(reason or "left") })
-    end
-  end
+  if Union.incoming then L.clientCall("replyInvite", Union.incoming.id, false) end
+  L.clientCall("leavePlaza", "union")
+  L.setStatus("busy")
+  Union.relay = false
+  Union.invite = nil
+  Union.incoming = nil
+  Union._await = nil
   local s = screen()
   if s and s.isOpen and s.isOpen() then s.close() end
   Union.flow = nil
@@ -832,21 +620,6 @@ function Union.stop(reason)
   return true
 end
 
-local function chooserOpen()
-  local s = screen()
-  return s and s.isOpen and s.isOpen() and s.mode == "activity"
-end
-
-local function sendRequest(activity)
-  if Union.relay then return Union.sendInvite(activity) end
-  local lk = link().link
-  if lk and lk.isOpen and lk:isOpen() then
-    lk:send({ type = Union.MSG.REQUEST, activity = activity, name = localPlayer().name })
-    return true
-  end
-  return false
-end
-
 -- pokefirered/src/union_room.c:2896 UR_STATE_HANDLE_DO_SOMETHING_PROMPT_INPUT
 function Union.chooseActivity(index)
   local item = Union.INVITE_ITEMS[tonumber(index) or 0]
@@ -854,7 +627,7 @@ function Union.chooseActivity(index)
   local M = message()
   if item.activity == Union.ACTIVITY.NONE then
     Union.activity = nil
-    if Union.relay and M and M.show then
+    if M and M.show then
       -- pokefirered/src/union_room.c:2916
       local p = Union.partnerRow() or {}
       local text = RomText.ascii(RomText.key("gTexts_UR_IfYouWantToDoSomething", tonumber(p.gender) == 1 and 1 or 0))
@@ -868,9 +641,9 @@ function Union.chooseActivity(index)
   local activity = item.union and (item.activity + Union.IN_UNION_ROOM) or item.activity
   Union.activity = activity
   Union._role = "child"
-  local sent = sendRequest(activity)
+  local sent = Union.sendInvite(activity)
   Union.state = sent and "send_activity_request" or "print_and_exit"
-  if sent and Union.relay and M and M.show then
+  if sent and M and M.show then
     -- pokefirered/src/union_room.c:2941
     local p = Union.partnerRow() or {}
     local g = tonumber(p.gender) == 1 and 1 or 0
@@ -887,31 +660,6 @@ function Union.cancelActivity()
   return true
 end
 
-local DELTA = { down = { 0, 1 }, up = { 0, -1 }, left = { -1, 0 }, right = { 1, 0 } }
-
-function Union.slotForLocalId(localId)
-  for slot = 1, Union.MAX_LEADERS do
-    if Union.LOCAL_IDS[slot] == localId then return slot end
-  end
-  return nil
-end
-
--- pokefirered/src/union_room.c:2757 TryInteractWithUnionRoomMember
-function Union.facingMemberSlot()
-  local Player = package.loaded["src.core.game3.player"]
-  local Objects = objects()
-  if not (Player and Objects and Objects.at) then return nil end
-  local d = DELTA[Player.facing or "down"]
-  if not d then return nil end
-  local eo = Objects.at((tonumber(Player.cellX) or 0) + d[1], (tonumber(Player.cellY) or 0) + d[2])
-  if not eo then return nil end
-  -- pokefirered/include/constants/event_objects.h:72
-  if tonumber(eo.graphicsId) == 66 then return Union.INTERACT_ATTENDANT end
-  local slot = Union.slotForLocalId(tonumber(eo.localId))
-  if slot and Union._spawned[slot] then return slot end
-  return nil
-end
-
 local function pressedA()
   local game = link().game()
   local input = game and game.input
@@ -919,204 +667,14 @@ local function pressedA()
   return input:wasPressed("a") and true or false
 end
 
--- pokefirered/src/union_room.c:2734 UR_STATE_MAIN
-local function pollInteraction(ctx)
-  local L = link()
-  local result = L.getVar(ctx, L.VAR_RESULT)
-  if result == 0 and pressedA() then
-    local slot = Union.facingMemberSlot()
-    if slot then
-      local okA, Audio = pcall(require, "src.core.game3.audio")
-      local okS, SE = pcall(require, "src.core.game3.se_ids")
-      if okA and okS and Audio.playSe then pcall(Audio.playSe, SE.SE_SELECT) end
-      result = slot
-    end
-  end
-  if result == 0 then return false end
-  L.setVar(ctx, L.VAR_RESULT, 0)
-  if result == Union.INTERACT_ATTENDANT then
-    Union.state = "interact_with_attendant"
-    return true
-  end
-  if result == Union.INTERACT_START_MENU then return false end
-  local slot = result
-  if not Union.players[slot] then
-    Union.state = "print_and_exit"
-    return true
-  end
-  Union.partnerId = slot
-  Union.state = "do_something_prompt"
-  return true
-end
-
 -- pokefirered/src/union_room.c:2647 Task_RunUnionRoom
 function Union.update(dt)
   if Union.state == "off" then return false end
-  local L = link()
-  local ctx = select(1, L.vmCtx())
-  local lk = L.link
-
-  if Union.state ~= "search" and not Union.onUnionRoomMap() then
+  if not Union.onUnionRoomMap() then
     Union.stop("left_union_room")
     return false
   end
-
-  if Union.relay then return Union.relayUpdate(dt, ctx) end
-  if lk and lk.isOpen and lk:isOpen() then
-    local hello = lk:take(Union.MSG.HELLO)
-    while hello do
-      local slot, isNew = addPlayer(hello)
-      if slot and isNew then
-        if Union.state ~= "search" then Union.spawnLeader(slot, Union.players[slot]) end
-        Union.noteUnionRoomPlayer(Union.players[slot].name)
-      end
-      hello = lk:take(Union.MSG.HELLO)
-    end
-    if lk:take(Union.MSG.BYE) then
-      for slot = Union.MAX_LEADERS, 1, -1 do
-        if Union.players[slot] then Union.removePlayer(slot) end
-      end
-    end
-    local request = lk:take(Union.MSG.REQUEST)
-    if request and Union.state == "main" then
-      Union.activity = tonumber(request.activity)
-      Union._requestName = request.name
-      Union.state = "player_contacted_you"
-    end
-    local response = lk:take(Union.MSG.RESPONSE)
-    if response then
-      Union._waited = nil
-      Union.lastResult = response.accept and "accepted" or "declined"
-      Union.state = response.accept and "start_activity" or "print_and_exit"
-    end
-  elseif Union.state ~= "init" and Union.state ~= "search" then
-    for slot = Union.MAX_LEADERS, 1, -1 do
-      if Union.players[slot] then Union.removePlayer(slot) end
-    end
-  end
-
-  -- pokefirered/src/union_room.c:2795 HandleUnionRoomPlayerRefresh
-  if Union.state ~= "search" then Union.refreshAvatars() end
-
-  if Union.state == "search" then
-    if not (lk and lk.isOpen and lk:isOpen()) then
-      Union.state = "off"
-      return false
-    end
-  elseif Union.state == "init" then
-    -- pokefirered/src/union_room.c:2674 UR_STATE_INIT_LINK
-    Union.announce()
-    Union.state = "main"
-  elseif Union.state == "main" then
-    pollInteraction(ctx)
-  elseif Union.state == "player_contacted_you" then
-    Union.askActivityRequest()
-  elseif Union.state == "handle_activity_request" then
-    local M = message()
-    local okC, Choice = pcall(require, "src.ui.game3.choice")
-    Union.offerYesNo()
-    local waiting = (M and M.isOpen and M.isOpen())
-      or (okC and Choice and Choice.isOpen and Choice.isOpen())
-    if not waiting then Union.answerRequest(false) end
-  elseif Union.state == "do_something_prompt" then
-    if not chooserOpen() then
-      local s = screen()
-      if s then
-        s.showActivities(Union.INVITE_ITEMS, {
-          partner = Union.players[Union.partnerId or 0],
-          onChoose = function(index) Union.chooseActivity(index) end,
-          onCancel = function() Union.cancelActivity() end,
-        })
-        Union.state = "handle_do_something_prompt_input"
-      else
-        Union.state = "main"
-      end
-    end
-  elseif Union.state == "handle_do_something_prompt_input" then
-    if not chooserOpen() then Union.state = "main" end
-  elseif Union.state == "interact_with_attendant" then
-    -- pokefirered/src/union_room.c:3373 UR_STATE_CHECK_TRADING_BOARD
-    local s = screen()
-    if s then
-      s.showPlayers(Union.list(), {
-        mode = "board",
-        onPoll = function() return Union.list() end,
-        -- pokefirered/src/union_room.c:3485 UR_STATE_TRADE_SELECT_MON
-        onConfirm = function(slot)
-          if not Union.chooseMonForTradingBoard(slot) then Union.state = "main" end
-        end,
-        onCancel = function() Union.state = "main" end,
-      })
-      Union.state = "check_trading_board"
-    else
-      Union.state = "main"
-    end
-  elseif Union.state == "check_trading_board" then
-    local s = screen()
-    if not (s and s.isOpen and s.isOpen()) then Union.state = "main" end
-  elseif Union.state == "send_activity_request" and Union.relay then
-    Union.pollInvite()
-  elseif Union.state == "await_room" then
-    Union.pollAwaitRoom(dt)
-  elseif Union.state == "await_link" then
-    Union.pollAwaitLink(dt)
-  elseif Union.state == "send_activity_request" then
-    -- pokefirered/src/union_room.c:2937 UR_STATE_TRAINER_APPEARS_BUSY
-    Union._waited = (Union._waited or 0) + (tonumber(dt) or 0)
-    if Union._waited >= Union.RESPONSE_SECONDS then
-      Union._waited = nil
-      Union.lastResult = "busy"
-      local M = message()
-      if M and M.show then
-        M.show(RomText.ascii("gText_UR_TrainerAppearsBusy"))
-      end
-      Union.state = "print_and_exit"
-    end
-  elseif Union.state == "start_activity" then
-    Union.startActivity()
-  elseif Union.state == "in_activity" then
-    local raw = math.floor(tonumber(Union.activity) or 0)
-    if raw % Union.IN_UNION_ROOM == Union.ACTIVITY.CHAT then
-      -- pokefirered/src/union_room.c:1949 EnterUnionRoomChat
-      if not chat().isActive() then
-        Union.activity = nil
-        Union.partnerId = nil
-        Union.state = "main"
-      end
-    elseif raw % Union.IN_UNION_ROOM == Union.ACTIVITY.CARD then
-      -- pokefirered/src/union_room.c:1954 CB2_ShowCard
-      local okC, TrainerCard = pcall(require, "src.ui.game3.trainer_card")
-      local open = okC and TrainerCard and TrainerCard.isOpen and TrainerCard.isOpen()
-      if not open then
-        Union.activity = nil
-        Union.partnerId = nil
-        Union.state = "main"
-      end
-    elseif raw % Union.IN_UNION_ROOM == Union.ACTIVITY.TRADE then
-      -- pokefirered/src/union_room.c:1713 Task_StartUnionRoomTrade
-      local LT = linkTrade()
-      if not LT.isActive() then
-        Union.activity = nil
-        Union.partnerId = nil
-        Union.state = "main"
-      end
-    else
-      local LB = battle()
-      if LB.state == "setup" then
-        LB.pumpUnionSetup()
-      elseif LB.state ~= "battle" then
-        Union.activity = nil
-        Union.partnerId = nil
-        Union.state = "main"
-      end
-    end
-  elseif Union.state == "print_and_exit" then
-    Union.activity = nil
-    Union.partnerId = nil
-    Union.state = "main"
-  end
-
-  return true
+  return Union.relayUpdate(dt, select(1, link().vmCtx()))
 end
 
 -- pokefirered/src/union_room.c:1832 WarpForCableClubActivity
@@ -1168,7 +726,7 @@ function Union.startActivity()
   local act = raw % Union.IN_UNION_ROOM
   local inRoom = raw >= Union.IN_UNION_ROOM
   local L = link()
-  local warpOpts = Union.relay and { onDone = function() end } or nil
+  local warpOpts = { onDone = function() end }
   if act == Union.ACTIVITY.BATTLE_SINGLE and inRoom then
     -- pokefirered/src/union_room.c:1811 StartUnionRoomBattle
     if battle().startUnionRoomBattle() then
@@ -1189,7 +747,7 @@ function Union.startActivity()
     return true
   elseif act == Union.ACTIVITY.TRADE and inRoom then
     -- pokefirered/src/union_room.c:1936 Task_StartUnionRoomTrade
-    if Union.relay then Union.prepareBoardTrade() end
+    Union.prepareBoardTrade()
     if linkTrade().startUnionRoomTrade(function() Union.state = "main" end) then
       Union.state = "in_activity"
       return true
@@ -1199,20 +757,10 @@ function Union.startActivity()
     Union.stop()
     Union.warpForCableClubActivity(Union.TRADE_CENTER, L.USING.TRADE_CENTER, warpOpts)
     return true
-  elseif act == Union.ACTIVITY.CHAT and Union.relay then
+  elseif act == Union.ACTIVITY.CHAT then
     -- pokefirered/src/union_room.c:1949
     local rs = Union._chatSession or L.clientCall("roomSession")
     if rs then return Union.enterChat(rs) end
-  elseif act == Union.ACTIVITY.CHAT then
-    -- pokefirered/src/union_room.c:1949 EnterUnionRoomChat
-    if chat().start({ onDone = function()
-      Union.activity = nil
-      Union.partnerId = nil
-      Union.state = "main"
-    end }) then
-      Union.state = "in_activity"
-      return true
-    end
   elseif act == Union.ACTIVITY.CARD then
     -- pokefirered/src/union_room.c:1954 CB2_ShowCard
     if Union.showPartnerCard() then
@@ -1447,7 +995,7 @@ end
 -- pokefirered/src/union_room.c:4400
 function Union.boardOffers()
   local out = {}
-  for slot = 1, Union.MAX_LEADERS do
+  for slot = 1, Union.capacity() do
     local p = Union.players[slot]
     local b = p and not p.gone and type(p.board) == "table" and p.board or nil
     if b and (tonumber(b.species) or 0) ~= 0 then
@@ -1509,7 +1057,7 @@ function Union.openTradingBoard()
     own = own,
     offers = offers,
     onChoose = function(_, item)
-      if not item or item.id == 8 then return Union.toMain() end
+      if not item or item.id == s.BOARD_EXIT then return Union.toMain() end
       local entry = item.entry
       if not entry then return Union.toMain() end
       Union.boardPick(entry)
@@ -1672,37 +1220,28 @@ end
 
 -- pokefirered/src/union_room.c:3148
 function Union.answerRequest(accept)
-  if Union.relay then
-    local inv = Union.incoming
-    Union.incoming = nil
-    local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
-    local M = message()
-    local shown = inv and M and M.show and type(love) == "table" and love.graphics
-    if inv then link().clientCall("replyInvite", inv.id, accept and true or false) end
-    Union.lastResult = accept and "accepted" or "declined"
-    if accept and inv then
-      Union._role = "parent"
-      Union.flow = nil
-      Union.beginAwaitRoom(nil)
-    else
-      Union.activity = nil
-      if shown then
-        -- pokefirered/src/union_room.c:887
-        local key = (raw == Union.ACTIVITY.CHAT or raw == Union.ACTIVITY.CARD)
-          and "gText_UR_OfferDeclined2" or "gText_UR_OfferDeclined1"
-        return Union.printAndExit(RomText.ascii(key))
-      end
-      Union.flow = nil
-      Union.state = "main"
-    end
-    return true
-  end
-  local lk = link().link
-  if lk and lk.isOpen and lk:isOpen() then
-    lk:send({ type = Union.MSG.RESPONSE, accept = accept and true or false })
-  end
-  Union.state = accept and "start_activity" or "main"
+  local inv = Union.incoming
+  Union.incoming = nil
+  local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
+  local M = message()
+  local shown = inv and M and M.show and type(love) == "table" and love.graphics
+  if inv then link().clientCall("replyInvite", inv.id, accept and true or false) end
   Union.lastResult = accept and "accepted" or "declined"
+  if accept and inv then
+    Union._role = "parent"
+    Union.flow = nil
+    Union.beginAwaitRoom(nil)
+  else
+    Union.activity = nil
+    if shown then
+      -- pokefirered/src/union_room.c:887
+      local key = (raw == Union.ACTIVITY.CHAT or raw == Union.ACTIVITY.CARD)
+        and "gText_UR_OfferDeclined2" or "gText_UR_OfferDeclined1"
+      return Union.printAndExit(RomText.ascii(key))
+    end
+    Union.flow = nil
+    Union.state = "main"
+  end
   return true
 end
 
@@ -1873,7 +1412,7 @@ end
 
 function Union.slotForId(id)
   if id == nil then return nil end
-  for slot = 1, Union.MAX_LEADERS do
+  for slot = 1, Union.capacity() do
     if Union.memberIds[slot] == id then return slot end
   end
   return nil
@@ -1917,101 +1456,91 @@ local function avatarRow(m)
   }
 end
 
-local function partnerSig(list)
-  local out = {}
-  for i, p in ipairs(list or {}) do out[i] = tostring(p.id) end
-  return table.concat(out, ",")
-end
+local NO_MEMBERS = {}
 
 -- pokefirered/src/union_room.c:2781
+Union.GONE_GRACE_SECONDS = 1.5
+
 function Union.syncPlaza()
   local plaza = link().clientCall("plaza")
   if type(plaza) ~= "table" then return false end
+  if Union._plazaSynced and plaza.instance == Union._plazaInstance and plaza.rev == Union._plazaRev then
+    return false
+  end
+  Union._plazaSynced = true
+  Union._plazaInstance, Union._plazaRev = plaza.instance, plaza.rev
+  Union.plazaBuilds = (Union.plazaBuilds or 0) + 1
   local me = myId()
   local mySlot = tonumber(plaza.you)
-  local members, present = {}, {}
-  for _, m in ipairs(type(plaza.members) == "table" and plaza.members or {}) do
-    if type(m) == "table" and m.id ~= nil and m.id ~= me
-        and not (mySlot and tonumber(m.slot) == mySlot) then
-      members[#members + 1] = m
-      present[m.id] = m
-    end
-  end
-  table.sort(members, function(a, b) return (tonumber(a.slot) or 99) < (tonumber(b.slot) or 99) end)
-  local partnerOf = {}
-  for _, m in ipairs(members) do
-    local g = type(m.group) == "table" and m.group or nil
-    if g and g.leader ~= nil and g.leader ~= m.id and present[g.leader] then partnerOf[m.id] = g.leader end
-  end
-  local leaders, partners = {}, {}
-  for _, m in ipairs(members) do
-    if not partnerOf[m.id] then
-      leaders[m.id] = m
-      local list = {}
-      local g = type(m.group) == "table" and m.group or nil
-      for _, id in ipairs(g and type(g.members) == "table" and g.members or {}) do
-        if partnerOf[id] == m.id and present[id] and #list < Union.GROUP_SIZE - 1 then
-          list[#list + 1] = avatarRow(present[id])
-        end
+  local cap = Union.capacity()
+  local gen = (Union._plazaGen or 0) + 1
+  Union._plazaGen = gen
+  local fresh = false
+  local members = type(plaza.members) == "table" and plaza.members or NO_MEMBERS
+  for i = 1, #members do
+    local m = members[i]
+    local slot = type(m) == "table" and tonumber(m.slot) or nil
+    if slot and slot >= 1 and slot <= cap and m.id ~= nil and m.id ~= me and slot ~= mySlot then
+      local p = Union.players[slot]
+      if p and p.id ~= m.id then
+        Union.hideAvatar(slot)
+        p = nil
       end
-      partners[m.id] = list
+      if not p then
+        p = avatarRow(m)
+        Union.players[slot] = p
+        Union.memberIds[slot] = m.id
+        Union.noteUnionRoomPlayer(p.name)
+        fresh = true
+      end
+      p.gen = gen
+      p.gone = nil
+      p.online = m.online
+      p.status = m.status
+      p.group = m.group
+      p.board = m.board
+      p.activity = Union.memberActivity(m)
     end
   end
-  local changed, fresh = false, false
-  for slot = 1, Union.MAX_LEADERS do
+  for slot = 1, cap do
     local p = Union.players[slot]
-    if p and not p.gone and not leaders[p.id] then p.gone = true end
-  end
-  for _, m in ipairs(members) do
-    if leaders[m.id] then
-      local slot = Union.slotForId(m.id)
-      local p = slot and Union.players[slot] or nil
-      local activity = Union.memberActivity(m)
-      if p then
-        if p.gone or p.activity ~= activity or partnerSig(p.partners) ~= partnerSig(partners[m.id]) then
-          changed = true
-        end
-        p.gone = nil
-        p.board = m.board
-        p.recruiting = m.recruiting
-        p.status = m.status
-        p.group = m.group
-        p.activity = activity
-        p.partners = partners[m.id]
-      elseif not slot then
-        for s = 1, Union.MAX_LEADERS do
-          if not Union.players[s] then
-            slot = s
-            break
-          end
-        end
-        if slot then
-          local row = avatarRow(m)
-          row.activity = activity
-          row.board = m.board
-          row.recruiting = m.recruiting
-          row.status = m.status
-          row.group = m.group
-          row.partners = partners[m.id]
-          Union.memberIds[slot] = m.id
-          Union.players[slot] = row
-          Union.noteUnionRoomPlayer(row.name)
-          fresh, changed = true, true
-        end
-      end
-    end
+    if p and p.gen ~= gen then p.gone = true end
   end
   -- pokefirered/src/union_room.c:2783
   if fresh and Union._synced then playSe("SE_NOTE_C") end
-  if changed then Union.scheduleRefresh() end
   Union._synced = true
+  Union.refreshPlaza()
   return true
+end
+
+function Union.plazaOffline()
+  local now = Union.clock()
+  Union._plazaSynced = false
+  Union._offlineSince = Union._offlineSince or now
+  if Union._offlineWiped or now - Union._offlineSince < Union.GONE_GRACE_SECONDS then return end
+  Union._offlineWiped = true
+  for slot = 1, Union.capacity() do
+    local p = Union.players[slot]
+    if p then p.gone = true end
+  end
+  Union.refreshPlaza()
+end
+
+function Union.checkUpgrade()
+  if Union._upgradeShown or Union.state ~= "main" or Union.flow then return end
+  local up = link().clientCall("upgradeRequired")
+  if not up then return end
+  Union._upgradeShown = true
+  local M = message()
+  if M and M.show then
+    Union.printAndExit(require("src.online.Protocol2").upgradeText(up))
+  end
 end
 
 -- pokefirered/src/union_room.c:3106
 function Union.pollIncoming()
   local L = link()
-  if Union.state == "init" or Union.state == "search" then return end
+  if Union.state == "init" then return end
   for _, inv in ipairs(L.clientCall("invites") or {}) do
     local id = type(inv) == "table" and inv.id or nil
     if id ~= nil and not Union._answered[id] then
@@ -2036,16 +1565,13 @@ end
 function Union.relayTick(_dt)
   local L = link()
   if not L.online() then
-    for slot = Union.MAX_LEADERS, 1, -1 do
-      local p = Union.players[slot]
-      if p and not p.gone then p.gone = true end
-    end
-    Union.handleRefresh()
+    Union.plazaOffline()
     Union.animateAll()
+    Union.checkUpgrade()
     return
   end
+  Union._offlineSince, Union._offlineWiped = nil, nil
   Union.syncPlaza()
-  Union.handleRefresh()
   Union.animateAll()
   Union.pollIncoming()
   if Union.state == "main" and L.link then
@@ -2163,15 +1689,16 @@ function Union.toMain()
   Union.flow = nil
   Union.activity = nil
   Union.state = "main"
+  if Union._talkSlot then Union.updateMemberFacing(Union._talkSlot) end
   Union.releaseScript()
 end
 
 -- pokefirered/src/union_room.c:3455
-function Union.printAndExit(text, slot, member)
+function Union.printAndExit(text, slot)
   return Union.runFlow(stepsOf(
     Union.sayStep(text),
     Union.doStep(function()
-      Union.updateMemberFacing(slot, member)
+      Union.updateMemberFacing(slot)
       Union.toMain()
     end)
   ), "print_and_exit")
@@ -2296,32 +1823,35 @@ function Union.doSomethingPrompt(again)
   ), "do_something_prompt")
 end
 
+function Union.chatHasRoom(p)
+  local g = type(p.group) == "table" and p.group or nil
+  local seats = g and type(g.members) == "table" and #g.members or 0
+  return seats < Union.GROUP_SIZE
+end
+
 -- pokefirered/src/union_room.c:2805
-function Union.talkTo(slot, member)
-  member = member or 0
+function Union.talkTo(slot)
   local p = Union.players[slot]
   if not p or p.gone then
-    return Union.printAndExit(RomText.ascii("gText_UR_TrainerAppearsBusy"), slot, member)
+    return Union.printAndExit(RomText.ascii("gText_UR_TrainerAppearsBusy"), slot)
   end
   Union.partnerId = slot
   Union._partner = p
   local raw = math.floor(tonumber(p.activity) or 0) % Union.IN_UNION_ROOM
-  local idle = raw == Union.ACTIVITY.NONE or raw == Union.ACTIVITY.PLYRTALK or raw == Union.ACTIVITY.SEARCH
-  if member == 0 and idle then return Union.doSomethingPrompt(false) end
-  local who = member == 0 and p or (p.partners and p.partners[member]) or p
-  local g = genderIndex(who)
-  local ctx = textCtx({ stringVars = { who.name or "" } })
-  if member == 0 and raw == Union.ACTIVITY.CHAT and #(p.partners or {}) < Union.GROUP_SIZE - 1 then
+  if idleActivity(p.activity) then return Union.doSomethingPrompt(false) end
+  local g = genderIndex(p)
+  local ctx = textCtx({ stringVars = { p.name or "" } })
+  if raw == Union.ACTIVITY.CHAT and Union.chatHasRoom(p) then
     local met = Union.metBefore(p) and 1 or 0
     return Union.runFlow(stepsOf(
       Union.stayStep(RomText.ascii(Union.JOIN_CHAT_TEXTS[met][g], ctx)),
       Union.yesNoStep(function(yes)
         if yes then return Union.joinChat(slot) end
-        Union.printAndExit(RomText.ascii(RomText.key("gTexts_UR_DeclineChat", g), ctx), slot, member)
+        Union.printAndExit(RomText.ascii(RomText.key("gTexts_UR_DeclineChat", g), ctx), slot)
       end)
     ), "recv_join_chat_request")
   end
-  return Union.printAndExit(Union.reactionText(p.activity, g, who.name), slot, member)
+  return Union.printAndExit(Union.reactionText(p.activity, g, p.name), slot)
 end
 
 -- pokefirered/src/union_room.c:3027
@@ -2376,7 +1906,6 @@ function Union.pollMain(ctx)
   if result ~= 0 then
     L.setVar(ctx, L.VAR_RESULT, 0)
     if result == Union.INTERACT_ATTENDANT then return Union.attendant() end
-    if result >= 1 and result <= Union.MAX_LEADERS then return Union.talkTo(result, 0) end
     Union.releaseScript()
     return
   end
@@ -2384,10 +1913,10 @@ function Union.pollMain(ctx)
   local Hud = package.loaded["src.ui.game3.hud"]
   if Hud and Hud.busy and Hud.busy() then return end
   if not pressedA() then return end
-  local slot, member = Union.tryInteractWithMember()
+  local slot = Union.tryInteractWithMember()
   if slot then
     playSe("SE_SELECT")
-    return Union.talkTo(slot, member)
+    return Union.talkTo(slot)
   end
   if Union.facingTradingBoard() then return Union.checkTradingBoard() end
 end
@@ -2395,10 +1924,11 @@ end
 function Union.facingTradingBoard()
   local P = playerMod()
   if not P or P.moving then return false end
-  local d = ({ down = { 0, 1 }, up = { 0, -1 }, left = { -1, 0 }, right = { 1, 0 } })[P.facing or "down"]
+  local d = FACING_DELTA[P.facing or "down"]
   if not d then return false end
-  return (tonumber(P.cellX) or 0) + d[1] == Union.TRADING_BOARD.x
-    and (tonumber(P.cellY) or 0) + d[2] == Union.TRADING_BOARD.y
+  local board = plazaMap().TRADING_BOARD or Union.TRADING_BOARD
+  return (tonumber(P.cellX) or 0) + d[1] == board.x
+    and (tonumber(P.cellY) or 0) + d[2] == board.y
 end
 
 function Union.namedRequest(name)
@@ -2484,7 +2014,7 @@ function Union.relayUpdate(dt, ctx)
     if Union.flow then return true end
   end
   local st = Union.state
-  if st == "init" or st == "search" then
+  if st == "init" then
     Union.state = "main"
   elseif st == "main" then
     Union.pollMain(ctx)
@@ -2589,8 +2119,7 @@ function Union.pollInvite()
     text = RomText.ascii("gText_UR_TrainerAppearsBusy")
   end
   if M and M.isOpen and M.isOpen() then M.close() end
-  if Union.relay and M and M.show then return Union.printAndExit(text) end
-  if M and M.show then M.show(text) end
+  if M and M.show then return Union.printAndExit(text) end
   Union.state = "print_and_exit"
 end
 
@@ -2657,7 +2186,7 @@ function Union.pollAwaitLink(dt)
   if raw == Union.ACTIVITY.CARD and not L.peerCard and a.t < Union.CARD_WAIT_SECONDS then return end
   Union._await = nil
   local M = message()
-  if Union.relay and M and M.show and type(love) == "table" and love.graphics then
+  if M and M.show and type(love) == "table" and love.graphics then
     if raw == Union.ACTIVITY.CARD then return Union.cardFlow() end
     return Union.printStartActivity()
   end
@@ -3447,7 +2976,6 @@ function Union.reset()
   Union.stop("reset")
   Union.state = "off"
   Union.players = {}
-  Union._spawned = {}
   Union.memberIds = {}
   Union.partnerId = nil
   Union.activity = nil
@@ -3455,7 +2983,6 @@ function Union.reset()
   Union._name = nil
   Union._pump = nil
   Union._trade = nil
-  Union._waited = nil
   Union._requestName = nil
   Union.relay = false
   Union.invite = nil
@@ -3467,10 +2994,14 @@ function Union.reset()
   Union._synced = false
   Union._groupMembers = nil
   Union._choose = nil
-  Union._objs = {}
   Union._vobjs = {}
   Union._vobjDirty = false
-  Union._refreshTimer = 0
+  Union._vobjRebuild = false
+  Union._avatarWaiting = false
+  Union._plazaSynced = false
+  Union._plazaInstance, Union._plazaRev = nil, nil
+  Union._offlineSince, Union._offlineWiped = nil, nil
+  Union._upgradeShown = nil
   Union.flow = nil
   Union._partner = nil
   Union._role = nil

@@ -207,6 +207,9 @@ function SyncEngine.defaultSaves()
                     playthroughId = id,
                     format = meta.format,
                     engine = meta.engine,
+                    -- Derive from the saved set, including older saves that
+                    -- predate modCount, rather than this device's current mods.
+                    modCount = #(type(meta.mods) == "table" and meta.mods or {}),
                     playTime = tonumber(save.playTime),
                     summary = {
                       name = name,

@@ -474,6 +474,7 @@ function Field.useItemfinder(session, showOWMessage)
     width = layout and layout.width,
     height = layout and layout.height,
     neighbors = Map.neighbors,
+    neighborList = Map.neighborList,
     eventsFor = function(id) return get_map_bg_events(game, id) end,
   })
 
@@ -995,14 +996,21 @@ function Field.executeFieldMove(payload)
       local Map = require("src.core.game3.map")
       local def = Map.currentDef()
       local layout = def and def.midLayout
-      if layout and layout.midAt and layout.setMidAt then
-        local Collision = require("src.core.game3.collision")
+      if layout then
         local FieldMoves = require("src.core.game3.field_moves")
+        local w, h = layout.width or 0, layout.height or 0
+        local Collision = require("src.core.game3.collision")
+        -- pokefirered/src/fldeff_rocksmash.c:31
+        local elev = P.elevation or 0
         FieldMoves.mowGrass3x3(P.cellX, P.cellY, function(x, y) return layout:midAt(x, y) end,
-          function(x, y, mid) layout:setMidAt(x, y, mid) end,
-          function(x, y) return Collision.isGrass(x, y) end)
-        local okFv, FieldView = pcall(require, "src.core.game3.field_view")
-        if okFv and FieldView then FieldView._nativeDirty = true end
+          function(x, y, mid) Field.setMetatile(x, y, mid, false) end,
+          function(x, y)
+            -- pokefirered/src/fldeff_cut.c:219
+            return x >= 0 and y >= 0 and x < w and y < h and layout:elevAt(x, y) == elev
+              and Collision.isGrass(x, y)
+          end)
+        -- pokefirered/src/field_effect_helpers.c:313
+        if not Collision.isGrass(P.cellX, P.cellY) then FieldEffects.clearTallGrass() end
       end
       FieldEffects.startCutGrass(P.cellX, P.cellY, function()
         Field.locked = false

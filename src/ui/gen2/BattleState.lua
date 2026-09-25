@@ -54,6 +54,7 @@ local Unown = require("src.core.gen2.Unown")
 local BattleState = {}
 BattleState.__index = BattleState
 BattleState.isOpaque = true
+BattleState.isBattle = true
 
 function BattleState:moveGridNavigation()
   if not Runtime.wantsHook("battle.move_grid_navigation") then return false end

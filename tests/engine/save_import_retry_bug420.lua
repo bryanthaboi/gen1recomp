@@ -136,7 +136,7 @@ local SaveConvert = require("src.save_convert.SaveConvert")
 -- The audio entry is single-quoted on purpose: gate_meta_coverage.lua treats a
 -- double-quoted registry name anywhere in the test corpus as that registry's
 -- unit test, and this suite is not the mod audio registry's.
-local GENERATED = { "pokemon", "moves", "items", "maps", "tilesets", 'audio' }
+local GENERATED = { "pokemon", "moves", "items", "maps", "tilesets", 'audio', 'encounters' }
 
 local function prefixes()
   local seen = {}

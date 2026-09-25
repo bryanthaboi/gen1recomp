@@ -2,6 +2,7 @@
 -- `down` = held this frame; `pressed` = edge, consumed per fixed step.
 
 local GamepadMap = require("src.core.GamepadMap")
+local PadHints = require("src.core.PadHints")
 
 local Input = {}
 
@@ -361,16 +362,20 @@ function Input:pollPads()
     self.padSuppress = suppress
   end
   local backDown = nil
+  local minimized = nil
   for i = 1, #list do
     local e = list[i]
     local down = anyPadDown(pads, e.button)
     local sources = self.sources[e.btn]
     local held = sources ~= nil and sources[e.source] == true
     if not down then suppress[e.button] = nil end
+    if down and not held and minimized == nil then
+      minimized = PadHints.windowMinimized()
+    end
     if held and not down then
       release(self, e.btn, e.source)
       notePadRepair("release", e.button)
-    elseif down and not held and not mute and not suppress[e.button]
+    elseif down and not held and not mute and not minimized and not suppress[e.button]
         and not self.padActions[e.button] then
       if e.chord and backDown == nil then
         backDown = self.state.select == true or anyPadDown(pads, "back")

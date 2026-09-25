@@ -21,6 +21,9 @@ UnionRoomScreen.TYPES_TEMPLATE = Window.template(20, 2, 9, 11)
 UnionRoomScreen.BOARD_HEADER_TEMPLATE = Window.template(1, 1, 28, 2)
 -- pokefirered/src/data/union_room.h:302
 UnionRoomScreen.BOARD_TEMPLATE = Window.template(1, 5, 28, 10)
+-- pokefirered/src/union_room.c:4400
+UnionRoomScreen.BOARD_ROWS = 8
+UnionRoomScreen.BOARD_EXIT = "exit"
 
 -- pokefirered/src/data/union_room.h:197
 UnionRoomScreen.ROW_HEIGHT = 14
@@ -202,14 +205,15 @@ function UnionRoomScreen.showBoard(opts)
       if item.entry then UnionRoomScreen.printBoardRow(item.entry, px, py, UnionRoomScreen.BOARD_SELF) end
     end }
   local offers = opts.offers or {}
-  for i = 0, 7 do
+  for i = 0, math.max(UnionRoomScreen.BOARD_ROWS, #offers) - 1 do
     local entry = offers[i + 1]
     rows[#rows + 1] = { label = "", id = i, disabled = entry == nil, entry = entry,
       print = function(item, px, py)
         if item.entry then UnionRoomScreen.printBoardRow(item.entry, px, py, UnionRoomScreen.BOARD_OTHER) end
       end }
   end
-  rows[#rows + 1] = { label = RomText.plain("gText_UR_Exit2"), id = 8, colors = UnionRoomScreen.BOARD_OTHER }
+  rows[#rows + 1] = { label = RomText.plain("gText_UR_Exit2"), id = UnionRoomScreen.BOARD_EXIT,
+    colors = UnionRoomScreen.BOARD_OTHER }
   local shown = UnionRoomScreen.showList("board", {
     template = UnionRoomScreen.BOARD_TEMPLATE,
     items = rows,

@@ -18,17 +18,18 @@ end
 
 local FakeRelay = require("tests.g3link_fake_relay")
 
-local UNION_MAP = "FR_UNION_ROOM"
+local Plaza = require("src.core.game3.link.union_plaza_map")
+local UNION_MAP = Plaza.MAP_ID
 local CENTER_MAP = "FR_TEST_POKEMON_CENTER_2F"
 local MAPS = {
-  [UNION_MAP] = { warps = { { x = 7, y = 11, mapGroup = 0x7F, mapNum = 0x7F, destWarp = 128 } } },
+  [UNION_MAP] = { warps = { { x = 12, y = 24, mapGroup = 0x7F, mapNum = 0x7F, destWarp = 128 } } },
   [CENTER_MAP] = { warps = { { x = 9, y = 1, destMap = "FR_TRADE_CENTER", destWarp = 1 } } },
   FR_TRADE_CENTER = { warps = { { x = 5, y = 8, mapGroup = 0x7F, mapNum = 0x7F, destWarp = 128 } } },
 }
 
 local store = { flags = {}, vars = {} }
 local session = {
-  store = store, map = UNION_MAP, x = 7, y = 11, name = "RED", gender = 0, trainerId = 0x1234,
+  store = store, map = UNION_MAP, x = 12, y = 24, name = "RED", gender = 0, trainerId = 0x1234,
   party = { { species = 1, level = 12 }, { species = 4, level = 9 } },
   bag = { pockets = { items = {} } },
 }
@@ -42,7 +43,7 @@ package.loaded["src.core.game3.runtime"] = {
   isActive = function() return true end,
   _game = game,
 }
-local Player = { cellX = 7, cellY = 11, facing = "down" }
+local Player = { cellX = 12, cellY = 23, facing = "down" }
 package.loaded["src.core.game3.player"] = Player
 local mapLoads = {}
 package.loaded["src.core.game3.map"] = {
@@ -181,50 +182,160 @@ local join = Client.last("joinPlaza")
 eq(join and join[1], "union", "joinPlaza union")
 eq(join and join[2] and join[2].rulesetId, "g3_link", "with the live g3_link profile")
 eq(join and join[3] and join[3].name, "RED", "and the avatar")
+eq(join and join[4], 40, "announcing the 40-player plaza cap")
+eq(Union.capacity(), Plaza.CAP, "the relay room holds 40 players")
 eq(Client.status, "idle", "presence status goes idle in the Union Room")
+check(Union.isUnionMap(UNION_MAP) and Union.isUnionMap("FR_UNION_ROOM"), "both rooms are Union Room maps")
+check(not Union.isUnionMap(CENTER_MAP), "the Pokemon Center is not")
 
-print("[test] 2. plaza members fill the leader slots in slot order, self excluded")
-Client._plaza = { kind = "union", instance = 1, you = 2, members = {
+print("[test] 2. every other trainer stands on the cell of their relay slot, self excluded")
+Client._plaza = { kind = "union", instance = 1, cap = 40, rev = 1, you = 2, members = {
+  member("aaaa0002", 1, "GREEN", 3, 1),
   member("0000beef", 2, "RED", 0x1234, 0),
   member("aaaa0001", 5, "BLUE", 0x2222, 0),
-  member("aaaa0002", 1, "GREEN", 3, 1),
 } }
 run(1)
 eq(Union.playerCount(), 2, "two other trainers")
-eq(Union.players[1] and Union.players[1].name, "GREEN", "the lowest relay slot takes cart slot 1")
-eq(Union.players[2] and Union.players[2].name, "BLUE", "the next takes cart slot 2")
+eq(Union.players[1] and Union.players[1].name, "GREEN", "relay slot 1 is GREEN")
+eq(Union.players[5] and Union.players[5].name, "BLUE", "relay slot 5 keeps its number (slot = cell)")
+eq(Union.players[2], nil, "our own slot is never drawn")
+eq(Union.vobj(2), nil, "and has no avatar")
 eq(Union.players[1] and Union.players[1].id, "aaaa0002", "the slot remembers the relay id")
-eq(objectCalls.added[1], Union.LOCAL_IDS[1], "slot 1's avatar spawned on the scheduled refresh")
-eq(getVar(Union.VAR_OBJ_GFX_ID_0), Union.graphicsIdFor(1, 3), "with the class graphics id")
-local green = liveObjects[Union.LOCAL_IDS[1]]
-eq(green and green.raiseY, -Union.FLY_HEIGHT, "UNION_ROOM_SPAWN_IN starts 160 px up (FLY_DOWN)")
-run(10)
-eq(green.raiseY, -Union.FLY_HEIGHT + 10 * Union.FLY_STEP, "and drops 8 px a frame")
-run(10)
-eq(green.raiseY, 0, "landing after 20 frames")
-eq(Union.leaderObj(1).state, 1, "the leader is shown")
-eq(Union.avatarData().leader_coords[1][1], 4, "leader slot 1 sits at sUnionRoomPlayerCoords[0]")
+eq(#objectCalls.added, 0, "no cart map object is used")
+local g1 = Union.vobj(1)
+local cx1, cy1, cf1 = Plaza.cellFor(1)
+check(g1 and g1.visible, "GREEN is a virtual object")
+eq(g1 and g1.x, cx1, "on slot 1's cell x")
+eq(g1 and g1.y, cy1, "on slot 1's cell y")
+eq(g1 and g1.dir, Union.FACE_DIR[cf1], "facing the cell's default")
+eq(Union.vobjId(5), Union.VOBJ_BASE + 5, "virtual object ids are VOBJ_BASE + slot")
+local b5 = Union.vobj(5)
+local cx5, cy5 = Plaza.cellFor(5)
+eq(b5 and b5.x, cx5, "BLUE on slot 5's cell x")
+eq(b5 and b5.y, cy5, "BLUE on slot 5's cell y")
+local rec1 = VirtualObjects.get(Union.vobjId(1))
+eq(rec1 and rec1.graphicsId, Union.graphicsIdFor(1, 3), "with the class graphics id")
+check(rec1 and rec1.y2 < 0, "flying in")
+run(20)
+eq(VirtualObjects.get(Union.vobjId(1)).y2, 0, "and landed")
+eq(VirtualObjects.count(), 2, "two avatars in the virtual object pool")
 
-print("[test] 3. refreshes are throttled like the cart, departures fly out")
-table.remove(Client._plaza.members, 2)
+print("[test] 3. the plaza rebuilds only on a new (instance, rev)")
+local builds = Union.plazaBuilds
+run(30)
+eq(Union.plazaBuilds, builds, "no rebuild while the rev stands still")
+Client._plaza.members[3].status = "battling"
 run(1)
-eq(Union.playerCount(), 2, "not refreshed on the next frame")
-check(Union.players[2] and Union.players[2].gone, "BLUE is marked gone")
-local frames = 0
-while Union.playerCount() == 2 and frames < Union.REFRESH_FRAMES + 5 do
-  run(1)
-  frames = frames + 1
-end
-eq(Union.playerCount(), 1, "BLUE left on the periodic refresh")
-check(frames > 200, "which waits for the 300-frame refresh (" .. frames .. ")")
-eq(Union.players[1] and Union.players[1].name, "GREEN", "GREEN keeps slot 1 (sticky)")
-local blue = liveObjects[Union.LOCAL_IDS[2]]
-check(blue ~= nil and blue.raiseY < 0, "UNION_ROOM_SPAWN_OUT flies the avatar up")
+eq(Union.players[5].activity, Union.ACTIVITY.NONE + Union.IN_UNION_ROOM, "an unannounced change is not applied")
+Client._plaza.rev = 2
+run(1)
+eq(Union.plazaBuilds, builds + 1, "a new rev rebuilds once")
+eq(Union.players[5].activity, Union.ACTIVITY.BATTLE_SINGLE + Union.IN_UNION_ROOM, "BLUE is battling")
+eq(b5.x, cx5, "a busy player stays on its cell")
+eq(b5.dir, Union.DIR.EAST, "facing its activity")
+Client._plaza.members[3].status = "idle"
+Client._plaza.instance, Client._plaza.rev = 2, 2
+run(1)
+eq(Union.plazaBuilds, builds + 2, "a new instance with the same rev rebuilds too")
+eq(b5.dir, Union.FACE_DIR[select(3, Plaza.cellFor(5))], "BLUE is idle again")
+local blueRow = table.remove(Client._plaza.members, 3)
+Client._plaza.rev = 3
+run(1)
+eq(Union.players[5], nil, "a leaver is gone on the delta that drops it")
+eq(b5.anim, "out", "and flies out")
 run(Union.FLY_HEIGHT / Union.FLY_STEP)
-eq(objectCalls.removed[#objectCalls.removed], Union.LOCAL_IDS[2], "then removes the object")
-eq(liveObjects[Union.LOCAL_IDS[2]], nil, "slot 2's avatar is gone")
+eq(VirtualObjects.get(Union.vobjId(5)), nil, "then leaves the pool")
+eq(VirtualObjects.count(), 1, "GREEN stays")
+table.insert(Client._plaza.members, blueRow)
+Client._plaza.rev = 4
+run(1)
+check(Union.vobjVisible(5), "a rejoin on the same slot comes back to the same cell")
+run(20)
 
-print("[test] 3b. a busy pair is one group: leader and member at the cart offsets, facing each other")
+print("[test] 3a. a short relay blip keeps the room, a long drop empties it")
+local realClock = Union.clock
+local fakeNow = 1000
+Union.clock = function() return fakeNow end
+Client._state = "reconnecting"
+run(1)
+fakeNow = fakeNow + Union.GONE_GRACE_SECONDS / 2
+run(1)
+eq(Union.playerCount(), 2, "a blip keeps everyone")
+Client._state = "online"
+run(1)
+eq(Union.playerCount(), 2, "and the resumed plaza (same rev) is applied again")
+Client._state = "reconnecting"
+run(1)
+fakeNow = fakeNow + Union.GONE_GRACE_SECONDS + 1
+run(1)
+eq(Union.playerCount(), 0, "a drop past the grace empties the room")
+Client._state = "online"
+run(1)
+eq(Union.playerCount(), 2, "the same rev after the drop still rebuilds")
+Union.clock = realClock
+run(20)
+
+print("[test] 3b. a full 40-player plaza: 39 avatars, no per-frame allocation")
+local full = {}
+for slot = 1, Plaza.CAP do
+  if slot == 2 then
+    full[#full + 1] = member("0000beef", 2, "RED", 0x1234, 0)
+  else
+    full[#full + 1] = member(string.format("bbbb%04x", slot), slot, "P" .. slot, slot * 7, slot % 2)
+  end
+end
+full[1] = member("aaaa0002", 1, "GREEN", 3, 1)
+Client._plaza = { kind = "union", instance = 3, cap = 40, rev = 10, you = 2, members = full }
+run(1)
+eq(Union.playerCount(), Plaza.CAP - 1, "39 other trainers")
+run(25)
+eq(VirtualObjects.count(), Plaza.CAP - 1, "39 avatars in the pool")
+local cellsOk, seen = true, {}
+for slot = 1, Plaza.CAP do
+  if slot ~= 2 then
+    local v = Union.vobj(slot)
+    local x, y = Plaza.cellFor(slot)
+    if not (v and v.visible and v.x == x and v.y == y) or seen[y * 64 + x] then cellsOk = false end
+    seen[y * 64 + x] = true
+  end
+end
+check(cellsOk, "every avatar on its own slot cell")
+builds = Union.plazaBuilds
+local okJit, jit = pcall(require, "jit")
+if okJit and jit and jit.off then jit.off() jit.flush() end
+for _ = 1, 10 do Union.relayTick(1 / 60) end
+collectgarbage("collect")
+collectgarbage("stop")
+local kb = collectgarbage("count")
+for _ = 1, 600 do Union.relayTick(1 / 60) end
+local grown = (collectgarbage("count") - kb) * 1024
+collectgarbage("restart")
+if okJit and jit and jit.on then jit.on() end
+eq(Union.plazaBuilds, builds, "600 frames on one rev never rebuild")
+check(grown == 0, string.format("and allocate nothing (%d bytes)", grown))
+Client._plaza.members[40].status = "chatting"
+Client._plaza.rev = 11
+run(1)
+eq(Union.plazaBuilds, builds + 1, "one status change is one rebuild")
+eq(Union.vobj(40).dir, Union.DIR.SOUTH, "a chatter faces south on its cell")
+local x40, y40 = Plaza.cellFor(40)
+Player.cellX, Player.cellY, Player.facing = x40 - 1, y40, "right"
+input.pressed = { a = true }
+run(1)
+input.pressed = {}
+eq(Union.state, "recv_join_chat_request", "slot 40's chatter is talkable from the west")
+check(settle(), "the join prompt asks YES/NO")
+answer(false)
+drain()
+eq(Union.state, "main", "back to the main loop")
+Client._plaza = { kind = "union", instance = 1, cap = 40, rev = 20, you = 2, members = {
+  member("aaaa0002", 1, "GREEN", 3, 1),
+  member("0000beef", 2, "RED", 0x1234, 0),
+} }
+run(25)
+eq(Union.playerCount(), 1, "back to GREEN alone")
+
+print("[test] 3c. anyone chatting can be joined, from any side; idle trainers from any side")
 local pink = member("aaaa0003", 3, "PINK", 5, 1)
 pink.status = "chatting"
 pink.group = { leader = "aaaa0003", members = { "aaaa0003", "aaaa0004" }, activity = "chat" }
@@ -233,41 +344,30 @@ yellow.status = "chatting"
 yellow.group = pink.group
 table.insert(Client._plaza.members, pink)
 table.insert(Client._plaza.members, yellow)
-run(1)
-eq(Union.playerCount(), 2, "the member rides with its leader instead of taking a slot")
-eq(Union.players[2] and Union.players[2].name, "PINK", "the leader takes the free slot")
-eq(Union.players[2] and #Union.players[2].partners, 1, "with YELLOW as its group member")
-eq(Union.players[2].activity, Union.ACTIVITY.CHAT + Union.IN_UNION_ROOM, "the group is chatting")
-local vl = Union.vobj(2, 0)
-local vm = Union.vobj(2, 1)
-check(vl and vl.visible, "the leader is a virtual object")
-check(vm and vm.visible, "and so is the member")
-eq(vl and vl.x, 13, "leader at sUnionRoomPlayerCoords[1].x")
-eq(vl and vl.y, 8, "leader at sUnionRoomPlayerCoords[1].y")
-eq(vm and vm.x, 14, "member at offset (1,0)")
-eq(vl and vl.dir, Union.DIR.SOUTH, "a chat leader faces south")
-eq(vm and vm.dir, Union.DIR.WEST, "the member faces the leader")
-eq(VirtualObjects.count(), 2, "both are in the virtual object pool")
-check((VirtualObjects.get(Union.vobjId(2, 0)) or {}).y2 < 0, "flying in")
-run(20)
-eq((VirtualObjects.get(Union.vobjId(2, 0)) or {}).y2, 0, "and landed")
-eq(liveObjects[Union.LOCAL_IDS[2]], nil, "no object event for a busy leader")
-
-print("[test] 3c. talking to a chatting group offers to join; a member gives a reaction")
+Client._plaza.rev = 21
+run(21)
+eq(Union.playerCount(), 3, "no grouping: the chat member has its own slot")
+eq(Union.players[4] and Union.players[4].name, "YELLOW", "YELLOW on slot 4")
+eq(Union.players[3].partners, nil, "no partner lists")
+local vy = Union.vobj(4)
+local x4, y4 = Plaza.cellFor(4)
+eq(vy and vy.x, x4, "YELLOW stands on slot 4's cell")
+eq(vy and vy.dir, Union.DIR.SOUTH, "facing its chat")
 Union.toMain()
 Message.reset()
-Player.cellX, Player.cellY, Player.facing = 13, 9, "up"
+Player.cellX, Player.cellY, Player.facing = x4, y4 + 1, "up"
 input.pressed = { a = true }
 run(1)
 input.pressed = {}
-eq(Union.state, "recv_join_chat_request", "A in front of the chat leader")
+eq(Union.state, "recv_join_chat_request", "A in front of a chat member who is not the host")
+eq(vy.dir, Union.DIR.SOUTH, "YELLOW turns to face the player")
 check(settle(), "the join prompt asks YES/NO")
 if romBundle then
-  check(shows(RomText.ascii("sText_JoinChatFemale")), "gTexts_UR_JoinChat for a female leader")
+  check(shows(RomText.ascii("sText_JoinChatMale")), "gTexts_UR_JoinChat for a male chatter")
 end
 answer(true)
 local jinv = Client.last("invite")
-eq(jinv and jinv[1], "aaaa0003", "joining asks the leader")
+eq(jinv and jinv[1], "aaaa0004", "joining asks YELLOW directly")
 eq(jinv and jinv[2], "chat", "for the chat")
 eq(jinv and jinv[3] and jinv[3].join, true, "as a join")
 eq(Union.state, "send_activity_request", "waiting for the relay")
@@ -276,32 +376,76 @@ jh.state, jh.why = "closed", "busy"
 run(1)
 eq(Union.state, "print_and_exit", "a refused join")
 if romBundle then
-  check(shows(RomText.ascii(RomText.key("gTexts_UR_ChatDeclined", 1))), "reads gTexts_UR_ChatDeclined")
+  check(shows(RomText.ascii(RomText.key("gTexts_UR_ChatDeclined", 0))), "reads gTexts_UR_ChatDeclined")
 end
 drain()
 eq(Union.state, "main", "back to the main loop")
-Player.cellX, Player.cellY, Player.facing = 14, 9, "up"
+eq(vy.dir, Union.DIR.SOUTH, "YELLOW faces its chat again")
+local x3, y3 = Plaza.cellFor(3)
+pink.group.members = { "aaaa0003", "aaaa0004", "c1", "c2", "c3" }
+Client._plaza.rev = 22
+run(1)
+Player.cellX, Player.cellY, Player.facing = x3 + 1, y3, "left"
 input.pressed = { a = true }
 run(1)
 input.pressed = {}
-eq(Union.state, "print_and_exit", "A in front of a group member")
-eq(vm.dir, Union.DIR.SOUTH, "the member turns to face the player")
-run(2)
-check(Message.isOpen(), "a reaction line")
+eq(Union.state, "print_and_exit", "a full chat (5 seats) only gets a reaction")
+eq(Union.vobj(3).dir, Union.DIR.EAST, "PINK turns east to the player")
 drain()
-eq(vm.dir, Union.DIR.WEST, "and turns back to its leader")
-Player.cellX, Player.cellY, Player.facing = 7, 11, "down"
+local xg, yg = Plaza.cellFor(1)
+for _, side in ipairs({ { 0, 1, "up" }, { 0, -1, "down" }, { -1, 0, "right" }, { 1, 0, "left" } }) do
+  Union.toMain()
+  Message.reset()
+  Player.cellX, Player.cellY, Player.facing = xg + side[1], yg + side[2], side[3]
+  input.pressed = { a = true }
+  run(1)
+  input.pressed = {}
+  eq(Union.state, "do_something_prompt", "idle GREEN is talkable facing " .. side[3])
+  Union.toMain()
+  Union.flow = nil
+  Message.reset()
+end
+eq(Union.vobj(1).dir, Union.FACE_DIR[cf1], "and turns back to its cell facing")
+Player.cellX, Player.cellY, Player.facing = 12, 23, "down"
+
+print("[test] 3d. a relay that refuses this build shows the update prompt once")
+Union.toMain()
+Message.reset()
+Client._state = "error"
+Client.upgradeRequired = function() return { type = "upgrade_required", text = "This build is too old for online play. Please update." } end
+run(1)
+eq(Union.state, "print_and_exit", "upgrade_required prints")
+tickMsg()
+check(Message.isOpen() and tostring(Message.currentPage()):find("too old", 1, true) ~= nil, "the relay's update text")
+drain()
+eq(Union.state, "main", "back to the main loop")
+run(5)
+eq(Union.state, "main", "and it is shown only once")
+Client.upgradeRequired = nil
+Client._state = "online"
+run(25)
+eq(Union.playerCount(), 3, "the room comes back when the relay does")
+Union.toMain()
+Message.reset()
 
 print("[test] 4. talking to a trainer: HiDoSomething, the invite menu, the cart's reject")
 run(1)
 local held = ctx.stateWait
-eq(held, Union.scriptWaitTask, "the Union Room holds the next waitstate (UnionRoom_EventScript_Player#)")
+eq(held, Union.scriptWaitTask, "the Union Room holds the next waitstate")
 ctx.stateWait = nil
 Flags.setVar(store, ctx, 0x800D, 1)
 eq(held(), false, "setvar VAR_RESULT, 1 then waitstate: the script waits")
 Flags.setVar(store, ctx, 0x800D, 0)
 run(1)
+eq(Union.state, "main", "a VAR_RESULT that is not the attendant talks to no slot")
+eq(Union.flow, nil, "and opens no flow")
+eq(held(), true, "the waitstate is released")
+Player.cellX, Player.cellY, Player.facing = xg, yg + 1, "up"
+input.pressed = { a = true }
+run(1)
+input.pressed = {}
 eq(Union.state, "do_something_prompt", "talking to GREEN")
+Player.cellX, Player.cellY, Player.facing = 12, 23, "down"
 check(settle(), "the activity menu opens")
 eq(Screen.mode, "activity", "GREETINGS / BATTLE / CHAT / EXIT")
 if romBundle then
@@ -328,7 +472,6 @@ check(shows(RomText.ascii(RomText.key("gTexts_UR_BattleDeclined", 1))),
   "the partner's gendered battle refusal (GetURoomActivityRejectMsg)")
 drain()
 eq(Union.state, "main", "back to the main loop")
-eq(held(), true, "and the talk script is released")
 
 Union.partnerId = 1
 Union.chooseActivity(3)
@@ -485,9 +628,10 @@ eq(board and board.wantType, 10, "wanting a FIRE type")
 drain()
 eq(Union.state, "main", "registration complete")
 
-local greenMember = Client._plaza.members[2]
+local greenMember = Client._plaza.members[1]
 eq(greenMember.name, "GREEN", "GREEN's plaza row")
 greenMember.board = { species = 4, level = 9, wantType = 12 }
+Client._plaza.rev = Client._plaza.rev + 1
 run(1)
 eq(Union.players[1].board and Union.players[1].board.species, 4, "GREEN's board offer is on the member row")
 local offers = Union.boardOffers()
@@ -527,6 +671,39 @@ else
 end
 eq(Union.state, "main", "back from the board")
 Player.cellX, Player.cellY, Player.facing = 7, 11, "down"
+
+print("[test] 7b. the board lists every offer in the room and scrolls; EXIT never collides")
+for slot = 5, 16 do
+  local m = member(string.format("cccc%04x", slot), slot, "T" .. slot, slot, 0)
+  m.board = { species = slot, level = slot, wantType = 12 }
+  table.insert(Client._plaza.members, m)
+end
+Client._plaza.rev = Client._plaza.rev + 1
+run(1)
+eq(#Union.boardOffers(), 13, "13 offers from 40 possible slots")
+Union.openTradingBoard()
+eq(Screen.mode, "board", "the trading board")
+local items = Screen.list.items
+eq(#items, 15, "header, 13 offers, EXIT")
+eq(items[#items].id, Screen.BOARD_EXIT, "EXIT has its own id")
+eq(items[10].id, 8, "the ninth offer keeps id 8")
+check(items[10].entry ~= nil and not items[10].disabled, "and is a real, pickable offer")
+eq(Screen.list.maxShowed, 5, "five rows at a time")
+Screen.select(10)
+check(Screen.list.scroll > 0, "the list scrolls to reach it")
+Screen.confirm()
+check(Union.state ~= "main", "picking offer id 8 opens that offer, not EXIT (" .. tostring(Union.state) .. ")")
+Union.toMain()
+Message.reset()
+Union.openTradingBoard()
+Screen.select(#Screen.list.items)
+Screen.confirm()
+eq(Union.state, "main", "EXIT closes the board")
+for i = #Client._plaza.members, 1, -1 do
+  if tostring(Client._plaza.members[i].id):sub(1, 4) == "cccc" then table.remove(Client._plaza.members, i) end
+end
+Client._plaza.rev = Client._plaza.rev + 1
+run(25)
 
 Union.trade().playerSpecies, Union.trade().playerLevel = 1, 12
 Flags.setVar(store, ctx, 0x800D, Union.INTERACT_ATTENDANT)

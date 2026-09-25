@@ -399,8 +399,8 @@ do
   eq(st.player.partyIndex, 2, "player active slot is 2")
   eq(st.enemy.partyIndex, 2, "enemy active slot is 2")
   check(logged[1]:find("that's enough!"), "step 1: player recall message")
-  check(logged[2]:find("sent\nout"), "step 2: enemy sendout message (BEFORE player sendout)")
-  check(logged[3]:find("Go!"), "step 3: player sendout message (AFTER enemy sendout)")
+  check(logged[2]:find("Go!"), "step 2: player sendout message (BEFORE enemy sendout)")
+  check(logged[3]:find("sent\nout"), "step 3: enemy sendout message (AFTER player sendout)")
 
   -- Non-headless step ordering test
   SwitchSeq.beginShiftSwitch(st, 2, 2, { headless = false, pushMsg = pushMsg })
@@ -419,16 +419,16 @@ do
   local iWithdraw = find_step("withdraw")
   local iEnemySend = find_step("sendout_enemy")
   local iPlayerSend = find_step("sendout_player")
-  local iEntryTriggers = find_step("entry_triggers")
+  local iEntryTriggers = find_step("entry_triggers", iEnemySend)
 
   check(iWithdraw ~= nil, "has withdraw step")
   check(iEnemySend ~= nil, "has sendout_enemy step")
   check(iPlayerSend ~= nil, "has sendout_player step")
   check(iEntryTriggers ~= nil, "has entry_triggers step")
 
-  check(iWithdraw < iEnemySend, "player withdraws BEFORE enemy sends out")
-  check(iEnemySend < iPlayerSend, "enemy sends out BEFORE player sends out (retail FRLG)")
-  check(iPlayerSend < iEntryTriggers, "entry triggers fire AFTER both mons placed on field")
+  check(iWithdraw < iPlayerSend, "player withdraws BEFORE player sends out")
+  check(iPlayerSend < iEnemySend, "player sends out BEFORE enemy sends out (retail FRLG)")
+  check(iEnemySend < iEntryTriggers, "entry triggers fire AFTER the enemy send-out")
 end
 
 print("\n--- Testing SwitchSeq.beginTrainerSlideIn ---")

@@ -2,6 +2,7 @@
 -- Built from mapDef.blocks + tileset.collision (Gen2 COLL_* quads baked from
 -- FRLG metatile attrs at extract). Does not call World:step / Player:tryMove.
 
+local Connections = require("src.core.game3.connections")
 local Collision = {}
 
 local DELTA = {
@@ -582,8 +583,7 @@ function Collision.connectionLanding(destDef, conn, dir, fromCx, fromCy)
   else
     return nil
   end
-  x = math.max(0, math.min(destW - 1, x))
-  y = math.max(0, math.min(destH - 1, y))
+  if x < 0 or y < 0 or x >= destW or y >= destH then return nil end
   return x, y
 end
 
@@ -614,17 +614,17 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
 
   local mapDef = Collision._mapDef
   if not mapDef or type(mapDef.connections) ~= "table" then return false end
-  local conn = mapDef.connections[dir]
-    or mapDef.connections[DIR_CONN[dir] or ""]
-  if not conn then return false end
-  local destMap = conn.map or conn.mapId
-  if type(destMap) ~= "string" then return false end
-
   local data = game and game.data and game.data.maps
-  local destDef = data and data[destMap]
-  if not destDef then return false end
+  if not data then return false end
   local Map = require("src.core.game3.map")
-  if Map.ensureMidLayout then Map.ensureMidLayout(game, destMap, destDef) end
+  -- pokefirered/src/fieldmap.c:673
+  local conn, destDef = Connections.incoming(mapDef, DIR_CONN[dir], fromX, fromY, function(id)
+    local def = data[id]
+    if def and Map.ensureMidLayout then Map.ensureMidLayout(game, id, def) end
+    return def
+  end)
+  if not conn then return false end
+  local destMap = conn.map
 
   local lx, ly = Collision.connectionLanding(destDef, conn, dir, fromX, fromY)
   if not lx then return false end

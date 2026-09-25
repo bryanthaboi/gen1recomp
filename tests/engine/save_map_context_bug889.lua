@@ -66,6 +66,7 @@ local function fixtureData()
     moves = dofile("tests/fixture_data/moves.lua"),
     items = dofile("tests/fixture_data/items.lua"),
     tilesets = { [maps.FIX_TOWN.tileset] = { header = TILESET_HEADER } },
+    encounters = {},
     audio = {
       -- Song ids are computed from the header address
       -- (constants/music_constants.asm): (address - $4000) / 3.

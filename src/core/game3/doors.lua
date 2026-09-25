@@ -133,8 +133,8 @@ local function resolveLayout(mapId)
     end
   end
 
-  if Map and Map.neighbors then
-    for _, n in pairs(Map.neighbors) do
+  if Map and Map.neighborList then
+    for _, n in ipairs(Map.neighborList) do
       if n.def and n.def.midLayout then
         if norm(n.map or n.mapId) == key then
           return n.def.midLayout, n.def.pair

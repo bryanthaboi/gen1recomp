@@ -53,6 +53,7 @@ local yellowData = {
 local stampMapWindow = loadfile("tests/fixture_data/map_window.lua")()
 for mapId in pairs(shared.maps) do stampMapWindow(redData, mapId) end
 yellowData.tilesets, yellowData.audio = redData.tilesets, redData.audio
+yellowData.encounters = redData.encounters
 
 local OFF = GenSave.OFFSETS
 

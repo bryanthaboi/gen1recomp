@@ -288,7 +288,7 @@ local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
                    "performance", "colors",
                    "tilt", "uiLetterbox", "shaderfx", "shaderfx2", "zoom", "voidFill",
                    "videoMode", "faithfulRes", "screenPos", "fpsCap", "vsync", "logicClock",
-                   "speedOverworld", "speedBattle", "speedMenu",
+                   "speedOverworld", "speedMenu",
                    "mods", "controls", "dateFormat", "timeFormat" }
 local function orow(menu, id)
   for _, row in ipairs(menu.rows) do

@@ -101,7 +101,10 @@ function Game:load(opts)
   -- apply the persisted audio + display options before anything plays
   self:applyOptions(self.save.options)
 
-  FixedStep:init(function(step) self:step(step) end)
+  FixedStep:init(function(step)
+    self:step(step)
+    self:_speedLockEdge()
+  end)
   self.fixedStep = FixedStep
 
   local OverworldState = require("src.world.OverworldController")
@@ -369,12 +372,7 @@ function Game:_resolveLogicSpeed()
   return GameSpeed.clamp(opts and opts[key] or GameSpeed.DEFAULT)
 end
 
--- The logic multiplier for this frame. Read live rather than cached so the
--- Options rows take effect immediately; speedOverride is the --speed /
--- POKEPORT_SPEED run argument, which wins over the saved option so a bot
--- or screenshot run does not depend on whatever the player last chose.
-function Game:logicSpeed()
-  local GameSpeed = require("src.core.GameSpeed")
+function Game:speedLocked()
   -- Link play is always 1X on both machines, and this wins over every other
   -- source including POKEPORT_SPEED and every per-category option.
   -- Fast-forward multiplies the logic clock, so a peer at 10X burned a
@@ -384,11 +382,30 @@ function Game:logicSpeed()
   -- either player set this to -- checked here, before the core.logic_speed
   -- hook ever runs, so a mod cannot defeat it either.
   if self.linkSession or (self.linkNet and not self.linkNet.closed) then
-    return 1
+    return true, "link"
   end
   if Game.isFixedSpeedInStack and Game.isFixedSpeedInStack(self.stack) then
-    return 1
+    return true, "minigame"
   end
+  if Game.speedCategoryInStack(self.stack) == "battle" then
+    return true, "battle"
+  end
+  return false
+end
+
+function Game:_speedLockEdge()
+  if (self._frameSpeed or 1) > 1 and self:speedLocked() then
+    FixedStep:endFrame()
+  end
+end
+
+-- The logic multiplier for this frame. Read live rather than cached so the
+-- Options rows take effect immediately; speedOverride is the --speed /
+-- POKEPORT_SPEED run argument, which wins over the saved option so a bot
+-- or screenshot run does not depend on whatever the player last chose.
+function Game:logicSpeed()
+  if self:speedLocked() then return 1 end
+  local GameSpeed = require("src.core.GameSpeed")
   if self.speedOverride then return GameSpeed.clamp(self.speedOverride) end
   -- Clamp here too, not just in _resolveLogicSpeed's vanilla path: a mod's
   -- core.logic_speed hook can return anything (0, negative, nil, NaN) and
@@ -404,7 +421,8 @@ function Game:update(dt)
   -- Give the accumulator room for one full frame at the current speed,
   -- or the anti-spiral clamp quietly caps every level above ~15X.
   local speed = self:logicSpeed()
-  FixedStep.maxAccum = FixedStep.catchupLimit(speed)
+  self._frameSpeed = speed
+  FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
   FixedStep:update(dt, speed)
   -- Audio runs off real time at a fixed 60Hz regardless of game speed or
   -- display refresh, so fades and chip synthesis keep their intended tempo
@@ -783,6 +801,7 @@ end
 
 function Game:_cycleSpeed(dir)
   if not (self.save and self.save.options) then return end
+  if self:speedLocked() then return end
   local busy
   local ow = self.overworld
   if ow then
@@ -794,12 +813,6 @@ function Game:_cycleSpeed(dir)
         or ow.engaging or ow.emote))
   end
   if busy then return end
-  -- Cycles whichever category Game.speedCategoryInStack says is active
-  -- right now (RFC 0007) -- pressing the hotkey during a battle speeds up
-  -- just the battle, on the overworld just the walk, in a menu just the
-  -- menu. A single physical control that means "speed up whatever I'm
-  -- looking at right now" needs no new UI and matches what a player
-  -- pressing it mid-battle almost certainly wants.
   local GameSpeed = require("src.core.GameSpeed")
   local key = GameSpeed.optionKey(Game.speedCategoryInStack(self.stack))
   self.save.options[key] = GameSpeed.cycle(self.save.options[key], dir)

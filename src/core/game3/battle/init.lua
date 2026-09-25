@@ -1219,8 +1219,7 @@ local function refuse_link_item(input)
   if not (input and st and st.link) then return false end
   if Ui._mode ~= "menu" or not input:wasPressed("a") then return false end
   if Commands.MENU[Ui._menuIndex or 1] ~= "BAG" then return false end
-  -- pokefirered/src/battle_message.c:251
-  Ui.push(BattleText.get("STRINGID_ITEMSCANTBEUSEDNOW"))
+  Ui.refuseItems()
   return true
 end
 

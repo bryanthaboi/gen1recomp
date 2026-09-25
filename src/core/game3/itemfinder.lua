@@ -1,3 +1,4 @@
+local Connections = require("src.core.game3.connections")
 local Itemfinder = {}
 
 local SE_ITEMFINDER = 65
@@ -36,54 +37,22 @@ local function hidden_item_at_pos(events, x, y, flagSet)
   return false
 end
 
-local function neighbor(neighbors, a, b)
-  return neighbors and (neighbors[a] or neighbors[b])
-end
-
-local function layout_size(def)
-  local L = def and def.midLayout
-  if L then return L.width or 0, L.height or 0 end
-  return (tonumber(def and def.width) or 0) * 2, (tonumber(def and def.height) or 0) * 2
+local function neighbor_list(opts)
+  if opts.neighborList then return opts.neighborList end
+  local list = {}
+  for k, n in pairs(opts.neighbors or {}) do
+    local dir = Connections.cardinal(n.dir or k)
+    if dir then
+      list[#list + 1] = { dir = dir, map = n.map, mapId = n.mapId, def = n.def, offset = n.offset }
+    end
+  end
+  return list
 end
 
 -- pokefirered/src/fieldmap.c:761, src/itemfinder.c:312
 local function connected_hidden_item(opts, lx, ly)
-  local curW, curH = opts.width, opts.height
-  local n = opts.neighbors
-  local conn, cx, cy
-  if ly < 0 then
-    conn = neighbor(n, "north", "up")
-    if conn then
-      local w, h = layout_size(conn.def)
-      local off = tonumber(conn.offset) or 0
-      if lx - off >= 0 and lx - off < w then cx, cy = lx - off, h + ly end
-    end
-  end
-  if not cx and ly >= curH then
-    conn = neighbor(n, "south", "down")
-    if conn then
-      local w = layout_size(conn.def)
-      local off = tonumber(conn.offset) or 0
-      if lx - off >= 0 and lx - off < w then cx, cy = lx - off, ly - curH end
-    end
-  end
-  if not cx and lx < 0 then
-    conn = neighbor(n, "west", "left")
-    if conn then
-      local w, h = layout_size(conn.def)
-      local off = tonumber(conn.offset) or 0
-      if ly - off >= 0 and ly - off < h then cx, cy = w + lx, ly - off end
-    end
-  end
-  if not cx and lx >= curW then
-    conn = neighbor(n, "east", "right")
-    if conn then
-      local _, h = layout_size(conn.def)
-      local off = tonumber(conn.offset) or 0
-      if ly - off >= 0 and ly - off < h then cx, cy = lx - curW, ly - off end
-    end
-  end
-  if not cx then return false end
+  local conn, cx, cy = Connections.atPos(neighbor_list(opts), lx, ly, opts.width, opts.height)
+  if not conn then return false end
   return hidden_item_at_pos(opts.eventsFor(conn.map or conn.mapId), cx, cy, opts.flagSet)
 end
 

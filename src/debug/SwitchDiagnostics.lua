@@ -198,6 +198,14 @@ function SwitchDiagnostics.onPadReconcile()
   SwitchDiagnostics.maybeFlush(true)
 end
 
+local function osName()
+  local sys = love and love.system
+  if not (sys and sys.getOS) then return nil end
+  local ok, name = pcall(sys.getOS)
+  if ok then return name end
+  return nil
+end
+
 function SwitchDiagnostics.onJoystickEvent(kind, joystick, button, extra)
   if not SwitchDiagnostics.isEnabled() then return end
   local payload = { button = button }
@@ -209,7 +217,25 @@ function SwitchDiagnostics.onJoystickEvent(kind, joystick, button, extra)
   if extra then
     for k, v in pairs(extra) do payload[k] = v end
   end
+  local PadHints = require("src.core.PadHints")
+  payload.hf = tostring(PadHints.hasFocus())
+  local fg = PadHints.foreground(osName())
+  if fg then payload.fg = fg end
   SwitchDiagnostics.onEvent(kind, payload)
+end
+
+function SwitchDiagnostics.onFocus(f)
+  if not SwitchDiagnostics.isEnabled() then return end
+  local PadHints = require("src.core.PadHints")
+  local payload = {
+    f = tostring(f),
+    hasFocus = tostring(PadHints.hasFocus()),
+    visible = tostring(not PadHints.windowMinimized()),
+  }
+  local fg = PadHints.foreground(osName())
+  if fg then payload.fg = fg end
+  SwitchDiagnostics.onEvent("focus", payload)
+  SwitchDiagnostics.maybeFlush(true)
 end
 
 function SwitchDiagnostics.logLuaError(msg)

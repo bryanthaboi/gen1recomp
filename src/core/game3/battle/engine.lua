@@ -1949,7 +1949,12 @@ function Engine.performSwitch(st, adapter, side, slot, opts)
   end
   local foe = (side == "player") and st.enemy or st.player
   if side == "player" then
-    State.trackParticipant(st, st.enemy, slot)
+    if opts.isShift or opts.reason == "shift" then
+      -- pokefirered/src/battle_script_commands.c:5945
+      State.resetSentPokes(st)
+    else
+      State.trackParticipant(st, st.enemy, slot)
+    end
   elseif st.player then
     -- pokefirered/src/battle_util.c:254
     State.opponentSwitchInResetSentPokes(st, nb)

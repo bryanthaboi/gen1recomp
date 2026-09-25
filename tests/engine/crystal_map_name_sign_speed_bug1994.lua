@@ -85,24 +85,16 @@ if check(one.mapSign ~= nil, "the sign comes up at 1X") then
 end
 
 -- ../pokecrystal/engine/overworld/events.asm:177-191
+FixedStep.clock = function() return 0 end
 for _, speed in ipairs({ 1, 4, 10, 20, 200 }) do
   local w = raise(gameAt(speed))
   local frame, steps, maxPerFrame = renderedFramesToClear(w, speed, 2000)
   eq(frame, 122, ("%dX: the sign clears on rendered frame 122"):format(speed))
-  if speed <= 10 then
-    eq(steps, 122 * speed,
-      ("%dX: under the catch-up cap the logic ran %d steps"):format(speed, speed * 122))
-  else
-    check(maxPerFrame <= 15 and steps < 122 * speed,
-      ("%dX: FixedStep pinned at %d steps a frame, %d in all (nominal would be %d)")
-        :format(speed, maxPerFrame, steps, 122 * speed))
-  end
+  eq(steps, 122 * speed,
+    ("%dX: the logic ran %d steps"):format(speed, speed * 122))
+  eq(maxPerFrame, speed, ("%dX: %d steps a rendered frame"):format(speed, speed))
 end
-
-local capped = raise(gameAt(200))
-local _, _, perFrame = renderedFramesToClear(capped, 200, 2000)
-check(perFrame >= 14 and perFrame <= 15,
-  ("200X: the capped regime really ran ~15 steps a frame (%d)"):format(perFrame))
+FixedStep.clock = nil
 
 local hidden = raise(gameAt(1))
 for _ = 1, 3 do Sign.frame(hidden) end

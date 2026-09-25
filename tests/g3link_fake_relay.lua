@@ -305,7 +305,7 @@ function FakeRelay.client(opts)
     rec("setStatus", status)
     C.status = status
   end
-  function C.joinPlaza(kind, profile, avatar) rec("joinPlaza", kind, profile, avatar) end
+  function C.joinPlaza(kind, profile, avatar, cap) rec("joinPlaza", kind, profile, avatar, cap) end
   function C.leavePlaza(kind) rec("leavePlaza", kind) end
   function C.plaza() return C._plaza end
   function C.plazaCounts() return C._counts end

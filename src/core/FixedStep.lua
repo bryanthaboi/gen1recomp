@@ -6,11 +6,9 @@ local FixedStep = {}
 
 FixedStep.GB_HZ = 4194304 / 70224
 FixedStep.STEP = 1 / 60
--- Hard ceiling on catch-up debt (seconds of logic time drained in one
--- rendered frame).  0.25s = 15 GB steps.  Game:update may lower this for the
--- current speed target but must never raise it: a hitch at high multipliers
--- cannot dump unbounded steps and starve input / spiral the frame.
 FixedStep.MAX_ACCUM = 0.25
+FixedStep.WORK_FRACTION = 0.75
+FixedStep.clock = nil
 local MAX_ACCUM = FixedStep.MAX_ACCUM
 local SMOOTH_FRAMES = 4
 local SMOOTH_MAX = 1 / 60 * 2.5
@@ -69,23 +67,35 @@ function FixedStep:init(callback)
   self.suppressCatchup = false
   self.dtHistory, self.dtSum = nil, 0
   self.phasedFor = nil
+  self.frameBreak = false
 end
 
--- The anti-spiral clamp is the steps-per-frame ceiling.  Game:update sets
--- maxAccum to the current speed's one-frame budget, hard-capped at MAX_ACCUM
--- so high fast-forward cannot turn a hitch into input starvation.
 FixedStep.maxAccum = MAX_ACCUM
 
--- Compute the live catch-up ceiling for a logic-speed multiplier.
--- Always ≤ MAX_ACCUM; at least two steps so ordinary vsync wobble can recover.
-function FixedStep.catchupLimit(speed)
+function FixedStep.catchupLimit(speed, dt)
   speed = tonumber(speed) or 1
   if speed < 1 then speed = 1 end
-  local target = speed * FixedStep.STEP * 1.5
-  local floor = FixedStep.STEP * 2
+  local step = FixedStep.STEP
+  local frame = tonumber(dt) or step
+  if frame ~= frame or frame < step or frame > SMOOTH_MAX then frame = step end
+  local target = speed * frame * 1.5
+  local floor = step * 2
   if target < floor then target = floor end
-  if target > MAX_ACCUM then target = MAX_ACCUM end
   return target
+end
+
+local function workBudget(self, dt)
+  local base = self.refreshPeriod or self.STEP
+  local frame = dt
+  if frame < base then frame = base end
+  if frame > self.STEP * 2 then frame = math.max(base, self.STEP * 2) end
+  return frame * FixedStep.WORK_FRACTION
+end
+
+local function workClock()
+  if FixedStep.clock then return FixedStep.clock end
+  local timer = love and love.timer
+  return timer and timer.getTime or nil
 end
 
 function FixedStep:update(dt, speed)
@@ -93,11 +103,13 @@ function FixedStep:update(dt, speed)
   -- called (the hitch itself already ran inside the current step); absorb
   -- that one frame as a single step instead of the normal accumulator so
   -- the burst it would otherwise release doesn't play out as a slide.
+  self.frameBreak = false
   if self.suppressCatchup then
     self.suppressCatchup = false
     self.dtHistory, self.dtSum = nil, 0
     self.accum = self.STEP * RESEED_PHASE
     self.callback(self.STEP)
+    self.frameBreak = false
     return
   end
   -- Snap/smooth against the wall-clock frame dt first.  Game speed is a
@@ -109,6 +121,7 @@ function FixedStep:update(dt, speed)
   -- Pathological wall-clock stalls: do not let dt alone exceed the catch-up
   -- ceiling before speed is applied (speed amplify would just hit the clamp).
   if dt > MAX_ACCUM then dt = MAX_ACCUM end
+  local frameDt = dt
   local period = self.refreshPeriod
   local snapped = false
   if period and dt > 0 then
@@ -140,10 +153,25 @@ function FixedStep:update(dt, speed)
     self.accum = self.accum - self.accum % self.STEP + target
   end
   self.accum = math.min(self.accum + dt * speed, self.maxAccum or MAX_ACCUM)
+  local clock = speed > 1 and workClock() or nil
+  local deadline = clock and (clock() + workBudget(self, frameDt)) or nil
   while self.accum >= self.STEP - STEP_EPS do
     self.accum = self.accum - self.STEP
     self.callback(self.STEP)
+    if self.frameBreak then
+      self.frameBreak = false
+      self.accum = self.accum % self.STEP
+      break
+    end
+    if deadline and self.accum >= self.STEP - STEP_EPS and clock() >= deadline then
+      self.accum = self.accum % self.STEP
+      break
+    end
   end
+end
+
+function FixedStep:endFrame()
+  self.frameBreak = true
 end
 
 -- Drop any pending catch-up steps and arm the one-frame clamp above.  A

@@ -22,6 +22,10 @@ return function(game)
 
   game.speedOverride = 4
   U.wait(2)
+  if game:logicSpeed() ~= 4 then
+    error(("bug1952: the overworld did not take the 4X override (%s)")
+      :format(tostring(game:logicSpeed())))
+  end
   U.log("gen2 speed override", 4, "sfx rate", Sound.rate())
   if Sound.rate() ~= 1 then
     error(("bug1952: Game2:update pitched SFX off GAME SPEED (rate %s at 4X)")
@@ -71,6 +75,12 @@ return function(game)
       :format(held, dur))
   end
 
+  game.linkNet = { closed = false }
+  if game:logicSpeed() ~= 1 then
+    error(("speed lock: an open gen 2 link ran at %sX under a 4X override")
+      :format(tostring(game:logicSpeed())))
+  end
+  game.linkNet = nil
   game.speedOverride = nil
   U.wait(2)
   if Sound.rate() ~= 1 then
@@ -80,5 +90,5 @@ return function(game)
 
   U.shot(game, DIR .. "/bug1952_gold_after.png")
   U.log("PASS the gen 2 jingle kept natural pitch under GAME SPEED")
-  love.event.quit()
+  love.event.quit(0)
 end

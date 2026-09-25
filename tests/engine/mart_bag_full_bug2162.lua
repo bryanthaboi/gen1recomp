@@ -73,6 +73,10 @@ local function newGame(money, ballCount)
       constants = {},
     },
     save = { money = money, inventory = {}, bagOrder = {} },
+    input = {
+      wasPressed = function() return false end,
+      isDown = function() return false end,
+    },
   }
   if ballCount then
     game.save.inventory.POKE_BALL = ballCount
@@ -93,9 +97,18 @@ local function newGame(money, ballCount)
   return game, events, stack
 end
 
+local function drain(game)
+  for _ = 1, 600 do
+    local top = game.stack:top()
+    if not (top and top.stay and not top.stayShown) then return end
+    top:update(1 / 60)
+  end
+end
+
 local function buyOne(game, stack)
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[1].onSelect()
+  drain(game)
   local list = stack[#stack]
   list.onChoose({ value = "POKE_BALL" })
   local qty = stack[#stack]
@@ -137,6 +150,7 @@ for _, case in ipairs({
 
   game.stack:pop()
   box.onDone()
+  drain(game)
   eq(stack[#stack], nil, case.name .. ": A closes the list")
   eq(menu.footer, ANYTHING, case.name .. ": the mart menu asks again")
   eq(game.save.money, case.money, case.name .. ": money is still untouched")
@@ -151,6 +165,7 @@ do
   game.save.bagOrder = { "BICYCLE" }
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[2].onSelect()
+  drain(game)
   local list = stack[#stack]
   list.onChoose({ value = "BICYCLE" })
   local box = stack[#stack]
@@ -158,6 +173,7 @@ do
   eq(stack[#stack - 1], list, "unsellable: the sell list is still under it")
   game.stack:pop()
   box.onDone()
+  drain(game)
   eq(stack[#stack], nil, "unsellable: A closes the sell list")
   eq(menu.footer, ANYTHING, "unsellable: the mart menu asks again")
 end
@@ -172,6 +188,7 @@ do
   check(getmetatable(box) == TextBox, "empty bag: only a text box is pushed")
   game.stack:pop()
   box.onDone()
+  drain(game)
   eq(menu.footer, ANYTHING, "empty bag: the mart menu asks again")
 end
 

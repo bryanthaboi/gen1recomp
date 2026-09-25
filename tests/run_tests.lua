@@ -2448,10 +2448,25 @@ do
     StateStack:update(1 / 60)
     Input.pressed = {}
   end
+  local function waitTop(pred)
+    for _ = 1, 600 do
+      if pred(StateStack:top()) then return true end
+      StateStack:update(1 / 60)
+    end
+    return pred(StateStack:top())
+  end
+  check(StateStack:top() ~= shop and StateStack:top().isTextBox,
+        "the greeting types before BUY/SELL/QUIT (text_script.asm:141-150)")
+  check(waitTop(function(t) return t == shop end), "the greeting hands over to the mart menu")
   press("a") -- BUY
   check(StateStack:top() ~= shop, "BUY opens the buy list")
+  eq(shop.hollowIndex, 1, "BUY leaves a hollow cursor (text_box.asm:176)")
+  check(waitTop(function(t) return t ~= nil and t.onChoose ~= nil end),
+        "the buy list follows Take your time.")
   press("b") -- close the list
-  eq(StateStack:top(), shop, "closing the list returns to the mart menu")
+  check(waitTop(function(t) return t == shop end), "closing the list returns to the mart menu")
+  eq(shop.index, 1, "the mart menu cursor is back on BUY (pokemart.asm:10)")
+  eq(shop.hollowIndex, nil, "and filled again")
   press("down")
   press("down")
   press("a") -- QUIT
@@ -2459,6 +2474,8 @@ do
   local goodbye = StateStack:top()
   check(goodbye ~= shop and goodbye.isTextBox,
         "QUIT prints _PokemartThankYouText")
+  eq(StateStack.states[#StateStack.states - 1], shop,
+     "the mart menu stays under the goodbye (pokemart.asm:220)")
   for _ = 1, 600 do
     if quitCalled then break end
     press("a")
@@ -2487,8 +2504,16 @@ end
   Game.save.inventory = { GREAT_BALL = 5, HYPER_POTION = 99 }
   local sellShop = require("src.ui.ShopMenu").new(Game, { "POTION" }, function() end)
   StateStack:push(sellShop)
+  for _ = 1, 600 do
+    if StateStack:top() == sellShop then break end
+    StateStack:update(1 / 60)
+  end
   Input.pressed = { down = true }; StateStack:update(1 / 60); Input.pressed = {}
   Input.pressed = { a = true }; StateStack:update(1 / 60); Input.pressed = {}
+  for _ = 1, 600 do
+    if StateStack:top() ~= sellShop and StateStack:top().items then break end
+    StateStack:update(1 / 60)
+  end
   local sellList = StateStack:top()
   local foundHyper
   for _, it in ipairs(sellList.items or {}) do
@@ -2947,8 +2972,6 @@ do
   check(seek("vsync"), "cursor reaches VSYNC")
   press("a")
   eq(og.save.options.vsync, "off", "A cycles VSYNC to OFF")
-  -- RFC 0007: the single GAME SPEED row is now three independent rows,
-  -- one per GameSpeed.CATEGORIES entry.
   check(seek("speedOverworld"), "cursor reaches OVERWORLD SPEED")
   press("a")
   eq(og.save.options.speedOverworld, 2, "A cycles OVERWORLD SPEED to 2X")
@@ -2957,11 +2980,7 @@ do
   -- bug when the cycling is fine and the row is simply one longer.
   for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
   eq(og.save.options.speedOverworld, 1, "OVERWORLD SPEED wraps back to NORMAL")
-  check(seek("speedBattle"), "cursor reaches BATTLE SPEED")
-  press("a")
-  eq(og.save.options.speedBattle, 2, "A cycles BATTLE SPEED to 2X")
-  for _ = 1, #GameSpeed.LEVELS - 1 do press("a") end
-  eq(og.save.options.speedBattle, 1, "BATTLE SPEED wraps back to NORMAL")
+  check(not seek("speedBattle"), "no BATTLE SPEED row: battles always run 1X")
   check(seek("speedMenu"), "cursor reaches MENU SPEED")
   press("a")
   eq(og.save.options.speedMenu, 2, "A cycles MENU SPEED to 2X")

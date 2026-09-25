@@ -1,5 +1,4 @@
--- Wait gates hold for the sound's real length at high GAME SPEED
--- (#1952/#2087) without pitching one-shot SFX (#1990/#1991/#1997).
+-- home/text.asm:506 (#1952/#2087, #1990/#1991/#1997)
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   local DIR = os.getenv("SHOT_DIR") or os.getenv("POKEPORT_SHOT_DIR") or "/tmp/shots"
@@ -26,12 +25,26 @@ return function(game)
   ow:pushBattle(battle)
 
   U.log("logic speed", game:logicSpeed(), "sfx rate", Sound.rate())
+  local function inBattle()
+    for _, st in ipairs(game.stack.states) do
+      if st == battle then return true end
+    end
+    return false
+  end
+  local function assertLocked(where)
+    if inBattle() and game:logicSpeed() ~= 1 then
+      error(("speed lock: %s ran at %sX with speedOverride 4")
+        :format(where, tostring(game:logicSpeed())))
+    end
+  end
+  assertLocked("battle start")
   if Sound.rate() ~= 1 then
     error(("bug1952: Game:update pitched SFX off GAME SPEED (rate %s at 4X)")
       :format(tostring(Sound.rate())))
   end
 
   for _ = 1, 240 do
+    assertLocked("battle intro")
     if battle.phase == "menu" then break end
     U.tap(game, "a")
     U.wait(3)
@@ -50,6 +63,7 @@ return function(game)
   local shot = false
   for _ = 1, 1200 do
     U.wait(1)
+    assertLocked("level-up")
     if battle.waitingSound and not t0 then
       local src = battle.waitingSound
       t0 = love.timer.getTime()
@@ -80,13 +94,25 @@ return function(game)
 
   if not dur then error("bug1952: no duration for the level-up fanfare") end
   if held < dur * 0.9 then
-    error(("bug2087: the 4X battle cut the fanfare short (%.3fs of %.3fs)")
+    error(("bug2087: the battle cut the fanfare short (%.3fs of %.3fs)")
       :format(held, dur))
   end
   if held > dur + 1 then
     error(("bug1952: the fanfare dragged past its length (%.3fs of %.3fs)")
       :format(held, dur))
   end
-  U.log("PASS the fanfare kept natural pitch and played to completion at 4X")
-  love.event.quit()
+  for _ = 1, 2400 do
+    if not inBattle() then break end
+    assertLocked("battle end")
+    U.tap(game, "a")
+    U.wait(1)
+  end
+  if inBattle() then error("speed lock: the battle never ended") end
+  U.wait(2)
+  if game:logicSpeed() ~= 4 then
+    error(("speed lock: after the battle logic speed is %s, want 4")
+      :format(tostring(game:logicSpeed())))
+  end
+  U.log("PASS the fanfare kept natural pitch at 1X in a 4X-override battle, 4X back after")
+  love.event.quit(0)
 end

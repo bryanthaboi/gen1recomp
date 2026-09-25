@@ -185,11 +185,11 @@ TileRenderer.recolorSample = recolorSample
 -- the 8 shifted variants of one tile (built once per sheet + tile id [+
 -- gbcKey, when `colors` recolors it for RED++ -- see buildAnim])
 local shiftVariants = {}
-local function getShiftVariants(tilesetImagePath, perRow, tile, colors, gbcKey)
+local function getShiftVariants(tilesetImagePath, perRow, tile, colors, gbcKey, own)
   local key = tilesetImagePath .. "#" .. tile .. (gbcKey or "")
-  if shiftVariants[key] ~= nil then return shiftVariants[key] end
+  if not own and shiftVariants[key] ~= nil then return shiftVariants[key] end
   if not (love.image and love.image.newImageData) then
-    shiftVariants[key] = false
+    if not own then shiftVariants[key] = false end
     return false
   end
   local id = Assets.imageData(tilesetImagePath)
@@ -207,14 +207,14 @@ local function getShiftVariants(tilesetImagePath, perRow, tile, colors, gbcKey)
     end
     out[o + 1] = love.graphics.newImage(v)
   end
-  shiftVariants[key] = out
+  if not own then shiftVariants[key] = out end
   return out
 end
 
 local frameImages = {}
-local function getFrameImages(paths, colors, gbcKey)
+local function getFrameImages(paths, colors, gbcKey, own)
   local key = table.concat(paths, "|") .. (gbcKey or "")
-  if frameImages[key] ~= nil then return frameImages[key] end
+  if not own and frameImages[key] ~= nil then return frameImages[key] end
   local out = {}
   for i, path in ipairs(paths) do
     local ok, img = pcall(function()
@@ -234,12 +234,12 @@ local function getFrameImages(paths, colors, gbcKey)
       return love.graphics.newImage(out2)
     end)
     if not ok then
-      frameImages[key] = false
+      if not own then frameImages[key] = false end
       return false
     end
     out[i] = img
   end
-  frameImages[key] = out
+  if not own then frameImages[key] = out end
   return out
 end
 
@@ -359,14 +359,14 @@ local function buildAnim(spec, tilesetImagePath, perRow, quads, gbc)
     local sequence = {}
     for i, offset in ipairs(offsets) do sequence[i] = offset + 1 end
     return { tiles = tiles, textures = textures, sequence = sequence,
-             period = period }
+             period = period, spec = gbc and spec or nil }
   elseif spec.kind == "frames" then
     local sequence = spec.sequence
     if not (spec.images and sequence and #sequence > 0) then return nil end
     local textures = getFrameImages(spec.images, colors, gbc and gbc.key)
     if not textures then return nil end
     return { tiles = tiles, textures = textures, sequence = sequence,
-             period = period }
+             period = period, spec = gbc and spec or nil }
   elseif spec.kind == "toggle" then
     if gbc then return nil end
     local image = getToggleImage(spec, tilesetImagePath, perRow)
@@ -407,12 +407,24 @@ local function gbcKeyFor(mapId)
   return "#gbc:" .. mapId .. PaletteFX.darkKey()
 end
 
-local function getGbcAtlas(imagePath, tilesetId, mapId, perRow, data)
+local function bgpGroupColors(data, tilesetId, mapId, bgp)
+  local groupColors = PaletteFX.worldGroupColors(data, tilesetId, mapId, nil, bgp ~= nil)
+  if groupColors and bgp then
+    local shade = {}
+    for i = 0, 3 do shade[i] = math.floor(bgp / (4 ^ i)) % 4 end
+    local shaded = {}
+    for i = 1, #groupColors do shaded[i] = PaletteFX.permute(groupColors[i], shade) end
+    groupColors = shaded
+  end
+  return groupColors
+end
+
+local function getGbcAtlas(imagePath, tilesetId, mapId, perRow, data, bgp)
   local key = imagePath .. gbcKeyFor(mapId)
-  if gbcAtlasCache[key] ~= nil then return gbcAtlasCache[key] or nil end
+  if not bgp and gbcAtlasCache[key] ~= nil then return gbcAtlasCache[key] or nil end
   local img = false
   if love.image and love.image.newImageData then
-    local groupColors = PaletteFX.worldGroupColors(data, tilesetId, mapId, nil)
+    local groupColors = bgpGroupColors(data, tilesetId, mapId, bgp)
     if groupColors then
       local src = Assets.imageData(imagePath)
       local iw, ih = src:getDimensions()
@@ -458,6 +470,7 @@ local function getGbcAtlas(imagePath, tilesetId, mapId, perRow, data)
       img = love.graphics.newImage(out)
     end
   end
+  if bgp then return img or nil end
   gbcAtlasCache[key] = img
   return img or nil
 end
@@ -881,6 +894,90 @@ end
 local function safeRelease(o)
   if o and o.release then pcall(o.release, o) end
 end
+local EMPTY = {}
+
+-- engine/pikachu/pikachu_pic_animation.asm:845
+function TileRenderer:bgpImage(byte)
+  if not (byte and self.gbcAtlas and self.data) then return nil end
+  local base = self.baseImage or self.image
+  if byte == 0xE4 and not PaletteFX.darkWorld() then return base end
+  self.bgpImages = self.bgpImages or {}
+  local img = self.bgpImages[byte]
+  if img == nil then
+    local ts = self.map.tileset
+    local ok, made = pcall(getGbcAtlas, ts.image, ts.id, self.map.id,
+                           ts.tilesPerRow, self.data, byte)
+    img = ok and made or false
+    self.bgpImages[byte] = img
+    if img then pcall(self.bakeBgpAnims, self, byte) end
+  end
+  return img or nil
+end
+
+function TileRenderer:bakeBgpAnims(byte)
+  local ctx = self.gbcCtx
+  if not (ctx and self.anims) then return end
+  local groupColors = bgpGroupColors(self.data, ctx.tilesetId, ctx.mapId, byte)
+  if not groupColors then return end
+  for _, anim in ipairs(self.anims) do
+    local spec = anim.spec
+    local group = spec and PaletteFX.worldGroupAt(ctx.tilesetId, ctx.mapId, anim.tiles[1])
+    local colors = group and groupColors[group + 1]
+    if colors then
+      local textures
+      if spec.kind == "hshift" then
+        textures = getShiftVariants(ctx.imagePath, ctx.perRow, anim.tiles[1],
+                                    colors, nil, true)
+      else
+        textures = getFrameImages(spec.images, colors, nil, true)
+      end
+      if textures then
+        anim.bgpTextures = anim.bgpTextures or {}
+        anim.bgpTextures[byte] = textures
+      end
+    end
+  end
+end
+
+function TileRenderer:setBgp(byte)
+  if byte == self.curBgp and byte ~= nil then return true end
+  local before = self.image
+  if self.curBgp then
+    self.bgpBorders[self.curBgp] = self.borderFill
+    self.image = self.baseImage
+    self.borderFill, self.borderFillMode = self.baseBorder, self.baseBorderMode
+    self.baseImage, self.baseBorder, self.baseBorderMode = nil, nil, nil
+    self.curBgp = nil
+    for _, anim in ipairs(self.anims or EMPTY) do
+      if anim.baseTextures then
+        anim.textures, anim.baseTextures = anim.baseTextures, nil
+      end
+    end
+  end
+  local shown = false
+  local img = self:bgpImage(byte)
+  if img and img == self.image then
+    shown = true
+  elseif img then
+    self.bgpBorders = self.bgpBorders or {}
+    self.baseImage = self.image
+    self.baseBorder, self.baseBorderMode = self.borderFill, self.borderFillMode
+    self.image = img
+    self.borderFill = self.bgpBorders[byte]
+    self.borderFillMode = self.borderFill and self.baseBorderMode or nil
+    self.bgpBorders[byte] = nil
+    self.curBgp = byte
+    for _, anim in ipairs(self.anims or EMPTY) do
+      local textures = anim.bgpTextures and anim.bgpTextures[byte]
+      if textures then
+        anim.baseTextures, anim.textures = anim.textures, textures
+      end
+    end
+    shown = true
+  end
+  if self.winBatch and self.image ~= before then self.winBatch:setTexture(self.image) end
+  return shown
+end
 
 -- Release only the GPU objects this instance built and uniquely owns: the
 -- two SpriteBatches, the border-fill image and its quad, the per-tile
@@ -890,6 +987,9 @@ end
 -- them.  Used by :rebuild before it swaps in fresh batches, and by
 -- :release on eviction.
 function TileRenderer:releaseBatches()
+  if self.curBgp then self:setBgp(nil) end
+  for _, img in pairs(self.bgpBorders or {}) do safeRelease(img) end
+  self.bgpBorders = nil
   safeRelease(self.winBatch); self.winBatch = nil
   safeRelease(self.borderFill); self.borderFill = nil
   safeRelease(self.borderQuad); self.borderQuad = nil
@@ -927,6 +1027,14 @@ function TileRenderer:release()
     safeRelease(self.image)
     self.image = nil
     self.gbcAtlas = nil
+  end
+  for _, img in pairs(self.bgpImages or {}) do safeRelease(img) end
+  self.bgpImages = nil
+  for _, anim in ipairs(self.anims or {}) do
+    for _, textures in pairs(anim.bgpTextures or {}) do
+      for _, img in ipairs(textures) do safeRelease(img) end
+    end
+    anim.bgpTextures = nil
   end
   self.anims = nil
 end

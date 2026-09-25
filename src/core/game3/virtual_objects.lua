@@ -64,6 +64,15 @@ function VirtualObjects.list()
   return out
 end
 
+function VirtualObjects.slots()
+  return #order
+end
+
+function VirtualObjects.nth(i)
+  local id = order[i]
+  return id and byId[id] or nil
+end
+
 function VirtualObjects.count()
   local n = 0
   for _ in pairs(byId) do n = n + 1 end

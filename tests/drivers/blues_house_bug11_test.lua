@@ -69,13 +69,27 @@ return function(game)
   check(game.save.inventory["0"] == 1, "seeded unknown item '0' in bag")
 
   -- open the clerk's BUY/SELL/QUIT menu exactly as the mart interaction does
+  local Menu = require("src.ui.Menu")
+  local ListMenu = require("src.ui.ListMenu")
+  local TextBox = require("src.render.TextBox")
+  local function waitTop(pred)
+    for _ = 1, 600 do
+      local top = game.stack:top()
+      if top and pred(top) then return top end
+      U.wait(1)
+    end
+  end
   Screens.push(game, "ShopMenu", {})
-  U.wait(4)
+  local shop = waitTop(function(t)
+    return getmetatable(t) == Menu and not t.hidden
+  end)
+  check(shop ~= nil, "clerk menu up after the greeting")
+  U.wait(2)
   U.tap(game, "down") -- BUY -> SELL
   U.wait(4)
   U.tap(game, "a")    -- open the SELL list
-  U.wait(6)
-  local sellList = game.stack:top()
+  local sellList = waitTop(function(t) return getmetatable(t) == ListMenu end)
+  U.wait(2)
   check(sellList and sellList.items ~= nil, "SELL list opened")
   U.shot(game, DIR .. "/bh_2_sell_list.png")
 
@@ -88,7 +102,6 @@ return function(game)
     check(item ~= nil, "bogus '0' row present in sell list")
     if item then
       sellList.index = idx
-      local footerBefore = sellList.footer
       -- Invoke the real onChoose the ListMenu would call on A.  Before the
       -- fix this throws at math.floor(def.price/2) with def=nil; we catch
       -- it so the run reports the crash instead of hanging on love's error
@@ -101,9 +114,15 @@ return function(game)
         check(true, "selling '0' did not crash")
         -- nothing may be sold: the guard returns before any QuantityBox
         check(game.save.inventory["0"] == 1, "unknown item still in bag (not sold)")
-        check(sellList.footer ~= footerBefore
-              and tostring(sellList.footer):find("price") ~= nil,
-              "sell footer shows the unsellable message")
+        local box = game.stack:top()
+        local said = {}
+        if getmetatable(box) == TextBox then
+          for _, page in ipairs(box.pages) do
+            for _, line in ipairs(page) do said[#said + 1] = line end
+          end
+        end
+        check(table.concat(said, " "):find("price") ~= nil,
+              "clerk says the unsellable line")
       end
       U.wait(4)
       U.shot(game, DIR .. "/bh_3_sell_choose.png")
@@ -112,4 +131,5 @@ return function(game)
 
   U.log("RESULT", ("pass=%d fail=%d"):format(pass, fail))
   if fail == 0 then U.log("RESULT", "ALL PASS") else U.log("RESULT", "HAS FAILURES") end
+  love.event.quit(fail == 0 and 0 or 1)
 end

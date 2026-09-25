@@ -1657,7 +1657,19 @@ function PartyMenu.handleInput(input)
           local fx, fy = P.cellX + d[1], P.cellY + d[2]
           local facingObj = Objects.at(fx, fy)
           local isWater = Collision.isWater and Collision.isWater(fx, fy)
-          local isGrass = Collision.isGrass and Collision.isGrass(fx, fy)
+          -- pokefirered/src/fldeff_cut.c:140
+          local function hasCuttableGrass3x3(px, py)
+            if not Collision.isGrass then return false end
+            -- pokefirered/src/fldeff_rocksmash.c:31
+            local elev = P.elevation
+            for y = py - 1, py + 1 do
+              for x = px - 1, px + 1 do
+                local e = Collision.elevationAt and Collision.elevationAt(x, y)
+                if (elev == nil or e == elev) and Collision.isGrass(x, y) then return true end
+              end
+            end
+            return false
+          end
           local mapDef = Map.currentDef()
           -- pokefirered/src/party_menu.c:4118
           local facingBeh = Collision.behavior and Collision.behavior(fx, fy)
@@ -1671,7 +1683,7 @@ function PartyMenu.handleInput(input)
             isFacingWaterfall = FieldMoves.isWaterfallBehavior(facingBeh),
             facing = P.facing,
             isSurfing = P.surfing == true,
-            hasCuttableGrass = isGrass or (Collision.isGrass and Collision.isGrass(P.cellX, P.cellY)),
+            hasCuttableGrass = hasCuttableGrass3x3(P.cellX, P.cellY),
             mapType = mapDef and mapDef.mapType,
             isCave = mapHeaderFlag(mapDef, "cave"),
             canEscapeRope = mapHeaderFlag(mapDef, "allowEscaping"),

@@ -78,9 +78,9 @@ return function(game)
     check("route buyItem paid 600", game.save.money == money0 - 600)
     check("route buyItem leaves the buy list on top", R.isList())
 
-    for _ = 1, 10 do
+    for _ = 1, 60 do
       if R.isMenu() then break end
-      U.tap(game, "b")
+      if R.isList() then U.tap(game, "b") end
       U.wait(6)
     end
     if not check("back on the BUY/SELL menu", R.isMenu()) then return end

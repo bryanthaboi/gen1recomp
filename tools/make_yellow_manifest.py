@@ -119,6 +119,13 @@ YELLOW_EXTRA_SYMBOLS = (
     "Pic_e5b7d", "Pic_e5ddd", "GFX_e6020", "Pic_e6340", "Pic_e6587",
     "Pic_e67d6", "GFX_e6e6f", "GFX_e718f", "GFX_e74af", "Pic_e77cf",
     "Pic_f0abf", "Pic_f0cf4",
+    # data/pikachu/pikachu_pic_animation.asm:340
+    "GFX_e4841", "GFX_e4ce0", "GFX_e4e70", "GFX_e50af", "GFX_e52fe",
+    "GFX_e5541", "GFX_e5794", "GFX_e59ed", "GFX_e5c4d", "GFX_e5e90",
+    "GFX_e61b0", "GFX_e63f7", "GFX_e6646", "GFX_e682f", "GFX_e69bf",
+    "GFX_e6b4f", "GFX_e6cdf", "GFX_e6fff", "GFX_e731f", "GFX_e763f",
+    "GFX_e7863", "GFX_e79f3", "GFX_e7b83", "GFX_e7d13", "GFX_f0b64",
+    "GFX_f0d82",
     # Yellow-only overworld player surf sprite, loaded outside
     # SpriteSheetPointerTable (LoadSurfingPlayerSpriteGraphics2) --
     # needs its own extract like RedBikeSprite. (RFC 0001)

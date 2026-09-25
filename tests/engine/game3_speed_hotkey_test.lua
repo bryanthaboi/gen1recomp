@@ -38,6 +38,14 @@ do
   eq(g:logicSpeed(), 2, "walk speed sticks after the menu closes")
   battleActive = true
   eq(g:speedCategory(), "battle", "battle stays battle")
+  g.options.speedBattle = 10
+  eq(g:logicSpeed(), 1, "a gen3 battle runs 1X whatever BATTLE SPEED says")
+  g.speedOverride = 20
+  eq(g:logicSpeed(), 1, "and whatever speedOverride says")
+  g.speedOverride = nil
+  g:keypressed("1")
+  eq(g.options.speedBattle, 10, "1 in battle is ignored")
+  eq(g.options.speedOverworld, 2, "and leaves OVERWORLD SPEED alone")
   battleActive = false
   eq(newGame3("boot"):speedCategory(), "menu", "boot phase stays menu")
   eq(newGame3("quest_log"):speedCategory(), "menu", "quest log stays menu")
@@ -156,6 +164,46 @@ do
   eq(g:logicSpeed(), 1, "gen3 arena is locked to 1X")
   package.loaded["src.core.game3.link"] = nil
   package.loaded["src.core.game3.minigames.common"] = nil
+end
+
+do
+  local g = newGame3("field")
+  g.options.speedOverworld = 10
+  eq(g:logicSpeed(), 10, "plain field walk honors OVERWORLD SPEED")
+  local unionOn = true
+  package.loaded["src.core.game3.link.union_room"] = {
+    isActive = function() return unionOn end,
+  }
+  eq(g:logicSpeed(), 1, "an active Union Room is locked to 1X")
+  g:keypressed("1")
+  eq(g.options.speedOverworld, 10, "1 in the Union Room is ignored")
+  unionOn = false
+  eq(g:logicSpeed(), 10, "leaving the Union Room restores the walk speed")
+  package.loaded["src.core.game3.link.union_room"] = nil
+  package.loaded["src.core.game3.map"] = { current = "FR_UNION_ROOM" }
+  eq(g:logicSpeed(), 1, "standing on the Union Room map is locked to 1X")
+  package.loaded["src.core.game3.map"] = { current = "FR_PALLET_TOWN" }
+  eq(g:logicSpeed(), 10, "another map is not")
+  package.loaded["src.core.game3.map"] = nil
+  local room = 1
+  package.loaded["src.core.game3.link"] = {
+    inLinkRoom = function() return room ~= 0 end,
+  }
+  eq(g:logicSpeed(), 1, "a cable club link room is locked to 1X")
+  room = 0
+  eq(g:logicSpeed(), 10, "and outside it the walk speed is back")
+  package.loaded["src.core.game3.link"] = nil
+  local menuOpen, directOpen = true, false
+  package.loaded["src.ui.game3.link_menu"] = {
+    isOpen = function() return menuOpen end,
+    Direct = { isOpen = function() return directOpen end },
+  }
+  eq(g:logicSpeed(), 1, "the wireless link menu is locked to 1X")
+  menuOpen, directOpen = false, true
+  eq(g:logicSpeed(), 1, "the Direct Corner chooser is locked to 1X")
+  directOpen = false
+  eq(g:logicSpeed(), 10, "closed link menus release the lock")
+  package.loaded["src.ui.game3.link_menu"] = nil
 end
 
 T.finish()

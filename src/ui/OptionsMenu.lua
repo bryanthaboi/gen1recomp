@@ -529,10 +529,7 @@ local function buildRows(game)
         return true
       end },
     -- fast-forward the logic clock only; music and sfx keep their tempo
-    -- (src/core/GameSpeed.lua), so this is safe to leave on. Per-category
-    -- (RFC 0007): overworld walking, battle turns and menu navigation each
-    -- cycle their own multiplier -- GameSpeed.CATEGORIES is the single
-    -- source of truth for which three rows exist.
+    -- (src/core/GameSpeed.lua), so this is safe to leave on.
     { id = "speedOverworld", label = Strings("OVERWORLD SPEED"),
       value = function(g)
         return gameSpeedLabel(g.save.options.speedOverworld)
@@ -540,15 +537,6 @@ local function buildRows(game)
       step = function(g, dir)
         local o = g.save.options
         o.speedOverworld = GameSpeed.cycle(o.speedOverworld, dir)
-        return true
-      end },
-    { id = "speedBattle", label = Strings("BATTLE SPEED"),
-      value = function(g)
-        return gameSpeedLabel(g.save.options.speedBattle)
-      end,
-      step = function(g, dir)
-        local o = g.save.options
-        o.speedBattle = GameSpeed.cycle(o.speedBattle, dir)
         return true
       end },
     { id = "speedMenu", label = Strings("MENU SPEED"),
@@ -726,7 +714,7 @@ local GROUPS = {
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
                 "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.speed", label = "SPEED",
-    members = { "textSpeed", "speedOverworld", "speedBattle", "speedMenu" } },
+    members = { "textSpeed", "speedOverworld", "speedMenu" } },
   { id = "group.graphics", label = "GRAPHICS",
     members = { "colors", "uiLetterbox", "shaderfx", "shaderfx2" } },
   -- A mod's Pipelines row splices in after TILT and is in no group, so it

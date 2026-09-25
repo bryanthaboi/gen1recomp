@@ -149,7 +149,8 @@ function MapTree.parseConnections(rom, connectionsPtr, groupsData)
         local maps = groupsData.groups[mapGroup].maps
         pretName = maps and maps[mapNum + 1]
       end
-      out[dirName] = {
+      out[#out + 1] = {
+        dir = dirName,
         mapGroup = mapGroup,
         mapNum = mapNum,
         offset = offset,

@@ -1163,11 +1163,8 @@ function SaveData.slotSummary(save)
   local gen3 = save.generation == 3 or (vinfo and vinfo.generation == 3) or (save.engine == "game3") or false
   local dexCount = 0
   if gen3 then
-    local dex = save.dex or save.pokedex or {}
-    local owned = dex.owned or dex.caught or {}
-    for _, has in pairs(owned) do
-      if has then dexCount = dexCount + 1 end
-    end
+    local okD, Dex = pcall(require, "src.core.game3.dex")
+    dexCount = okD and Dex and Dex.summaryCount and Dex.summaryCount(save) or 0
   elseif gen2 then
     for _, has in pairs((save.pokedex and save.pokedex.caught) or {}) do
       if has then dexCount = dexCount + 1 end
@@ -1422,7 +1419,18 @@ local function writeSlotIn(key, slotId, saveTable)
   end
   if type(saveTable) ~= "table" then return false, "missing save table" end
   local main, bak, tmp = slotNames(key, slotId)
-  local encoded = SaveSerializer.encode(saveTable)
+  local vinfo = type(saveTable.version) == "string" and GameVersion.info(saveTable.version)
+    or type(key) == "string" and GameVersion.info(key)
+  local gen3 = saveTable.engine == "game3" or saveTable.generation == 3
+    or (vinfo and vinfo.generation == 3) or false
+  local body = saveTable
+  if not gen3 and saveTable.options ~= nil then
+    body = {}
+    for k, v in pairs(saveTable) do
+      if k ~= "options" then body[k] = v end
+    end
+  end
+  local encoded = SaveSerializer.encode(body)
   local fs = persistFs(nil)
   ensureParentDir(fs, main)
   if fs.getInfo(main) then
@@ -2003,6 +2011,7 @@ function SaveData.buildMeta(mods, previous, sessionStart)
     cartHash = type(previous) == "table" and previous.cartHash or nil,
     sealBroken = (type(previous) == "table" and previous.sealBroken == true) or nil,
     mods = list,
+    modCount = #list,
   }
 end
 

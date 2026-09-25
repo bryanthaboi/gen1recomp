@@ -143,6 +143,11 @@ function Client.upgradeRequired() return S.upgrade end
 function Client.invites() return S.invites end
 function Client.outgoing() return S.outgoing end
 function Client.plaza() return S.plaza end
+function Client.plazaRev()
+  local p = S.plaza
+  if not p then return nil end
+  return p.instance, p.rev
+end
 function Client.plazaCounts() return S.plazaCounts end
 function Client.group() return S.group end
 function Client.direct() return S.direct end
@@ -747,6 +752,7 @@ local function applyPlazaDelta(msg)
      and msg.instance ~= plaza.instance then
     return false
   end
+  if type(msg.rev) == "number" then plaza.rev = msg.rev end
   local gone = {}
   for _, id in ipairs(msg.left or {}) do gone[id] = true end
   local members = {}
@@ -831,7 +837,7 @@ local function resendState()
   if S.presence then sendRaw(Protocol2.presence(S.presence)) end
   for _, kind in ipairs({ "union", "wireless" }) do
     local j = S.plazaJoins[kind]
-    if j then sendRaw(Protocol2.plazaJoin(kind, j.profile, j.avatar)) end
+    if j then sendRaw(Protocol2.plazaJoin(kind, j.profile, j.avatar, j.cap)) end
   end
   local board = S.presence and S.presence.board
   if S.plazaJoins.union and type(board) == "table" then
@@ -1051,7 +1057,7 @@ local function handle(msg)
     emit("invite_closed", msg)
   elseif kind == "plaza_state" then
     S.plaza = { kind = msg.kind, instance = msg.instance, you = msg.you,
-                members = sortMembers(msg.members) }
+                cap = msg.cap, rev = msg.rev, members = sortMembers(msg.members) }
     emit("plaza", S.plaza)
   elseif kind == "plaza_delta" then
     if applyPlazaDelta(msg) then emit("plaza", S.plaza) end
@@ -1398,10 +1404,11 @@ function Client.replyInvite(id, accept)
   return sendRaw(Protocol2.inviteReply(id, accept == true))
 end
 
-function Client.joinPlaza(kind, profile, avatar)
+function Client.joinPlaza(kind, profile, avatar, cap)
   profile = profile or defaultProfile(3)
-  S.plazaJoins[kind] = { profile = profile, avatar = avatar }
-  return sendRaw(Protocol2.plazaJoin(kind, profile, avatar))
+  if cap == nil and kind == "union" then cap = Protocol2.PLAZA_CAP end
+  S.plazaJoins[kind] = { profile = profile, avatar = avatar, cap = cap }
+  return sendRaw(Protocol2.plazaJoin(kind, profile, avatar, cap))
 end
 
 function Client.leavePlaza(kind)

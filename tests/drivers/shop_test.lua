@@ -39,7 +39,11 @@ return function(game)
     U.wait(20)
     check(tag .. " menu", mash("a", function() return topIs(Menu) end))
     U.tap(game, "a") -- BUY
-    U.wait(8)
+    for _ = 1, 300 do
+      if topIs(ListMenu) then break end
+      U.wait(1)
+    end
+    U.wait(4)
     check(tag .. " list", topIs(ListMenu))
     U.shot(game, ("%s/%s_0_list.png"):format(DIR, tag))
     U.tap(game, "a") -- first item

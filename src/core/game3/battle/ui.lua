@@ -435,7 +435,16 @@ local function restore_action_menu()
   if Message and Message.open then Message.reset() end
 end
 
+-- pokefirered/src/battle_main.c:3182 BattleScript_ActionSelectionItemsCantBeUsed
+function Ui.refuseItems()
+  Ui._selCmd = nil
+  Ui._selReturn = "menu"
+  Ui._mode = "selmsg"
+  Ui.push(BattleText.get("STRINGID_ITEMSCANTBEUSEDNOW"))
+end
+
 local function open_battle_bag()
+  if Ui._st and Ui._st.link then return Ui.refuseItems() end
   local BagMenu = require("src.ui.game3.bag_menu")
   local Runtime = package.loaded["src.core.game3.runtime"]
   local session = Ui._session

@@ -45,7 +45,7 @@ local menu = OptionsMenu.new(game)
 
 T.check(find(menu.rows, "battleBg"), "self.rows keeps the flat list for mods")
 T.check(find(menu.rows, "musicVol"), "self.rows keeps the audio rows too")
-for _, id in ipairs({ "battleBg", "speedBattle", "uiLayout", "tilt", "zoom",
+for _, id in ipairs({ "battleBg", "speedMenu", "uiLayout", "tilt", "zoom",
                       "voidFill", "colors", "shaderfx", "shaderfx2",
                       "musicVol", "videoMode" }) do
   T.check(not find(menu.view, id), id .. " moved onto a page")
@@ -53,7 +53,7 @@ end
 
 for _, spec in ipairs({
   { "group.battle", 6 }, { "group.audio", 3 }, { "group.video", 5 },
-  { "group.speed", 4 }, { "group.graphics", 4 }, { "group.extras", 3 },
+  { "group.speed", 3 }, { "group.graphics", 4 }, { "group.extras", 3 },
 }) do
   local row = find(menu.view, spec[1])
   T.check(row, spec[1] .. " has an opener row")
@@ -100,7 +100,7 @@ game.stack:pop()
 local speed = find(menu.view, "group.speed")
 speed.activate(game)
 T.eq(ids(game.stack:top().view),
-  "textSpeed,speedOverworld,speedBattle,speedMenu",
+  "textSpeed,speedOverworld,speedMenu",
   "TEXT SPEED heads the SPEED page")
 game.stack:pop()
 

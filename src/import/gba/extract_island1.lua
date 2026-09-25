@@ -443,7 +443,7 @@ function Extract.run(imports, cache, progressCb)
     for _, mapId in ipairs(mapOrder) do
       local conns = romConns[mapId] or {}
       local fixed = {}
-      for dir, c in pairs(conns) do
+      for _, c in ipairs(conns) do
         local dest = c.map
         if (not dest or dest:match("^g%d+_m%d+$")) and c.mapGroup ~= nil then
           dest = MapCatalog.mapIdFor(c.mapGroup, c.mapNum) or dest
@@ -451,7 +451,7 @@ function Extract.run(imports, cache, progressCb)
           dest = MapCatalog.resolve(dest) or dest
         end
         if dest then
-          fixed[dir] = { map = dest, offset = tonumber(c.offset) or 0 }
+          fixed[#fixed + 1] = { dir = c.dir, map = dest, offset = tonumber(c.offset) or 0 }
         end
       end
       connections[mapId] = fixed
@@ -533,13 +533,9 @@ function Extract.run(imports, cache, progressCb)
   for _, mapId in ipairs(mapOrder) do
     local conns = connections[mapId] or {}
     cl[#cl + 1] = ("  %s = {\n"):format(mapId)
-    local dirs = {}
-    for dir in pairs(conns) do dirs[#dirs + 1] = dir end
-    table.sort(dirs)
-    for _, dir in ipairs(dirs) do
-      local c = conns[dir]
-      cl[#cl + 1] = ("    %s = { map = %q, offset = %d },\n"):format(
-        dir, c.map, tonumber(c.offset) or 0)
+    for _, c in ipairs(conns) do
+      cl[#cl + 1] = ("    { dir = %q, map = %q, offset = %d },\n"):format(
+        c.dir, c.map, tonumber(c.offset) or 0)
     end
     cl[#cl + 1] = "  },\n"
   end
@@ -1844,7 +1840,7 @@ local function _dormant_quantize_run(imports, cache, progressCb)
     for _, mapId in ipairs(mapOrder) do
       local conns = romConns[mapId] or {}
       local fixed = {}
-      for dir, c in pairs(conns) do
+      for _, c in ipairs(conns) do
         local dest = c.map
         if (not dest or dest:match("^g%d+_m%d+$")) and c.mapGroup ~= nil then
           dest = MapCatalog.mapIdFor(c.mapGroup, c.mapNum) or dest
@@ -1852,7 +1848,7 @@ local function _dormant_quantize_run(imports, cache, progressCb)
           dest = MapCatalog.resolve(dest) or dest
         end
         if dest then
-          fixed[dir] = { map = dest, offset = tonumber(c.offset) or 0 }
+          fixed[#fixed + 1] = { dir = c.dir, map = dest, offset = tonumber(c.offset) or 0 }
         end
       end
       connections[mapId] = fixed
@@ -1885,13 +1881,9 @@ local function _dormant_quantize_run(imports, cache, progressCb)
   for _, mapId in ipairs(mapOrder) do
     local conns = connections[mapId] or {}
     cl[#cl + 1] = ("  %s = {\n"):format(mapId)
-    local dirs = {}
-    for dir in pairs(conns) do dirs[#dirs + 1] = dir end
-    table.sort(dirs)
-    for _, dir in ipairs(dirs) do
-      local c = conns[dir]
-      cl[#cl + 1] = ("    %s = { map = %q, offset = %d },\n"):format(
-        dir, c.map, tonumber(c.offset) or 0)
+    for _, c in ipairs(conns) do
+      cl[#cl + 1] = ("    { dir = %q, map = %q, offset = %d },\n"):format(
+        c.dir, c.map, tonumber(c.offset) or 0)
     end
     cl[#cl + 1] = "  },\n"
   end

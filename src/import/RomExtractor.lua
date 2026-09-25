@@ -2137,10 +2137,7 @@ function RomExtractor:extractField()
   -- (PikaAnimTilemap_1, column order) paints.  Scripts 18/22/23/24 have no
   -- compressed base and take PikaPicAnimBGFrames_5 -> PikaAnimTilemap_9,
   -- which is ROW order over a raw 25-tile sheet, hence no columns flag.
-  -- Script 26 shares script 11's base.  The pikaframe overlays each script
-  -- draws ON TOP of the base are a second full pose out of the same blob and
-  -- stay unripped: PikachuFollower.picLift stands in for their motion
-  -- (#561, still on #407's stand-in).
+  -- Script 26 shares script 11's base.
   local PIKAPIC_BASE = {
     "Pic_e4000", "Pic_e411c", "Pic_e4272", "Pic_e4383", "Pic_e458b",
     "Pic_e467b", "Pic_e476e", "Pic_e49d1", "Pic_e4b39", "Pic_e4c3e",
@@ -2157,6 +2154,17 @@ function RomExtractor:extractField()
       else
         self:writeCompressedPic(label, path)
       end
+    end
+    -- data/pikachu/pikachu_pic_animation.asm:340
+    for _, label in ipairs({
+      "GFX_e4841", "GFX_e4ce0", "GFX_e4e70", "GFX_e50af", "GFX_e52fe",
+      "GFX_e5541", "GFX_e5794", "GFX_e59ed", "GFX_e5c4d", "GFX_e5e90",
+      "GFX_e6020", "GFX_e61b0", "GFX_e63f7", "GFX_e6646", "GFX_e682f",
+      "GFX_e69bf", "GFX_e6b4f", "GFX_e6cdf", "GFX_e6e6f", "GFX_e6fff",
+      "GFX_e718f", "GFX_e731f", "GFX_e74af", "GFX_e763f", "GFX_e7863",
+      "GFX_e79f3", "GFX_e7b83", "GFX_e7d13", "GFX_f0b64", "GFX_f0d82",
+    }) do
+      self:raw2bpp(label, 40, 40, "pikachu/" .. label:lower() .. ".png")
     end
   end
 

@@ -31,6 +31,22 @@ eq(found and found.sprite, GfxIds.spriteFor(40), "sprite name reaches the non-OW
 eq(Objects._byId[1], nil, "the registry is not in the object store (no collision)")
 eq(Objects.at(5, 6), nil, "Objects.at cannot see it")
 
+local again
+for _, eo in ipairs(Objects.forDraw()) do
+  if eo.virtualId == 1 then again = eo end
+end
+check(again == found, "forDraw reuses the draw record for an unchanged virtual object")
+if jit then jit.off() end
+for _ = 1, 20 do Objects.forDraw() end
+collectgarbage("collect")
+collectgarbage("stop")
+local kb0 = collectgarbage("count")
+for _ = 1, 100 do Objects.forDraw() end
+local grown = collectgarbage("count") - kb0
+collectgarbage("restart")
+if jit then jit.on() end
+check(grown < 1, "forDraw allocates nothing in steady state (" .. grown .. " KB)")
+
 VirtualObjects.turn(1, 2)
 local turned
 for _, eo in ipairs(Objects.forDraw()) do

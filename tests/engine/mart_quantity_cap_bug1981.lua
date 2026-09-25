@@ -133,15 +133,17 @@ do
     },
     save = { money = 100, inventory = {}, bagOrder = {} },
     stack = { push = function(_, s) pushed[#pushed + 1] = s end,
-              pop = function() end },
+              pop = function() end,
+              top = function() return pushed[#pushed] end },
   }
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[1].onSelect()
-  local list = pushed[1]
+  pushed[1].stay.onShown()
+  local list = pushed[2]
   if check(list ~= nil and list.onChoose ~= nil, "BUY pushes the item list") then
     local before = list.footer
     list.onChoose({ value = "POKE_BALL" })
-    local qty = pushed[2]
+    local qty = pushed[3]
     if check(qty ~= nil, "choosing an item opens the quantity menu") then
       eq(qty.max, 99, "wMaxItemQuantity is 99, not floor(money / price)")
       eq(qty.unitPrice, 200, "the unit price rides along for the total")

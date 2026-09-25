@@ -339,6 +339,7 @@ function Dataset.hydrate(game)
     Space.ensureBundle(nil)
     nEvents = Space.attachEventsToMaps(game.data.maps, Space.bundle) or 0
   end
+  require("src.core.game3.link.union_plaza_map").ensure(game)
 
   local NativeTileset = require("src.core.game3.tileset_native")
   if NativeTileset.install then

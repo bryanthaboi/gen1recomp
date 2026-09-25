@@ -22,6 +22,9 @@ return function(game)
     for _, r in ipairs(results) do U.log(r.ok and "PASS" or "FAIL", r.label) end
   end
   local function idleForever()
+    local failed = false
+    for _, r in ipairs(results) do if not r.ok then failed = true end end
+    love.event.quit(failed and 1 or 0)
     while true do coroutine.yield() end
   end
 
@@ -37,7 +40,10 @@ return function(game)
   -- follower and every count below would read as the bug.
   game.save.flags = game.save.flags or {}
   game.save.flags.EVENT_GOT_STARTER = true
+  game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+  game.save.pikachuInBall = false
   game.save.party = { Pokemon.new(game.data, "PIKACHU", 20) }
+  require("src.battle.BattleState").stampOT(game.save, game.save.party[1])
   game.save.onBike = false
 
   local frames = 0
@@ -261,8 +267,12 @@ return function(game)
 
   U.tap(game, "a")
   U.wait(1)
+  for _ = 1, 600 do
+    if ow.emote and ow.emote.pikaPic then break end
+    U.wait(1)
+  end
   local emote = ow.emote
-  if not check("the A press raised the framed pikapic", emote ~= nil) then
+  if not check("the A press raised the framed pikapic", emote ~= nil and emote.pikaPic ~= nil) then
     report()
     idleForever()
   end
@@ -275,12 +285,12 @@ return function(game)
   local lifted, grounded, liftShot = 0, 0, nil
   for _ = 1, 60 do
     if not ow.emote then break end
-    local lift = PikachuFollower.picLift(ow.emote)
-    if lift > 0 then
+    local path = PikachuFollower.picFrame(ow.emote)
+    if path and path:find("gfx_e6646", 1, true) then
       lifted = lifted + 1
       if not liftShot then
-        liftShot = SHOT_DIR .. "/bug424_pikapic_lift.png"
-        if U.shot(game, liftShot) then U.log("captured", liftShot)
+        liftShot = SHOT_DIR .. "/bug424_pikapic_pose_e6646.png"
+        if U.still(game, liftShot) then U.log("captured", liftShot)
         else liftShot = nil end
       end
     else
@@ -288,9 +298,9 @@ return function(game)
     end
     step(1)
   end
-  check("the pic sits on the box floor for part of the beat", grounded > 0)
-  check("and rises off it for another part", lifted > 0)
-  U.log("of the first 60 frames the pic was up for", lifted, "and down for",
+  check("the base pic shows for part of the beat", grounded > 0)
+  check("and PikaAnimTilemap_34's GFX_e6646 pose for another part", lifted > 0)
+  U.log("of the first 60 frames the pose was up for", lifted, "and the base for",
         grounded)
 
   local leftWhenCut = ow.emote and ow.emote.frames or 0
@@ -309,7 +319,7 @@ return function(game)
   U.log("Hold Down: Pikachu should walk up to the ledge lip and WAIT there,")
   U.log("then clear both cells in one motion on your next step, at walking")
   U.log("speed. Let go and count the first glance: about a second, not half.")
-  U.log("Face it, press A: the framed pic hops inside the box for the whole")
+  U.log("Face it, press A: the framed pic swaps to the hearts pose and back for the whole")
   U.log("beat, and A or B cuts the beat off early.")
 
   idleForever()

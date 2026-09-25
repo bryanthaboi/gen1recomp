@@ -28,12 +28,31 @@ local function anythingElse(game)
              Strings("Is there anything\nelse I can do?"))
 end
 
+-- engine/events/pokemart.asm:131-133
+local function say(game, menu, text, after)
+  local box
+  box = TextBox.new(game, text, nil, { stay = { onShown = function()
+    if game.stack:top() == box then game.stack:pop() end
+    menu.footer = text
+    if after then after() end
+  end } })
+  game.stack:push(box)
+end
+
+-- engine/events/pokemart.asm:199-206
+local function backToMenu(game, menu)
+  say(game, menu, anythingElse(game), function()
+    -- engine/events/pokemart.asm:10
+    menu.index, menu.hollowIndex = 1, nil
+  end)
+end
+
 -- .returnToMainPokemartMenu -- pokered engine/events/pokemart.asm:199-206
 local function refuse(game, menu, list, text, under)
   game.stack:push(TextBox.new(game, text, function()
     if under and game.stack:top() == under then game.stack:pop() end
     if list then list:close() end
-    menu.footer = anythingElse(game)
+    backToMenu(game, menu)
   end))
 end
 
@@ -62,12 +81,12 @@ local function buy(game, stock, menu)
     itemBox = true,
     money = function() return game.save.money end,
     footer = greet,
-    onCancel = function() menu.footer = anythingElse(game) end,
+    onCancel = function() backToMenu(game, menu) end,
     onChoose = function(item)
       -- home/list_menu.asm:105-110, 523-528
       if item.cancel then
         list:close()
-        menu.footer = anythingElse(game)
+        backToMenu(game, menu)
         return
       end
       -- home/list_menu.asm:89-91
@@ -126,7 +145,8 @@ local function buy(game, stock, menu)
       game.stack:push(qtyBox)
     end,
   })
-  game.stack:push(list)
+  -- engine/events/pokemart.asm:131-150
+  say(game, menu, greet, function() game.stack:push(list) end)
 end
 
 -- home/list_menu.asm:472-477
@@ -168,7 +188,7 @@ local function sell(game, menu)
     itemBox = true,
     money = function() return game.save.money end,
     footer = greet,
-    onCancel = function() menu.footer = anythingElse(game) end,
+    onCancel = function() backToMenu(game, menu) end,
     onSelectKey = function(item, l)
       -- swap_items.asm:19-22
       if not item or item.cancel then return end
@@ -186,7 +206,7 @@ local function sell(game, menu)
       -- home/list_menu.asm:105-110, 523-528
       if item.cancel then
         list:close()
-        menu.footer = anythingElse(game)
+        backToMenu(game, menu)
         return
       end
       -- home/list_menu.asm:89-91
@@ -245,7 +265,8 @@ local function sell(game, menu)
       game.stack:push(qtyBox)
     end,
   })
-  game.stack:push(list)
+  -- engine/events/pokemart.asm:50-52
+  say(game, menu, greet, function() game.stack:push(list) end)
 end
 
 -- MONEY_BOX 11,0 (data/text_boxes.asm:35) over the greeting PrintText left
@@ -281,21 +302,39 @@ function ShopMenu.new(game, stock, onQuit)
   -- keepOpen: the mart menu stays underneath its list so closing the
   -- list lands back here; only QUIT (or B) leaves and fires onQuit
   local menu
+  -- engine/menus/text_box.asm:176
+  local function chosen(fn)
+    return function()
+      menu.hollowIndex = menu.index
+      fn()
+    end
+  end
   -- engine/events/pokemart.asm:220 .done, reached by QUIT and by B alike
   local function farewell()
     game.stack:push(TextBox.new(game,
-      txt(game, "_PokemartThankYouText", "Thank you!"), onQuit))
+      txt(game, "_PokemartThankYouText", "Thank you!"), function()
+        if game.stack:top() == menu then game.stack:pop() end
+        if onQuit then onQuit() end
+      end))
   end
   menu = Menu.new(game, {
-    { label = Strings("BUY"), keepOpen = true, onSelect = function() buy(game, stock, menu) end },
-    { label = Strings("SELL"), keepOpen = true, onSelect = function() sell(game, menu) end },
-    { label = Strings("QUIT"), onSelect = farewell },
+    { label = Strings("BUY"), keepOpen = true,
+      onSelect = chosen(function() buy(game, stock, menu) end) },
+    { label = Strings("SELL"), keepOpen = true,
+      onSelect = chosen(function() sell(game, menu) end) },
+    { label = Strings("QUIT"), keepOpen = true, onSelect = chosen(farewell) },
     -- data/text_boxes.asm:34
-  }, { tx = 0, ty = 0, tw = 11, th = 7 })
-  menu.onCancel = farewell
-  menu.footer = txt(game, "_PokemartGreetingText",
-                    Strings("Hi there!\nMay I help you?"))
+  }, { tx = 0, ty = 0, tw = 11, th = 7, keepOnCancel = true })
+  menu.onCancel = chosen(farewell)
+  -- home/text_script.asm:141-150
+  function menu:enter()
+    self.hidden = true
+    say(game, self, txt(game, "_PokemartGreetingText",
+                        Strings("Hi there!\nMay I help you?")),
+        function() self.hidden = false end)
+  end
   menu.draw = function(self)
+    if self.hidden then return end
     drawClerk(self)
     Menu.draw(self)
   end

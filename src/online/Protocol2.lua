@@ -98,9 +98,11 @@ function Protocol2.inviteReply(id, accept)
   return build({ type = "invite_reply", id = id, accept = accept == true })
 end
 
-function Protocol2.plazaJoin(kind, profile, avatar)
+Protocol2.PLAZA_CAP = 40
+
+function Protocol2.plazaJoin(kind, profile, avatar, cap)
   return build({ type = "plaza_join", kind = kind, profile = profile,
-                 avatar = avatar })
+                 avatar = avatar, cap = cap })
 end
 
 function Protocol2.plazaLeave(kind)
@@ -399,11 +401,14 @@ end
 VALIDATORS.plaza_state = function(m)
   if type(m.members) ~= "table" then return nil, "plaza_state without members" end
   if type(m.kind) ~= "string" then return nil, "plaza_state without a kind" end
+  if m.rev ~= nil and type(m.rev) ~= "number" then return nil, "plaza_state rev is not a number" end
+  if m.cap ~= nil and type(m.cap) ~= "number" then return nil, "plaza_state cap is not a number" end
   return m
 end
 
 VALIDATORS.plaza_delta = function(m)
   if type(m.kind) ~= "string" then return nil, "plaza_delta without a kind" end
+  if m.rev ~= nil and type(m.rev) ~= "number" then return nil, "plaza_delta rev is not a number" end
   return m
 end
 

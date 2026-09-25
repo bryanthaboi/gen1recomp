@@ -93,6 +93,14 @@ local function newGame(money)
   return game, stack, frame
 end
 
+local function drain(game)
+  for _ = 1, 600 do
+    local top = game.stack:top()
+    if not (top and top.stay and not top.stayShown) then return end
+    top:update(1 / 60)
+  end
+end
+
 local function flat(box)
   local out = {}
   for _, page in ipairs(box.pages or {}) do
@@ -105,6 +113,7 @@ do
   local game, stack, frame = newGame(3000)
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[1].onSelect()
+  drain(game)
   local list = stack[#stack]
   list.index = 1
   list.onChoose({ value = "POKE_BALL" })
@@ -161,6 +170,7 @@ do
   local game, stack = newGame(3000)
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[1].onSelect()
+  drain(game)
   local list = stack[#stack]
   list.onChoose({ value = "POKE_BALL" })
   local qty = stack[#stack]
@@ -185,6 +195,7 @@ do
   game.save.bagOrder = { "POKE_BALL" }
   local menu = ShopMenu.new(game, { "POKE_BALL" }, function() end)
   menu.items[2].onSelect()
+  drain(game)
   local list = stack[#stack]
   list.index = 1
   list.onChoose(list.items[1])

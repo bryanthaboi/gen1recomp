@@ -1228,6 +1228,12 @@ function Adapters.host(mod, game, world)
         return v
       end
       local cx, cy = as_coord(x), as_coord(y)
+      if mapId == "FR_UNION_ROOM" then
+        local Plaza = require("src.core.game3.link.union_plaza_map")
+        Plaza.ensure(resolveGame())
+        mapId = Plaza.MAP_ID
+        cx, cy = Plaza.entry()
+      end
       local wid = tonumber(warpId)
       if (not cx or not cy) and wid and wid ~= 0xFF and wid >= 0 then
         local def = w and w.data and w.data.maps and w.data.maps[mapId]

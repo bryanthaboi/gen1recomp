@@ -65,6 +65,14 @@ game = {
   },
 }
 
+local function drain()
+  for _ = 1, 600 do
+    local top = game.stack:top()
+    if not (top and top.stay and not top.stayShown) then return end
+    top:update(1 / 60)
+  end
+end
+
 local function openList(which)
   game.stack.states = {}
   local menu = ShopMenu.new(game, { "POKE_BALL", "GREAT_BALL" }, function() end)
@@ -73,6 +81,7 @@ local function openList(which)
   pressed = "a"
   menu:update(1 / 60)
   pressed = nil
+  drain()
   return menu, game.stack:top()
 end
 
@@ -129,6 +138,7 @@ do
   pressed = "a"
   list:update(1 / 60)
   pressed = nil
+  drain()
   eq(game.stack:top(), menu, "A on CANCEL returns to the mart menu")
 end
 

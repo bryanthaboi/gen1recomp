@@ -101,6 +101,121 @@ do
   check(awards2[1].amount > awards1[1].amount, "p3 receives full undivided EXP for e2")
 end
 
+print("\n=== 2b. Live shift step list: player swaps before enemy, only new mon earns EXP ===")
+do
+  local Adapter = require("src.core.game3.battle.adapter")
+  local p1 = Damage.ensureStats({ species = 1, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+  local p2 = Damage.ensureStats({ species = 4, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+  local e1 = Damage.ensureStats({ species = 16, level = 10, hp = 0, maxHp = 30, exp = 1000 })
+  local e2 = Damage.ensureStats({ species = 19, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+
+  local st = State.new({
+    playerParty = { p1, p2 },
+    foeParty = { e1, e2 },
+    foeMon = e1,
+    wild = false,
+  })
+  local ad = Adapter.new(st, function() end)
+
+  eq(SwitchSeq.beginShiftSwitch(st, 2, 2, { headless = false }), true, "live shift builds a step list")
+  local swaps = {}
+  for _, step in ipairs(SwitchSeq._steps or {}) do
+    if step.kind == "swap_data" then swaps[#swaps + 1] = step.data end
+  end
+  eq(#swaps, 2, "shift step list has two swap_data rows")
+  eq(swaps[1].side, "player", "player swap_data runs before the enemy send-out")
+  eq(swaps[2].side, "enemy", "enemy swap_data runs second")
+  SwitchSeq.reset()
+
+  for _, d in ipairs(swaps) do
+    Engine.performSwitch(st, ad, d.side, d.newSlot,
+      { reason = d.reason or "switch", isShift = d.isShift })
+  end
+  eq(st.player.partyIndex, 2, "p2 is active after live shift")
+  eq(st.enemy.partyIndex, 2, "e2 is active after live shift")
+  eq(st.enemy.participants[1], nil, "withdrawn p1 is NOT participant on e2 (live path)")
+  eq(st.enemy.participants[2], true, "p2 is participant on e2 (live path)")
+
+  local awards = Experience.awardFoe(st, st.enemy, { trainer = true })
+  eq(#awards, 1, "only p2 receives EXP for e2 (live path)")
+  eq(awards[1].partyIndex, 2, "live-path award goes to p2")
+end
+
+print("\n=== 2d. Shift switch-in effects: player Spikes before the enemy send-out, Intimidate hits the new foe ===")
+do
+  local Adapter = require("src.core.game3.battle.adapter")
+  local Hazards = require("src.core.game3.battle.effects.hazards")
+  local p1 = Damage.ensureStats({ species = 1, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+  local p2 = Damage.ensureStats({ species = 58, level = 10, hp = 32, maxHp = 32, exp = 1000, ability = 22 })
+  local e1 = Damage.ensureStats({ species = 16, level = 10, hp = 0, maxHp = 30, exp = 1000 })
+  local e2 = Damage.ensureStats({ species = 19, level = 10, hp = 30, maxHp = 30, exp = 1000, ability = 50 })
+
+  local st = State.new({
+    playerParty = { p1, p2 },
+    foeParty = { e1, e2 },
+    foeMon = e1,
+    wild = false,
+  })
+  st.trainerClassName, st.trainerName = "YOUNGSTER", "BEN"
+  local savedAd = Battle._adapter
+  Battle._adapter = Adapter.new(st, function() end)
+  Hazards.set(st.playerSide, 1)
+  local log = {}
+  SwitchSeq.beginShiftSwitch(st, 2, 2, { headless = true, pushMsg = function(text)
+    log[#log + 1] = tostring(text):lower()
+  end })
+  Battle._adapter = savedAd
+
+  local spikesAt, sentAt, intimAt
+  for i, t in ipairs(log) do
+    if t:find("spikes") then spikesAt = spikesAt or i end
+    if t:find("sent") then sentAt = sentAt or i end
+    if t:find("cuts") then intimAt = intimAt or i end
+  end
+  check(spikesAt ~= nil and sentAt ~= nil and intimAt ~= nil, "spikes, send-out and Intimidate messages pushed")
+  check(spikesAt < sentAt, "player Spikes resolve before the enemy sends out")
+  eq(st.player.mon.hp, 28, "player took 1/8 Spikes damage")
+  check(intimAt > sentAt, "Intimidate resolves after the new foe is out")
+  eq(st.enemy.stages.attack, -1, "new foe's attack cut by the shifted-in Intimidate")
+
+  eq(SwitchSeq.beginShiftSwitch(st, 1, 2, { headless = false }), true, "live shift builds a step list")
+  local entry, enemySwap = {}, nil
+  for i, step in ipairs(SwitchSeq._steps or {}) do
+    if step.kind == "entry_triggers" then entry[#entry + 1] = { i = i, d = step.data } end
+    if step.kind == "swap_data" and step.data.side == "enemy" then enemySwap = { i = i, d = step.data } end
+  end
+  SwitchSeq.reset()
+  eq(#entry, 2, "two entry_triggers steps")
+  eq(entry[1].d.side, "player", "first entry step is the player's")
+  check(entry[1].d.deferIntimidate, "player entry step defers Intimidate")
+  check(entry[1].i < enemySwap.i, "player entry step runs before the enemy swap_data")
+  eq(entry[2].d.side, "enemy", "second entry step is the enemy's")
+  check(entry[2].i > enemySwap.i, "enemy entry step runs after the enemy swap_data")
+  eq(enemySwap.d.reason, "shift", "enemy swap_data keeps reason shift")
+end
+
+print("\n=== 2c. Shift performSwitch resets sent mons even when the enemy swaps first ===")
+do
+  local Adapter = require("src.core.game3.battle.adapter")
+  local p1 = Damage.ensureStats({ species = 1, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+  local p2 = Damage.ensureStats({ species = 4, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+  local e1 = Damage.ensureStats({ species = 16, level = 10, hp = 0, maxHp = 30, exp = 1000 })
+  local e2 = Damage.ensureStats({ species = 19, level = 10, hp = 30, maxHp = 30, exp = 1000 })
+
+  local st = State.new({
+    playerParty = { p1, p2 },
+    foeParty = { e1, e2 },
+    foeMon = e1,
+    wild = false,
+  })
+  local ad = Adapter.new(st, function() end)
+  Engine.performSwitch(st, ad, "enemy", 2, { reason = "switch" })
+  eq(st.enemy.participants[1], true, "p1 tracked on e2 while still active")
+  Engine.performSwitch(st, ad, "player", 2, { reason = "shift", isShift = true })
+  eq(st.enemy.participants[1], nil, "shift switch drops p1 from e2's sent mons")
+  eq(st.enemy.participants[2], true, "shift switch leaves only p2 on e2")
+end
+
 print("\n=== 3. Enemy AI switch resets participant tracking ===")
 do
   local p1 = Damage.ensureStats({ species = 1, level = 10, hp = 30, maxHp = 30, exp = 1000 })

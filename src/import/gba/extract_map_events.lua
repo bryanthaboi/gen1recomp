@@ -351,7 +351,7 @@ function ExtractMapEvents.parseConnections(rom, connectionsPtr)
     local dirName = CONN_DIR[direction]
     local destMap = Versions.frMapFor(mapGroup, mapNum)
     if dirName and destMap then
-      out[dirName] = { map = destMap, offset = offset }
+      out[#out + 1] = { dir = dirName, map = destMap, offset = offset }
     end
   end
   return out

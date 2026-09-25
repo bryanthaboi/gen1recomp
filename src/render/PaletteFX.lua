@@ -73,8 +73,8 @@ function PaletteFX.darkObp(colors, group)
 end
 
 -- the same shift folded into a baked 8-group world palette array (ADVANCED)
-local function darkGroups(groups)
-  if not (groups and darkWorld) then return groups end
+local function darkGroups(groups, lit)
+  if lit or not (groups and darkWorld) then return groups end
   local out = {}
   for i = 1, #groups do
     out[i] = PaletteFX.permute(groups[i], PaletteFX.DARK_BGP)
@@ -716,11 +716,11 @@ end
 -- slot swapped to the current town/route (Route 6's north end uses
 -- Saffron's roof colors while the player stands in its top 2 cell rows,
 -- like pokered's wYCoord check -- data is Game.data, for the map lookup)
-function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
+function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY, lit)
   local w = PaletteFX.worldPack()
   local base = w and w.groupColors[tileset]
   if not base then return nil end
-  if not w.roofGroup[tileset] then return darkGroups(base) end
+  if not w.roofGroup[tileset] then return darkGroups(base, lit) end
   local roofMapId = mapId
   if mapId == ROUTE_6_SAFFRON.mapId and playerCellY
      and playerCellY < ROUTE_6_SAFFRON.cellYBelow then
@@ -728,7 +728,7 @@ function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
   end
   local roofMap = data and data.maps and data.maps[roofMapId]
   local roof = roofMap and w.roofByMapIndex[roofMap.index]
-  if not roof then return darkGroups(base) end
+  if not roof then return darkGroups(base, lit) end
   local out = {}
   for i = 1, 8 do out[i] = base[i] end
   -- LoadTownPalette only overwrites W2_BgPaletteData + $32, i.e. colors 1
@@ -738,7 +738,7 @@ function PaletteFX.worldGroupColors(data, tileset, mapId, playerCellY)
   -- material's 2 middle shades are town-specific
   local base4 = base[ROOF_GROUP + 1]
   out[ROOF_GROUP + 1] = { base4[1], roof[1], roof[2], base4[4] }
-  return darkGroups(out)
+  return darkGroups(out, lit)
 end
 
 -- an overworld sprite's resolved 4-color OBJ palette (ColorOverworldSprite),
