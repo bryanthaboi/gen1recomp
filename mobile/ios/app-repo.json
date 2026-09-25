@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.17",
+          "date": "2026-09-25",
+          "size": 38569796,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.17/gen1recomp++-0.3.17-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2477 Freezing game after picking up items on one island\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.16",
           "date": "2026-09-25",
           "size": 38565957,
