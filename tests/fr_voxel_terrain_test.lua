@@ -101,7 +101,11 @@ check(FrTerrain.ready() == true, "the terrain reports ready")
 check(#built > 0, #built .. " tileset chunk(s) produced a mesh")
 
 local verts = 0
-for _, v in ipairs(built) do verts = verts + #v / 6 end
+for _, v in ipairs(built) do
+  -- rows after the LÖVE 11 fix (a flat number list is refused); a flat
+  -- list still counts out at the shared stride of 6
+  verts = verts + (type(v[1]) == "table" and #v or #v / 6)
+end
 check(verts > 4000,
   ("the mesh carries %d vertices over %d quads"):format(verts, verts / 4))
 

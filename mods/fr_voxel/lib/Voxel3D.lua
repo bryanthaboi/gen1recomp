@@ -234,6 +234,8 @@ local shaders = { [false] = nil, [true] = nil }
 local activeShader = nil      -- the variant this pass bound
 local canvas, canvasW, canvasH = nil, 0, 0
 local active = false
+local warnedMesh = false      -- one loud newMesh refusal per run
+local warnedCanvas = false    -- one loud depth-canvas refusal per run
 
 local IDENTITY = Mat4.identity()
 
@@ -275,14 +277,45 @@ function Voxel3D.available()
   return Voxel3D.shader() ~= nil
 end
 
--- Build a mesh in the shared format. `verts` is the LOVE vertex list and
--- `map` the triangle index list. Returns nil when meshes are unavailable,
--- which the callers treat the same way they treat a missing model.
+-- love.graphics.newMesh takes the vertex list as a table of ROWS
+-- ({ {x,y,z,u,v,s}, ... }); a flat number list is refused with "expected
+-- table of tables", which is what this mod hit on its first real run --
+-- every caller here builds flat (appending numbers beats appending tables
+-- while the mesher runs), so the stride conversion lives in this one place
+-- and the next caller cannot rediscover the trap.
+local stride = 0
+for _, spec in ipairs(Voxel3D.FORMAT) do stride = stride + spec[3] end
+
+local function toRows(verts)
+  if type(verts[1]) == "table" then return verts end
+  local rows = {}
+  local count = #verts / stride
+  for i = 0, count - 1 do
+    local row = {}
+    local base = i * stride
+    for j = 1, stride do row[j] = verts[base + j] end
+    rows[i + 1] = row
+  end
+  return rows
+end
+
+-- Build a mesh in the shared format. `verts` is the LOVE vertex list (flat
+-- or rows) and `map` the triangle index list, 1-based as pushQuad builds
+-- it. Returns nil when meshes are unavailable, which the callers treat the
+-- same way they treat a missing model.
 function Voxel3D.newMesh(verts, map)
-  if #verts == 0 then return nil end
-  local ok, mesh = pcall(love.graphics.newMesh, Voxel3D.FORMAT, verts,
-                         "triangles", "static")
-  if not ok then return nil end
+  if not verts or #verts == 0 then return nil end
+  local ok, mesh = pcall(love.graphics.newMesh, Voxel3D.FORMAT,
+                         toRows(verts), "triangles", "static")
+  if not ok then
+    -- swallowed by the caller as "no mesh", which would otherwise look
+    -- like a map the driver simply refuses to draw: say it out loud once
+    if not warnedMesh then
+      warnedMesh = true
+      pcall(print, "[fr_voxel] newMesh refused: " .. tostring(mesh))
+    end
+    return nil
+  end
   if map and #map > 0 then pcall(mesh.setVertexMap, mesh, map) end
   return mesh
 end
@@ -359,18 +392,35 @@ function Voxel3D.beginScene(w, h, cx, cy, vw, vh, sky)
   if not sh then
     grid, sh = false, Voxel3D.shader()
   end
-  if not sh then return false end
+  if not sh then
+    if not warnedCanvas then
+      warnedCanvas = true
+      pcall(print, "[fr_voxel] no scene shader on this driver")
+    end
+    return false
+  end
   if not canvas or canvasW ~= w or canvasH ~= h then
     local ok, c = pcall(love.graphics.newCanvas, w, h)
-    if not ok then return false end
+    if not ok then
+      if not warnedCanvas then
+        warnedCanvas = true
+        pcall(print, "[fr_voxel] newCanvas " .. w .. "x" .. h
+          .. " refused: " .. tostring(c))
+      end
+      return false
+    end
     c:setFilter("nearest", "nearest")
     canvas, canvasW, canvasH = c, w, h
   end
   -- a depth buffer is what makes occlusion real: walk behind a building and
   -- the building wins, with no y-sorting anywhere
-  local ok = pcall(love.graphics.setCanvas,
-                   { canvas, depth = true })
+  local ok, err = pcall(love.graphics.setCanvas,
+                        { canvas, depth = true })
   if not ok then
+    if not warnedCanvas then
+      warnedCanvas = true
+      pcall(print, "[fr_voxel] depth canvas refused: " .. tostring(err))
+    end
     pcall(love.graphics.setCanvas)
     return false
   end

@@ -45,6 +45,16 @@ local function say(msg)
   pcall(print, "[fr_voxel] " .. msg)
 end
 
+-- The rebuild path can fail for a reason that is invisible from outside
+-- (a tileset with no atlas, a driver that refuses the vertex format), and
+-- a failure that repeats every frame repeats the log line too -- so these
+-- go through the once-only `warned` latch like the two below.
+local function warnOnce(msg)
+  if warned then return end
+  warned = true
+  say(msg)
+end
+
 -- UV axis per face direction: which corner component drives the atlas U
 -- and which drives V.  Top faces map V onto +Z so the tile's own top edge
 -- faces north, exactly as the flat blit puts it.
@@ -147,15 +157,19 @@ local function emitFace(chunk, faceId, x, z, y0, y1, uv)
   local shade = Voxel3D.FACE_SHADE[faceId]
   local dy = y1 - y0
   local du, dv = uv.u1 - uv.u0, uv.v1 - uv.v0
+  -- one ROW per vertex: love.graphics.newMesh refuses a flat number list
+  -- ("expected table of tables"), so rows are what the mesher emits and
+  -- what Voxel3D.newMesh passes straight through
   for i = 1, 4 do
     local c = corners[i]
-    local n = #verts
-    verts[n + 1] = x + c[1] * CELL
-    verts[n + 2] = y0 + c[2] * dy
-    verts[n + 3] = z + c[3] * CELL
-    verts[n + 4] = uv.u0 + c[au] * du
-    verts[n + 5] = uv.v0 + c[av] * dv
-    verts[n + 6] = shade
+    verts[#verts + 1] = {
+      x + c[1] * CELL,
+      y0 + c[2] * dy,
+      z + c[3] * CELL,
+      uv.u0 + c[au] * du,
+      uv.v0 + c[av] * dv,
+      shade,
+    }
   end
   Voxel3D.pushQuad(indices, #indices / 6)
 end
@@ -189,7 +203,11 @@ function FrTerrain.ensure(game, vw, vh)
   local maps = game and game.data and game.data.maps
   local rootDef = maps and maps[Map.current]
   local rootL = rootDef and rootDef.midLayout
-  if not rootL then return false end
+  if not rootL then
+    warnOnce("no metatile layout for " .. tostring(Map.current)
+      .. " -- staying on the 2D path")
+    return false
+  end
 
   -- The apron shrinks on a map too big to mesh in one piece, so a large
   -- route still gets built (tighter, but built) instead of timing out.
@@ -287,7 +305,11 @@ function FrTerrain.ensure(game, vw, vh)
       end
     end
   end
-  if count == 0 then return false end
+  if count == 0 then
+    warnOnce(("no mesh built for %d cell(s) -- the driver refused the "
+      .. "vertex format, staying on the 2D path"):format(n))
+    return false
+  end
 
   FrTerrain.release()
   meshes = out

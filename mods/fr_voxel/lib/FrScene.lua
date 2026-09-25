@@ -18,6 +18,17 @@ local FrActors = V.require("FrActors")
 
 local FrScene = {}
 
+-- Debug chatter for the "not this frame" branches.  Off by default and
+-- flipped by hand (or by a test through mod.exports.scene): the mod sandbox
+-- hides the environment, so there is no env var to gate it on, and a
+-- per-frame line would drown the engine log anyway.  The once-only warnings
+-- in FrTerrain/Voxel3D are what a broken device actually reports.
+local DEBUG = false
+local function dbg(msg)
+  if DEBUG then pcall(print, "[fr_voxel] " .. msg) end
+end
+FrScene.dbg = dbg
+
 -- Light afternoon sky: at the shallow end of the angle ladder the horizon
 -- comes into frame, and this is what shows past the edge of the map.
 local SKY = { 0.55, 0.76, 0.94, 1 }
@@ -67,15 +78,32 @@ end
 
 --- Render the world.  nil = fall back to the 2D path this frame.
 function FrScene.render(ctx)
-  if not (ctx and ctx.state and ctx.cam) then return nil end
-  if not Voxel3D.available() then return nil end
+  if not (ctx and ctx.state and ctx.cam) then
+    dbg("decline: ctx incomplete (state/cam)")
+    return nil
+  end
+  if not Voxel3D.available() then
+    dbg("decline: Voxel3D not available")
+    return nil
+  end
   local okM, Map = pcall(require, "src.core.game3.map")
-  if not (okM and type(Map) == "table") then return nil end
-  if not FrScene.allowed(Map.current, ctx.level) then return nil end
+  if not (okM and type(Map) == "table") then
+    dbg("decline: no game3 map module")
+    return nil
+  end
+  if not FrScene.allowed(Map.current, ctx.level) then
+    dbg(("decline: %s out of scope at rung %s")
+      :format(tostring(Map.current), tostring(ctx.level)))
+    return nil
+  end
   local vw, vh = tonumber(ctx.vw) or 240, tonumber(ctx.vh) or 160
-  if vw <= 0 or vh <= 0 then return nil end
+  if vw <= 0 or vh <= 0 then
+    dbg("decline: view size " .. vw .. "x" .. vh)
+    return nil
+  end
 
   if not FrTerrain.ensure(ctx.state, vw, vh) then
+    dbg("decline: terrain not built")
     Voxel.ready = false
     return nil
   end
@@ -84,16 +112,23 @@ function FrScene.render(ctx)
   local w, h = sceneSize(ctx)
   local cx = ctx.cam.x + vw / 2
   local cy = ctx.cam.y + vh / 2
-  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, SKY) then return nil end
+  if not Voxel3D.beginScene(w, h, cx, cy, vw, vh, SKY) then
+    dbg(("decline: beginScene %dx%d refused"):format(w, h))
+    return nil
+  end
 
   FrTerrain.draw()
   local canvas = Voxel3D.endScene()
-  if not canvas then return nil end
+  if not canvas then
+    dbg("decline: endScene handed back nothing")
+    return nil
+  end
 
   if Voxel3D.beginOverlay() then
     FrActors.draw(ctx, ctx.actors)
     Voxel3D.endOverlay()
   end
+  dbg(("frame ok: canvas %s"):format(tostring(canvas)))
   return canvas
 end
 
