@@ -1353,4 +1353,52 @@ function FieldView.invalidate()
   end
 end
 
+-- ------- render pipeline support (see src/render/Pipelines.lua) ---------
+--
+-- A pipeline that owns the world pass does not call FieldView.draw, so it
+-- needs the two things that function computes for free: where the camera
+-- sits, and who is standing in the scene.  Same inputs, same answers as
+-- the 2D path, so a sprite the pipeline re-projects lands exactly where
+-- the flat draw would have put it.
+--
+-- The session's map position is written back here too (FieldView.draw
+-- does it every frame): the save reads session.x/y, and a display mode
+-- that stopped updating it would record wherever the player stood the
+-- moment the mode was switched on.
+
+--- Collect the visible actors and the camera the field would have used.
+-- Returns nil when the current map has no layout to draw.
+function FieldView.pipelineActors(game, canvasW, canvasH)
+  canvasW = canvasW or Display.W
+  canvasH = canvasH or Display.H
+  local mapId = currentMapId(game)
+  local mapDef = resolveMapDef(game, mapId)
+  if not mapDef or not mapDef.width then return nil end
+  local px, py, facing, walkPhase, stepFlip, _, playerYOff, playerXOff =
+    playerPixels(game)
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local session = Runtime and Runtime.getSession and Runtime.getSession()
+  if session then
+    session.x = math.floor((px or 0) / CELL)
+    session.y = math.floor((py or 0) / CELL)
+    session.facing = facing
+    if mapId then session.map = mapId end
+  end
+  local camX = math.floor((px or 0) + CELL / 2 - canvasW / 2)
+             + (FieldView.cameraPanX or 0)
+  local camY = math.floor((py or 0) + CELL / 2 - canvasH / 2)
+             + (FieldView.cameraPanY or 0)
+  local under, over = collectGame3Actors(game, mapDef, camX, camY,
+      px, py, facing, walkPhase, stepFlip, playerYOff or 0, playerXOff or 0)
+  return {
+    mapDef = mapDef, mapId = mapId, camX = camX, camY = camY,
+    px = px, py = py, under = under, over = over,
+  }
+end
+
+--- Draw one collected actor at its flat world position.  The body of the
+-- inline loop in FieldView.draw, exported so a pipeline can draw the same
+-- actors after sliding them onto its own projected anchors.
+FieldView.drawActor = drawSingleActor
+
 return FieldView

@@ -671,7 +671,14 @@ Schemas.GEN3 = {
   growth_rates = false, type_chart = false,
   rulesets = false, transitions = false, field = false,
   text_pointers = false, link_fields = false,
-  battle_sprite_scales = false, render_pipelines = false,
+  battle_sprite_scales = false,
+  -- render_pipelines keeps the shared target because Game3 is now a
+  -- consumer: src/core/Game3.lua:load calls Pipelines.install(self.data)
+  -- after the merge and src/core/game3/display.lua composites the selected
+  -- pipeline's drawWorld over the flat field.  It used to be closed here,
+  -- which was true while nothing in a Gen 3 boot read the table -- a mod
+  -- registering one was dropped with "has no Gen 3 target" and the mode
+  -- simply never appeared.
   font = false, audio = false, music = false, sfx = false, cries = false,
   map_songs = false, screens = false, tokens = false,
   held_items = false, phone_contacts = false, decorations = false,

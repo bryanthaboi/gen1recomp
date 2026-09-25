@@ -231,6 +231,46 @@ local function drawFieldPlane(game, vw, vh, Renderer)
   local transitioning = Transition and Transition.isActive and Transition.isActive()
   Oam.resetFrame()
   local prev = Oam.setLayer("world")
+
+  -- A render pipeline may own this pass (src/render/Pipelines.lua): it
+  -- draws the world itself and hands back one image to composite instead
+  -- of the flat tile blit.  Never under a battle transition -- that
+  -- composites over the vanilla world canvas -- and never when it
+  -- declines the frame, which falls through to the 2D path below.
+  local override = nil
+  if not transitioning then
+    local okP, Pipelines = pcall(require, "src.render.Pipelines")
+    if okP and type(Pipelines) == "table" and Pipelines.worldPipeline then
+      local id = Pipelines.worldPipeline()
+      if id then
+        local ctx = { state = game, vw = vw, vh = vh,
+                      level = Pipelines.level(id) }
+        local cast = FieldView.pipelineActors(game, vw, vh)
+        if cast then
+          ctx.cam = { x = cast.camX, y = cast.camY }
+          ctx.actors = cast
+          -- TILT's per-frame billboard hint: FieldView.draw sets it every
+          -- frame, and this path does not call FieldView.draw, so a hint
+          -- left over from the last flat frame would slide the actors
+          -- through the tilt projection the mode no longer uses
+          FieldView._billboard = nil
+          override = Pipelines.drawWorld(id, ctx)
+          if override then override = Pipelines.worldPresent(override, ctx) end
+        end
+        Renderer:setWorldOverride(override)
+      end
+    end
+  end
+
+  if override then
+    -- the pipeline owns the whole world image: terrain, characters and
+    -- its own FX.  Nothing draws into the canvas, and the OAM/BG flush
+    -- below would only put 2D-projected sprites on top of it, so it is
+    -- skipped entirely.
+    Oam.setLayer(prev)
+    return
+  end
+
   if Tilt.active() and not transitioning and Renderer and Renderer.beginUprightPass then
     FieldView.draw(game, vw, vh, { skipActors = true })
     Renderer:beginUprightPass()

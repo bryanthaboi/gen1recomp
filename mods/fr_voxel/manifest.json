@@ -1,0 +1,17 @@
+{
+  "id": "fr_voxel",
+  "name": "FireRed Diorama (3D)",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "permissions": ["engine_internals"],
+  "games": ["firered", "leafgreen"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Turns the overworld into a depth-buffered 3D diorama: metatiles extrude into geometry from their collision bytes, the characters are re-projected onto it, and the ladder picks the map scope (Pallet Town, then Route 1, then everywhere). Presentational only: no collision, movement, trigger or script changes, and every rung falls back to the flat 2D field when the 3D pass cannot start."
+}

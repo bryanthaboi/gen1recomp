@@ -180,6 +180,14 @@ function Game3:load(opts)
 
   self:_exposeModData()
   self:_loadMods(opts)
+  -- Render pipelines (src/render/Pipelines.lua) read their records off the
+  -- merged dataset, so install() belongs after the mod merge and
+  -- applyOptions() after install(), which resets every level.
+  pcall(function()
+    local Pipelines = require("src.render.Pipelines")
+    Pipelines.install(self.data)
+    Pipelines.applyOptions(self.options)
+  end)
   pcall(function() require("src.core.DiscordPresence").init(self) end)
 
   if opts.arena then
@@ -355,6 +363,7 @@ function Game3:applyOptions(opts)
     require("src.ui.game3.chrome").setFrameType(cartOpts.frameType)
   end)
   try("src.render.Tilt", "applyOptions", opts)
+  try("src.render.Pipelines", "applyOptions", opts)
   try("src.render.Letterbox", "applyOptions", opts)
   try("src.render.Zoom", "applyOptions", opts)
   try("src.core.VideoMode", "applyOptions", opts)
@@ -693,6 +702,12 @@ function Game3:update(dt)
   if self._audioAccum > 0.25 then self._audioAccum = 0 end
   local okT, errT = pcall(function() require("src.render.Tilt").update(dt) end)
   if not okT then s9log("tilt", errT) end
+  -- every registered pipeline ticks, active or not: a mode easing back out
+  -- still has a camera tween to retire (see Pipelines.update)
+  local okP, errP = pcall(function()
+    require("src.render.Pipelines").update(dt)
+  end)
+  if not okP then s9log("pipelines", errP) end
   pcall(function() require("src.core.DiscordPresence").update(dt) end)
 end
 
@@ -820,6 +835,23 @@ function Game3:_hotkey(key)
     self:zoomStep(1)
     return true
   end
+  -- render pipelines take the keys the engine above does not claim.  The
+  -- free-roam gate lives in Pipelines.hotkey, so a mode cannot be flipped
+  -- mid-warp or mid-cutscene -- but an already-on one keeps drawing.
+  local okK, taken = pcall(function()
+    local Pipelines = require("src.render.Pipelines")
+    local Stack = package.loaded["src.ui.game3.stack"]
+    local overworld = self.phase == "field"
+      and not (Stack and Stack.fullscreen and Stack.fullscreen())
+    if not Pipelines.hotkey(key, nil, overworld) then return false end
+    if type(self.options) == "table" then
+      Pipelines.syncOptions(self.options)
+      require("src.render.Tilt").setLevel(self.options.tilt or 0)
+      self:writeOptions()
+    end
+    return true
+  end)
+  if okK and taken then return true end
   return false
 end
 
