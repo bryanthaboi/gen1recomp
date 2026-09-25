@@ -258,11 +258,19 @@ function Loader:_installDevShim()
       -- doing it is the hole this closes, and any future path that runs mod
       -- code without a sandbox env still lands here.
       local owner = Runtime.currentMod or Runtime.modRequire
-      if owner or callerIsMod(3) then
+      if owner then
         local id = type(owner) == "string" and owner or nil
         local denial = Sandbox.moduleDenial(name, devShim.permissions[id])
           or (id and crossGenerationDenial(name, devShim.generation))
         if denial then error(("[%s] %s"):format(id or "mod", denial), 0) end
+      else
+        -- No mod on record, so the only possible denial is the name's own
+        -- (no permissions, no generation check). Ask who the caller is only
+        -- when that denial exists: callerIsMod builds a debug.getinfo table,
+        -- and engine code requires on hot paths every frame -- that table
+        -- was the largest single source of per-frame garbage in the field.
+        local denial = Sandbox.moduleDenial(name, nil)
+        if denial and callerIsMod(3) then error(("[mod] %s"):format(denial), 0) end
       end
       if devShim.dev or devShim.generation ~= 1 then scanRequire(name) end
       -- The Gen 1 name a mod asked for, answered by this generation's compat arm.

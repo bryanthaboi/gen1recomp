@@ -45,16 +45,39 @@ function LayoutNative:cellAt(cx, cy)
   return { mid = mid, coll = 0xff, elev = 0 }
 end
 
+-- The field reads single fields of thousands of cells a frame (the tilted
+-- view is mostly border and neighbor cells), and cellAt builds a fresh table
+-- for every border cell.  These read the field without that table; a layout
+-- whose cellAt was replaced keeps going through it.
+local baseCellAt = LayoutNative.cellAt
+
+local function field(self, cx, cy, name, missing, border)
+  if self.cellAt ~= baseCellAt then return self:cellAt(cx, cy)[name] end
+  local ov = self.overrides[cy * 1024 + cx]
+  if ov then return ov[name] end
+  local tw = self.trueWidth or self.width
+  local th = self.trueHeight or self.height
+  if cx >= 0 and cy >= 0 and cx < tw and cy < th then
+    local cell = self.cells[cy * self.width + cx + 1]
+    if cell then return cell[name] end
+    return missing
+  end
+  if border ~= nil then return border end
+  local bx, by = wrap_border(
+    cx, cy, tw, th, self.borderWidth, self.borderHeight)
+  return self.borderMids[by * self.borderWidth + bx + 1] or 0
+end
+
 function LayoutNative:midAt(cx, cy)
-  return self:cellAt(cx, cy).mid
+  return field(self, cx, cy, "mid", 0, nil)
 end
 
 function LayoutNative:collAt(cx, cy)
-  return self:cellAt(cx, cy).coll
+  return field(self, cx, cy, "coll", 0xff, 0xff)
 end
 
 function LayoutNative:elevAt(cx, cy)
-  return self:cellAt(cx, cy).elev
+  return field(self, cx, cy, "elev", 0, 0)
 end
 
 --- Flat 1-based COLL_* array for Collision.bindMap.

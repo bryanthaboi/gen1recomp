@@ -5,6 +5,13 @@ local function copy(v)
   if type(v)~='table' then return v end
   local t={}; for k,x in pairs(v) do t[k]=copy(x) end; return t
 end
+-- Equal flat tables (no nested tables): a recorded tile already holds it.
+local function sameFlat(a,b)
+  if type(a)~='table' or type(b)~='table' then return false end
+  for k,v in pairs(b) do if type(v)=='table' or a[k]~=v then return false end end
+  for k in pairs(a) do if b[k]==nil then return false end end
+  return true
+end
 local function empty() return {version=1,scenes={}} end
 function Q.restore(value)
   local log=empty()
@@ -66,7 +73,11 @@ function Q.addTiles(session,tiles)
   local scene=scenes and scenes[#scenes]
   if session._questNewScene or not scene or scene.map~=session.map or #scene.frames>=Q.MAX_FRAMES then return end
   scene.tiles=scene.tiles or {}
-  for key,tile in pairs(tiles or {}) do scene.tiles[key]=copy(tile) end
+  -- Sampled every 6 ticks over the same ~220 cells: keep a recorded tile
+  -- whose {mid,pair} is unchanged instead of re-copying it (steady garbage).
+  for key,tile in pairs(tiles or {}) do
+    if not sameFlat(scene.tiles[key],tile) then scene.tiles[key]=copy(tile) end
+  end
 end
 local Playback={}; Playback.__index=Playback
 function Q.playback(log,finalScene)

@@ -796,7 +796,12 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
     for r = 0, rows - 1 do
       FieldView._nativeOverByRow[r] = {}
     end
-    local cellsByPair = {}
+    -- Rebuilt on every cell the camera crosses: keep one flat list of
+    -- (mid, x, y) triples per pair across rebuilds instead of a table per
+    -- visible cell (thousands per rebuild, the field's steadiest garbage).
+    local cellsByPair = FieldView._nativeCells or {}
+    FieldView._nativeCells = cellsByPair
+    for _, list in pairs(cellsByPair) do list.n = 0 end
     local voidHas, voidPrimary = nil, nil
     if voidMode ~= "map" and voidMode ~= "black" then
       voidHas = function(m) return NativeTileset.hasMid(pair, m) end
@@ -824,15 +829,19 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
         if not skip then
           local list = cellsByPair[srcPair]
           if not list then
-            list = {}
+            list = { n = 0 }
             cellsByPair[srcPair] = list
           end
-          list[#list + 1] = { mid = mid, x = col * CELL, y = row * CELL }
+          local n = list.n + 1
+          list.n = n
+          list[n * 3 - 2], list[n * 3 - 1], list[n * 3] = mid, col * CELL, row * CELL
         end
       end
     end
+    local visiblePairs = {}
     for srcPair, cells in pairs(cellsByPair) do
-      local ts = NativeTileset.get(srcPair)
+      local ts = cells.n > 0 and NativeTileset.get(srcPair)
+      if cells.n > 0 then visiblePairs[srcPair] = true end
       if ts and ts.image then
         local batch = ensure_batch(FieldView._nativeBatches, srcPair, ts.image, capacity)
         batch:clear()
@@ -842,20 +851,21 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
             FieldView._nativeOverBatches, srcPair, ts.overImage, capacity)
           overBatch:clear()
         end
-        for _, cell in ipairs(cells) do
-          local slot = NativeTileset.slotFor(ts, cell.mid)
+        for i = 1, cells.n * 3, 3 do
+          local x, y = cells[i + 1], cells[i + 2]
+          local slot = NativeTileset.slotFor(ts, cells[i])
           local q = NativeTileset.quad(ts, slot)
-          if q then batch:add(q, cell.x, cell.y) end
+          if q then batch:add(q, x, y) end
           if overBatch then
             local oq = NativeTileset.overQuad(ts, slot)
             if oq then
-              overBatch:add(oq, cell.x, cell.y)
+              overBatch:add(oq, x, y)
             end
           end
         end
       end
     end
-    require("src.core.game3.tileset_anim").setVisiblePairs(cellsByPair)
+    require("src.core.game3.tileset_anim").setVisiblePairs(visiblePairs)
     FieldView._nativeBx = cx0
     FieldView._nativeBy = cy0
     FieldView._nativePair = pair

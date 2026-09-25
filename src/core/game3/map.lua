@@ -178,22 +178,24 @@ end
 --- Resolve a cell in current-map space, sampling connected neighbors when OOB
 -- (pret VMap connection fill). Returns mid, sourcePair. OOB with no neighbor
 -- falls through to primary border tiling.
+-- Module level, not a closure per call: worldMidAt runs for every visible
+-- cell of every frame, and a per-call closure was steady garbage.
+local function fromNeighbor(n, nx, ny, primaryPair)
+  if not n or not n.def then return nil end
+  local L = n.def.midLayout
+  if not L then return nil end
+  if nx < 0 or ny < 0 or nx >= (L.width or 0) or ny >= (L.height or 0) then
+    return nil
+  end
+  local pair = L.pair or n.def.pair
+  return L:midAt(nx, ny), pair or primaryPair
+end
+
 function Map.worldMidAt(cx, cy, primaryDef)
   local layout = primaryDef and primaryDef.midLayout
   if not layout then return 0, nil end
   local w, h = layout.width or 0, layout.height or 0
   local primaryPair = layout.pair or primaryDef.pair
-
-  local function fromNeighbor(n, nx, ny)
-    if not n or not n.def then return nil end
-    local L = n.def.midLayout
-    if not L then return nil end
-    if nx < 0 or ny < 0 or nx >= (L.width or 0) or ny >= (L.height or 0) then
-      return nil
-    end
-    local pair = L.pair or n.def.pair
-    return L:midAt(nx, ny), pair or primaryPair
-  end
 
   if cx >= 0 and cy >= 0 and cx < w and cy < h then
     return layout:midAt(cx, cy), primaryPair
@@ -205,14 +207,14 @@ function Map.worldMidAt(cx, cy, primaryDef)
       local offset = tonumber(n.offset) or 0
       local L = n.def and n.def.midLayout
       local nh = L and L.height or 0
-      local mid, pair = fromNeighbor(n, cx - offset, nh + cy)
+      local mid, pair = fromNeighbor(n, cx - offset, nh + cy, primaryPair)
       if mid ~= nil then return mid, pair end
     end
   elseif cy >= h then
     local n = neighborFor("south")
     if n then
       local offset = tonumber(n.offset) or 0
-      local mid, pair = fromNeighbor(n, cx - offset, cy - h)
+      local mid, pair = fromNeighbor(n, cx - offset, cy - h, primaryPair)
       if mid ~= nil then return mid, pair end
     end
   end
@@ -223,14 +225,14 @@ function Map.worldMidAt(cx, cy, primaryDef)
       local offset = tonumber(n.offset) or 0
       local L = n.def and n.def.midLayout
       local nw = L and L.width or 0
-      local mid, pair = fromNeighbor(n, nw + cx, cy - offset)
+      local mid, pair = fromNeighbor(n, nw + cx, cy - offset, primaryPair)
       if mid ~= nil then return mid, pair end
     end
   elseif cx >= w then
     local n = neighborFor("east")
     if n then
       local offset = tonumber(n.offset) or 0
-      local mid, pair = fromNeighbor(n, cx - w, cy - offset)
+      local mid, pair = fromNeighbor(n, cx - w, cy - offset, primaryPair)
       if mid ~= nil then return mid, pair end
     end
   end
