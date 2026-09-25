@@ -17,7 +17,13 @@ function Q.restore(value)
       for j=1,math.min(#scene.frames,Q.MAX_FRAMES) do
         local f=scene.frames[j]
         if type(f)=='table' and type(f.x)=='number' and type(f.y)=='number'
-            and type(f.actors)=='table' then row.frames[#row.frames+1]=copy(f) end
+            and type(f.actors)=='table' then
+          local frame=copy(f);frame.actors={}
+          for _,a in ipairs(f.actors) do
+            if type(a)=='table' and type(a.id)=='number' then frame.actors[#frame.actors+1]=copy(a) end
+          end
+          row.frames[#row.frames+1]=frame
+        end
       end
       for j=1,math.min(#scene.events,Q.MAX_EVENTS) do
         local e=scene.events[j]

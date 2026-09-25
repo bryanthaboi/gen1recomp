@@ -781,6 +781,26 @@ function LauncherSettings.open(hooks, version)
           return true
         end,
       },
+      {
+        label = Strings("Splash Video"),
+        value = function()
+          return opts.splashVideo == false and Strings("OFF") or Strings("ON")
+        end,
+        step = function()
+          opts.splashVideo = opts.splashVideo == false
+          return true
+        end,
+      },
+      {
+        label = Strings("Splash Sound"),
+        value = function()
+          return opts.splashMute == true and Strings("OFF") or Strings("ON")
+        end,
+        step = function()
+          opts.splashMute = not (opts.splashMute == true)
+          return true
+        end,
+      },
     },
   }
   local Window = require("src.import.LauncherWindow")

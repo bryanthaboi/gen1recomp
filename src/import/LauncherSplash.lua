@@ -11,10 +11,13 @@ local function smoothstep(value)
 end
 
 function LauncherSplash.new()
+  local okOpt, options = pcall(require("src.core.SaveData").loadOptions)
+  if not okOpt or type(options) ~= "table" then options = {} end
+  if options.splashVideo == false then return nil end
   local self = setmetatable({ elapsed = 0, age = 0, opacity = 1 }, LauncherSplash)
   local ok, err = pcall(function()
     self.video = love.graphics.newVideo("assets/launcher/splash.ogv", {
-      audio = love.audio ~= nil,
+      audio = love.audio ~= nil and options.splashMute ~= true,
     })
     self.video:setFilter("linear", "linear")
     local width, height = self.video:getDimensions()
@@ -29,7 +32,6 @@ function LauncherSplash.new()
         return vec4(pixel.rgb, pixel.a * coverage * opacity) * color;
       }
     ]])
-    local options = require("src.core.SaveData").loadOptions()
     self.volume = math.max(0, math.min(7, tonumber(options.sfxVol) or 7)) / 7
     local source = self.video:getSource()
     if source then source:setVolume(self.volume) end

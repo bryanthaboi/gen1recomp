@@ -21,7 +21,7 @@ function R.capture(game,session)
   end
   for _,o in ipairs(O.forDraw()) do
     local gid=Space and Space.resolveObjectGraphicsId and o.def and Space.resolveObjectGraphicsId(o.def)
-    f.actors[#f.actors+1]={id=o.localId,x=o.px or o.cellX*16,y=o.py or o.cellY*16,
+    f.actors[#f.actors+1]={id=o.localId or 1000+(tonumber(o.virtualId) or 0),x=o.px or o.cellX*16,y=o.py or o.cellY*16,
       graphicsId=gid or o.graphicsId or (o.def and (o.def.graphicsId or o.def.graphics)),
       facing=o.facing,walkPhase=O.walkPhase(o),stepFlip=o.stepFlip,frame=o.customFrame,bow=(o.bowFrames or 0)>0}
   end
