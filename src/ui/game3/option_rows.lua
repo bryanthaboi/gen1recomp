@@ -374,6 +374,37 @@ function Rows.build(ctx)
     end,
   })
 
+  -- A mod's render pipelines are display modes like TILT, so their rows sit
+  -- with it rather than at the end of the list.  Mirrors the splice in
+  -- src/ui/OptionsMenu.lua: nothing registered means nothing spliced, so a
+  -- vanilla install sees the list it always had.  On a phone there is no
+  -- keyboard hotkey, so without this row a world pipeline could never be
+  -- picked outside a desktop run.
+  do
+    local okP, Pipelines = pcall(require, "src.render.Pipelines")
+    if okP and Pipelines and Pipelines.rows then
+      local okR, pipelineRows = pcall(Pipelines.rows, ctx.game)
+      if okR and type(pipelineRows) == "table" and pipelineRows[1] then
+        local merged = {}
+        for _, row in ipairs(rows) do
+          merged[#merged + 1] = row
+          if row.id == "tilt" then
+            for _, extra in ipairs(pipelineRows) do
+              merged[#merged + 1] = extra
+            end
+          end
+        end
+        -- no TILT row to anchor to: append rather than silently lose the modes
+        if #merged == #rows then
+          for _, extra in ipairs(pipelineRows) do
+            merged[#merged + 1] = extra
+          end
+        end
+        rows = merged
+      end
+    end
+  end
+
   local Orientation = require("src.core.Orientation")
   local VideoMode = require("src.core.VideoMode")
   local touchEnv = os.getenv("POKEPORT_TOUCH")

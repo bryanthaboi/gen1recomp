@@ -152,6 +152,33 @@ return function(game)
     end
   end
 
+  -- --------------------------------------------- option row (phone path)
+  -- No keyboard on a phone, so the in-game OPTION menu must carry the
+  -- ladder: game3's option rows splice registered pipelines after TILT.
+  do
+    local Runtime = package.loaded["src.core.game3.runtime"]
+    local session = Runtime and Runtime.getSession and Runtime.getSession()
+    local okO, Orows = pcall(require, "src.ui.game3.option_rows")
+    local labels = {}
+    if okO then
+      local Options = require("src.core.game3.options")
+      local engine = Options.engine(session)
+        or (game and game.options)
+        or (session and session.options)
+        or {}
+      local flat = Orows.build({ session = session, game = game,
+        options = engine })
+      local grouped = Orows.group(flat, function() end)
+      for _, r in ipairs(grouped) do labels[#labels + 1] = tostring(r.label) end
+    end
+    local seen = false
+    for _, l in ipairs(labels) do
+      if l == "DIORAMA" then seen = true break end
+    end
+    result(okO and seen, "in-game OPTION menu carries the DIORAMA row",
+      table.concat(labels, " | "))
+  end
+
   -- --------------------------------------------- Pallet, flat first
   Pipelines.setLevel("fr_diorama", 0)
   U.wait(20)
