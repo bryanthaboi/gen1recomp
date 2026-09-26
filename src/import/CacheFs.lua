@@ -76,6 +76,14 @@ local function resolveMkdir()
     local resolved = pcall(function() return ffi.C.mkdir end)
     if resolved then
       mkdirFn = function(path) pcall(ffi.C.mkdir, path, 493) end -- 0755
+    else
+      local okl, clib = pcall(ffi.load, "c")
+      if okl and clib then
+        local okm = pcall(function() return clib.mkdir end)
+        if okm then
+          mkdirFn = function(path) pcall(clib.mkdir, path, 493) end
+        end
+      end
     end
   end
   return mkdirFn
@@ -254,19 +262,59 @@ local function realPath(root, rel)
   return root .. SEP .. rel:gsub("/", SEP)
 end
 
+local knownDirs = {}
+
 -- create every parent directory of `rel` under `root` (best effort; an
 -- already-existing directory is fine, a genuine failure surfaces when the
 -- subsequent io.open write fails)
 local function ensureParents(root, rel)
   local mkdir = resolveMkdir()
-  if not mkdir then return end
   local parts = {}
   for part in rel:gmatch("[^/]+") do parts[#parts + 1] = part end
   local cur = root
+  local curRel = ""
   for i = 1, #parts - 1 do
     cur = cur .. SEP .. parts[i]
-    mkdir(cur)
+    curRel = (curRel == "" and parts[i]) or (curRel .. "/" .. parts[i])
+    if not knownDirs[cur] then
+      if mkdir then
+        mkdir(cur)
+      elseif love and love.filesystem and love.filesystem.createDirectory then
+        love.filesystem.createDirectory(curRel)
+      end
+      knownDirs[cur] = true
+    end
   end
+end
+
+local function resolveWriteRoot()
+  local root = CacheFs.root()
+  if root then return root end
+  if Platform.isNX and Platform.isNX() then return nil end
+  if Platform.isUWP and Platform.isUWP() then return nil end
+  if love and (love._version or love.getVersion) and love.filesystem and love.filesystem.getSaveDirectory then
+    local saveDir = love.filesystem.getSaveDirectory()
+    if saveDir and type(saveDir) == "string" and saveDir ~= "" and not unsafe_rel(saveDir) then
+      return saveDir
+    end
+  end
+  return nil
+end
+
+local function ensureDirectory(parent)
+  if not parent or parent == "" or knownDirs[parent] then return true end
+  if not (love and love.filesystem and love.filesystem.createDirectory) then return true end
+  if love.filesystem.createDirectory(parent) then
+    knownDirs[parent] = true
+    return true
+  end
+  local info = love.filesystem.getInfo and love.filesystem.getInfo(parent)
+  if info and info.type == "directory" then
+    knownDirs[parent] = true
+    return true
+  end
+  local reason = info and ("a " .. info.type .. " already exists there") or "unknown reason"
+  return false, "could not create " .. parent .. ": " .. reason
 end
 
 -- write cache-relative `rel` (forward-slash path) with the given bytes;
@@ -274,7 +322,7 @@ end
 function CacheFs.write(rel, data)
   rel = withPrefix(rel)
   if unsafe_rel(rel) then return false, "unsafe cache path" end
-  local root = CacheFs.root()
+  local root = resolveWriteRoot()
   if root then
     ensureParents(root, rel)
     local f, err = io.open(realPath(root, rel), "wb")
@@ -284,11 +332,9 @@ function CacheFs.write(rel, data)
     return true
   end
   local parent = rel:match("^(.*)/[^/]+$")
-  if parent and not love.filesystem.createDirectory(parent) then
-    local info = love.filesystem.getInfo(parent)
-    local reason = info and ("a " .. info.type .. " already exists there")
-      or "unknown reason"
-    return false, "could not create " .. parent .. ": " .. reason
+  if parent then
+    local okDir, dirErr = ensureDirectory(parent)
+    if not okDir then return false, dirErr end
   end
   return love.filesystem.write(rel, data)
 end
@@ -300,7 +346,7 @@ end
 function CacheFs.openWrite(rel)
   rel = withPrefix(rel)
   if unsafe_rel(rel) then return nil, "unsafe cache path" end
-  local root = CacheFs.root()
+  local root = resolveWriteRoot()
   if root then
     ensureParents(root, rel)
     local f, err = io.open(realPath(root, rel), "wb")
@@ -318,11 +364,9 @@ function CacheFs.openWrite(rel)
     return nil, "streaming cache writes are unavailable"
   end
   local parent = rel:match("^(.*)/[^/]+$")
-  if parent and not love.filesystem.createDirectory(parent) then
-    local info = love.filesystem.getInfo(parent)
-    local reason = info and ("a " .. info.type .. " already exists there")
-      or "unknown reason"
-    return nil, "could not create " .. parent .. ": " .. reason
+  if parent then
+    local okDir, dirErr = ensureDirectory(parent)
+    if not okDir then return nil, dirErr end
   end
   local file, makeErr = love.filesystem.newFile(rel)
   if not file then return nil, makeErr or "could not create cache file" end
@@ -408,7 +452,10 @@ function CacheFs.existsAt(rel)
     f:close()
     return true
   end
-  return love.filesystem.getInfo(rel, "file") ~= nil
+  if love and love.filesystem and love.filesystem.getInfo then
+    return love.filesystem.getInfo(rel, "file") ~= nil
+  end
+  return false
 end
 
 
@@ -425,7 +472,9 @@ function CacheFs.remove(rel)
     os.remove(realPath(root, rel))
     return
   end
-  love.filesystem.remove(rel)
+  if love and love.filesystem and love.filesystem.remove then
+    love.filesystem.remove(rel)
+  end
 end
 
 -- Remove a single cache-relative directory once its files are gone.  Needed
@@ -443,7 +492,9 @@ function CacheFs.removeDir(rel)
     if rmdir then rmdir(realPath(root, rel)) end
     return
   end
-  love.filesystem.remove(rel)
+  if love and love.filesystem and love.filesystem.remove then
+    love.filesystem.remove(rel)
+  end
 end
 
 -- Remove the game-folder copy of a cache subtree before a fresh import, so a

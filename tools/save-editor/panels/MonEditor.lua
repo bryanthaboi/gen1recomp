@@ -18,6 +18,7 @@
 
 local Theme = require("Theme")
 local Ops = require("Ops")
+local MonOps = require("MonOps")
 local PAL = Theme.PAL
 local Gen = require("Gen")
 
@@ -132,6 +133,91 @@ local function levelRowWidth(Kit, mon)
     + 6 * s + Kit.textWidth("mono", ("EXP %d"):format(Gen.exp(mon)))
 end
 
+local STAT_KEYS_G3 = {
+  { key = "hp", label = "HP" },
+  { key = "atk", label = "ATTACK" },
+  { key = "def", label = "DEFENSE" },
+  { key = "spa", label = "SP. ATK" },
+  { key = "spd", label = "SP. DEF" },
+  { key = "spe", label = "SPEED" },
+}
+
+local function totalEvsOf(mon)
+  local evs = mon.evs or {}
+  local total = 0
+  for _, st in ipairs(STAT_KEYS_G3) do
+    total = total + (tonumber(evs[st.key]) or 0)
+  end
+  return total
+end
+
+local function drawIvRowsG3(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
+  local s = Kit.scale
+  mon.ivs = mon.ivs or { hp = 31, atk = 31, def = 31, spe = 31, spa = 31, spd = 31 }
+  for i, st in ipairs(STAT_KEYS_G3) do
+    local ry = rowY + (i - 1) * (rowH + rowGap)
+    Theme.row(cx, ry, colW, rowH, 10 * s, 0.6)
+    local v = (mon.ivs and mon.ivs[st.key]) or 0
+    Kit.text("tiny", st.label, cx + 10 * s,
+      ry + (rowH - Kit.textHeight("tiny")) / 2, PAL.muted)
+    local btn = 26 * s
+    local btnX = cx + colW - 10 * s - 3 * btn - 18 * s
+    local meterX = cx + 66 * s
+    local meterW = math.max(16 * s, btnX - meterX - 34 * s)
+    Kit.meter(meterX, ry + (rowH - 8 * s) / 2, meterW, 8 * s, v / 31 * 100,
+      v >= 31 and PAL.green or (v >= 20 and PAL.blue or PAL.steel))
+    Kit.textRight("monoRow", tostring(v), meterX + meterW + 28 * s,
+      ry + (rowH - Kit.textHeight("monoRow")) / 2, PAL.heading)
+    if Kit.stepper(btnX, ry + (rowH - btn) / 2, btn, btn, "-") then
+      Ops.setIv(S, mon, st.key, v - 1)
+    end
+    if Kit.stepper(btnX + btn + 6 * s, ry + (rowH - btn) / 2, btn, btn, "+") then
+      Ops.setIv(S, mon, st.key, v + 1)
+    end
+    if Kit.button(btnX + 2 * btn + 12 * s, ry + (rowH - btn) / 2, btn, btn,
+        "31", { kind = "good", font = "micro", radius = 6 * s }) then
+      Ops.setIv(S, mon, st.key, 31)
+    end
+  end
+end
+
+local function drawEvRowsG3(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
+  local s = Kit.scale
+  mon.evs = mon.evs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }
+  for i, st in ipairs(STAT_KEYS_G3) do
+    local ry = rowY + (i - 1) * (rowH + rowGap)
+    Theme.row(cx, ry, colW, rowH, 10 * s, 0.6)
+    local v = (mon.evs and mon.evs[st.key]) or 0
+    Kit.text("tiny", st.label, cx + 10 * s,
+      ry + (rowH - Kit.textHeight("tiny")) / 2, PAL.muted)
+
+    local btn = 24 * s
+    local rightX = cx + colW - 10 * s
+    local b252W = 28 * s
+    local b252X = rightX - b252W
+    local p1X = b252X - 6 * s - btn
+    local m1X = p1X - 6 * s - btn
+
+    local meterX = cx + 66 * s
+    local meterW = math.max(16 * s, m1X - meterX - 34 * s)
+    Kit.meter(meterX, ry + (rowH - 8 * s) / 2, meterW, 8 * s, v / 255 * 100,
+      v >= 252 and PAL.green or (v >= 100 and PAL.blue or PAL.steel))
+    Kit.textRight("monoRow", tostring(v), meterX + meterW + 28 * s,
+      ry + (rowH - Kit.textHeight("monoRow")) / 2, PAL.heading)
+
+    if Kit.stepper(m1X, ry + (rowH - btn) / 2, btn, btn, "-") then
+      Ops.setEv(S, mon, st.key, v - 1)
+    end
+    if Kit.stepper(p1X, ry + (rowH - btn) / 2, btn, btn, "+") then
+      Ops.setEv(S, mon, st.key, v + 1)
+    end
+    if Kit.button(b252X, ry + (rowH - btn) / 2, b252W, btn,
+        "252", { kind = "good", font = "micro", radius = 6 * s }) then
+      Ops.setEv(S, mon, st.key, 252)
+    end
+  end
+end
+
 local function drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)
   local s = Kit.scale
   mon.dvs = mon.dvs or { attack = 0, defense = 0, speed = 0, special = 0, hp = 0 }
@@ -229,36 +315,83 @@ local function drawMoveRows(S, Kit, mon, rightX, rowY, colW, rowH, rowGap)
     Theme.row(rightX, ry, colW, rowH, 10 * s, 0.6)
     local mv = mon.moves and mon.moves[slot]
     local clear = Kit.tapMin()
-    local clearX = rightX + colW - 10 * s - clear
+    local clearX = rightX + colW - 8 * s - clear
+
     local mvId = nil
-    local mvPp = 0
     if type(mv) == "table" then
       mvId = (S.data and S.data.moves and S.data.moves[mv.id] and S.data.moves[mv.id].name) or mv.id or mv.name
-      mvPp = mv.pp or 0
     elseif type(mv) == "number" then
       mvId = S.data and S.data.moves and S.data.moves[mv] and S.data.moves[mv].name
-      mvPp = mon.pp and mon.pp[slot] or 0
+      if not mvId then
+        local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
+        if okP and PokemonG3 and PokemonG3.moveName then
+          mvId = PokemonG3.moveName(mv)
+        end
+      end
     elseif type(mv) == "string" then
       mvId = mv
     end
-    local ppText = mv and ("PP %d"):format(mvPp) or ""
-    local ppW = Kit.textWidth("tiny", ppText)
+
     Kit.text("mono", tostring(slot), rightX + 10 * s,
       ry + (rowH - Kit.textHeight("mono")) / 2, PAL.faint)
-    local nameX = rightX + 28 * s
-    local nameW2 = math.max(20 * s, clearX - 12 * s - ppW - nameX)
-    Kit.text("monoRow", Kit.ellipsize("monoRow", mvId or "-- --", nameW2),
-      nameX, ry + (rowH - Kit.textHeight("monoRow")) / 2,
-      mv and PAL.text or PAL.faint)
-    Kit.textRight("tiny", ppText, clearX - 10 * s,
-      ry + (rowH - Kit.textHeight("tiny")) / 2, PAL.caption)
-    -- the row body opens the searchable picker; the x empties the slot
-    if Kit.press(rightX, ry, clearX - rightX - 4 * s, rowH) then
-      Ops.openMovePicker(S, Kit, slot)
-    end
-    if Kit.button(clearX, ry + (rowH - clear) / 2, clear, clear, "x",
-        { kind = "danger", font = "tiny", radius = 6 * s }) then
-      Ops.clearMove(S, mon, slot)
+
+    if mv then
+      local basePp = MonOps.getBasePp(S.data, mon, slot)
+      local ppUps = MonOps.getPpUps(mon, slot)
+      local maxPp = (mon.maxPp and mon.maxPp[slot]) or (type(mv) == "table" and mv.maxPp) or MonOps.calcMaxPp(basePp, ppUps)
+      local currentPp = (type(mv) == "table" and mv.pp) or (mon.pp and mon.pp[slot]) or maxPp
+
+      local ppUpW = 44 * s
+      local btnH = 22 * s
+      local ppUpX = clearX - 6 * s - ppUpW
+      local plusX = ppUpX - 4 * s - btnH
+      local minusX = plusX - 4 * s - btnH
+
+      -- PP Up button
+      local upLabel = ("+PP %d"):format(ppUps)
+      if Kit.button(ppUpX, ry + (rowH - btnH) / 2, ppUpW, btnH, upLabel,
+          { kind = ppUps > 0 and "accent" or "ghost", font = "micro", radius = 5 * s }) then
+        Ops.setPpUps(S, mon, slot, (ppUps + 1) % 4)
+      end
+
+      -- Steppers for current PP
+      if Kit.stepper(minusX, ry + (rowH - btnH) / 2, btnH, btnH, "-", { font = "small" }) then
+        Ops.setPp(S, mon, slot, currentPp - 1)
+      end
+      if Kit.stepper(plusX, ry + (rowH - btnH) / 2, btnH, btnH, "+", { font = "small" }) then
+        Ops.setPp(S, mon, slot, currentPp + 1)
+      end
+
+      local ppText = ("%d/%d"):format(currentPp, maxPp)
+      local ppW = Kit.textWidth("tiny", ppText)
+      local ppColor = currentPp == 0 and PAL.red or (currentPp < maxPp and PAL.caption or PAL.text)
+      Kit.textRight("tiny", ppText, minusX - 6 * s,
+        ry + (rowH - Kit.textHeight("tiny")) / 2, ppColor)
+
+      local nameX = rightX + 28 * s
+      local nameW = math.max(20 * s, minusX - 10 * s - ppW - nameX)
+      Kit.text("monoRow", Kit.ellipsize("monoRow", mvId or "-- --", nameW),
+        nameX, ry + (rowH - Kit.textHeight("monoRow")) / 2, PAL.text)
+
+      -- Press on move name opens picker
+      if Kit.press(rightX, ry, math.max(0, minusX - 8 * s - rightX), rowH) then
+        Ops.openMovePicker(S, Kit, slot)
+      end
+
+      -- Clear move button
+      if Kit.button(clearX, ry + (rowH - clear) / 2, clear, clear, "x",
+          { kind = "danger", font = "tiny", radius = 6 * s }) then
+        Ops.clearMove(S, mon, slot)
+      end
+    else
+      local nameX = rightX + 28 * s
+      local nameW = math.max(20 * s, clearX - 8 * s - nameX)
+      Kit.text("monoRow", Kit.ellipsize("monoRow", "-- --", nameW),
+        nameX, ry + (rowH - Kit.textHeight("monoRow")) / 2, PAL.faint)
+
+      if Kit.press(rightX, ry, clearX - rightX - 4 * s, rowH) then
+        Ops.openMovePicker(S, Kit, slot)
+      end
     end
   end
 end
@@ -307,12 +440,22 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     headerH = math.max(sprite, titleH) + 12 * s + 28 * s
   end
 
-  local colRowsH = 4 * (rowH + rowGap) - rowGap
+  local isG3 = Gen.ofState(S) == 3
+  local colRowsH = (isG3 and 6 or 4) * (rowH + rowGap) - rowGap
+  local movesRowsH = 4 * (rowH + rowGap) - rowGap
   local colsH
-  if narrow then
-    colsH = (capH + 10 * s + colRowsH) * 2 + 14 * s + 10 * s + actH
+  if isG3 then
+    if narrow then
+      colsH = (capH + 10 * s + colRowsH) * 2 + (capH + 10 * s + movesRowsH) + 28 * s + 10 * s + actH
+    else
+      colsH = (capH + 10 * s + colRowsH) + 14 * s + (capH + 10 * s + movesRowsH) + 12 * s + actH
+    end
   else
-    colsH = capH + 10 * s + colRowsH + 12 * s + actH
+    if narrow then
+      colsH = (capH + 10 * s + colRowsH) * 2 + 14 * s + 10 * s + actH
+    else
+      colsH = capH + 10 * s + colRowsH + 12 * s + actH
+    end
   end
   -- the nickname section: a caption line (with the Clear button on it) plus
   -- the field + Set row
@@ -414,7 +557,11 @@ function MonEditor.draw(S, Kit, x, y, w, h)
 
   -- ------------------------------------------------------- derived stats
   local statsY = nickY + capH + 10 * s + nickFieldH + 18 * s
-  Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
+  if isG3 then
+    Kit.caption(cx, statsY, "STATS . recalculated from level + IVs + EVs + nature")
+  else
+    Kit.caption(cx, statsY, "STATS . recalculated from level + DVs")
+  end
   statsY = statsY + capH + 10 * s
   local STAT_KEYS = Gen.ofState(S) >= 2 and STAT_KEYS_G2 or STAT_KEYS_G1
   local gap = 12 * s
@@ -451,9 +598,10 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     extraY = extraY + row + 6 * s
 
     -- Nature and Friendship
-    local SummaryData = require("src.core.game3.summary_data")
+    local SummaryData = package.loaded["src.core.game3.summary_data"] or require("src.core.game3.summary_data")
     local natureIdx = mon.nature or ((mon.personality or 0) % 25)
-    local natureName = SummaryData.NATURES[natureIdx]
+    local okN, nName = pcall(function() return SummaryData.NATURES[natureIdx] end)
+    local natureName = (okN and nName) or ("Nature " .. natureIdx)
     Kit.text("tiny", "NATURE " .. natureName, cx, extraY, PAL.text)
     if Kit.stepper(cx + 140 * s, extraY, 28 * s, row, "<", { font = "small" }) then
       Ops.setNature(S, mon, (natureIdx - 1 + 25) % 25)
@@ -534,7 +682,117 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     end
     colY = extraY
   end
-  if narrow then
+  if isG3 then
+    local ivEvRowsH = 6 * (rowH + rowGap) - rowGap
+    local mRowsH = 4 * (rowH + rowGap) - rowGap
+    local totalEvs = totalEvsOf(mon)
+
+    if narrow then
+      -- 1. IVs section
+      Kit.caption(cx, colY, "IVs (0-31)")
+      local maxIvW = 84 * s
+      local maxIvH = 22 * s
+      if Kit.button(cx + inner - maxIvW, colY + (capH - maxIvH) / 2, maxIvW, maxIvH,
+          "Max all (31)", { kind = "good", font = "micro", radius = 6 * s }) then
+        Ops.maxIvs(S, mon)
+      end
+      local ivRowY = colY + capH + 10 * s
+      drawIvRowsG3(S, Kit, mon, cx, ivRowY, inner, rowH, rowGap)
+
+      -- 2. EVs section
+      local evY = ivRowY + ivEvRowsH + 14 * s
+      Kit.caption(cx, evY, "EVs (0-255)")
+      local clearEvW = 54 * s
+      local clearEvH = 22 * s
+      if Kit.button(cx + inner - clearEvW, evY + (capH - clearEvH) / 2, clearEvW, clearEvH,
+          "Clear", { kind = "danger", font = "micro", radius = 6 * s }) then
+        Ops.clearEvs(S, mon)
+      end
+      local evTotalText = ("TOTAL %d / 510"):format(totalEvs)
+      Kit.textRight("tiny", evTotalText, cx + inner - clearEvW - 10 * s,
+        evY + (capH - Kit.textHeight("tiny")) / 2, totalEvs >= 510 and PAL.green or PAL.caption)
+      local evRowY = evY + capH + 10 * s
+      drawEvRowsG3(S, Kit, mon, cx, evRowY, inner, rowH, rowGap)
+
+      -- 3. Moves section
+      local movesY = evRowY + ivEvRowsH + 14 * s
+      Kit.caption(cx, movesY, "MOVES")
+      local maxPpW = 84 * s
+      local maxPpH = 22 * s
+      if Kit.button(cx + inner - maxPpW, movesY + (capH - maxPpH) / 2, maxPpW, maxPpH,
+          "Max all PP", { kind = "good", font = "micro", radius = 6 * s }) then
+        Ops.maxAllPpUps(S, mon)
+      end
+      Kit.textRight("tiny", "click a slot to search", cx + inner - maxPpW - 10 * s,
+        movesY + (capH - Kit.textHeight("tiny")) / 2, PAL.caption)
+      local mRowY = movesY + capH + 10 * s
+      drawMoveRows(S, Kit, mon, cx, mRowY, inner, rowH, rowGap)
+
+      local actY = mRowY + mRowsH + 10 * s
+      local actW = (inner - 10 * s) / 2
+      if Kit.button(cx, actY, actW, actH, "Reset to learnset",
+          { font = "small", radius = 9 * s }) then
+        Ops.resetMoves(S, mon)
+      end
+      if Kit.button(cx + actW + 10 * s, actY, actW, actH, "Full heal",
+          { kind = "good", font = "small", radius = 9 * s }) then
+        Ops.healMon(S, mon)
+      end
+    else
+      local colGap = 18 * s
+      local colW = (inner - colGap) / 2
+      local rightX = cx + colW + colGap
+
+      -- Left: IVs
+      Kit.caption(cx, colY, "IVs (0-31)")
+      local maxIvW = 84 * s
+      local maxIvH = 22 * s
+      if Kit.button(cx + colW - maxIvW, colY + (capH - maxIvH) / 2, maxIvW, maxIvH,
+          "Max all (31)", { kind = "good", font = "micro", radius = 6 * s }) then
+        Ops.maxIvs(S, mon)
+      end
+      local ivRowY = colY + capH + 10 * s
+      drawIvRowsG3(S, Kit, mon, cx, ivRowY, colW, rowH, rowGap)
+
+      -- Right: EVs
+      Kit.caption(rightX, colY, "EVs (0-255)")
+      local clearEvW = 54 * s
+      local clearEvH = 22 * s
+      if Kit.button(rightX + colW - clearEvW, colY + (capH - clearEvH) / 2, clearEvW, clearEvH,
+          "Clear", { kind = "danger", font = "micro", radius = 6 * s }) then
+        Ops.clearEvs(S, mon)
+      end
+      local evTotalText = ("TOTAL %d / 510"):format(totalEvs)
+      Kit.textRight("tiny", evTotalText, rightX + colW - clearEvW - 10 * s,
+        colY + (capH - Kit.textHeight("tiny")) / 2, totalEvs >= 510 and PAL.green or PAL.caption)
+      drawEvRowsG3(S, Kit, mon, rightX, ivRowY, colW, rowH, rowGap)
+
+      -- Moves Section below IVs and EVs
+      local movesY = ivRowY + ivEvRowsH + 14 * s
+      Kit.caption(cx, movesY, "MOVES")
+      local maxPpW = 84 * s
+      local maxPpH = 22 * s
+      if Kit.button(cx + inner - maxPpW, movesY + (capH - maxPpH) / 2, maxPpW, maxPpH,
+          "Max all PP", { kind = "good", font = "micro", radius = 6 * s }) then
+        Ops.maxAllPpUps(S, mon)
+      end
+      Kit.textRight("tiny", "click a slot to search", cx + inner - maxPpW - 10 * s,
+        movesY + (capH - Kit.textHeight("tiny")) / 2, PAL.caption)
+      local mRowY = movesY + capH + 10 * s
+      drawMoveRows(S, Kit, mon, cx, mRowY, inner, rowH, rowGap)
+
+      local actY = mRowY + mRowsH + 12 * s
+      local actW = (inner - 10 * s) / 2
+      if Kit.button(cx, actY, actW, actH, "Reset to learnset",
+          { font = "small", radius = 9 * s }) then
+        Ops.resetMoves(S, mon)
+      end
+      if Kit.button(cx + actW + 10 * s, actY, actW, actH, "Full heal",
+          { kind = "good", font = "small", radius = 9 * s }) then
+        Ops.healMon(S, mon)
+      end
+    end
+  elseif narrow then
     -- stacked: DVs first, then moves, then the two actions side by side at
     -- full width (#715)
     Kit.caption(cx, colY, "DVs")
@@ -545,7 +803,14 @@ function MonEditor.draw(S, Kit, x, y, w, h)
 
     local movesY = rowY + colRowsH + 14 * s
     Kit.caption(cx, movesY, "MOVES")
-    Kit.textRight("tiny", "click a slot to search", cx + inner, movesY, PAL.caption)
+    local maxPpW = 84 * s
+    local maxPpH = 22 * s
+    if Kit.button(cx + inner - maxPpW, movesY + (capH - maxPpH) / 2, maxPpW, maxPpH,
+        "Max all PP", { kind = "good", font = "micro", radius = 6 * s }) then
+      Ops.maxAllPpUps(S, mon)
+    end
+    Kit.textRight("tiny", "click a slot to search", cx + inner - maxPpW - 10 * s,
+      movesY + (capH - Kit.textHeight("tiny")) / 2, PAL.caption)
     local mRowY = movesY + capH + 10 * s
     drawMoveRows(S, Kit, mon, cx, mRowY, inner, rowH, rowGap)
 
@@ -568,7 +833,14 @@ function MonEditor.draw(S, Kit, x, y, w, h)
     Kit.textRight("tiny", ("HP DV auto-derived . %d"):format((mon.dvs and mon.dvs.hp) or 0),
       cx + colW, colY, PAL.caption)
     Kit.caption(rightX, colY, "MOVES")
-    Kit.textRight("tiny", "click a slot to search", rightX + colW, colY, PAL.caption)
+    local maxPpW = 84 * s
+    local maxPpH = 22 * s
+    if Kit.button(rightX + colW - maxPpW, colY + (capH - maxPpH) / 2, maxPpW, maxPpH,
+        "Max all PP", { kind = "good", font = "micro", radius = 6 * s }) then
+      Ops.maxAllPpUps(S, mon)
+    end
+    Kit.textRight("tiny", "click a slot to search", rightX + colW - maxPpW - 10 * s,
+      colY + (capH - Kit.textHeight("tiny")) / 2, PAL.caption)
 
     local rowY = colY + capH + 10 * s
     drawDvRows(S, Kit, mon, cx, rowY, colW, rowH, rowGap)

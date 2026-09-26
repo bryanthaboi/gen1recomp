@@ -41,7 +41,7 @@ end
 -- Mock isReady
 RomImporter.isReady = function(v)
   return v == "red" or v == "gold" or v == "blue" or v == "yellow"
-    or v == "silver" or v == "crystal"
+    or v == "silver" or v == "crystal" or v == "firered" or v == "leafgreen"
 end
 
 local ok = RomImporter.syncAndroidShortcuts("gold")
@@ -64,6 +64,16 @@ check(capturedShortcuts[1] == "crystal", "activeVersion 'crystal' is placed firs
 check(capturedShortcuts[2] == "red" and capturedShortcuts[3] == "blue"
   and capturedShortcuts[4] == "yellow",
   "and the rest still follow GameVersion.ORDER until the cap")
+
+capturedShortcuts = nil
+RomImporter.syncAndroidShortcuts("firered")
+check(#capturedShortcuts == 4, "firered shortcut sync caps at 4")
+check(capturedShortcuts[1] == "firered", "activeVersion 'firered' is placed first")
+
+capturedShortcuts = nil
+RomImporter.syncAndroidShortcuts("leafgreen")
+check(#capturedShortcuts == 4, "leafgreen shortcut sync caps at 4")
+check(capturedShortcuts[1] == "leafgreen", "activeVersion 'leafgreen' is placed first")
 
 -- Test with subset of ready games (e.g. only Red and Gold)
 RomImporter.isReady = function(v)

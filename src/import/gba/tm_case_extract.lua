@@ -282,10 +282,16 @@ function TmCaseExtract.run(rom, cache, opts)
     cache:write(string.format("%s/disc_hm_%d.rgba", root, typeIdx), hmDiscRgba)
   end
 
-  -- 4. HM Icon
+  -- 4. HM Icon (16x16 tiled bitmap in ROM, 16x12 visible; FRLG tm_case.c:1491,1589)
   local hmGfx = {}
-  for i = 1, 96 do hmGfx[i] = rom:get(Versions.TM_CASE_HM_GFX + i - 1) end
-  local hmRgba = bake_hm_icon_rgba(hmGfx, banks1[0] or {})
+  for i = 1, 128 do hmGfx[i] = rom:get(Versions.TM_CASE_HM_GFX + i - 1) end
+  -- FRLG sPal3Override on WIN_LIST palette 15: color 6 = RGB(8,8,8), color 7 = RGB(30,16,6)
+  local hmPal = {
+    [0] = 0,
+    [6] = 8 + 8 * 32 + 8 * 1024,      -- RGB(8, 8, 8) = 0x2108 (dark grey)
+    [7] = 30 + 16 * 32 + 6 * 1024,    -- RGB(30, 16, 6) = 0x1A1E (orange)
+  }
+  local hmRgba = bake_hm_icon_rgba(hmGfx, hmPal)
   cache:write(root .. "/hm_icon.rgba", hmRgba)
 
   local manifest = string.format([[

@@ -937,6 +937,41 @@ public class GameActivity extends SDLActivity {
                         longLabel = "Play Gold";
                         iconResId = context.getResources().getIdentifier("ic_shortcut_gold", "drawable", context.getPackageName());
                         break;
+                    case "silver":
+                        shortLabel = "Play Silver";
+                        longLabel = "Play Silver";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_silver", "drawable", context.getPackageName());
+                        break;
+                    case "crystal":
+                        shortLabel = "Play Crystal";
+                        longLabel = "Play Crystal";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_crystal", "drawable", context.getPackageName());
+                        break;
+                    case "firered":
+                        shortLabel = "Play FireRed";
+                        longLabel = "Play FireRed";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_firered", "drawable", context.getPackageName());
+                        break;
+                    case "leafgreen":
+                        shortLabel = "Play LeafGreen";
+                        longLabel = "Play LeafGreen";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_leafgreen", "drawable", context.getPackageName());
+                        break;
+                    case "ruby":
+                        shortLabel = "Play Ruby";
+                        longLabel = "Play Ruby";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_ruby", "drawable", context.getPackageName());
+                        break;
+                    case "sapphire":
+                        shortLabel = "Play Sapphire";
+                        longLabel = "Play Sapphire";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_sapphire", "drawable", context.getPackageName());
+                        break;
+                    case "emerald":
+                        shortLabel = "Play Emerald";
+                        longLabel = "Play Emerald";
+                        iconResId = context.getResources().getIdentifier("ic_shortcut_emerald", "drawable", context.getPackageName());
+                        break;
                     default:
                         String capitalized = lower.substring(0, 1).toUpperCase() + lower.substring(1);
                         shortLabel = "Play " + capitalized;
@@ -2157,35 +2192,9 @@ public class GameActivity extends SDLActivity {
     }
 
     private void requestGameAudioFocus() {
-        AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-
-        if (audioManager == null) {
-            return;
-        }
-
-        if (audioFocusListener == null) {
-            audioFocusListener = new AudioManager.OnAudioFocusChangeListener() {
-                @Override
-                public void onAudioFocusChange(int focusChange) {
-                    handleAudioFocusChange(focusChange);
-                }
-            };
-        }
-
-        int result;
-
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            result = requestGameAudioFocusModern(audioManager);
-        } else {
-            result = audioManager.requestAudioFocus(audioFocusListener,
-                AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        }
-
-        audioFocusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-
-        if (!audioFocusHeld) {
-            Log.d("GameActivity", "audio focus request was not granted: " + result);
-        }
+        // Do not request exclusive AUDIOFOCUS_GAIN to allow background media
+        // (Spotify, YouTube, podcasts, etc.) to continue playing seamlessly.
+        // Android's native audio mixer will mix game audio with background apps.
     }
 
     private int requestGameAudioFocusModern(AudioManager audioManager) {
@@ -2233,14 +2242,9 @@ public class GameActivity extends SDLActivity {
         try {
             switch (focusChange) {
                 case AudioManager.AUDIOFOCUS_LOSS:
-                    audioFocusHeld = false;
-                    nativeAudioFocusLost();
-                    scheduleAudioFocusRecovery();
-                    break;
                 case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                    nativeAudioFocusLost();
-                    break;
                 case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    // Allow mixing with other audio streams without pausing game audio
                     break;
                 case AudioManager.AUDIOFOCUS_GAIN:
                 case AudioManager.AUDIOFOCUS_GAIN_TRANSIENT:

@@ -9,4 +9,10 @@
     <color name="shortcut_yellow">#FDD835</color>
     <color name="shortcut_gold">#D4AF37</color>
     <color name="shortcut_silver">#BEC6D2</color>
+    <color name="shortcut_crystal">#6EC3DF</color>
+    <color name="shortcut_firered">#EB4123</color>
+    <color name="shortcut_leafgreen">#28AF50</color>
+    <color name="shortcut_ruby">#C31E32</color>
+    <color name="shortcut_sapphire">#1946B9</color>
+    <color name="shortcut_emerald">#149B50</color>
 </resources>

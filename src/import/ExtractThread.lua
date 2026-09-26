@@ -7,17 +7,30 @@
 -- this only fills the tree between those two steps, so the "marker appears
 -- last" order isReady() depends on stays on one thread.
 
-require("love.filesystem")
-require("love.image")
-require("love.math")
-require("love.system")
-require("love.timer")
-require("love.data")
+pcall(require, "love.filesystem")
+pcall(require, "love.image")
+pcall(require, "love.math")
+pcall(require, "love.system")
+pcall(require, "love.timer")
+pcall(require, "love.data")
+pcall(require, "love.thread")
+
+-- Ensure fresh thread Lua state resolves "src.*" via love.filesystem on all platforms:
+table.insert(package.searchers or package.loaders, 1, function(modname)
+  local path = modname:gsub("%.", "/") .. ".lua"
+  if love and love.filesystem and love.filesystem.getInfo and love.filesystem.getInfo(path) then
+    return assert(love.filesystem.load(path))
+  end
+  local initPath = modname:gsub("%.", "/") .. "/init.lua"
+  if love and love.filesystem and love.filesystem.getInfo and love.filesystem.getInfo(initPath) then
+    return assert(love.filesystem.load(initPath))
+  end
+end)
 
 local version, prefix, romData, progressName, resultName, romSha1 = ...
 
-local progressChannel = love.thread.getChannel(progressName)
-local resultChannel = love.thread.getChannel(resultName)
+local progressChannel = love.thread and love.thread.getChannel and love.thread.getChannel(progressName)
+local resultChannel = love.thread and love.thread.getChannel and love.thread.getChannel(resultName)
 
 -- RomExtractor:tick fires per item, thousands of times per import; a channel
 -- push each would cost more than the work it reports.

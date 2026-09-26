@@ -476,6 +476,63 @@ function Ops.setDv(S, mon, key, value)
   return Ops.mark(S, ("%s DV %d  (HP DV now %d)"):format(key, mon.dvs[key], mon.dvs.hp))
 end
 
+function Ops.setEv(S, mon, key, value)
+  if not mon then return false end
+  mon.evs = mon.evs or { hp = 0, atk = 0, def = 0, spe = 0, spa = 0, spd = 0 }
+  local cur = tonumber(mon.evs[key]) or 0
+  local applied = MonOps.setEv(S.data, mon, key, value, Gen.ofState(S))
+  if applied == cur then
+    return Ops.say(S, ("%s EV is already %d"):format(key:upper(), cur))
+  end
+  return Ops.mark(S, ("%s EV set to %d"):format(key:upper(), applied or 0))
+end
+
+function Ops.clearEvs(S, mon)
+  if not mon then return false end
+  MonOps.clearEvs(S.data, mon, Gen.ofState(S))
+  return Ops.mark(S, ("Cleared EVs for %s"):format(mon.species or "Pokémon"))
+end
+
+function Ops.setIv(S, mon, key, value)
+  if not mon then return false end
+  mon.ivs = mon.ivs or { hp = 31, atk = 31, def = 31, spe = 31, spa = 31, spd = 31 }
+  local cur = tonumber(mon.ivs[key]) or 0
+  local applied = MonOps.setIv(S.data, mon, key, value, Gen.ofState(S))
+  if applied == cur then
+    return Ops.say(S, ("%s IV is already %d"):format(key:upper(), cur))
+  end
+  return Ops.mark(S, ("%s IV set to %d"):format(key:upper(), applied or 0))
+end
+
+function Ops.maxIvs(S, mon)
+  if not mon then return false end
+  MonOps.maxIvs(S.data, mon, Gen.ofState(S))
+  return Ops.mark(S, ("Maxed IVs (31) for %s"):format(mon.species or "Pokémon"))
+end
+
+function Ops.setPpUps(S, mon, slot, value)
+  if not mon or not slot or not (mon.moves and mon.moves[slot]) then return false end
+  local cur = MonOps.getPpUps(mon, slot)
+  local want = math.max(0, math.min(3, math.floor(tonumber(value) or 0)))
+  if want == cur then
+    return Ops.say(S, ("Slot %d PP Up is already %d"):format(slot, want))
+  end
+  local applied, maxPp = MonOps.setPpUps(S.data, mon, slot, want, Gen.ofState(S))
+  return Ops.mark(S, ("Slot %d PP Up set to %d (Max PP %d)"):format(slot, applied, maxPp))
+end
+
+function Ops.setPp(S, mon, slot, value)
+  if not mon or not slot or not (mon.moves and mon.moves[slot]) then return false end
+  local applied, maxPp = MonOps.setPp(S.data, mon, slot, value, Gen.ofState(S))
+  return Ops.mark(S, ("Slot %d PP set to %d/%d"):format(slot, applied or 0, maxPp or 0))
+end
+
+function Ops.maxAllPpUps(S, mon)
+  if not mon then return false end
+  MonOps.maxAllPpUps(S.data, mon, Gen.ofState(S))
+  return Ops.mark(S, ("Maxed PP Ups (3) and restored PP for %s"):format(mon.species or "Pokémon"))
+end
+
 -- Kept for tests and any keyboard path; the inspector opens the searchable
 -- picker instead of walking the catalog one tap at a time.
 function Ops.cycleMove(S, mon, slot)

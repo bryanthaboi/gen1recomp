@@ -40,6 +40,47 @@ check(reqSet["data/generated/gba/items/bag/bg.rgba"] == true, "contract has bag 
 check(reqSet["data/generated/gba/items/shop/manifest.lua"] == true, "contract has shop manifest.lua")
 check(reqSet["data/generated/gba/items/shop/bg.rgba"] == true, "contract has shop bg.rgba")
 
+print("[test] 2b. Bag Chrome Pixel Buffer Decoding")
+local BagChromeExtract = require("src.import.gba.bag_chrome_extract")
+local Rom = require("src.import.gba.rom")
+local f = io.open("1636 - Pokemon Fire Red (U)(Squirrels).gba", "rb")
+if f then
+  local content = f:read("*a")
+  f:close()
+  local mockImports = {
+    info = function() return { size = #content, md5 = "dummy" } end,
+    read = function(self, id, pos, len) return content:sub(pos + 1, pos + len) end,
+  }
+  local testRom = Rom.open(mockImports, "firered")
+  local testStore = {}
+  local testCache = {
+    write = function(self, p, d) testStore[p] = d end,
+    read = function(self, p) return testStore[p] end,
+    exists = function(self, p) return testStore[p] ~= nil end,
+  }
+  BagChromeExtract.run(testRom, testCache, { cacheRoot = "data/generated/gba" })
+  local bg = testCache:read("data/generated/gba/items/bag/bg.rgba")
+  local bagMale = testCache:read("data/generated/gba/items/bag/bag_male.rgba")
+  check(bg and #bg == 240 * 160 * 4, "bg.rgba extracted with correct size")
+  check(bagMale and #bagMale == 64 * 256 * 4, "bag_male.rgba extracted with correct size")
+  local bgColors = {}
+  for i = 1, #bg, 4 do
+    local k = string.format("%d,%d,%d,%d", bg:byte(i, i + 3))
+    bgColors[k] = (bgColors[k] or 0) + 1
+  end
+  local distinctBg = 0
+  for _ in pairs(bgColors) do distinctBg = distinctBg + 1 end
+  check(distinctBg > 10, "bg.rgba has diverse colors (not solid mono-color): " .. tostring(distinctBg))
+  local bagColors = {}
+  for i = 1, #bagMale, 4 do
+    local k = string.format("%d,%d,%d,%d", bagMale:byte(i, i + 3))
+    bagColors[k] = (bagColors[k] or 0) + 1
+  end
+  local distinctBag = 0
+  for _ in pairs(bagColors) do distinctBag = distinctBag + 1 end
+  check(distinctBag > 8, "bag_male.rgba has non-zero sprites: " .. tostring(distinctBag))
+end
+
 print("[test] 3. BagMenu Lifecycle & Pockets")
 local Bag = require("src.core.game3.bag")
 local BagMenu = require("src.ui.game3.bag_menu")

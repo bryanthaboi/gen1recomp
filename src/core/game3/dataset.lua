@@ -31,9 +31,15 @@ local function diskFallback(rel)
   local identity = os.getenv("POKEPORT_IDENTITY") or ""
   local sandboxed = identity ~= ""
   local home = os.getenv("HOME")
-  if home and sandboxed then
-    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity
-    roots[#roots + 1] = home .. "/.local/share/love/" .. identity
+  if home then
+    if sandboxed then
+      roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity
+      roots[#roots + 1] = home .. "/.local/share/love/" .. identity
+    else
+      roots[#roots + 1] = home .. "/Library/Application Support/LOVE/pokemon-love2d"
+      roots[#roots + 1] = home .. "/.local/share/love/pokemon-love2d"
+      roots[#roots + 1] = home .. "/.local/share/love/Gen2Recomp"
+    end
   end
   if love and love.filesystem and love.filesystem.getSaveDirectory then
     local sd = love.filesystem.getSaveDirectory()

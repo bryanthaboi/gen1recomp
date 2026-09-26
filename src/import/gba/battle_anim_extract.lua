@@ -535,19 +535,30 @@ local function encode_png(pixels, w, h)
 
   if buf then
     local dest = 0
-    for y = 0, h - 1 do
-      buf[dest] = 0 -- Filter: None
-      dest = dest + 1
-      local src_base = y * w * 4
-      if is_str then
-        for x = 0, w * 4 - 1 do
-          buf[dest] = pixels:byte(src_base + x + 1) or 0
-          dest = dest + 1
-        end
-      else
-        for x = 0, w * 4 - 1 do
-          buf[dest] = pixels[src_base + x + 1] or 0
-          dest = dest + 1
+    local row_bytes = w * 4
+    if is_str and ffi and ffi.copy then
+      local c_src = ffi.cast("const char*", pixels)
+      for y = 0, h - 1 do
+        buf[dest] = 0 -- Filter: None
+        dest = dest + 1
+        ffi.copy(buf + dest, c_src + (y * row_bytes), row_bytes)
+        dest = dest + row_bytes
+      end
+    else
+      for y = 0, h - 1 do
+        buf[dest] = 0 -- Filter: None
+        dest = dest + 1
+        local src_base = y * row_bytes
+        if is_str then
+          for x = 0, row_bytes - 1 do
+            buf[dest] = pixels:byte(src_base + x + 1) or 0
+            dest = dest + 1
+          end
+        else
+          for x = 0, row_bytes - 1 do
+            buf[dest] = pixels[src_base + x + 1] or 0
+            dest = dest + 1
+          end
         end
       end
     end

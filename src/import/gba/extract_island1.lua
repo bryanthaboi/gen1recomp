@@ -277,7 +277,7 @@ local MAP_ORDER = {
   "FR_PEWTER_CITY_GYM",
 }
 
-function Extract.run(imports, cache, progressCb)
+function Extract.run(imports, cache, progressCb, opts)
   local importId, info = Extract.findImport(imports)
   if not importId then
     return false, "no FireRed/LeafGreen optional import installed"
@@ -477,33 +477,37 @@ function Extract.run(imports, cache, progressCb)
   -- OW sprites + tileset anims + encounters + audio + chrome from ROM
   do
     local rom2 = assert(Rom.open(imports, importId))
-    require("src.import.gba.help_extract").writeExtract(rom2, cache)
-    require("src.import.gba.quest_log_extract").writeExtract(rom2, cache)
-    require("src.import.gba.object_interactions_extract").writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
+    if not (opts and opts.skipScriptsAndOw) then
+      require("src.import.gba.help_extract").writeExtract(rom2, cache)
+      require("src.import.gba.quest_log_extract").writeExtract(rom2, cache)
+      require("src.import.gba.object_interactions_extract").writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
+    end
     local midLists = {}
     for _, pairName in ipairs(pairNames) do
       midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
     end
     local AnimPack = require("src.import.gba.tileset_anim_pack")
     AnimPack.writeExtract(rom2, cache, Extract.CACHE_ROOT, bundles, midLists, version)
-    local OwExtract = require("src.import.gba.ow_extract")
-    OwExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
-    local EncExtract = require("src.import.gba.encounters_extract")
-    EncExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
-    local FxExtract = require("src.import.gba.field_effect_extract")
-    FxExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
-    do
-      local MartsExtract = require("src.import.gba.marts_extract")
-      local okM, detailM = pcall(MartsExtract.run, rom2, cache, {
-        cacheRoot = Extract.CACHE_ROOT,
-      })
-      if okM and detailM then
-        print(string.format("[marts] %d lists → %s",
-          detailM.listCount or 0, tostring(detailM.path)))
+    if not (opts and opts.skipScriptsAndOw) then
+      local OwExtract = require("src.import.gba.ow_extract")
+      OwExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
+      local EncExtract = require("src.import.gba.encounters_extract")
+      EncExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
+      local FxExtract = require("src.import.gba.field_effect_extract")
+      FxExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
+      do
+        local MartsExtract = require("src.import.gba.marts_extract")
+        local okM, detailM = pcall(MartsExtract.run, rom2, cache, {
+          cacheRoot = Extract.CACHE_ROOT,
+        })
+        if okM and detailM then
+          print(string.format("[marts] %d lists → %s",
+            detailM.listCount or 0, tostring(detailM.path)))
+        end
       end
-    end
-    for _, name in ipairs({ "online_ui_extract", "berry_crush_extract", "dodrio_extract", "pokemon_jump_extract" }) do
-      require("src.import.gba." .. name).run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
+      for _, name in ipairs({ "online_ui_extract", "berry_crush_extract", "dodrio_extract", "pokemon_jump_extract" }) do
+        require("src.import.gba." .. name).run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
+      end
     end
     rom2:clearCache()
   end
@@ -542,34 +546,37 @@ function Extract.run(imports, cache, progressCb)
   cl[#cl + 1] = "}\n"
   cache:write(Extract.CACHE_ROOT .. "/connections.lua", table.concat(cl))
 
-  -- game3 scripts/events/text/movements from ROM MapEvents + BFS
-  local ExtractScripts = require("src.import.gba.extract_scripts")
-  rom = assert(Rom.open(imports, importId))
-  local scriptBundle = ExtractScripts.writeBundleFromRom(
-    rom, cache, Extract.CACHE_ROOT, version, extractedScripts)
+  local scriptBundle = nil
+  if not (opts and opts.skipScriptsAndOw) then
+    -- game3 scripts/events/text/movements from ROM MapEvents + BFS
+    local ExtractScripts = require("src.import.gba.extract_scripts")
+    rom = assert(Rom.open(imports, importId))
+    scriptBundle = ExtractScripts.writeBundleFromRom(
+      rom, cache, Extract.CACHE_ROOT, version, extractedScripts)
 
-  -- Extract full trainer parties, AI flags, dialogs, and sprites
-  do
-    local TrainerExtract = require("src.import.gba.trainer_extract")
-    TrainerExtract.run(rom, cache, {
-      cacheRoot = Extract.CACHE_ROOT,
-      scripts = scriptBundle and scriptBundle.scripts,
-      text = scriptBundle and scriptBundle.text,
-    })
-  end
-
-  -- Normalized map_tree mirror
-  do
-    local MapTreeExtract = require("src.import.gba.map_tree_extract")
-    local okTree, treeDetail = MapTreeExtract.run(rom, cache, {
-      version = version,
-      root = Extract.CACHE_ROOT .. "/map_tree",
-    })
-    if not okTree then
-      print("[extract] map_tree warn: " .. tostring(treeDetail))
+    -- Extract full trainer parties, AI flags, dialogs, and sprites
+    do
+      local TrainerExtract = require("src.import.gba.trainer_extract")
+      TrainerExtract.run(rom, cache, {
+        cacheRoot = Extract.CACHE_ROOT,
+        scripts = scriptBundle and scriptBundle.scripts,
+        text = scriptBundle and scriptBundle.text,
+      })
     end
+
+    -- Normalized map_tree mirror
+    do
+      local MapTreeExtract = require("src.import.gba.map_tree_extract")
+      local okTree, treeDetail = MapTreeExtract.run(rom, cache, {
+        version = version,
+        root = Extract.CACHE_ROOT .. "/map_tree",
+      })
+      if not okTree then
+        print("[extract] map_tree warn: " .. tostring(treeDetail))
+      end
+    end
+    rom:clearCache()
   end
-  rom:clearCache()
 
   progress(progressCb, 7, "done", 1, 1)
   bundles = nil
@@ -1736,63 +1743,6 @@ local function _dormant_quantize_run(imports, cache, progressCb)
     EncExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
     local FxExtract = require("src.import.gba.field_effect_extract")
     FxExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
-    do
-      local MartsExtract = require("src.import.gba.marts_extract")
-      local okM, detailM = pcall(MartsExtract.run, rom2, cache, {
-        cacheRoot = Extract.CACHE_ROOT,
-      })
-      if okM and detailM then
-        print(string.format("[marts] %d lists → %s",
-          detailM.listCount or 0, tostring(detailM.path)))
-      end
-    end
-    do
-      local BagChromeExtract = require("src.import.gba.bag_chrome_extract")
-      local okB, detailB = pcall(BagChromeExtract.run, rom2, cache, {
-        cacheRoot = Extract.CACHE_ROOT,
-      })
-      if okB and detailB then
-        print(string.format("[bag_chrome] icons=%d → %s",
-          detailB.iconsBaked or 0, tostring(detailB.root)))
-      elseif not okB then
-        print("[bag_chrome] warn: " .. tostring(detailB))
-      end
-    end
-    do
-      local AnimExtract = require("src.import.gba.battle_anim_extract")
-      local animCache = {
-        write = function(_, rel, bytes)
-          local path = rel
-          if not path:match("^data/") then path = Extract.CACHE_ROOT .. "/" .. path end
-          return cache:write(path, bytes)
-        end,
-        exists = function(_, rel) return (cache.exists and cache:exists(rel)) or false end,
-        read   = function(_, rel) return (cache.read and cache:read(rel)) or nil end,
-      }
-      pcall(AnimExtract.run, rom2, animCache, { cacheRoot = Extract.CACHE_ROOT, force = true })
-    end
-    do
-      local BattleAiExtract = require("src.import.gba.battle_ai_extract")
-      BattleAiExtract.run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-    end
-    do
-      local TextChromeExtract = require("src.import.gba.text_chrome_extract")
-      local okTc, errTc = pcall(TextChromeExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      if not okTc then print("[text_chrome] warn: " .. tostring(errTc)) end
-      local MapSectionsExtract = require("src.import.gba.map_sections_extract")
-      local okMs, errMs = pcall(MapSectionsExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      if not okMs then print("[map_sections] warn: " .. tostring(errMs)) end
-      require("src.import.gba.easy_chat_extract").run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      local MapPreviewExtract = require("src.import.gba.map_preview_extract")
-      local okMp, errMp = pcall(MapPreviewExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      if not okMp then print("[map_preview] warn: " .. tostring(errMp)) end
-      local RegionMapExtract = require("src.import.gba.region_map_extract")
-      local okRm, errRm = pcall(RegionMapExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      if not okRm then print("[region_map] warn: " .. tostring(errRm)) end
-      local HealLocationsExtract = require("src.import.gba.heal_locations_extract")
-      local okHl, errHl = pcall(HealLocationsExtract.run, rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-      if not okHl then print("[heal_locations] warn: " .. tostring(errHl)) end
-    end
     rom2:clearCache()
   end
 
@@ -1932,6 +1882,69 @@ local function _dormant_quantize_run(imports, cache, progressCb)
   }
 end
 
+function Extract.runScriptsAndOw(imports, cache, progressCb)
+  local importId, info = Extract.findImport(imports)
+  if not importId then
+    return false, "no FireRed/LeafGreen optional import installed"
+  end
+  local version, verr = Versions.lookup(info.md5)
+  if not version then return false, verr end
+
+  local rom = assert(Rom.open(imports, importId))
+
+  if progressCb then progressCb(1, 4, "help_quest_log", 0, 1) end
+  require("src.import.gba.help_extract").writeExtract(rom, cache)
+  require("src.import.gba.quest_log_extract").writeExtract(rom, cache)
+  require("src.import.gba.object_interactions_extract").writeExtract(rom, cache, Extract.CACHE_ROOT, version)
+
+  if progressCb then progressCb(2, 4, "ow_sprites", 0, 1) end
+  local OwExtract = require("src.import.gba.ow_extract")
+  OwExtract.writeExtract(rom, cache, Extract.CACHE_ROOT, version)
+  local EncExtract = require("src.import.gba.encounters_extract")
+  EncExtract.writeExtract(rom, cache, Extract.CACHE_ROOT, version)
+  local FxExtract = require("src.import.gba.field_effect_extract")
+  FxExtract.writeExtract(rom, cache, Extract.CACHE_ROOT, version)
+
+  if progressCb then progressCb(3, 4, "scripts_events", 0, 1) end
+  local ExtractScripts = require("src.import.gba.extract_scripts")
+  local scriptBundle = ExtractScripts.writeBundleFromRom(rom, cache, Extract.CACHE_ROOT, version)
+
+  if progressCb then progressCb(4, 4, "trainers_map_tree", 0, 1) end
+  local TrainerExtract = require("src.import.gba.trainer_extract")
+  TrainerExtract.run(rom, cache, {
+    cacheRoot = Extract.CACHE_ROOT,
+    scripts = scriptBundle and scriptBundle.scripts,
+    text = scriptBundle and scriptBundle.text,
+  })
+
+  local MapTreeExtract = require("src.import.gba.map_tree_extract")
+  local okTree, treeDetail = MapTreeExtract.run(rom, cache, {
+    version = version,
+    root = Extract.CACHE_ROOT .. "/map_tree",
+  })
+  if not okTree then
+    print("[extract] map_tree warn: " .. tostring(treeDetail))
+  end
+
+  do
+    local MartsExtract = require("src.import.gba.marts_extract")
+    local okM, detailM = pcall(MartsExtract.run, rom, cache, {
+      cacheRoot = Extract.CACHE_ROOT,
+    })
+    if okM and detailM then
+      print(string.format("[marts] %d lists → %s",
+        detailM.listCount or 0, tostring(detailM.path)))
+    end
+  end
+
+  for _, name in ipairs({ "online_ui_extract", "berry_crush_extract", "dodrio_extract", "pokemon_jump_extract" }) do
+    require("src.import.gba." .. name).run(rom, cache, { cacheRoot = Extract.CACHE_ROOT })
+  end
+
+  rom:clearCache()
+  return true
+end
+
 --- Rebuild native blobs only (demake cache already valid). Seconds, not minutes.
 -- Uses full gMapGroups census → CacheFS (same pair set as Extract.run).
 function Extract.runNativeOnly(imports, cache, progressCb)
@@ -2039,47 +2052,6 @@ function Extract.runNativeOnly(imports, cache, progressCb)
     EncExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
     local FxExtract = require("src.import.gba.field_effect_extract")
     FxExtract.writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
-    do
-      local MartsExtract = require("src.import.gba.marts_extract")
-      local okM, detailM = pcall(MartsExtract.run, rom2, cache, {
-        cacheRoot = Extract.CACHE_ROOT,
-      })
-      if okM and detailM then
-        print(string.format("[marts] %d lists → %s",
-          detailM.listCount or 0, tostring(detailM.path)))
-      end
-    end
-    do
-      local BagChromeExtract = require("src.import.gba.bag_chrome_extract")
-      local okB, detailB = pcall(BagChromeExtract.run, rom2, cache, {
-        cacheRoot = Extract.CACHE_ROOT,
-      })
-      if okB and detailB then
-        print(string.format("[bag_chrome] icons=%d → %s",
-          detailB.iconsBaked or 0, tostring(detailB.root)))
-      elseif not okB then
-        print("[bag_chrome] warn: " .. tostring(detailB))
-      end
-    end
-    do
-      local AnimExtract = require("src.import.gba.battle_anim_extract")
-      local animCache = {
-        write = function(_, rel, bytes)
-          local path = rel
-          if not path:match("^data/") then
-            path = Extract.CACHE_ROOT .. "/" .. path
-          end
-          return cache:write(path, bytes)
-        end,
-        exists = function(_, rel) return (cache.exists and cache:exists(rel)) or false end,
-        read   = function(_, rel) return (cache.read and cache:read(rel)) or nil end,
-      }
-      pcall(AnimExtract.run, rom2, animCache, { cacheRoot = Extract.CACHE_ROOT, force = true })
-    end
-    do
-      local BattleAiExtract = require("src.import.gba.battle_ai_extract")
-      BattleAiExtract.run(rom2, cache, { cacheRoot = Extract.CACHE_ROOT })
-    end
     rom2:clearCache()
   end
   bump_meta_version(cache)

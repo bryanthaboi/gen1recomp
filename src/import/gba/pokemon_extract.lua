@@ -123,13 +123,24 @@ local function decode_4bpp(bytes, w, h)
   local ti = 0
   local band = bit and bit.band
   local rshift = bit and bit.rshift
+  local isStr = type(bytes) == "string"
+  local bytes_ptr = (isStr and ffi) and ffi.cast("const uint8_t*", bytes) or nil
+  local bytes_len = isStr and #bytes or (bytes and #bytes or 0)
+
   for ty = 0, tilesH - 1 do
     for tx = 0, tilesW - 1 do
       local tileOff = ti * 32 -- 32 bytes / 4bpp tile
       for row = 0, 7 do
         for bx = 0, 3 do
-          local bi = tileOff + row * 4 + bx + 1
-          local byte = bytes[bi] or 0
+          local bi = tileOff + row * 4 + bx
+          local byte = 0
+          if bytes_ptr then
+            if bi < bytes_len then byte = bytes_ptr[bi] end
+          elseif isStr then
+            byte = string.byte(bytes, bi + 1) or 0
+          else
+            byte = bytes[bi + 1] or 0
+          end
           local p0, p1
           if band and rshift then
             p0 = band(byte, 0x0F)
@@ -212,9 +223,26 @@ local function decode_pic_sheet(tiles, palBytes, frame, bank)
   local palBase = (tonumber(bank) or 0) * 32
   local tileBase = (tonumber(frame) or 0) * 2048
   local pal = {}
+  local isStrPal = type(palBytes) == "string"
+  local isStrTiles = type(tiles) == "string"
+  local pal_ptr = (isStrPal and ffi) and ffi.cast("const uint8_t*", palBytes) or nil
+  local tiles_ptr = (isStrTiles and ffi) and ffi.cast("const uint8_t*", tiles) or nil
+  local pal_len = isStrPal and #palBytes or (palBytes and #palBytes or 0)
+  local tiles_len = isStrTiles and #tiles or (tiles and #tiles or 0)
+
   for c = 0, 15 do
-    local lo = palBytes[palBase + c * 2 + 1] or 0
-    local hi = palBytes[palBase + c * 2 + 2] or 0
+    local lo, hi
+    if pal_ptr then
+      local idx = palBase + c * 2
+      lo = (idx < pal_len) and pal_ptr[idx] or 0
+      hi = (idx + 1 < pal_len) and pal_ptr[idx + 1] or 0
+    elseif isStrPal then
+      lo = string.byte(palBytes, palBase + c * 2 + 1) or 0
+      hi = string.byte(palBytes, palBase + c * 2 + 2) or 0
+    else
+      lo = palBytes[palBase + c * 2 + 1] or 0
+      hi = palBytes[palBase + c * 2 + 2] or 0
+    end
     pal[c] = lo + hi * 256
   end
   local w, h = 64, 64
@@ -236,8 +264,15 @@ local function decode_pic_sheet(tiles, palBytes, frame, bank)
         local tileOff = ti * 32
         for row = 0, 7 do
           for bx = 0, 3 do
-            local bi = tileBase + tileOff + row * 4 + bx + 1
-            local byte = tiles[bi] or 0
+            local bi = tileBase + tileOff + row * 4 + bx
+            local byte = 0
+            if tiles_ptr then
+              if bi < tiles_len then byte = tiles_ptr[bi] end
+            elseif isStrTiles then
+              byte = string.byte(tiles, bi + 1) or 0
+            else
+              byte = tiles[bi + 1] or 0
+            end
             local p0 = band(byte, 0x0F)
             local p1 = rshift(byte, 4)
             local x0 = tx * 8 + bx * 2
@@ -285,8 +320,8 @@ local function decode_pic_sheet(tiles, palBytes, frame, bank)
       local tileOff = ti * 32
       for row = 0, 7 do
         for bx = 0, 3 do
-          local bi = tileBase + tileOff + row * 4 + bx + 1
-          local byte = tiles[bi] or 0
+          local bi = tileBase + tileOff + row * 4 + bx
+          local byte = isStrTiles and (string.byte(tiles, bi + 1) or 0) or (tiles[bi + 1] or 0)
           local p0 = byte % 16
           local p1 = math.floor(byte / 16) % 16
           local x0 = tx * 8 + bx * 2
@@ -682,6 +717,9 @@ function PokemonExtract.run(rom, cache, opts)
   local cacheRoot = opts.cacheRoot or default_cache_root()
   local root = cacheRoot .. "/" .. PokemonExtract.CACHE_SUB
   local num = opts.numSpecies or Versions.NUM_SPECIES
+  local spMin = opts.spMin or 0
+  local spMax = opts.spMax or (num - 1)
+  local onlySpeciesGfx = opts.onlySpeciesGfx == true
   local progress = opts.progress
 
   local names = {}
@@ -705,8 +743,10 @@ function PokemonExtract.run(rom, cache, opts)
   end
 
   local function lz(off)
-    local ok, out = pcall(Lz77.decompress, function(i) return rom:get(i) end, off)
-    if ok then return out end
+    local ok, out = pcall(Lz77.decompressString, rom, off)
+    if ok and out then return out end
+    local ok2, out2 = pcall(Lz77.decompress, function(i) return rom:get(i) end, off)
+    if ok2 then return out2 end
     return nil
   end
 
@@ -731,6 +771,7 @@ function PokemonExtract.run(rom, cache, opts)
           -- src/pokemon.c:1350, :5339
           if sp == SPECIES_SPINDA and kind == "front" then
             local function raw(t, n)
+              if type(t) == "string" then return t:sub(1, n) end
               local out = {}
               for i = 1, n do out[i] = string.char(t[i] or 0) end
               return table.concat(out)
@@ -757,10 +798,34 @@ function PokemonExtract.run(rom, cache, opts)
     end
   end
 
-  for sp = 0, num - 1 do
-    if progress and sp % 40 == 0 then
-      progress("pokemon", sp, num)
+  local totalGfxCount = spMax - spMin + 1
+  for sp = spMin, spMax do
+    if progress and (sp - spMin) % 40 == 0 then
+      progress("pokemon", sp - spMin, totalGfxCount)
     end
+    put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
+    picsWritten.icons = picsWritten.icons + 1
+    write_pics(sp)
+  end
+
+  if not onlySpeciesGfx and spMax >= num - 1 then
+    -- include/constants/species.h:425
+    for sp = Versions.SPECIES_UNOWN_B, Versions.SPECIES_UNOWN_QMARK do
+      put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
+      write_pics(sp)
+    end
+  end
+
+  if onlySpeciesGfx then
+    return {
+      root = root,
+      numSpecies = totalGfxCount,
+      picsWritten = picsWritten,
+    }
+  end
+
+  -- Full metadata pass for all species
+  for sp = 0, num - 1 do
     names[sp] = decode_name(rom, nameBase + sp * Versions.SPECIES_NAME_LENGTH)
     local ioff = infoBase + sp * Versions.SPECIES_INFO_SIZE
     stats[sp] = {
@@ -783,7 +848,6 @@ function PokemonExtract.run(rom, cache, opts)
     end
     types[sp] = { rom:get(ioff + 6), rom:get(ioff + 7) }
     abilities[sp] = { rom:get(ioff + 0x16), rom:get(ioff + 0x17) }
-    -- pokefirered/include/pokemon.h:219
     local evLo, evHi = rom:get(ioff + 0x0A), rom:get(ioff + 0x0B)
     meta[sp] = {
       catchRate = rom:get(ioff + 0x08),
@@ -802,22 +866,10 @@ function PokemonExtract.run(rom, cache, opts)
       growthRate = rom:get(ioff + 0x13),
       eggGroup1 = rom:get(ioff + 0x14),
       eggGroup2 = rom:get(ioff + 0x15),
-      -- pokefirered/include/pokemon.h:233
       safariZoneFleeRate = rom:get(ioff + 0x18),
       linkStats = linkStats,
     }
-    -- Table omits SPECIES_NONE; SpeciesToNationalPokedexNum uses [species - 1].
     toNat[sp] = (sp >= 1) and rom:u16(natBase + (sp - 1) * 2) or 0
-
-    put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
-    picsWritten.icons = picsWritten.icons + 1
-    write_pics(sp)
-  end
-
-  -- include/constants/species.h:425
-  for sp = Versions.SPECIES_UNOWN_B, Versions.SPECIES_UNOWN_QMARK do
-    put(cache, root .. "/icons/" .. sp .. ".rgba", icon_rgba(rom, sp, pals))
-    write_pics(sp)
   end
 
   if #picsMissing > 0 then
@@ -826,17 +878,18 @@ function PokemonExtract.run(rom, cache, opts)
     error(("pokemon_extract: %d species sprites with valid ROM pointers produced no file (%s%s)")
       :format(#picsMissing, table.concat(shown, ", "), #picsMissing > #shown and ", ..." or ""))
   end
-  if picsWritten.icons < num or picsWritten.front < 1 or picsWritten.back < 1 then
+  local expectedIcons = (spMin == 0 and spMax >= num - 1) and num or (spMax - spMin + 1)
+  if picsWritten.icons < expectedIcons or picsWritten.front < 1 or picsWritten.back < 1 then
     error(("pokemon_extract: sprite pass wrote %d icons, %d front, %d back for %d species")
-      :format(picsWritten.icons, picsWritten.front, picsWritten.back, num))
+      :format(picsWritten.icons, picsWritten.front, picsWritten.back, expectedIcons))
   end
 
   -- pokefirered/src/battle_gfx_sfx_util.c:422
   local ghostPic = Versions.GHOST_FRONT_PIC
   local ghostPal = Versions.GHOST_PALETTE
   if ghostPic and ghostPal then
-    local okT, tiles = pcall(Lz77.decompress, function(i) return rom:get(i) end, ghostPic)
-    local okP, palBytes = pcall(Lz77.decompress, function(i) return rom:get(i) end, ghostPal)
+    local okT, tiles = pcall(Lz77.decompressString, rom, ghostPic)
+    local okP, palBytes = pcall(Lz77.decompressString, rom, ghostPal)
     if okT and okP and tiles and palBytes then
       local rgba = decode_pic_sheet(tiles, palBytes)
       if rgba then cache:write(root .. "/front/ghost.rgba", rgba) end
@@ -956,8 +1009,8 @@ function PokemonExtract.run(rom, cache, opts)
 
   local moveDescs = {}
   local moveDescBase = Versions.MOVE_DESCRIPTIONS or 0x4886E8
-  local moveCount = (Versions.MOVES_COUNT or 355) - 1
-  for i = 0, moveCount - 1 do
+  local moveDescCount = (Versions.MOVES_COUNT or 355) - 1
+  for i = 0, moveDescCount - 1 do
     local ptr = rom:u32(moveDescBase + i * 4)
     local off = gba_off(ptr)
     local name = moveNames[i + 1] or ("MOVE_" .. (i + 1))
@@ -1056,12 +1109,12 @@ function PokemonExtract.run(rom, cache, opts)
 
   if progress then progress("bag_chrome", 0, 1) end
   local BagChromeExtract = require("src.import.gba.bag_chrome_extract")
-  local bagChrome = BagChromeExtract.run(rom, cache, { cacheRoot = cacheRoot })
+  BagChromeExtract.run(rom, cache, { cacheRoot = cacheRoot })
   if progress then progress("bag_chrome", 1, 1) end
 
   if progress then progress("shop_chrome", 0, 1) end
   local ShopChromeExtract = require("src.import.gba.shop_chrome_extract")
-  local shopChrome = ShopChromeExtract.run(rom, cache, { cacheRoot = cacheRoot })
+  ShopChromeExtract.run(rom, cache, { cacheRoot = cacheRoot })
   if progress then progress("shop_chrome", 1, 1) end
 
   local TextChromeExtract = require("src.import.gba.text_chrome_extract")
@@ -1091,16 +1144,6 @@ function PokemonExtract.run(rom, cache, opts)
 
   require("src.import.gba.easy_chat_extract").run(rom, cache, { cacheRoot = cacheRoot })
 
-  if progress then progress("trainers", 0, 1) end
-  local TrainerExtract = require("src.import.gba.trainer_extract")
-  local trainers = TrainerExtract.run(rom, cache, { cacheRoot = cacheRoot })
-  if progress then progress("trainers", 1, 1) end
-
-  if progress then progress("battle_ai", 0, 1) end
-  local BattleAiExtract = require("src.import.gba.battle_ai_extract")
-  local battleAi = BattleAiExtract.run(rom, cache, { cacheRoot = cacheRoot or default_cache_root() })
-  if progress then progress("battle_ai", 1, 1) end
-
   return {
     root = root,
     numSpecies = num,
@@ -1119,8 +1162,6 @@ function PokemonExtract.run(rom, cache, opts)
     battleChrome = battleChrome,
     battleTransition = battleTransition,
     summaryChrome = summaryChrome,
-    trainers = trainers,
-    battleAi = battleAi,
   }
 end
 

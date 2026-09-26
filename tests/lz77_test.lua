@@ -47,10 +47,19 @@ local function test_lz77_bounds_safety()
   print("✓ test_lz77_bounds_safety passed")
 end
 
+local function test_lz77_decompress_string()
+  local payload = "ZERO COPY STRING DECOMPRESSION TEST PAYLOAD 1234567890ABCDEF"
+  local compressed = Lz77.compressStore(payload)
+  local decompStr, consumed = Lz77.decompressString(function(i) return compressed[i + 1] end, 0)
+  assert(decompStr == payload, "decompressString should match original payload")
+  print("✓ test_lz77_decompress_string passed")
+end
+
 local function run_all()
   test_lz77_basic()
   test_lz77_matches()
   test_lz77_bounds_safety()
+  test_lz77_decompress_string()
   print("All LZ77 unit tests passed!")
 end
 

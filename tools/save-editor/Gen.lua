@@ -161,8 +161,8 @@ function Gen.bindGame3Data(data)
   local okD, Dataset = pcall(require, "src.core.game3.dataset")
   if okD and Dataset then
     if Dataset.mountExtractRoots then pcall(Dataset.mountExtractRoots) end
-    local g3Maps = Dataset.buildMaps()
-    if g3Maps then
+    local okM, g3Maps = pcall(Dataset.buildMaps)
+    if okM and g3Maps then
       local cache = Dataset.cache and Dataset.cache()
       if cache and Dataset.attachMidLayouts then
         pcall(Dataset.attachMidLayouts, g3Maps, cache)
@@ -181,8 +181,8 @@ function Gen.bindGame3Data(data)
     pcall(Pokemon.install, nil)
     data.pokemon = data.pokemon or {}
     for id = 1, Pokemon.SPECIES_EGG - 1 do
-      local name = Pokemon.name(id)
-      if name and name ~= "??????????" and name ~= "" then
+      local okN, name = pcall(Pokemon.name, id)
+      if okN and name and name ~= "??????????" and name ~= "" then
         local def = {
           id = name,
           name = name,
@@ -197,9 +197,10 @@ function Gen.bindGame3Data(data)
     end
 
     data.moves = data.moves or {}
+    local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
     for id = 1, 354 do
       local mName = Pokemon.moveName(id)
-      local bMove = Pokemon.battleMove(id)
+      local bMove = Pokemon.battleMove(id) or (okB and BuiltinMoves and BuiltinMoves[id])
       if mName and mName ~= "-------" and not mName:find("^MOVE %d+") then
         local mDef = {
           id = mName,
@@ -223,8 +224,8 @@ function Gen.bindGame3Data(data)
       data.items[k] = iDef
     end
     for num = 1, 375 do
-      local info = ItemsData.info(num)
-      if info and info.name and info.name ~= "none" and info.name ~= "" then
+      local okInf, info = pcall(ItemsData.info, num)
+      if okInf and info and info.name and info.name ~= "none" and info.name ~= "" then
         local normName = info.name:upper():gsub("[^A-Z0-9_]", "_"):gsub("_+", "_")
         local iDef = { id = normName, name = info.name, pocket = info.pocket, itemId = num }
         data.items[normName] = iDef

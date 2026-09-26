@@ -894,7 +894,11 @@ function Pokemon.moveName(moveId)
   if not Pokemon._moveNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._moveNames and Pokemon._moveNames[num]
   if n and n ~= "" then return n end
-  error("no ROM move name for move " .. num, 2)
+  local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
+  if okB and BuiltinMoves and BuiltinMoves[num] and BuiltinMoves[num].name then
+    return BuiltinMoves[num].name
+  end
+  return "MOVE " .. tostring(num)
 end
 
 function Pokemon.learnset(species)
@@ -943,7 +947,14 @@ function Pokemon.battleMove(moveId)
   moveId = tonumber(moveId)
   if not moveId then return nil end
   if not Pokemon._battleMoves then Pokemon.install(Pokemon._cache) end
-  return Pokemon._battleMoves and Pokemon._battleMoves[moveId]
+  if Pokemon._battleMoves and Pokemon._battleMoves[moveId] then
+    return Pokemon._battleMoves[moveId]
+  end
+  local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
+  if okB and BuiltinMoves and BuiltinMoves[moveId] then
+    return BuiltinMoves[moveId]
+  end
+  return nil
 end
 
 function Pokemon.movePp(moveId)

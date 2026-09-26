@@ -26,7 +26,7 @@ check(Versions.TM_CASE_MENU_FEMALE_PAL == 0xE84D20, "Versions.TM_CASE_MENU_FEMAL
 check(Versions.TM_CASE_DISC_GFX == 0xE84D90, "Versions.TM_CASE_DISC_GFX is 0xE84D90")
 check(Versions.TM_CASE_DISC_TYPES1_PAL == 0xE84F20, "Versions.TM_CASE_DISC_TYPES1_PAL is 0xE84F20")
 check(Versions.TM_CASE_DISC_TYPES2_PAL == 0xE85068, "Versions.TM_CASE_DISC_TYPES2_PAL is 0xE85068")
-check(Versions.TM_CASE_HM_GFX == 0xE99138, "Versions.TM_CASE_HM_GFX is 0xE99138")
+check(Versions.TM_CASE_HM_GFX == 0xE99118, "Versions.TM_CASE_HM_GFX is 0xE99118")
 
 check(Versions.BERRY_POUCH_SPRITE_GFX == 0xE8560C, "Versions.BERRY_POUCH_SPRITE_GFX is 0xE8560C")
 check(Versions.BERRY_POUCH_BG_GFX == 0xE859D0, "Versions.BERRY_POUCH_BG_GFX is 0xE859D0")
@@ -37,14 +37,23 @@ check(Versions.BERRY_POUCH_BG_TILEMAP == 0xE85C44, "Versions.BERRY_POUCH_BG_TILE
 
 print("\n=== 2. Extraction from FireRed ROM ===")
 
-local romPath = "1636 - Pokemon Fire Red (U)(Squirrels).gba"
-local f = io.open(romPath, "rb")
+local candidatePaths = {
+  "1636 - Pokemon Fire Red (U)(Squirrels).gba",
+  "firered_dump.gba",
+  "Pokemon - Fire Red Version (U) (V1.1).gba",
+}
+local f, romPath
+for _, p in ipairs(candidatePaths) do
+  f = io.open(p, "rb")
+  if f then romPath = p; break end
+end
 if not f then
-  print("[SKIP] ROM not found at " .. romPath)
+  print("[SKIP] ROM not found in candidate paths")
   os.exit(0)
 end
 local romData = f:read("*all")
 f:close()
+print("Loaded ROM: " .. romPath)
 
 local rom = {
   get = function(self, i)

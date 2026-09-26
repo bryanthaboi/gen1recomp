@@ -168,6 +168,77 @@ function Lz77.decompress(get, offset)
   return out, src - offset
 end
 
+--- Decompress GBA LZ77 directly into a binary Lua string (zero-copy when FFI is available).
+function Lz77.decompressString(get, offset)
+  offset = offset or 0
+  local get_byte
+  if type(get) == "function" then
+    get_byte = get
+  elseif type(get) == "string" then
+    get_byte = function(i) return string.byte(get, i + 1) or 0 end
+  elseif type(get) == "table" and get.get then
+    get_byte = function(i) return get:get(i) or 0 end
+  elseif type(get) == "table" then
+    get_byte = function(i) return get[i + 1] or 0 end
+  else
+    error("LZ77: invalid byte source")
+  end
+
+  local typ = get_byte(offset)
+  if typ ~= 0x10 then
+    error(("LZ77: expected type 0x10 at 0x%X, got 0x%02X"):format(offset, typ or 0))
+  end
+  local size = get_byte(offset + 1) + get_byte(offset + 2) * 256 + get_byte(offset + 3) * 65536
+  if size <= 0 or size > 8 * 1024 * 1024 then
+    error(("LZ77: unreasonable size %d"):format(size))
+  end
+
+  local src = offset + 4
+  local buf = get_ffi_buffer(size)
+
+  local band = bit and bit.band
+  local rshift = bit and bit.rshift
+  local lshift = bit and bit.lshift
+  local bor = bit and bit.bor
+
+  if buf and band and rshift and bor and lshift and ffi then
+    local produced = 0
+    while produced < size do
+      local flags = get_byte(src)
+      src = src + 1
+      for bi = 7, 0, -1 do
+        if produced >= size then break end
+        local is_ref = band(rshift(flags, bi), 1) == 1
+        if is_ref then
+          local b1 = get_byte(src)
+          local b2 = get_byte(src + 1)
+          src = src + 2
+          local length = rshift(b1, 4) + 3
+          local disp = bor(lshift(band(b1, 0x0F), 8), b2)
+          for _ = 1, length do
+            if produced >= size then break end
+            local read_pos = produced - 1 - disp
+            local v = 0
+            if read_pos >= 0 then
+              v = buf[read_pos]
+            end
+            buf[produced] = v
+            produced = produced + 1
+          end
+        else
+          buf[produced] = get_byte(src) or 0
+          src = src + 1
+          produced = produced + 1
+        end
+      end
+    end
+    return ffi.string(buf, size), src - offset
+  end
+
+  local out_arr, consumed = Lz77.decompress(get, offset)
+  return Lz77.toString(out_arr), consumed
+end
+
 --- Decompress from a 1-based byte array / string-like source.
 function Lz77.decompressFromBytes(bytes, offset0)
   local function get(i)

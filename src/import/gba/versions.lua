@@ -1609,7 +1609,7 @@ Versions.TM_CASE_MENU_FEMALE_PAL = 0xE84D20      -- gTMCaseMenu_Female_Pal (LZ 4
 Versions.TM_CASE_DISC_GFX = 0xE84D90             -- gTMCaseDisc_Gfx (LZ 4bpp, 1024 bytes)
 Versions.TM_CASE_DISC_TYPES1_PAL = 0xE84F20      -- gTMCaseDiscTypes1_Pal (LZ 16 banks, 512 bytes)
 Versions.TM_CASE_DISC_TYPES2_PAL = 0xE85068      -- gTMCaseDiscTypes2_Pal (LZ 1 bank, 32 bytes)
-Versions.TM_CASE_HM_GFX = 0xE99138               -- gTMCaseHM_Gfx (raw 4bpp, 96 bytes)
+Versions.TM_CASE_HM_GFX = 0xE99118               -- gTMCaseHM_Gfx (raw 4bpp, 128 bytes)
 
 -- Berry Pouch (LZ-compressed; FireRed USA 1.0).
 Versions.BERRY_POUCH_SPRITE_GFX = 0xE8560C       -- gBerryPouchSpriteTiles (LZ 4bpp 64x64, 2048 bytes)

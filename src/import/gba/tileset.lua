@@ -10,11 +10,6 @@ Tileset.NUM_PRIMARY_METATILES = 640
 Tileset.NUM_PALS_IN_PRIMARY = 7  -- BG slots 0..6
 Tileset.NUM_PALS_TOTAL = 13      -- BG slots 0..12
 
-local function bytes_to_array(str)
-  local t = {}
-  for i = 1, #str do t[i] = str:byte(i) end
-  return t
-end
 
 --- Decode one BGR555 colour → r,g,b in 0..31 (5-bit) and 0..255.
 function Tileset.bgr555(c)
@@ -68,18 +63,20 @@ end
 
 --- Decompress 4bpp tiles → array of tileCount entries, each 64 nybbles (8×8).
 function Tileset.loadTiles4bpp(rom, lzOffset)
-  local raw, _consumed = Lz77.decompress(function(i) return rom:get(i) end, lzOffset)
-  local nbytes = type(raw) == "table" and (raw._len or #raw) or #raw
+  local ok, raw = pcall(Lz77.decompressString, rom, lzOffset)
+  if not ok or not raw then
+    raw = Lz77.decompress(function(i) return rom:get(i) end, lzOffset)
+  end
+  local nbytes = type(raw) == "string" and #raw or (type(raw) == "table" and (raw._len or #raw) or 0)
   local tileCount = math.floor(nbytes / 32)
-  local tiles = { count = tileCount, raw = raw }
-  return tiles
+  return { count = tileCount, raw = raw }
 end
 
 --- Uncompressed 4bpp tile sheet (isCompressed=0 tilesets, e.g. cable club).
 function Tileset.loadTiles4bppRaw(rom, offset, nbytes)
   nbytes = tonumber(nbytes) or 0
-  if nbytes < 32 then return { count = 0, raw = {} } end
-  local raw = rom:readBytes(offset, nbytes)
+  if nbytes < 32 then return { count = 0, raw = "" } end
+  local raw = rom:readString(offset, nbytes)
   return { count = math.floor(nbytes / 32), raw = raw }
 end
 
@@ -93,8 +90,10 @@ function Tileset.tileIndex(tiles, tid, x, y)
   local b
   if raw._ffi then
     b = raw._ffi[byteIndex]
+  elseif type(raw) == "string" then
+    b = string.byte(raw, byteIndex + 1) or 0
   else
-    b = raw[byteIndex + 1]
+    b = raw[byteIndex + 1] or 0
   end
   if x % 2 == 0 then
     return b % 16
@@ -103,13 +102,13 @@ function Tileset.tileIndex(tiles, tid, x, y)
 end
 
 function Tileset.loadMetatiles(rom, offset, nbytes)
-  local data = rom:readBytes(offset, nbytes)
+  local data = rom:readString(offset, nbytes)
   local count = math.floor(nbytes / 16)
   return { data = data, count = count }
 end
 
 function Tileset.loadAttributes(rom, offset, nbytes)
-  local data = rom:readBytes(offset, nbytes)
+  local data = rom:readString(offset, nbytes)
   local count = math.floor(nbytes / 4)
   return { data = data, count = count }
 end
@@ -125,9 +124,15 @@ function Tileset.attrOf(attrs, mid, primaryCount)
   if idx < 0 or idx >= attrs.count then
     return 0, 0
   end
-  local off = idx * 4 -- 1-based data
+  local off = idx * 4
   local d = attrs.data
-  local w = d[off + 1] + d[off + 2] * 256 + d[off + 3] * 65536 + d[off + 4] * 16777216
+  local w
+  if type(d) == "string" then
+    local b1, b2, b3, b4 = string.byte(d, off + 1, off + 4)
+    w = (b1 or 0) + (b2 or 0) * 256 + (b3 or 0) * 65536 + (b4 or 0) * 16777216
+  else
+    w = d[off + 1] + d[off + 2] * 256 + d[off + 3] * 65536 + d[off + 4] * 16777216
+  end
   local behavior = w % 512 -- 0x1FF
   -- Collision in map cells is separate; metatile attr also encodes layer type etc.
   -- Use bit 0x200 area: pret stores collision in map grid, behavior here.
@@ -143,12 +148,21 @@ function Tileset.metatileEntries(primaryMt, secondaryMt, mid)
     data = secondaryMt.data
     localMid = mid - Tileset.NUM_PRIMARY_METATILES
   end
-  local off = localMid * 16 -- 1-based: 16 bytes = 8 u16
-  if off + 16 > #data then return nil end
+  local off = localMid * 16
+  local dataLen = type(data) == "string" and #data or (data and (data._len or #data) or 0)
+  if off + 16 > dataLen then return nil end
   local entries = {}
-  for i = 0, 7 do
-    local b = off + i * 2
-    entries[i + 1] = data[b + 1] + data[b + 2] * 256
+  if type(data) == "string" then
+    for i = 0, 7 do
+      local b = off + i * 2
+      local b1, b2 = string.byte(data, b + 1, b + 2)
+      entries[i + 1] = (b1 or 0) + (b2 or 0) * 256
+    end
+  else
+    for i = 0, 7 do
+      local b = off + i * 2
+      entries[i + 1] = data[b + 1] + data[b + 2] * 256
+    end
   end
   return entries
 end

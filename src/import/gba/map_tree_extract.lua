@@ -30,6 +30,9 @@ end
 local function rom_blob(rom, ptr, nbytes)
   local off = rom:ptrOffset(ptr)
   if not off or not nbytes or nbytes < 1 then return nil end
+  if rom.readString then
+    return rom:readString(off, nbytes)
+  end
   local bytes = rom:readBytes(off, nbytes)
   local s = {}
   for i = 1, #bytes do
