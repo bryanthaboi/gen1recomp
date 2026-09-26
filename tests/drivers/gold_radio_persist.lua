@@ -14,7 +14,7 @@
 -- Snorlax fight.
 local U = require("tests.drivers.util")
 
-return function(game)
+local function run(game)
   U.wait(45)
   local world = game.world
   assert(world and world.map, "gold world did not boot")
@@ -34,9 +34,15 @@ return function(game)
 
   -- Beside the sleeping Snorlax: (33,8) is one of SnorlaxAwake's own
   -- .ProximityCoords, and facing right reaches the doll's object cell (34,8).
-  assert(world:setMap("VERMILION_CITY", 33, 8, "right"),
-    "setMap failed for VERMILION_CITY")
-  U.wait(10)
+  world:warpToMapId("VERMILION_CITY", 33, 8, "right")
+  local ready
+  for _ = 1, 600 do
+    ready = not game.stack:top() and world.map.id == "VERMILION_CITY"
+      and world:acceptsMenuInput()
+    if ready then break end
+    U.wait(1)
+  end
+  assert(ready, "Vermilion warp did not become ready for menu input")
 
   local function top() return game.stack:top() end
   local function topIs(id)
@@ -79,8 +85,7 @@ return function(game)
   assert(gear.mode == "card" and gear:card().id == "radio",
     "did not land on the radio card")
 
-  -- Wind the knob to 20.0: RADIO_CHANNELS row 7, six UPs from row 1.
-  for _ = 1, 6 do U.tap(game, "up") U.wait(2) end
+  for _ = 1, 39 do U.tap(game, "up") U.wait(2) end
   assert(gear.radioShow == "POKE_FLUTE_RADIO",
     "20.0 did not resolve the POKe FLUTE channel (got "
     .. tostring(gear.radioShow) .. ")")
@@ -96,12 +101,14 @@ return function(game)
   -- survive all three (ExitPokegearRadio_HandleMusic keeps a tuned song).
   U.tap(game, "b") U.wait(3)
   U.tap(game, "b") U.wait(3)
-  for _ = 1, 60 do
-    if top() == nil then break end
+  ready = false
+  for _ = 1, 600 do
+    ready = top() == nil and world:acceptsMenuInput()
+    if ready then break end
     if topIs("Gen2StartMenu") then U.tap(game, "b") end
-    U.wait(4)
+    U.wait(1)
   end
-  U.wait(5)
+  assert(ready, "closing the gear did not return to an interactive overworld")
   assert(Music.current() == "Music_PokeFluteChannel",
     "the song did not survive closing the gear (playing "
     .. tostring(Music.current()) .. ")")
@@ -138,5 +145,10 @@ return function(game)
     :format(enemy.level, tostring(enemy.item)))
 
   print("[driver] PASS gold radio persistence + Snorlax wake")
-  love.event.quit()
+end
+
+return function(game)
+  local ok, err = xpcall(function() run(game) end, debug.traceback)
+  if not ok then print("[driver] FAIL gold radio persistence " .. tostring(err)) end
+  love.event.quit(ok and 0 or 1)
 end

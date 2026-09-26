@@ -80,7 +80,13 @@ local function newWorld(cellX, cellY)
     w.moves[#w.moves + 1] = { entity = entity, dir = dir, tiles = tiles,
                               onDone = onDone }
   end
-  w.takeWarp = function(_, def) w.warps[#w.warps + 1] = def end
+  w.refreshStandingOnWarp = function()
+    w.standingOnWarp = w.map:warpAtCell(w.player.cellX, w.player.cellY) ~= nil
+  end
+  w.takeWarp = function(_, def)
+    T.check(w.standingOnWarp, "scripted admission refreshes source warp flag before takeWarp")
+    w.warps[#w.warps + 1] = def
+  end
   w.startWarpTo = function(_, mapId, x, y, facing)
     w.warps[#w.warps + 1] = { startWarpTo = mapId, x = x, y = y,
                               facing = facing }
@@ -151,6 +157,7 @@ T.eq(#ow.moves, 1, "the payment text is followed by the entrance auto-walk")
 T.eq(ow.moves[1].dir, "up", "SafariZoneEntranceAutoWalk walks PAD_UP")
 T.eq(ow.moves[1].tiles, 2, "two cells reach the north warp row")
 T.eq(#ow.warps, 0, "the warp is not taken until the walk lands on it")
+ow.player.cellY = 0
 ow.moves[1].onDone()
 T.eq(game.save.safari.steps, 500,
   "the two gate steps are charged, so the counter reads 500/500 on arrival")

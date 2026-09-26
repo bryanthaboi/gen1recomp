@@ -926,10 +926,8 @@ function Pokegear.new(game, opts)
   self.cards = self:visibleCards()
   self.cardIndex = 1
   self.mode = "strip" -- strip | card
-  -- Which RadioChannels row the tuning knob sits on.  The knob itself runs
-  -- 0..80 in steps of two; the port steps the row instead, because every
-  -- position between two stations is the same dead air.
-  self.station = 1
+  self.tuningKnob = game and game.radioTuningSave == self.save
+    and game.radioTuningKnob or 0
   -- wPokegearPhoneCursorPosition / wPokegearPhoneScrollPosition, both of which
   -- are ZERO based on the cart: the cursor runs 0..PHONE_DISPLAY_HEIGHT - 1
   -- inside the visible window and the scroll runs 0..CONTACT_LIST_SIZE -
@@ -1223,17 +1221,15 @@ function Pokegear:update(_dt)
       return
     end
     self:ensureTuned()
-    -- AnimateTuningKnob.TuningKnob: up winds the knob towards 80 and down
-    -- back towards 0, and it stops dead at either end rather than wrapping.
-    -- The port steps RadioChannels rows, so "stops dead" is a clamp.
-    if input:wasPressed("up") then
-      if self.station < #RADIO_CHANNELS then
-        self.station = self.station + 1
+    -- engine/pokegear/pokegear.asm:1379
+    if input:wasPressed("down") then
+      if self.tuningKnob > 0 then
+        self.tuningKnob = self.tuningKnob - 2
         self:tuneRadio()
       end
-    elseif input:wasPressed("down") then
-      if self.station > 1 then
-        self.station = self.station - 1
+    elseif input:wasPressed("up") then
+      if self.tuningKnob < 80 then
+        self.tuningKnob = self.tuningKnob + 2
         self:tuneRadio()
       end
     end
@@ -1314,13 +1310,21 @@ function Pokegear:stations()
 end
 
 function Pokegear:currentStation()
-  return self:stations()[self.station]
+  for _, row in ipairs(self:stations()) do
+    if row.knob == self.tuningKnob then return row end
+  end
+  return { knob = self.tuningKnob,
+    frequency = ("%04.1f"):format((self.tuningKnob + 2) / 4) }
 end
 
 -- UpdateRadioStation: the knob moved, so resolve the frequency, hand the show
 -- machine the station it landed on, and let RadioChannelSongs replace the
 -- map's music.  Dead air is NoRadioStation: no name, no box, no song.
 function Pokegear:tuneRadio()
+  if self.game then
+    self.game.radioTuningKnob = self.tuningKnob
+    self.game.radioTuningSave = self.save
+  end
   local row = self:currentStation()
   local station = row and row.station
   self.radioTuned = true
@@ -1328,6 +1332,7 @@ function Pokegear:tuneRadio()
   if not station then
     self.radio = nil
     self.radioOn = false
+    self.radioSong = nil
     -- NoRadioStation: MUSIC_NONE now, and ENTER_MAP_MUSIC parked in
     -- wPokegearRadioMusicPlaying so leaving the radio on dead air brings the
     -- map's own theme back (ExitPokegearRadio_HandleMusic).
@@ -2464,16 +2469,15 @@ function Pokegear:drawPlain()
       meridiem(hour)), 5, 9)
     Chrome.print(Clock.daytimeLabel(hour), 5, 11)
   elseif id == "radio" then
-    -- Without the gear sheet there is no dial art, so the frequencies go down
-    -- the screen as a list.  A frequency whose test failed still gets a row:
-    -- the knob really does stop there, it just finds nothing.
+    self:ensureTuned()
     Chrome.box(0, 4, 20, 14)
-    for i, row in ipairs(self:stations()) do
-      local ty = 5 + (i - 1) * 2
-      if ty < 17 then
-        if i == self.station then Chrome.cursor(1, ty) end
-        Chrome.print(row.frequency .. " " .. (row.name or ""), 2, ty)
-      end
+    local row = self:currentStation()
+    Chrome.print(row.frequency, 2, 6)
+    Chrome.print(row.name or "", 2, 9)
+    Chrome.textbox(0, 12, 18, 4)
+    if row.station and self.radio then
+      Chrome.print(self.radio.top or "", 1, 14)
+      Chrome.print(self.radio.bottom or "", 1, 16)
     end
   elseif id == "phone" then
     -- No card art, so no signal meter and no tilemap: the list and the call

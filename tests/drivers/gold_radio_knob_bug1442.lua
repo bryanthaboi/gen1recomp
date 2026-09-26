@@ -10,29 +10,37 @@
 --     perl -e 'alarm 300; exec @ARGV' \
 --     python3 -c "import pty; pty.spawn(['love','.'])"
 --
--- The run parks on the radio card with the knob on 08.5, so UP and DOWN move
--- the needle by hand.
 local U = require("tests.drivers.util")
 
-local SHOTS = os.getenv("POKEPORT_SHOTS") or "/tmp/radioknob"
+local SHOTS = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("POKEPORT_SHOTS") or "/tmp/radioknob"
 
-return function(game)
+local function run(game)
   U.wait(45)
   local world = game.world
   assert(world and world.map, "gold world did not boot")
 
   -- Goldenrod, where the card is handed out, and the two engine flags the
   -- START menu and the strip read: ENGINE_POKEGEAR and ENGINE_RADIO_CARD.
-  assert(world:setMap("GOLDENROD_CITY", 12, 20, "down"),
-    "setMap failed for GOLDENROD_CITY")
+  world:warpToMapId("GOLDENROD_CITY", 12, 20, "down")
   world:setEngineFlag(4, true) -- ENGINE_POKEGEAR
   world:setEngineFlag(0, true) -- ENGINE_RADIO_CARD
-  U.wait(5)
+  local ready
+  for _ = 1, 600 do
+    ready = not game.stack:top() and world.map.id == "GOLDENROD_CITY"
+      and world:acceptsMenuInput()
+    if ready then break end
+    U.wait(1)
+  end
+  assert(ready, "Goldenrod warp did not become ready for menu input")
 
   game:openStartMenuItem("pokegear")
-  U.wait(5)
-  local gear = game.stack:top()
-  assert(gear and gear.cards, "the POKeGEAR did not open")
+  local gear
+  for _ = 1, 180 do
+    local top = game.stack:top()
+    if top and top.screenId == "Gen2Pokegear" then gear = top break end
+    U.wait(1)
+  end
+  assert(gear and gear.cards, "the POKeGEAR did not open after the menu fade")
   gear.mode = "card"
   for index, card in ipairs(gear.cards) do
     if card.id == "radio" then gear.cardIndex = index end
@@ -40,18 +48,21 @@ return function(game)
   assert(gear:card().id == "radio", "the RADIO card is missing from the strip")
   U.wait(5)
 
-  -- 04.5, the bottom of the dial: the needle sits at the left of the box.
-  U.shot(game, SHOTS .. "/01-radio-04.5.png")
+  for _ = 1, 8 do U.tap(game, "up") U.wait(4) end
+  assert(gear:currentStation().knob == 16, "04.5 knob missing")
+  U.shot(game, SHOTS .. "/1442_radio_04.5.png")
   U.log("knob", tostring(gear:currentStation().knob), "at 04.5")
 
-  U.tap(game, "up") U.wait(4)
-  U.tap(game, "up") U.wait(4)
-  U.shot(game, SHOTS .. "/02-radio-08.5.png")
+  for _ = 1, 8 do U.tap(game, "up") U.wait(4) end
+  assert(gear:currentStation().knob == 32, "08.5 knob missing")
+  U.shot(game, SHOTS .. "/1442_radio_08.5.png")
   U.log("knob", tostring(gear:currentStation().knob), "at 08.5")
 
-  U.log("compare 01 and 02: a red needle stands in the dial box and has",
-    "moved right; UP/DOWN now walk it by hand")
-  while true do
-    coroutine.yield()
-  end
+  print("[driver] PASS radio_knob_1442")
+end
+
+return function(game)
+  local ok, err = xpcall(function() run(game) end, debug.traceback)
+  if not ok then print("[driver] FAIL radio_knob_1442 " .. tostring(err)) end
+  love.event.quit(ok and 0 or 1)
 end

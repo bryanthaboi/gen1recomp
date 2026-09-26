@@ -797,15 +797,8 @@ end
 function Sound.playCry(data, species, pikaClip)
   if not love.audio then return nil end
   if deviceSuspended() then return nil end
-  -- Yellow voices every Pikachu cry with the PCM clips (the chip cry is
-  -- never used for the species there).  Which clip is a property of the
-  -- call site in the original -- every caller of PlayPikachuSoundClip sets
-  -- its own `ldpikacry e, PikachuCryN` -- so pikaClip carries that choice
-  -- in; it is ignored for every other species.  Clip 1 is the LONG
-  -- title-screen "Pikachuuu" (engine/movie/title.asm:146), kept as the
-  -- default only for the sites that have not been given their own clip
-  -- yet; battle entrances pass 11/37 (#837).
-  if species == "PIKACHU" then
+  -- pokeyellow/home/pokemon.asm:140
+  if species == "PIKACHU" and pikaClip ~= false then
     local src = Sound.playPikaCry(data, pikaClip or 1)
     if src then return src end
   end

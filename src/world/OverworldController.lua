@@ -2706,7 +2706,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       Game.stack:push(TextBox.new(Game,
         romText(Game.data, "_FoundHiddenItemText", "%s found\n%s!",
           save.player.name, name),
-        nil, TextBox.soundOpts(Game, "Get_Item2")))
+        nil, TextBox.soundOpts(Game, "Get_Item2", {auto = true})))
       return true
     end
   end
@@ -3440,7 +3440,7 @@ function OverworldState:talkTo(npc)
       romText(Game.data, "_FoundItemText", "%s found\n%s!",
         Game.save.player.name, name), nil,
       TextBox.soundOpts(Game,
-        (ddef and ddef.keyItem) and "Get_Key_Item" or "Get_Item1")))
+        (ddef and ddef.keyItem) and "Get_Key_Item" or "Get_Item1", {auto = true})))
     return
   end
 

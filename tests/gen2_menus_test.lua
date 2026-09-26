@@ -1684,33 +1684,31 @@ check("without a phone, right pages to the radio", noPhone:card().id, "radio")
 --
 -- AnimateTuningKnob.TuningKnob winds wRadioTuningKnob up towards 80 and down
 -- towards 0 and stops dead at either end -- `ret z` at the bottom and
--- `ret nc` at the top.  It does not wrap, so neither does the port's row.
+-- engine/pokegear/pokegear.asm:1398
 local knobGear = newMapGear({ clock = { hour = 14, minute = 0, weekday = 1 } })
 for index, card in ipairs(knobGear.cards) do
   if card.id == "radio" then knobGear.cardIndex = index end
 end
 knobGear.mode = "card"
 knobGear:update(0)
-check("entering the card resolves the frequency", knobGear.radioShow,
-  "OAKS_POKEMON_TALK")
+check("entering the card resolves initial dead air", knobGear.radioShow, nil)
 mapInput:press("up")
 knobGear:update(0)
-check("up winds the knob on", knobGear.station, 2)
-check("and retunes", knobGear.radioShow, "POKEMON_MUSIC")
+check("up winds the knob by two", knobGear.tuningKnob, 2)
+check("and resolves intermediate dead air", knobGear.radioShow, nil)
 mapInput:press("down")
 knobGear:update(0)
 mapInput:press("down")
 knobGear:update(0)
-check("down stops dead at the bottom of the dial", knobGear.station, 1)
-knobGear.station = #Pokegear.RADIO_CHANNELS
+check("down stops dead at the bottom of the dial", knobGear.tuningKnob, 0)
+knobGear.tuningKnob = 80
 mapInput:press("up")
 knobGear:update(0)
-check("and up stops dead at the top", knobGear.station,
-  #Pokegear.RADIO_CHANNELS)
+check("and up stops dead at the top", knobGear.tuningKnob, 80)
 
 -- The show only advances while the card is up, and B hands the map's music
 -- back (ExitPokegearRadio_HandleMusic) and throws the machine away.
-knobGear.station = 1
+knobGear.tuningKnob = 16
 knobGear:tuneRadio()
 for _ = 1, 300 do knobGear:update(0) end
 check("the show runs while the card is up", #knobGear.radio.log >= 2, true)

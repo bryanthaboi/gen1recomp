@@ -23,7 +23,7 @@ local StartMenu = require("src.ui.gen2.StartMenu")
 local TrainerCard = require("src.ui.gen2.TrainerCard")
 local GoldSilverIntro = require("src.ui.gen2.GoldSilverIntro")
 
-return function(game)
+local function run(game)
   local out = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/gold-menus"
 
   local function shot(name)
@@ -172,7 +172,7 @@ return function(game)
   for i, card in ipairs(radio.cards) do
     if card.id == "radio" then radio.cardIndex = i end
   end
-  radio.station = 1
+  radio.tuningKnob = 16
   radio.radioLine = 2
   show("13b-pokegear-radio", radio)
   local phone = Pokegear.new(game, {})
@@ -207,12 +207,14 @@ return function(game)
   show("17c-pokedex-search", dexSearch)
 
   show("18-options", OptionsMenu.new(game, { options = game.options }))
-  -- ...and scrolled to the port's own display rows, which is what the ▼ on
-  -- the first page points at.
   local scrolled = OptionsMenu.new(game, { options = game.options })
-  scrolled.index = #OptionsMenu.ROWS
-  scrolled:ensureVisible()
-  show("25-options-display", scrolled)
+  game.stack:push(scrolled)
+  local display = scrolled:focusRow("uiLetterbox")
+  assert(display ~= scrolled and display:row().id == "uiLetterbox",
+    "display options group did not open")
+  shot("25-options-display")
+  game.stack:pop()
+  game.stack:pop()
   -- writer is stubbed so the shot never touches a real save file.
   show("19-save", SaveMenu.new(game, {
     save = save, existed = false,
@@ -295,4 +297,10 @@ return function(game)
   }))
 
   print("[driver] PASS gold menu shots in " .. out)
+end
+
+return function(game)
+  local ok, err = xpcall(function() run(game) end, debug.traceback)
+  if not ok then print("[driver] FAIL gold menu shots " .. tostring(err)) end
+  love.event.quit(ok and 0 or 1)
 end

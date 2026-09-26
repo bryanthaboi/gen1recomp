@@ -337,8 +337,7 @@ do
     save = save, landmarks = LANDMARKS,
     currentLandmark = "LANDMARK_VERMILION_CITY",
   })
-  -- The knob on 20.0: RADIO_CHANNELS row 7.
-  gear.station = 7
+  gear.tuningKnob = 78
   gear:tuneRadio()
   eq(gear.radioShow, "POKE_FLUTE_RADIO", "the tuner resolved the channel")
   gear:tickRadio()
@@ -353,7 +352,7 @@ do
 
   -- Dead air: knob 16 asks for Johto, and this gear is in Kanto.
   Music.setMapSong("Music_VermilionCity")
-  gear.station = 1
+  gear.tuningKnob = 16
   gear:tuneRadio()
   eq(gear.radioShow, nil, "04.5 is dead air in Kanto")
   eq(gear.radioMusicPlaying, "enterMap", "NoRadioStation parks ENTER_MAP_MUSIC")

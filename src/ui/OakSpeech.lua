@@ -462,8 +462,15 @@ function OakSpeech:runStep(step)
     self.picFlip = true
     self.picTrueColor = self.demoTrueColor
     self:revealPic("wipe", function()
-      Sound.playCry(self.game.data, self.demoSpecies)
-      self:say("_OakSpeechText2A", function() self:advance() end)
+      local species = self.demoSpecies
+      if not require("src.core.GameVersion").isYellow() and species == "NIDORINO"
+          and not (self.cfg and self.cfg.demoSpecies) then
+        species = "NIDORINA"
+      end
+      self:sayText(textOr(self.game, "_OakSpeechText2A"), function() self:advance() end,
+        {auto = {wait = true, sound = function()
+          return Sound.playCry(self.game.data, species, false)
+        end}})
     end)
   elseif kind == "name" then
     local who = step.who or "player"

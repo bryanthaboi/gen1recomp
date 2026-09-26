@@ -43,6 +43,7 @@ local function walkIntoZone(game, ow)
     if st then st.steps = st.steps - 2 end
     -- scripted steps skip onStepComplete (and with it CheckWarpsNoCollision),
     -- so take that warp explicitly once the walk lands on it
+    ow:refreshStandingOnWarp()
     ow:takeWarp(w.def)
   end)
 end
