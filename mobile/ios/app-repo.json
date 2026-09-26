@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.20",
+          "date": "2026-09-26",
+          "size": 38583490,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.20/gen1recomp++-0.3.20-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2479 Textbox not closing automatically after picking up item\n- #2481 Pokemon cry issues during intro\n- #2483 Can't leave Safari Zone immediately\n- #2485 Moving up and down should adjust the radio frequency by 0.5 Hz, rather than just cycling through some stations\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.19",
           "date": "2026-09-26",
           "size": 38583540,
