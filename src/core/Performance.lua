@@ -111,6 +111,12 @@ function Performance.detect()
   if isArm and os == "Linux" then
     return "low"
   end
+  -- PS4: 1.6 GHz Jaguar cores.  cpuArch() cannot tell, and detect() fell
+  -- through to "high", the most demanding tier.  balanced drops the 3D tilt,
+  -- the heaviest extra.
+  if os == "PS4" then
+    return "balanced"
+  end
   -- Phones and tablets: balanced drops the 3D tilt, the heaviest extra.
   if os == "Android" or os == "iOS" then
     return "balanced"

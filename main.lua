@@ -108,10 +108,13 @@ do
       local fullMsg = tostring(msg) .. "\n\n" .. tostring(debug.traceback()) .. "\n\n[Hold START + SELECT for 5s to Force Quit]"
       return function()
         love.event.pump()
-        for e, a in love.event.poll() do
+        for e, a, b in love.event.poll() do
           if e == "quit" or (e == "keypressed" and a == "escape") then
             return 1
-          elseif e == "gamepadpressed" and (a == "start" or a == "back") then
+          -- gamepadpressed carries (joystick, button): the button is the SECOND
+          -- value.  Comparing the first one to "start" was never true, so no
+          -- pad button could leave this screen (all platforms).
+          elseif e == "gamepadpressed" and (b == "start" or b == "back") then
             return 1
           end
         end
