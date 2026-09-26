@@ -1427,6 +1427,7 @@ function Game:applyOptions(opts)
   require("src.render.PaletteFX").applyOptions(opts)
   require("src.render.Tilt").applyOptions(opts)
   require("src.render.Letterbox").applyOptions(opts)
+  require("src.render.PixelFilter").applyOptions(opts)
   -- after Tilt, so a persisted world pipeline can switch the tilt level it
   -- just restored back off (the two are mutually exclusive)
   require("src.render.Pipelines").applyOptions(opts)

@@ -286,7 +286,7 @@ local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
                    "battleFit", "battleHud", "battleBg", "uiLayout",
                    "ruleset", "musicVol", "sfxVol", "musicFilter",
                    "performance", "colors",
-                   "tilt", "uiLetterbox", "shaderfx", "shaderfx2", "zoom", "voidFill",
+                   "tilt", "uiLetterbox", "pixelFilter", "shaderfx", "shaderfx2", "zoom", "voidFill",
                    "videoMode", "faithfulRes", "screenPos", "fpsCap", "vsync", "logicClock",
                    "speedOverworld", "speedBattle", "speedMenu",
                    "mods", "controls", "dateFormat", "timeFormat" }

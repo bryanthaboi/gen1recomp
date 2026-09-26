@@ -58,10 +58,13 @@ Performance.LABELS = {
 -- set below 1.0 yet -- tuning the actual per-tier value for real low-end
 -- hardware needs a device this project doesn't have to hand right now; this
 -- is the mechanism, not the tuning.
+--
+-- `pixelFilter` gates PIXEL FILTER (src/render/PixelFilter.lua): one full-window
+-- shader pass, far lighter than a slang chain, so it survives BALANCED.
 Performance.CAPS = {
-  high     = { tilt = true,  survey = true,  shaderfx = 1.0,   fpsMax = false },
-  balanced = { tilt = false, survey = true,  shaderfx = false, fpsMax = false },
-  low      = { tilt = false, survey = false, shaderfx = false, fpsMax = 60 },
+  high     = { tilt = true,  survey = true,  shaderfx = 1.0,   pixelFilter = true,  fpsMax = false },
+  balanced = { tilt = false, survey = true,  shaderfx = false, pixelFilter = true,  fpsMax = false },
+  low      = { tilt = false, survey = false, shaderfx = false, pixelFilter = false, fpsMax = 60 },
 }
 
 -- Live resolved tier (never "auto"); Game:applyOptions sets it and the

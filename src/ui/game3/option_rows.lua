@@ -169,6 +169,19 @@ function Rows.build(ctx)
     end,
   })
   add({
+    id = "pixelFilter", label = Strings("PIXEL FILTER"),
+    value = function(c)
+      local PixelFilter = require("src.render.PixelFilter")
+      return Strings(PixelFilter.label(c.options.pixelFilter))
+    end,
+    step = function(c, dir)
+      local PixelFilter = require("src.render.PixelFilter")
+      c.options.pixelFilter = PixelFilter.cycle(c.options.pixelFilter, dir)
+      PixelFilter.setMode(c.options.pixelFilter)
+      return true
+    end,
+  })
+  add({
     id = "videoMode", label = Strings("VIDEO MODE"),
     value = function(c)
       local VideoMode = require("src.core.VideoMode")
@@ -402,7 +415,7 @@ Rows.GROUPS = {
     members = { "uiLayout", "videoMode", "orientation", "faithfulRes",
                 "screenPos", "fpsCap", "vsync", "logicClock" } },
   { id = "group.graphics", label = "GRAPHICS",
-    members = { "uiLetterbox", "frameType" } },
+    members = { "uiLetterbox", "pixelFilter", "frameType" } },
   { id = "group.audio", label = "AUDIO",
     members = { "sound", "musicVol", "sfxVol", "musicFilter" } },
   { id = "group.battle", label = "BATTLE OPTIONS",
