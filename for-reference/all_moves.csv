@@ -1,0 +1,745 @@
+Move,Type,Category,Power,Acc.,Details
+Fury Cutter,bug,Physical,10,95,"・An attack that intensifies on each successive hit.
+・ Move's power raises if it hits."
+Pin Missile,bug,Physical,14,85,"・Sharp pins are fired to strike 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Leech Life,bug,Physical,20,100,"・An attack that steals half the damage inflicted.
+・ User recovers half the damage inflicted."
+Twineedle,bug,Physical,25,100,"・Stingers on the forelegs jab the foe twice.
+・ Attacks twice. May induce poison."
+Silver Wind,bug,Physical,60,100,"・A powdery attack that may raise abilities.
+・ May raise all user's stats one stage."
+Signal Beam,bug,Physical,75,100,"・A strange beam attack that may confuse the foe.
+・ May induce CONFUSION."
+Megahorn,bug,Physical,120,85,・A brutal ramming attack using out-thrust horns.
+String Shot,bug,Status,-,95,"・Binds the foe with string to reduce its SPEED.
+・ Lowers opponent's SPEED one stage."
+Spider Web,bug,Status,-,100,"・Ensnares the foe to stop it from fleeing or switching.
+・ Prevents the opponent from escaping."
+Tail Glow,bug,Status,-,100,"・Flashes a light that sharply raises SP. ATK.
+・ Raises user's SP. ATK two stages."
+Beat Up,dark,Special,10,100,"・Summons party Pokémon to join in the attack.
+・ Does additional damage for every Pokémon in trainer's team."
+Knock Off,dark,Special,20,100,"・Knocks down the foe's held item to prevent its use.
+・ Knocks down opponent's held item to prevent its use."
+Pursuit,dark,Special,40,100,"・Inflicts bad damage if used on a foe switching out.
+・ Inflicts double damage if the opponent is switching out."
+"Thief
+(TM46)",dark,Special,40,100,"・While attacking, it may steal the foe's held item.
+・ May steal opponent's item (temporarily in trainer battles)."
+Feint Attack,dark,Special,60,0,"・Draws the foe close, then strikes without fail.
+・ Cannot miss."
+Bite,dark,Special,60,100,"・Bites with vicious fangs. May cause flinching.
+・ May cause opponent to flinch."
+Crunch,dark,Special,80,100,"・Crunches with sharp fangs. May lower SP. DEF.
+・ May lower opponent's SP. DEF one stage."
+Fake Tears,dark,Status,-,100,"・Feigns crying to sharply lower the foe's SP. DEF.
+・ Lowers opponent's SP. DEF two stages."
+Flatter,dark,Status,-,100,"・Confuses the foe, but raises its SP. ATK.
+・ Induces CONFUSE. Raises opponent's SP. ATK two stages."
+Memento,dark,Status,-,100,"・The user faints and lowers the foe's abilities.
+・ Lowers opponent's stats. User faints."
+"Snatch
+(TM49)",dark,Status,-,100,"・Steals the effects of the move the foe uses next.
+・ Steals the effects of opponent's next move."
+"Taunt
+(TM12)",dark,Status,-,100,"・Taunts the foe into only using attack moves.
+・ Opponent can only use attack moves."
+"Torment
+(TM41)",dark,Status,-,100,"・Torments the foe and stops successive use of a move.
+・ Opponent cannot use the same move in a row."
+Dragon Rage,dragon,Special,1,100,"・Launches shock waves that always inflict 40 HP damage.
+・ Inflicts 40 HP damage."
+Twister,dragon,Special,40,100,"・Whips up a vicious twister to tear at the foe.
+・ May cause opponent to flinch. Damage is doubled if opponent is using FLY."
+Dragon Breath,dragon,Special,60,100,"・Strikes the foe with an incredible blast of breath.
+・ May induce paralysis."
+"Dragon Claw
+(TM02)",dragon,Special,80,100,"・Slashes the foe with sharp claws.
+・ No effect."
+Outrage,dragon,Special,90,100,"・A rampage of 2 to 3 turns that confuses the user.
+・ User uses the same attack for 2-3 turns then becomes confused."
+Dragon Dance,dragon,Status,-,-,"・A mystical dance that ups ATTACK and SPEED.
+・ Raises user's ATTACK and SPEED one stage."
+Thunder Shock,electric,Special,40,100,"・An electrical attack that may paralyze the foe.
+・ May induce paralysis."
+"Shock Wave
+(TM34)",electric,Special,60,-,"・A fast and unavoidable electric attack.
+・ Cannot miss."
+Spark,electric,Special,65,100,"・An electrified tackle that may paralyze the foe.
+・ May induce paralysis."
+Thunder Punch,electric,Special,75,100,"・An electrified punch that may paralyze the foe.
+・ May induce paralysis."
+"Thunderbolt
+(TM24)",electric,Special,95,100,"・A strong electrical attack that may paralyze the foe.
+・ May induce paralysis."
+Zap Cannon,electric,Special,100,50,"・Powerful and sure to cause paralysis, but inaccurate.
+・ May induce paralysis."
+"Thunder
+(TM25)",electric,Special,120,70,"・A lightning attack that may cause paralysis.
+・ May induce paralysis."
+Charge,electric,Status,-,100,"・Charges power to boost the electric move used next.
+・ Increases the power of the next ELECTRIC attack."
+Thunder Wave,electric,Status,-,100,"・A weak jolt of electricity that paralyzes the foe.
+・ Induces paralysis"
+Counter,fighting,Physical,1,100,"・Retaliates any physical hit with double the power.
+・ If hit by a physical attack, deals double the damage received."
+Low Kick,fighting,Physical,1,100,"・A kick that inflicts more damage on heavier foes.
+・ Damage inflicted raises the heavier the opponent is."
+Reversal,fighting,Physical,1,100,"・Inflicts more damage when the user's HP is down.
+・ Inflicts more damage when the user's HP is down."
+Seismic Toss,fighting,Physical,1,100,"・Inflicts damage identical to the user's level.
+・ Inflicts damage equal to the user's level."
+Triple Kick,fighting,Physical,10,90,"・Kicks the foe 3 times in a row with rising intensity.
+・ Attacks 1-3 times in a row."
+Arm Thrust,fighting,Physical,15,100,"・Straight-arm punches that strike the foe 2 to 5 times.
+・ Attacks 2-5 times in a row."
+"Rock Smash
+(HM06)",fighting,Physical,20,100,"・A rock-crushing attack that may lower DEFENSE.
+・ May lower opponent's DEFENSE one stage."
+Double Kick,fighting,Physical,30,100,"・A double-kicking attack that strikes the foe twice.
+・ Attacks twice in a row."
+Mach Punch,fighting,Physical,40,100,"・A punch is thrown at wicked speed to strike first.
+・ Always strikes first."
+Karate Chop,fighting,Physical,50,100,"・A chopping attack with a high critical-hit ratio.
+・ Has high critical hit ratio."
+Rolling Kick,fighting,Physical,60,85,"・A fast kick delivered from a rapid spin.
+・ May cause opponent to flinch."
+Revenge,fighting,Physical,60,100,"・An attack that gains power if injured by the foe.
+・ Power doubles if hit before the attack."
+Jump Kick,fighting,Physical,70,95,"・A strong jumping kick. May miss and hurt the kicker.
+・ If attack misses, user takes 1/8 HP of damage."
+Vital Throw,fighting,Physical,70,100,"・Makes the user's move last, but it never misses.
+・ Cannot miss. Goes last."
+"Brick Break
+(TM31)",fighting,Physical,75,100,"・Destroys barriers such as REFLECT and causes damage.
+・ Destroys protective barriers."
+Submission,fighting,Physical,80,80,"・A reckless body slam that also hurts the user.
+・ User takes recoil damage."
+High Jump Kick,fighting,Physical,85,90,"・A jumping knee kick. If it misses, the user is hurt.
+・ If attack misses, user takes 1/8 HP of damage."
+Sky Uppercut,fighting,Physical,85,90,"・An uppercut thrown as if leaping into the sky.
+・ Hits even if opponent is using FLY."
+Dynamic Punch,fighting,Physical,100,50,"・Powerful and sure to cause confusion, but inaccurate.
+・ May induce CONFUSION."
+Cross Chop,fighting,Physical,100,80,"・A double-chopping attack. High critical-hit ratio.
+・ Has high critical hit ratio."
+Superpower,fighting,Physical,120,100,"・Boosts strength sharply, but lowers abilities.
+・ Lowers user's ATTACK and DEFENSE one stage."
+"Focus Punch
+(TM01)",fighting,Physical,150,100,"・A powerful loyalty attack. The user flinches if hit.
+・ User flinches if hit before attacking."
+"Bulk Up
+(TM08)",fighting,Status,-,-,"・Bulks up the body to boost both ATTACK and DEFENSE.
+・ Raises user's ATTACK and DEFENSE one stage."
+Detect,fighting,Status,-,-,"・Evades attack, but may fail if used in succession.
+・ Evades opponents next attack; the move's accuracy drops."
+Fire Spin,fire,Special,15,70,"・Traps the foe in a ring of fire for 2 to 5 turns.
+・ Traps opponent."
+Ember,fire,Special,40,100,"・A weak fire attack that may inflict a burn.
+・ May induce burn."
+Flame Wheel,fire,Special,60,100,"・A fiery charge attack that may inflict a burn.
+・ May induce burn."
+Fire Punch,fire,Special,75,100,"・A fiery punch that may burn the foe.
+・ May induce burn."
+Blaze Kick,fire,Special,85,90,"・A kick with a high critical- hit ratio. May cause a burn.
+・ Has high critical hit ratio. May induce burn."
+"Flamethrower
+(TM35)",fire,Special,95,100,"・A powerful fire attack that may inflict a burn.
+・ May induce burn."
+Heat Wave,fire,Special,100,90,"・Exhales a hot breath on the foe. May inflict a burn.
+・ May induce burn."
+Sacred Fire,fire,Special,100,95,"・A mystical fire attack that may inflict a burn.
+・ May induce burn."
+"Fire Blast
+(TM38)",fire,Special,120,85,"・A fiery blast that scorches all. May cause a burn.
+・ May induce burn."
+"Overheat
+(TM50)",fire,Special,140,90,"・Allows a full-power attack, but sharply lowers SP. ATK.
+・ Lowers user's SP. ATK two stages."
+Blast Burn,fire,Special,150,90,"・Powerful, but leaves the user immobile the next turn.
+・ User cannot attack on the next turn."
+Eruption,fire,Special,150,100,"・The higher the user's HP, the more damage caused.
+・ Inflicts more damage when the user's HP is high."
+Will-O-Wisp,fire,Status,-,75,"・Inflicts a burn on the foe with intense fire.
+・ Induces burn."
+"Sunny Day
+(TM11)",fire,Status,-,-,"・Boosts the power of FIRE- type moves for 5 turns.
+・ Causes Sunshine for 5 rounds."
+Peck,flying,Physical,35,100,"・Attacks the foe with a jabbing beak, etc."
+Gust,flying,Physical,40,100,"・Strikes the foe with a gust of wind whipped up by wings.
+・ Hits even if opponent is using FLY."
+Air Cutter,flying,Physical,55,95,"・Hacks with razorlike wind. High critical-hit ratio.
+・ Has high critical hit ratio."
+Wing Attack,flying,Physical,60,100,・Strikes the foe with wings spread wide.
+"Aerial Ace
+(TM40)",flying,Physical,60,-,"・An extremely speedy and unavoidable attack.
+・ Cannot miss."
+"Fly
+(HM02)",flying,Physical,70,95,"・Flies up on the first turn, then strikes the next turn.
+・ The user is protected the first turn, attacks the second turn."
+Drill Peck,flying,Physical,80,100,"・A corkscrewing attack with the beak acting as a drill.
+・ No effect."
+Bounce,flying,Physical,85,85,"・Bounces up, then down the next turn. May paralyze.
+・ The user is protected the first turn, attacks the second turn."
+Aeroblast,flying,Physical,100,95,"・Launches a vacuumed blast. High critical-hit ratio.
+・ Has high critical hit ratio."
+Sky Attack,flying,Physical,140,90,"・Searches out weak spots, then strikes the next turn.
+・ May cause opponent to flinch."
+Feather Dance,flying,Status,-,100,"・Envelops the foe with down to sharply reduce ATTACK.
+・ Lowers opponent's ATTACK two stages."
+Mirror Move,flying,Status,-,-,"・Counters the foe's attack with the same move.
+・ User does the last move used by opponent."
+Night Shade,ghost,Physical,1,100,"・Inflicts damage identical to the user's level.
+・ Inflicts damage equal to the user's level."
+Lick,ghost,Physical,20,100,"・Licks with a long tongue to injure. May also paralyze.
+・ May induce paralysis."
+Astonish,ghost,Physical,30,100,"・An attack that may shock the foe into flinching.
+・ May cause opponent to flinch."
+Shadow Punch,ghost,Physical,60,-,"・An unavoidable punch that is thrown from shadows.
+・ Cannot miss."
+"Shadow Ball
+(TM30)",ghost,Physical,80,100,"・Hurls a black blob that may lower the foe's SP. DEF.
+・ May lower opponent's SP. DEF one stage."
+Confuse Ray,ghost,Status,-,100,"・A sinister ray that confuses the foe.
+・ May induce CONFUSION."
+Grudge,ghost,Status,-,100,"・If the user faints, deletes the PP of the final move.
+・ If the user faints, deletes the PP of opponent's last move."
+Nightmare,ghost,Status,-,100,"・Inflicts 1/4 damage on a sleeping foe every turn.
+・ Inflicts 1/4 damage on a sleeping foe every turn."
+Spite,ghost,Status,-,100,"・Spitefully cuts the PP of the foe's last move.
+・ Opponent's last move loses 2-5 HP."
+Curse,ghost,Status,-,-,"・A move that functions differently for GHOSTS.
+・ Ghost type Pokémon: User loses half their maximum HP, and the opponent gets a Nightmare. Other Pokémon types: Raises user's ATTACK and DEFENSE one stage. Lowers user's SPEED one stage."
+Destiny Bond,ghost,Status,-,-,"・If the user faints, the foe is also made to faint.
+・ If the user faints, the opponent will also faint."
+"Bullet Seed
+(TM09)",grass,Special,10,100,"・Shoots 2 to 5 seeds in a row to strike the foe.
+・ Attacks 2-5 times in a row."
+Absorb,grass,Special,20,100,"・An attack that absorbs half the damage inflicted.
+・ User recovers half the damage inflicted."
+Vine Whip,grass,Special,35,100,"・Strikes the foe with slender, whiplike vines."
+Mega Drain,grass,Special,40,100,"・An attack that absorbs half the damage inflicted.
+・ User recovers half the damage inflicted."
+Razor Leaf,grass,Special,55,95,"・Cuts the enemy with leaves. High critical-hit ratio.
+・ Has high critical hit ratio."
+"Giga Drain
+(TM19)",grass,Special,60,100,"・An attack that steals half the damage inflicted.
+・ User recovers half the damage inflicted."
+Needle Arm,grass,Special,60,100,"・Attacks with thorny arms. May cause flinching.
+・ May cause opponent to flinch."
+Magical Leaf,grass,Special,60,-,"・Attacks with a strange leaf that cannot be evaded.
+・ Cannot miss."
+Leaf Blade,grass,Special,70,100,"・Slashes with a sharp leaf. High critical-hit ratio.
+・ Has high critical hit ratio."
+Petal Dance,grass,Special,70,100,"・A rampage of 2 to 3 turns that confuses the user.
+・ User uses the same attack for 2-3 turns then becomes confused."
+"Solar Beam
+(TM22)",grass,Special,120,100,"・Absorbs light in one turn, then attacks next turn.
+・ Wait for a turn and attacks the next."
+Frenzy Plant,grass,Special,150,90,"・Powerful, but leaves the user immobile the next turn.
+・ User cannot attack on the next turn."
+Grass Whistle,grass,Status,-,55,"・Lulls the foe into sleep with a pleasant melody.
+・ Induces sleep."
+Sleep Powder,grass,Status,-,75,"・Scatters a powder that may cause the foe to sleep.
+・ Induces sleep."
+Stun Spore,grass,Status,-,75,"・Scatters a powder that may paralyze the foe.
+・ Induces paralysis"
+Cotton Spore,grass,Status,-,85,"・Spores cling to the foe, sharply reducing SPEED.
+・ Lowers opponent's SPEED two stages."
+Leech Seed,grass,Status,-,90,"・Plants a seed on the foe to steal HP on every turn.
+・ User steals HP from the opponent every turn."
+Ingrain,grass,Status,-,100,"・Lays roots that restore HP. The user can't switch out.
+・ Recovers HP every turn. User cannot switch."
+Spore,grass,Status,-,100,"・Scatters a cloud of spores that always induce sleep.
+・ Induces sleep."
+Aromatherapy,grass,Status,-,-,"・Heals all status problems with a soothing scent.
+・ Heals party's status problems."
+Synthesis,grass,Status,-,-,"・Restores HP. The amount varies with the weather.
+・ User restores HP."
+Fissure,ground,Physical,1,30,"・A one-hit KO move that drops the foe in a fissure.
+・ May cause one-hit KO."
+Magnitude,ground,Physical,1,100,"・A ground-shaking attack of random intensity.
+・ Move power is random: 10/30/50/70/90/110/150."
+Sand Tomb,ground,Physical,15,70,"・Traps and hurts the foe in quicksand for 2 to 5 turns.
+・ Traps opponent."
+Mud-Slap,ground,Physical,20,100,"・Hurls mud in the foe's face to reduce its accuracy.
+・ May lower opponent's ACCURACY one stage."
+Bone Rush,ground,Physical,25,80,"・Strikes the foe with a bone in hand 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Bonemerang,ground,Physical,50,90,"・Throws a bone boomerang that strikes twice.
+・ Attacks twice in a row."
+Mud Shot,ground,Physical,55,95,"・Hurls mud at the foe and reduces SPEED.
+・ May lower opponent's SPEED one stage."
+"Dig
+(TM28)",ground,Physical,60,100,"・Digs underground the first turn and strikes next turn.
+・ The user is protected the first turn, attacks the second turn."
+Bone Club,ground,Physical,65,85,"・Clubs the foe with a bone. May cause flinching.
+・ May cause opponent to flinch."
+"Earthquake
+(TM26)",ground,Physical,100,100,"・A powerful quake, but has no effect on flying foes.
+・ Hits everyone on the field."
+Mud Sport,ground,Status,-,100,"・Covers the user in mud to raise electrical resistance.
+・ Lowers the power of ELECTRIC moves."
+Sand Attack,ground,Status,-,100,"・Reduces the foe's accuracy by hurling sand in its face.
+・ Lowers opponent's ACCURACY one stage."
+Spikes,ground,Status,-,-,"・Sets spikes that hurt a foe switching out.
+・ Sets spikes that hurt the opponent upon switching."
+Sheer Cold,ice,Special,1,30,"・A chilling attack that causes fainting if it hits.
+・ May cause one-hit KO."
+Icicle Spear,ice,Special,10,100,"・Attacks the foe by firing 2 to 5 icicles in a row.
+・ Attacks 2-5 times in a row."
+Ice Ball,ice,Special,30,90,"・A 5-turn attack that gains power on successive hits.
+・ Uses the same move for 5 turns; move's power raises if it hits."
+Powder Snow,ice,Special,40,100,"・Blasts the foe with a snowy gust. May cause freezing.
+・ May induce freeze."
+Icy Wind,ice,Special,55,95,"・A chilling attack that lowers the foe's SPEED.
+・ May lower opponent's SPEED one stage."
+Aurora Beam,ice,Special,65,100,"・Fires a rainbow-colored beam that may lower ATTACK.
+・ May lower opponent's ATTACK one stage."
+Ice Punch,ice,Special,75,100,"・An icy punch that may freeze the foe.
+・ May induce freeze."
+"Ice Beam
+(TM13)",ice,Special,95,100,"・Blasts the foe with an icy beam that may freeze it.
+・ May induce freeze."
+"Blizzard
+(TM14)",ice,Special,120,70,"・Hits the foe with an icy storm that may freeze it.
+・ May induce freeze."
+"Hail
+(TM07)",ice,Status,-,-,"・Summons a hailstorm that strikes every turn.
+・ Causes Hailstorm for 5 rounds."
+Haze,ice,Status,-,-,"・Creates a black haze that eliminates all stat changes.
+・ Resets all ability stages."
+Mist,ice,Status,-,-,"・Creates a mist that stops reduction of abilities.
+・ Stops ability reduction."
+Guillotine,normal,Physical,1,30,"・A powerful pincer attack that may cause fainting.
+・ May cause one-hit KO."
+Horn Drill,normal,Physical,1,30,"・A one-hit KO attack that uses a horn like a drill.
+・ May cause one-hit KO."
+Present,normal,Physical,1,90,"・A gift in the form of a bomb. May restore HP.
+・ May hit or heal the user or the opponent."
+Sonic Boom,normal,Physical,1,90,"・Launches shock waves that always inflict 20 HP damage.
+・ Inflicts 20 HP damage."
+Super Fang,normal,Physical,1,90,"・Attacks with sharp fangs and cuts half the foe's HP.
+・ Cuts half opponent's HP."
+Bide,normal,Physical,1,100,"・Endures attack for 2 turns to retaliate double.
+・ User takes hits for 2 rounds, then strikes back."
+Endeavor,normal,Physical,1,100,"・Gains power if the user's HP is lower than the foe's HP.
+・ Power rises if user's HP are less than opponent's HP."
+Flail,normal,Physical,1,100,"・Inflicts more damage when the user's HP is down.
+・ Inflicts more damage when the user's HP is down."
+"Frustration
+(TM21)",normal,Physical,1,100,"・An attack that is stronger if the TRAINER is disliked.
+・ The less happy the user, the stronger the attack."
+"Hidden Power
+(TM10)",normal,Physical,1,100,"・The effectiveness varies with the user.
+・ Power and type depend on user's IVs."
+"Return
+(TM27)",normal,Physical,1,100,"・An attack that increases in power with friendship.
+・ The happier the user, the stronger the attack."
+Constrict,normal,Physical,10,100,"・Constricts to inflict pain. May lower SPEED.
+・ May lower opponent's SPEED one stage."
+Bind,normal,Physical,15,75,"・Binds and squeezes the foe for 2 to 5 turns.
+・ Traps opponent."
+Barrage,normal,Physical,15,85,"・Hurls round objects at the foe 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Double Slap,normal,Physical,15,85,"・Repeatedly slaps the foe 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Fury Attack,normal,Physical,15,85,"・Jabs the foe 2 to 5 times with sharp horns, etc.
+・ Attacks 2-5 times in a row."
+Wrap,normal,Physical,15,85,"・Wraps and squeezes the foe 2 to 5 times with vines, etc.
+・ Traps opponent."
+Fury Swipes,normal,Physical,18,80,"・Rakes the foe with sharp claws, etc., 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Comet Punch,normal,Physical,18,85,"・Repeatedly punches the foe 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Rage,normal,Physical,20,100,"・Raises the user's ATTACK every time it is hit.
+・ User's ATTACK raises if hit."
+Rapid Spin,normal,Physical,20,100,"・Spins the body at high speed to strike the foe.
+・ User is becomes free from moves like Wrap, Bind and Leech Seed."
+Spike Cannon,normal,Physical,20,100,"・Launches sharp spikes that strike 2 to 5 times.
+・ Attacks 2-5 times in a row."
+Tackle,normal,Physical,35,95,・Charges the foe with a full-body tackle.
+Covet,normal,Physical,40,100,"・Cutely begs to obtain an item held by the foe.
+・ May steal opponent's item (temporarily in trainer battles)."
+Fake Out,normal,Physical,40,100,"・A 1st-turn, 1st-strike move that causes flinching.
+・ Causes opponent to flinch. Attacks first."
+False Swipe,normal,Physical,40,100,"・An attack that leaves the foe with at least 1 HP.
+・ Leaves the foe with at least 1 HP."
+Pay Day,normal,Physical,40,100,"・Throws coins at the foe. Money is recovered after.
+・ User gains coins after battle."
+Pound,normal,Physical,40,100,・Pounds the foe with forelegs or tail.
+Quick Attack,normal,Physical,40,100,"・An extremely fast attack that always strikes first.
+・ Always strikes first."
+Scratch,normal,Physical,40,100,・Scratches the foe with sharp claws.
+Snore,normal,Physical,40,100,"・A loud attack that can be used only while asleep.
+・ Can only be used while asleep."
+"Cut
+(HM01)",normal,Physical,50,95,"・Cuts the foe with sharp scythes, claws, etc.
+・ No effect."
+Struggle,normal,Physical,50,100,"・Used only if all PP are gone. Also hurts the user a little.
+・ User takes recoil damage."
+Uproar,normal,Physical,50,100,"・Causes an uproar for 2 to 5 turns and prevents sleep.
+・ User cannot sleep for 2-5 turns."
+Weather Ball,normal,Physical,50,100,"・The move's type and power change with the weather.
+・ Depends on the weather."
+Vise Grip,normal,Physical,55,100,・Grips the foe with large and powerful pincers.
+Smelling Salts,normal,Physical,60,100,"・Powerful against paralyzed foes, but also heals them.
+・ Stronger against a paralyzed opponent but also heals them."
+Swift,normal,Physical,60,-,"・Sprays star-shaped rays that never miss.
+・ Cannot miss."
+Horn Attack,normal,Physical,65,100,・Jabs the foe with sharp horns.
+Stomp,normal,Physical,65,100,"・Stomps the enemy with a big foot. May cause flinching.
+・ May cause opponent to flinch."
+Dizzy Punch,normal,Physical,70,100,"・A rhythmic punch that may confuse the foe.
+・ May induce CONFUSION."
+"Facade
+(TM42)",normal,Physical,70,100,"・Boosts ATTACK when burned, paralyzed, or poisoned.
+・ ATTACK is doubled when burned, paralyzed, or poisoned."
+Headbutt,normal,Physical,70,100,"・A ramming attack that may cause flinching.
+・ May cause opponent to flinch."
+"Secret Power
+(TM43)",normal,Physical,70,100,"・An attack with effects that vary by location.
+・ Depends on battle location."
+Slash,normal,Physical,70,100,"・Slashes with claws, etc. Has a high critical-hit ratio.
+・ Has high critical hit ratio."
+Crush Claw,normal,Physical,75,95,"・Tears at the foe with sharp claws. May lower DEFENSE.
+・ May lower opponent's DEFENSE one stage."
+Slam,normal,Physical,80,75,"・Slams the foe with a long tail, vine, etc."
+Mega Punch,normal,Physical,80,85,・A strong punch thrown with incredible power.
+Hyper Fang,normal,Physical,80,90,"・Attacks with sharp fangs. May cause flinching.
+・ May cause opponent to flinch."
+Extreme Speed,normal,Physical,80,100,"・An extremely fast and powerful attack.
+・ Always strikes first."
+Razor Wind,normal,Physical,80,100,"・A 2-turn move that strikes the foe on the 2nd turn.
+・ Has high critical hit ratio."
+"Strength
+(HM04)",normal,Physical,80,100,"・Builds enormous power, then slams the foe."
+Tri Attack,normal,Physical,80,100,"・Fires three types of beams at the same time.
+・ May induce burn, freeze or paralysis."
+Body Slam,normal,Physical,85,100,"・A full-body slam that may cause paralysis.
+・ May induce paralysis."
+Take Down,normal,Physical,90,85,"・A reckless charge attack that also hurts the user.
+・ User takes recoil damage."
+Hyper Voice,normal,Physical,90,100,・A loud attack that uses sound waves to injure.
+Thrash,normal,Physical,90,100,"・A rampage of 2 to 3 turns that confuses the user.
+・ User uses the same attack for 2-3 turns then becomes confused."
+Egg Bomb,normal,Physical,100,75,"・An egg is forcibly hurled at the foe.
+・ No effect."
+Skull Bash,normal,Physical,100,100,"・Tucks in the head, then attacks on the next turn.
+・ Raises user's DEFENSE one stage and attacks next turn."
+Spit Up,normal,Physical,100,100,"・Releases stockpiled power (the more the better).
+・ Releases power from STOCKPILE."
+Mega Kick,normal,Physical,120,75,・An extremely powerful kick with intense force.
+Double-Edge,normal,Physical,120,100,"・A life-risking tackle that also hurts the user.
+・ User takes recoil damage."
+"Hyper Beam
+(TM15)",normal,Physical,150,90,"・Powerful, but leaves the user immobile the next turn.
+・ User cannot attack on the next turn."
+Self-Destruct,normal,Physical,200,100,"・Inflicts severe damage but makes the user faint.
+・ User faints."
+Explosion,normal,Physical,250,100,"・Inflicts severe damage but makes the user faint.
+・ User faints."
+Disable,normal,Status,-,55,"・Psychically disables one of the foe's moves.
+・ Disables opponent's last move."
+Sing,normal,Status,-,55,"・A soothing song lulls the foe into a deep slumber.
+・ Induces sleep."
+Supersonic,normal,Status,-,55,"・Emits bizarre sound waves that may confuse the foe.
+・ May induce CONFUSION."
+"Flash
+(HM05)",normal,Status,-,70,"・Looses a powerful blast of light that cuts accuracy.
+・ Lowers opponent's ACCURACY one stage."
+Glare,normal,Status,-,75,"・Intimidates and frightens the foe into paralysis.
+・ Induces paralysis"
+Lovely Kiss,normal,Status,-,75,"・Demands a kiss with a scary face that induces sleep.
+・ Induces sleep."
+Sweet Kiss,normal,Status,-,75,"・Demands a kiss with a cute look. May cause confusion.
+・ May induce CONFUSION."
+Screech,normal,Status,-,85,"・Emits a screech to sharply reduce the foe's DEFENSE.
+・ Lowers opponent's DEFENSE two stages."
+Scary Face,normal,Status,-,90,"・Frightens with a scary face to sharply reduce SPEED.
+・ Lowers opponent's SPEED two stages."
+Swagger,normal,Status,-,90,"・Confuses the foe, but also sharply raises ATTACK.
+・ Induces CONFUSE. Raises opponent's ATTACK two stages."
+Nature Power,normal,Status,-,95,"・The type of attack varies depending on the location.
+・ Depends on battle location."
+Assist,normal,Status,-,100,"・Attacks randomly with one of the partner's moves.
+・ Uses a random move from another Pokémon in the team."
+"Attract
+(TM45)",normal,Status,-,100,"・Makes the opposite gender less likely to attack.
+・ Induces ATTRACT."
+Block,normal,Status,-,100,"・Blocks the foe's way to prevent escape.
+・ Prevents the opponent from escaping."
+Camouflage,normal,Status,-,100,"・Alters the POKéMON's type depending on the location.
+・ User changes type depending on the location."
+Charm,normal,Status,-,100,"・Charms the foe and sharply reduces its ATTACK.
+・ Lowers opponent's ATTACK two stages."
+Conversion 2,normal,Status,-,100,"・Makes the user resistant to the last attack's type.
+・ User becomes a type resistant to opponent's last attack."
+Encore,normal,Status,-,100,"・Makes the foe repeat its last move over 2 to 6 turns.
+・ Opponent repears the last move."
+Follow Me,normal,Status,-,100,"・Draws attention to make foes attack only the user.
+・ Opponent only attacks the user. Best used in 2VS2 battles."
+Foresight,normal,Status,-,100,"・Negates the foe's efforts to heighten evasiveness.
+・ Resets opponent's EVASIVENESS."
+Growl,normal,Status,-,100,"・Growls cutely to reduce the foe's ATTACK.
+・ Lowers opponent's ATTACK one stage."
+Helping Hand,normal,Status,-,100,"・Boosts the power of the recipient's moves.
+・ Boosts receiver's attacks. Best used in 2VS2 battles."
+Leer,normal,Status,-,100,"・Frightens the foe with a leer to lower DEFENSE.
+・ Lowers opponent's DEFENSE one stage."
+Lock-On,normal,Status,-,100,"・Locks on to the foe to ensure the next move hits.
+・ Ensures that user's next move will not fail."
+Mean Look,normal,Status,-,100,"・Fixes the foe with a mean look that prevents escape.
+・ Prevents the opponent from escaping."
+Mimic,normal,Status,-,100,"・Copies a move used by the foe during one battle.
+・ Copies opponents last move."
+Mind Reader,normal,Status,-,100,"・Senses the foe's action to ensure the next move's hit.
+・ Ensures that user's next move will not fail."
+Odor Sleuth,normal,Status,-,100,"・Negates the foe's efforts to heighten evasiveness.
+・ Resets opponent's EVASIVENESS."
+Pain Split,normal,Status,-,100,"・Adds the user and foe's HP, then shares them equally.
+・ User and opponent share HP."
+Recycle,normal,Status,-,100,"・Recycles a used item for one more use.
+・ Recycles an already used held item."
+Refresh,normal,Status,-,100,"・Heals poisoning, paralysis, or a burn.
+・ Heals poisoning, paralysis, or a burn."
+"Roar
+(TM05)",normal,Status,-,100,"・Makes the foe flee to end the battle.
+・ Ends battle. Switches the opponent Pokémon in a trainer battle."
+Slack Off,normal,Status,-,100,"・Slacks off and restores half the maximum HP.
+・ User recovers half the maximum HP."
+Smokescreen,normal,Status,-,100,"・Lowers the foe's accuracy using smoke, ink, etc.
+・ Lowers opponent's ACCURACY one stage."
+Soft-Boiled,normal,Status,-,100,"・Recovers up to half the user's maximum HP.
+・ User recovers half the maximum HP. Can also be used in the field."
+Sweet Scent,normal,Status,-,100,"・Allures the foe to reduce evasiveness.
+・ Lowers opponent's EVASIVENESS one stage."
+Tail Whip,normal,Status,-,100,"・Wags the tail to lower the foe's DEFENSE.
+・ Lowers opponent's DEFENSE one stage."
+Teeter Dance,normal,Status,-,100,"・Confuses all POKéMON on the scene.
+・ Confuses all Pokémon on the field."
+Tickle,normal,Status,-,100,"・Makes the foe laugh to lower ATTACK and DEFENSE.
+・ Worsens the condition of those that made appeals."
+Whirlwind,normal,Status,-,100,"・Blows away the foe with wind and ends the battle.
+・ Ends battle. Switches the opponent Pokémon in a trainer battle."
+Wish,normal,Status,-,100,"・A wish that restores HP. It takes time to work.
+・ Recovers HP. Delays 1 turn."
+Yawn,normal,Status,-,100,"・Lulls the foe into yawning, then sleeping next turn.
+・ User and opponent sleep the next turn."
+Baton Pass,normal,Status,-,-,"・Switches out the user while keeping effects in play.
+・ Switches out the user but status changes remain."
+Belly Drum,normal,Status,-,-,"・Maximizes ATTACK while sacrificing HP.
+・ Cut's half of user's maximum HP and maximizes ATTACK."
+Conversion,normal,Status,-,-,"・Changes the user's type into an own move's type.
+・ User changes type into an own move's type."
+Defense Curl,normal,Status,-,-,"・Curls up to conceal weak spots and raise DEFENSE.
+・ Raises user's DEFENSE one stage. Damage from ROLLOUT will be higher."
+"Double Team
+(TM32)",normal,Status,-,-,"・Creates illusory copies to raise evasiveness.
+・ Raises user's EVASIVENESS one stage."
+Endure,normal,Status,-,-,"・Endures any attack for 1 turn, leaving at least 1HP.
+・ Survives any attack for one turn leaving at least 1 HP but move's accuracy drops."
+Focus Energy,normal,Status,-,-,"・Focuses power to raise the critical-hit ratio.
+・ Increases user's critical hit rate."
+Growth,normal,Status,-,-,"・Forces the body to grow and heightens SP. ATK.
+・ Raises user's SP. ATK one stage."
+Harden,normal,Status,-,-,"・Stiffens the body's muscles to raise DEFENSE.
+・ Raises user's DEFENSE one stage."
+Heal Bell,normal,Status,-,-,"・Chimes soothingly to heal all status abnormalities.
+・ Heals party's status problems."
+Howl,normal,Status,-,-,"・Howls to raise the spirit and boosts ATTACK.
+・ Raises user's ATTACK one stage."
+Metronome,normal,Status,-,-,"・Waggles a finger to use any POKéMON move at random.
+・ Uses a random move."
+Milk Drink,normal,Status,-,-,"・Recovers up to half the user's maximum HP.
+・ User recovers half the maximum HP. Can also be used in the field."
+Minimize,normal,Status,-,-,"・Minimizes the user's size to raise evasiveness.
+・ Raises user's EVASIVENESS one stage."
+Moonlight,normal,Status,-,-,"・Restores HP. The amount varies with the weather.
+・ User restores HP."
+Morning Sun,normal,Status,-,-,"・Restores HP. The amount varies with the weather.
+・ User restores HP."
+Perish Song,normal,Status,-,-,"・Any POKéMON hearing this song faints in 3 turns.
+・ All Pokémon on the field faint in 3 turns."
+"Protect
+(TM17)",normal,Status,-,-,"・Evades attack, but may fail if used in succession.
+・ Evades opponents next attack; the move's accuracy drops."
+Psych Up,normal,Status,-,-,"・Copies the foe's effect(s) and gives to the user.
+・ Copies opponent's stat changes."
+Recover,normal,Status,-,-,"・Recovers up to half the user's maximum HP.
+・ User recovers half the maximum HP."
+"Safeguard
+(TM20)",normal,Status,-,-,"・A mystical force prevents all status problems.
+・ Prevents all status problems."
+Sharpen,normal,Status,-,-,"・Reduces the polygon count and raises ATTACK.
+・ Raises user's ATTACK one stage."
+Sketch,normal,Status,-,-,"・Copies the foe's last move permanently.
+・ Copies the opponent's last move forever."
+Sleep Talk,normal,Status,-,-,"・Uses an own move randomly while asleep.
+・ Uses an own random move while asleep."
+Splash,normal,Status,-,-,・It's just a splash... Has no effect whatsoever.
+Stockpile,normal,Status,-,-,"・Charges up power for up to 3 turns.
+・ User stockpiles power for up to 3 turns."
+Substitute,normal,Status,-,-,"・Creates a decoy using 1/4 of the user's maximum HP.
+・ Creates a decoy using 1/4 of the user's maximum HP."
+Swallow,normal,Status,-,-,"・Absorbs stockpiled power and restores HP.
+・ Absorbs power from STOCKPILE and recovers HP."
+Swords Dance,normal,Status,-,-,"・A fighting dance that sharply raises ATTACK.
+・ Raises user's ATTACK two stages."
+Transform,normal,Status,-,-,"・Alters the user's cells to become a copy of the foe.
+・ User transforms to the opponent."
+Poison Sting,poison,Physical,15,100,"・A toxic attack with barbs, etc., that may poison.
+・ May induce poison."
+Smog,poison,Physical,20,70,"・An exhaust-gas attack that may also poison.
+・ May induce poison."
+Acid,poison,Physical,30,100,"・Sprays a hide-melting acid. May lower DEFENSE.
+・ May lower opponent's DEFENSE one stage."
+Acid Armor,poison,Physical,40,-,"・Liquifies the user's body to sharply raise DEFENSE.
+・ Raises user's DEFENSE two stages."
+Poison Fang,poison,Physical,50,100,"・A sharp-fanged attack. May badly poison the foe.
+・ May induce severe poison."
+Poison Tail,poison,Physical,50,100,"・Has a high critical-hit ratio. May also poison.
+・ Has high critical hit ratio. May induce poison."
+Sludge,poison,Physical,65,100,"・Sludge is hurled to inflict damage. May also poison.
+・ May induce poison."
+"Sludge Bomb
+(TM36)",poison,Physical,90,100,"・Sludge is hurled to inflict damage. May also poison.
+・ May induce poison."
+Poison Gas,poison,Status,-,55,"・Envelops the foe in a toxic gas that may poison.
+・ Induces poison."
+Poison Powder,poison,Status,-,75,"・Scatters a toxic powder that may poison the foe.
+・ Induces poison."
+"Toxic
+(TM06)",poison,Status,-,85,"・Poisons the foe with an intensifying toxin.
+・ Induces severe poison."
+Psywave,psychic,Special,1,80,"・Attacks with a psychic wave of varying intensity.
+・ Inflicts damage equal to 0.5 to 1.5 x user's level."
+Mirror Coat,psychic,Special,1,100,"・Counters the foe's special attack at double the power.
+・ Counters the foe's special attack at double the power."
+Confusion,psychic,Special,50,100,"・A psychic attack that may cause confusion.
+・ May induce CONFUSION."
+Psybeam,psychic,Special,65,100,"・Fires a peculiar ray that may confuse the foe.
+・ May induce CONFUSION."
+Luster Purge,psychic,Special,70,100,"・Attacks with a burst of light. May lower SP. DEF.
+・ May lower opponent's SP. DEF one stage."
+Mist Ball,psychic,Special,70,100,"・Attacks with a flurry of down. May lower SP. ATK.
+・ May lower opponent's SP. ATK one stage."
+Future Sight,psychic,Special,80,90,"・Heightens inner power to strike 2 turns later.
+・ Damage delays 2 turns."
+Extrasensory,psychic,Special,80,100,"・Attacks with a peculiar power. May cause flinching.
+・ May cause opponent to flinch."
+"Psychic
+(TM29)",psychic,Special,90,100,"・A powerful psychic attack that may lower SP. DEF.
+・ May lower opponent's SP. DEF one stage."
+Dream Eater,psychic,Special,100,100,"・Takes one half the damage inflicted on a sleeping foe.
+・ User recovers half the damage inflicted on a sleeping opponent."
+Psycho Boost,psychic,Special,140,90,"・Allows a full-power attack, but sharply lowers SP. ATK.
+・ Lowers user's SP. ATK two stages."
+Hypnosis,psychic,Status,-,60,"・A hypnotizing move that may induce sleep.
+・ Induces sleep."
+Kinesis,psychic,Status,-,80,"・Distracts the foe. May lower accuracy.
+・ Lowers opponent's ACCURACY one stage."
+Imprison,psychic,Status,-,100,"・Prevents foes from using moves known by the user.
+・ Opponent cannot use move that user knows."
+Magic Coat,psychic,Status,-,100,"・Reflects special effects back to the attacker.
+・ Any special move is reflected back to the attacker."
+Role Play,psychic,Status,-,100,"・Mimics the target and copies its special ability.
+・ Copies target's ability."
+"Skill Swap
+(TM48)",psychic,Status,-,100,"・The user swaps special abilities with the target.
+・ Use and target trade abilities."
+Trick,psychic,Status,-,100,"・Tricks the foe into trading held items.
+・ User trades items with opponent."
+Agility,psychic,Status,-,-,"・Relaxes the body to sharply boost SPEED.
+・ Raises user's SPEED two stages."
+Amnesia,psychic,Status,-,-,"・Forgets about something and sharply raises SP. DEF.
+・ Raises user's SP. DEF two stages."
+Barrier,psychic,Status,-,-,"・Creates a barrier that sharply raises DEFENSE.
+・ Raises user's DEFENSE two stages."
+"Calm Mind
+(TM04)",psychic,Status,-,-,"・Raises SP. ATK and SP. DEF by focusing the mind.
+・ Raises user's SP. ATK and SP. DEF one stage."
+Cosmic Power,psychic,Status,-,-,"・Raises DEFENSE and SP. DEF with a mystic power.
+・ Raises user's DEFENSE and SP. DEF one stage."
+"Light Screen
+(TM16)",psychic,Status,-,-,"・Creates a wall of light that lowers SP. ATK damage.
+・ Halves SP. ATK damage inflicted on user."
+Meditate,psychic,Status,-,-,"・Meditates in a peaceful fashion to raise ATTACK.
+・ Raises user's ATTACK one stage."
+"Reflect
+(TM33)",psychic,Status,-,-,"・Creates a wall of light that weakens physical attacks.
+・ Halves ATTACK damage inflicted on user."
+"Rest
+(TM44)",psychic,Status,-,-,"・The user sleeps for 2 turns, restoring HP and status.
+・ User restores health, then sleeps."
+Teleport,psychic,Status,-,-,"・A psychic move for fleeing from battle instantly.
+・ Ends battle. Switches user in trainer battles."
+Rock Blast,rock,Physical,25,80,"・Hurls boulders at the foe 2 to 5 times in a row.
+・ Attacks 2-5 times in a row."
+Rollout,rock,Physical,30,90,"・An attack lasting 5 turns with rising intensity.
+・ Uses the same move for 5 turns; move's power raises if it hits."
+"Rock Tomb
+(TM39)",rock,Physical,50,80,"・Stops the foe from moving with rocks and cuts SPEED.
+・ May lower opponent's SPEED one stage."
+Rock Throw,rock,Physical,50,90,・Throws small rocks to strike the foe.
+Ancient Power,rock,Physical,60,100,"・An attack that may raise all stats.
+・ May raise all user's stats one stage."
+Rock Slide,rock,Physical,75,90,"・Large boulders are hurled. May cause flinching.
+・ May cause opponent to flinch."
+"Sandstorm
+(TM37)",rock,Status,-,-,"・Causes a sandstorm that rages for several turns.
+・ Causes a Sandstorm for 5 turns."
+Metal Claw,steel,Physical,50,95,"・A claw attack that may raise the user's ATTACK.
+・ May raise user's ATTACK one stage."
+"Steel Wing
+(TM47)",steel,Physical,70,90,"・Strikes the foe with hard wings spread wide.
+・ May raise user's DEFENSE one stage."
+"Iron Tail
+(TM23)",steel,Physical,100,75,"・Attacks with a rock-hard tail. May lower DEFENSE.
+・ May lower opponent's DEFENSE one stage."
+Meteor Mash,steel,Physical,100,85,"・Fires a meteor-like punch. May raise ATTACK.
+・ May raise user's ATTACK one stage."
+Doom Desire,steel,Physical,120,85,"・Summons strong sunlight to attack 2 turns later.
+・ Damage delays 2 turns."
+Metal Sound,steel,Status,-,85,"・Emits a horrible screech that sharply lowers SP. DEF.
+・ Lowers opponent's SP. DEF two stages."
+Iron Defense,steel,Status,-,-,"・Hardens the body's surface to sharply raise DEFENSE.
+・ Raises user's DEFENSE two stages."
+Whirlpool,water,Special,15,70,"・Traps and hurts the foe in a whirlpool for 2 to 5 turns.
+・ Traps opponent."
+Bubble,water,Special,20,100,"・An attack using bubbles. May lower the foe's SPEED.
+・ May lower opponent's SPEED one stage."
+Clamp,water,Special,35,75,"・Traps and squeezes the foe for 2 to 5 turns.
+・ Traps opponent."
+Water Gun,water,Special,40,100,・Squirts water to attack the foe.
+"Dive
+(HM08)",water,Special,60,100,"・Dives underwater the first turn and strikes next turn.
+・ The user is protected the first turn, attacks the second turn."
+"Water Pulse
+(TM03)",water,Special,60,100,"・Attacks with ultrasonic waves. May confuse the foe
+・ May induce CONFUSION."
+Octazooka,water,Special,65,85,"・Fires a lump of ink to damage and cut accuracy.
+・ May lower opponent's ACCURACY one stage."
+Bubble Beam,water,Special,65,100,"・Forcefully sprays bubbles that may lower SPEED.
+・ May lower opponent's SPEED one stage."
+"Waterfall
+(HM07)",water,Special,80,100,・Charges the foe with speed to climb waterfalls.
+Crabhammer,water,Special,90,85,"・Hammers with a pincer. Has a high critical-hit ratio.
+・ Has high critical hit ratio."
+Muddy Water,water,Special,95,85,"・Attacks with muddy water. May lower accuracy.
+・ May lower opponent's ACCURACY one stage."
+"Surf
+(HM03)",water,Special,95,100,"・Creates a huge wave, then crashes it down on the foe."
+Hydro Pump,water,Special,120,80,・Blasts water at high power to strike the foe.
+Hydro Cannon,water,Special,150,90,"・Powerful, but leaves the user immobile the next turn.
+・ User cannot attack on the next turn."
+Water Spout,water,Special,150,100,"・Inflicts more damage if the user's HP is high.
+・ Inflicts more damage when the user's HP is high."
+Water Sport,water,Status,-,100,"・The user becomes soaked to raise resistance to fire.
+・ Lowers the power of FIRE moves."
+"Rain Dance
+(TM18)",water,Status,-,-,"・Boosts the power of WATER- type moves for 5 turns.
+・ Causes Rain for 5 rounds."
+Withdraw,water,Status,-,-,"・Withdraws the body into its hard shell to raise DEFENSE.
+・ Raises user's DEFENSE one stage."

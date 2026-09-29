@@ -1,0 +1,581 @@
+﻿Character,Card Name,Type,Rarity,Target Type,Energy Cost,Description,Upgraded Energy Cost,Upgraded Description
+Colorless,Alchemize,Skill,Rare,Self,1,Exhaust. Procure a random potion.,0,Exhaust. Procure a random potion.
+Colorless,Anointed,Skill,Rare,Self,1,Exhaust. Put every Rare card from your Draw Pile into your Hand.,1,Exhaust. Retain. Put every Rare card from your Draw Pile into your Hand.
+Colorless,Automation,Power,Uncommon,Self,1,"Every 10 cards you draw, gain 1 Energy.",0,"Every 10 cards you draw, gain 1 Energy."
+Colorless,Beacon of Hope,Power,Rare,Self,1,"Whenever you gain Block on your turn, other players gain half that much Block.",1,"Innate. Whenever you gain Block on your turn, other players gain half that much Block."
+Colorless,Beat Down,Skill,Rare,RandomEnemy,3,Play 3 random Attacks from your Discard Pile.,3,Play 4 random Attacks from your Discard Pile.
+Colorless,Believe in You,Skill,Uncommon,AnyAlly,0,Another player gains 2 Energy.,0,Another player gains 3 Energy.
+Colorless,Bolas,Attack,Rare,AnyEnemy,0,"Deal 3 damage. At the start of your next turn, return this to your Hand.",0,"Deal 4 damage. At the start of your next turn, return this to your Hand."
+Colorless,Calamity,Power,Rare,Self,3,"Whenever you play an Attack, add a random Attack into your Hand.",2,"Whenever you play an Attack, add a random Attack into your Hand."
+Colorless,Catastrophe,Skill,Uncommon,Self,2,Play 2 random cards from your Draw Pile.,2,Play 3 random cards from your Draw Pile.
+Colorless,Coordinate,Skill,Uncommon,AnyAlly,1,Give another player 5 Strength this turn.,1,Give another player 8 Strength this turn.
+Colorless,Dark Shackles,Skill,Uncommon,AnyEnemy,0,Exhaust. Enemy loses 9 Strength this turn.,0,Exhaust. Enemy loses 15 Strength this turn.
+Colorless,Discovery,Skill,Uncommon,Self,1,Exhaust. Choose 1 of 3 random cards to add into your Hand. It's free to play this turn.,1,Choose 1 of 3 random cards to add into your Hand. It's free to play this turn.
+Colorless,Dramatic Entrance,Attack,Uncommon,AllEnemies,0,Exhaust. Innate. Deal 11 damage to ALL enemies.,0,Exhaust. Innate. Deal 15 damage to ALL enemies.
+Colorless,Entropy,Power,Rare,Self,1,"At the start of your turn, Transform 1 card in your Hand.",1,"Innate. At the start of your turn, Transform 1 card in your Hand."
+Colorless,Equilibrium,Skill,Uncommon,Self,2,Gain 13 Block. Retain your Hand this turn.,2,Gain 16 Block. Retain your Hand this turn.
+Colorless,Eternal Armor,Power,Rare,Self,3,Gain 9 Plating.,3,Gain 12 Plating.
+Colorless,Fasten,Power,Uncommon,Self,1,Gain an additional 4 Block from Defend cards.,1,Gain an additional 6 Block from Defend cards.
+Colorless,Finesse,Skill,Uncommon,Self,0,Gain 4 Block. Draw 1 card.,0,Gain 7 Block. Draw 1 card.
+Colorless,Fisticuffs,Attack,Uncommon,AnyEnemy,1,Deal 7 damage. Gain Block equal to damage dealt.,1,Deal 9 damage. Gain Block equal to damage dealt.
+Colorless,Flash of Steel,Attack,Uncommon,AnyEnemy,0,Deal 5 damage. Draw 1 card.,0,Deal 8 damage. Draw 1 card.
+Colorless,Gang Up,Attack,Uncommon,AnyEnemy,1,Deal 5 damage. Deals 5 additional damage for each time another player has attacked the enemy this turn.,1,Deal 5 damage. Deals 7 additional damage for each time another player has attacked the enemy this turn.
+Colorless,Gold Axe,Attack,Rare,AnyEnemy,1,Deal damage equal to the number of cards played this combat.,1,Retain. Deal damage equal to the number of cards played this combat.
+Colorless,Hand of Greed,Attack,Rare,AnyEnemy,2,"Deal 20 damage. If Fatal, gain 20 Gold.",2,"Deal 25 damage. If Fatal, gain 25 Gold."
+Colorless,Hidden Gem,Skill,Rare,Self,1,A random card without Replay in your Draw Pile gains Replay 2.,1,A random card without Replay in your Draw Pile gains Replay 3.
+Colorless,Huddle Up,Skill,Uncommon,AllAllies,1,Exhaust. ALL players draw 2 cards.,1,Exhaust. ALL players draw 3 cards.
+Colorless,Impatience,Skill,Uncommon,Self,0,"If you have no Attacks in your Hand, draw 2 cards.",0,"If you have no Attacks in your Hand, draw 3 cards."
+Colorless,Intercept,Skill,Uncommon,AnyAlly,1,Gain 9 Block. Redirect all incoming attacks that would be dealt to another player this turn to you.,1,Gain 13 Block. Redirect all incoming attacks that would be dealt to another player this turn to you.
+Colorless,Jack of All Trades,Skill,Uncommon,Self,0,Exhaust. Add 1 random Colorless card into your Hand.,0,Exhaust. Add 2 random Colorless cards into your Hand.
+Colorless,Jackpot,Attack,Rare,AnyEnemy,3,Deal 25 damage. Add 3 random 01 Energy cards into your Hand.,3,Deal 30 damage. Add 3 random Upgraded 01 Energy cards into your Hand.
+Colorless,Knockdown,Attack,Rare,AnyEnemy,3,Deal 10 damage. The enemy takes double damage from other players this turn.,3,Deal 14 damage. The enemy takes triple damage from other players this turn.
+Colorless,Lift,Skill,Uncommon,AnyAlly,1,Give another player 11 Block.,1,Give another player 16 Block.
+Colorless,Master of Strategy,Skill,Rare,Self,0,Exhaust. Draw 3 cards.,0,Exhaust. Draw 4 cards.
+Colorless,Mayhem,Power,Rare,Self,2,"At the start of your turn, play the top card of your Draw Pile.",1,"At the start of your turn, play the top card of your Draw Pile."
+Colorless,Mimic,Skill,Rare,AnyAlly,1,Exhaust. Gain Block equal to the Block on another player.,1,Gain Block equal to the Block on another player.
+Colorless,Mind Blast,Attack,Uncommon,AnyEnemy,1,Innate. Deal damage equal to the number of cards in your Draw Pile.,0,Innate. Deal damage equal to the number of cards in your Draw Pile.
+Colorless,Nostalgia,Power,Rare,Self,1,The first Attack or Skill you play each turn is placed on top of your Draw Pile.,0,The first Attack or Skill you play each turn is placed on top of your Draw Pile.
+Colorless,Omnislice,Attack,Uncommon,AnyEnemy,0,Deal 8 damage. Damage ALL other enemies equal to the damage dealt.,0,Deal 11 damage. Damage ALL other enemies equal to the damage dealt.
+Colorless,Panache,Power,Uncommon,Self,0,"Every time you play 5 cards in a single turn, deal 10 damage to ALL enemies.",0,"Every time you play 5 cards in a single turn, deal 14 damage to ALL enemies."
+Colorless,Panic Button,Skill,Uncommon,Self,0,Exhaust. Gain 30 Block. You cannot gain Block from cards for 2 turns.,0,Exhaust. Gain 40 Block. You cannot gain Block from cards for 2 turns.
+Colorless,Prep Time,Power,Uncommon,Self,1,"At the start of your turn, gain 4 Vigor.",1,"At the start of your turn, gain 6 Vigor."
+Colorless,Production,Skill,Uncommon,Self,0,Exhaust. Gain 2 Energy.,0,Exhaust. Gain 3 Energy.
+Colorless,Prolong,Skill,Uncommon,Self,0,"Exhaust. Next turn, gain Block equal to your current Block.",0,"Next turn, gain Block equal to your current Block."
+Colorless,Prowess,Power,Uncommon,Self,1,Gain 1 Strength. Gain 1 Dexterity.,1,Gain 2 Strength. Gain 2 Dexterity.
+Colorless,Purity,Skill,Uncommon,Self,0,Retain. Exhaust. Exhaust up to 3 cards in your Hand.,0,Retain. Exhaust. Exhaust up to 5 cards in your Hand.
+Colorless,Rally,Skill,Rare,AllAllies,2,ALL players gain 12 Block.,2,ALL players gain 17 Block.
+Colorless,Rend,Attack,Rare,AnyEnemy,2,Deal 15 damage. Deals 5 additional damage for each unique debuff on the enemy.,2,Deal 18 damage. Deals 8 additional damage for each unique debuff on the enemy.
+Colorless,Restlessness,Skill,Uncommon,Self,0,"Retain. If your Hand is empty, draw 2 cards and gain 2 Energy.",0,"Retain. If your Hand is empty, draw 3 cards and gain 3 Energy."
+Colorless,Rolling Boulder,Power,Rare,Self,3,"At the start of your turn, deal 5 damage to ALL enemies and increase this damage by 5.",3,"At the start of your turn, deal 10 damage to ALL enemies and increase this damage by 5."
+Colorless,Salvo,Attack,Rare,AnyEnemy,1,Deal 12 damage. Retain your Hand this turn.,1,Deal 16 damage. Retain your Hand this turn.
+Colorless,Scrawl,Skill,Rare,Self,1,Exhaust. Draw cards until your Hand is full.,1,Exhaust. Retain. Draw cards until your Hand is full.
+Colorless,Secret Technique,Skill,Rare,Self,0,Exhaust. Put a Skill from your Draw Pile into your Hand.,0,Put a Skill from your Draw Pile into your Hand.
+Colorless,Secret Weapon,Skill,Rare,Self,0,Exhaust. Put an Attack from your Draw Pile into your Hand.,0,Put an Attack from your Draw Pile into your Hand.
+Colorless,Seeker Strike,Attack,Uncommon,AnyEnemy,1,Deal 9 damage. Choose 1 of 3 cards in your Draw Pile to add into your Hand.,1,Deal 12 damage. Choose 1 of 3 cards in your Draw Pile to add into your Hand.
+Colorless,Shockwave,Skill,Uncommon,AllEnemies,2,Exhaust. Apply 3 Weak and Vulnerable to ALL enemies.,2,Exhaust. Apply 5 Weak and Vulnerable to ALL enemies.
+Colorless,Splash,Skill,Uncommon,Self,1,Choose 1 of 3 random Attacks from another character to add into your Hand. It's free to play this turn.,1,Choose 1 of 3 random Upgraded Attacks from another character to add into your Hand. It's free to play this turn.
+Colorless,Stratagem,Power,Uncommon,Self,1,"Whenever you shuffle your Draw Pile, choose a card from it to put into your Hand.",0,"Whenever you shuffle your Draw Pile, choose a card from it to put into your Hand."
+Colorless,Tag Team,Attack,Uncommon,AnyEnemy,2,Deal 11 damage. The next Attack another player plays on the enemy is played an extra time.,2,Deal 15 damage. The next Attack another player plays on the enemy is played an extra time.
+Colorless,The Bomb,Skill,Uncommon,Self,2,"At the end of 3 turns, deal 40 damage to ALL enemies.",2,"At the end of 3 turns, deal 50 damage to ALL enemies."
+Colorless,The Gambit,Skill,Rare,Self,0,"Gain 50 Block. If you take unblocked attack damage this combat, die.",0,"Gain 75 Block. If you take unblocked attack damage this combat, die."
+Colorless,Thinking Ahead,Skill,Uncommon,Self,0,Exhaust. Draw 2 cards. Put 1 card from your Hand on top of your Draw Pile.,0,Draw 2 cards. Put 1 card from your Hand on top of your Draw Pile.
+Colorless,Thrumming Hatchet,Attack,Uncommon,AnyEnemy,1,"Deal 11 damage. At the start of your next turn, return this to your Hand.",1,"Deal 14 damage. At the start of your next turn, return this to your Hand."
+Colorless,Ultimate Defend,Skill,Uncommon,Self,1,Gain 11 Block.,1,Gain 15 Block.
+Colorless,Ultimate Strike,Attack,Uncommon,AnyEnemy,1,Deal 14 damage.,1,Deal 20 damage.
+Colorless,Volley,Attack,Uncommon,RandomEnemy,X,Deal 10 damage to a random enemy X times.,X,Deal 14 damage to a random enemy X times.
+Curse,Ascender's Bane,Curse,Curse,None,N/A,Eternal. Unplayable. Ethereal. ,N/A,Eternal. Unplayable. Ethereal. 
+Curse,Bad Luck,Curse,Curse,None,N/A,"Eternal. Unplayable. At the end of your turn, if this is in your Hand, lose 13 HP.",N/A,"Eternal. Unplayable. At the end of your turn, if this is in your Hand, lose 13 HP."
+Curse,Clumsy,Curse,Curse,None,N/A,Unplayable. Ethereal. ,N/A,Unplayable. Ethereal. 
+Curse,Curse of the Bell,Curse,Curse,None,N/A,Eternal. Unplayable. ,N/A,Eternal. Unplayable. 
+Curse,Debt,Curse,Curse,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, lose 10 Gold.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, lose 10 Gold."
+Curse,Decay,Curse,Curse,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 2 damage.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 2 damage."
+Curse,Doubt,Curse,Curse,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, gain 1 Weak.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, gain 1 Weak."
+Curse,Enthralled,Curse,Curse,None,2,"Eternal. If this is in your Hand, it must be played before other cards.",2,"Eternal. If this is in your Hand, it must be played before other cards."
+Curse,Folly,Curse,Curse,None,N/A,Unplayable. Eternal. Innate. Ethereal. ,N/A,Unplayable. Eternal. Innate. Ethereal. 
+Curse,Greed,Curse,Curse,None,N/A,Eternal. Unplayable. ,N/A,Eternal. Unplayable. 
+Curse,Guilty,Curse,Curse,None,N/A,Unplayable. Removed from your Deck after 5 combats.,N/A,Unplayable. Removed from your Deck after 5 combats.
+Curse,Injury,Curse,Curse,None,N/A,Unplayable. ,N/A,Unplayable. 
+Curse,Normality,Curse,Curse,None,N/A,Unplayable. You cannot play more than 3 cards this turn.,N/A,Unplayable. You cannot play more than 3 cards this turn.
+Curse,Poor Sleep,Curse,Curse,None,N/A,Unplayable. Retain. ,N/A,Unplayable. Retain. 
+Curse,Regret,Curse,Curse,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, lose 1 HP for each card in your Hand.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, lose 1 HP for each card in your Hand."
+Curse,Shame,Curse,Curse,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, gain 1 Frail.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, gain 1 Frail."
+Curse,Spore Mind,Curse,Curse,None,1,Exhaust. ,1,Exhaust. 
+Curse,Writhe,Curse,Curse,None,N/A,Innate. Unplayable. ,N/A,Innate. Unplayable. 
+Defect,Adaptive Strike,Attack,Rare,AnyEnemy,2,Deal 18 damage. Add a 01 Energy copy of this card into your Discard Pile.,2,Deal 23 damage. Add a 01 Energy copy of this card into your Discard Pile.
+Defect,All for One,Attack,Rare,AnyEnemy,2,Deal 10 damage. Put ALL 01 Energy cards from your Discard Pile into your Hand.,2,Deal 14 damage. Put ALL 01 Energy cards from your Discard Pile into your Hand.
+Defect,Ball Lightning,Attack,Common,AnyEnemy,1,Deal 7 damage. Channel 1 Lightning.,1,Deal 10 damage. Channel 1 Lightning.
+Defect,Barrage,Attack,Common,AnyEnemy,1,Deal 5 damage for each Channeled Orb.,1,Deal 7 damage for each Channeled Orb.
+Defect,Beam Cell,Attack,Common,AnyEnemy,0,Deal 3 damage. Apply 1 Vulnerable.,0,Deal 4 damage. Apply 2 Vulnerable.
+Defect,Biased Cognition,Power,Ancient,Self,1,"Gain 4 Focus. At the start of your turn, lose 1 Focus.",1,"Gain 5 Focus. At the start of your turn, lose 1 Focus."
+Defect,Boost Away,Skill,Common,Self,0,Gain 6 Block. Add a Dazed into your Discard Pile.,0,Gain 9 Block. Add a Dazed into your Discard Pile.
+Defect,Boot Sequence,Skill,Uncommon,Self,0,Innate. Exhaust. Gain 10 Block.,0,Innate. Exhaust. Gain 13 Block.
+Defect,Buffer,Power,Rare,Self,2,Prevent the next time you would lose HP.,2,Prevent the next 2 times you would lose HP.
+Defect,Bulk Up,Power,Uncommon,Self,2,Lose 1 Orb Slot. Gain 2 Strength. Gain 2 Dexterity.,2,Lose 1 Orb Slot. Gain 3 Strength. Gain 3 Dexterity.
+Defect,Capacitor,Power,Uncommon,Self,1,Gain 2 Orb Slots.,1,Gain 3 Orb Slots.
+Defect,Chaos,Skill,Uncommon,Self,1,Channel 1 random Orb.,1,Channel 2 random Orbs.
+Defect,Charge Battery,Skill,Common,Self,1,"Gain 7 Block. Next turn, gain 1 Energy.",1,"Gain 10 Block. Next turn, gain 1 Energy."
+Defect,Chill,Skill,Uncommon,Self,0,Exhaust. Channel 1 Frost for each enemy.,0,Channel 1 Frost for each enemy.
+Defect,Claw,Attack,Common,AnyEnemy,0,Deal 3 damage. Increase the damage of ALL Claw cards by 2 this combat.,0,Deal 4 damage. Increase the damage of ALL Claw cards by 3 this combat.
+Defect,Cold Snap,Attack,Common,AnyEnemy,1,Deal 6 damage. Channel 1 Frost.,1,Deal 9 damage. Channel 1 Frost.
+Defect,Compact,Skill,Uncommon,Self,1,Gain 6 Block. Transform all Status cards in your Hand into Fuel.,1,Gain 7 Block. Transform all Status cards in your Hand into Fuel+.
+Defect,Compile Driver,Attack,Common,AnyEnemy,1,Deal 7 damage. Draw 1 card for each unique Orb you have.,1,Deal 10 damage. Draw 1 card for each unique Orb you have.
+Defect,Consuming Shadow,Power,Rare,Self,2,"Channel 2 Dark. At the end of your turn, Evoke your leftmost Orb.",2,"Channel 3 Dark. At the end of your turn, Evoke your leftmost Orb."
+Defect,Coolant,Power,Rare,Self,1,"At the start of your turn, gain 2 Block for each unique Orb you have.",1,"At the start of your turn, gain 3 Block for each unique Orb you have."
+Defect,Coolheaded,Skill,Common,Self,1,Channel 1 Frost. Draw 1 card.,1,Channel 1 Frost. Draw 2 cards.
+Defect,Creative AI,Power,Rare,Self,3,"At the start of your turn, add a random Power into your Hand.",2,"At the start of your turn, add a random Power into your Hand."
+Defect,Darkness,Skill,Uncommon,Self,1,Channel 1 Dark. Trigger the passive ability of all Dark Orbs.,1,Channel 1 Dark. Trigger the passive ability of all Dark Orbs twice.
+Defect,Defend,Skill,Basic,Self,1,Gain 5 Block.,1,Gain 8 Block.
+Defect,Defragment,Power,Rare,Self,1,Gain 1 Focus.,1,Gain 2 Focus.
+Defect,Double Energy,Skill,Uncommon,Self,1,Exhaust. Double your Energy.,0,Exhaust. Double your Energy.
+Defect,Dualcast,Skill,Basic,Self,1,Evoke your rightmost Orb twice.,0,Evoke your rightmost Orb twice.
+Defect,Echo Form,Power,Rare,Self,3,Ethereal. The first card you play each turn is played an extra time.,3,The first card you play each turn is played an extra time.
+Defect,Energy Surge,Skill,Uncommon,AllAllies,1,Exhaust. ALL players gain 2 Energy.,1,Exhaust. ALL players gain 3 Energy.
+Defect,Feral,Power,Uncommon,Self,2,"The first time you play a 01 Energy Attack each turn, return it to your Hand.",1,"The first time you play a 01 Energy Attack each turn, return it to your Hand."
+Defect,Fight Through,Skill,Uncommon,Self,1,Gain 13 Block. Add 2 Wounds into your Discard Pile.,1,Gain 17 Block. Add 2 Wounds into your Discard Pile.
+Defect,Flak Cannon,Attack,Rare,RandomEnemy,2,Exhaust ALL your Status cards. Deal 8 damage to a random enemy for each card Exhausted.,2,Exhaust ALL your Status cards. Deal 11 damage to a random enemy for each card Exhausted.
+Defect,Focused Strike,Attack,Common,AnyEnemy,1,Deal 9 damage. Gain 1 Focus this turn.,1,Deal 11 damage. Gain 2 Focus this turn.
+Defect,FTL,Attack,Uncommon,AnyEnemy,0,"Deal 5 damage. If you have played fewer than 3 cards this turn, draw 1 card.",0,"Deal 6 damage. If you have played fewer than 4 cards this turn, draw 1 card."
+Defect,Fusion,Skill,Uncommon,Self,1,Exhaust. Channel 1 Plasma.,1,Channel 1 Plasma.
+Defect,Genetic Algorithm,Skill,Rare,Self,1,Exhaust. Gain 1 Block. Permanently increase this card's Block by 3.,1,Exhaust. Gain 1 Block. Permanently increase this card's Block by 4.
+Defect,Glacier,Skill,Uncommon,Self,2,Gain 6 Block. Channel 2 Frost.,2,Gain 9 Block. Channel 2 Frost.
+Defect,Glasswork,Skill,Uncommon,Self,1,Gain 5 Block. Channel 1 Glass.,1,Gain 8 Block. Channel 1 Glass.
+Defect,Go for the Eyes,Attack,Common,AnyEnemy,0,"Deal 3 damage. If the enemy intends to attack, apply 1 Weak.",0,"Deal 4 damage. If the enemy intends to attack, apply 2 Weak."
+Defect,Gunk Up,Attack,Common,AnyEnemy,1,Deal 4 damage 3 times. Add a Slimed into your Discard Pile.,1,Deal 5 damage 3 times. Add a Slimed into your Discard Pile.
+Defect,Hailstorm,Power,Uncommon,Self,1,"At the end of your turn, if you have Frost, deal 6 damage to ALL enemies.",1,"At the end of your turn, if you have Frost, deal 8 damage to ALL enemies."
+Defect,Helix Drill,Attack,Rare,AnyEnemy,0,Deal 3 damage for each 1 Energy previously spent this turn.,0,Deal 5 damage for each 1 Energy previously spent this turn.
+Defect,Hologram,Skill,Common,Self,1,Exhaust. Gain 3 Block. Put a card from your Discard Pile into your Hand.,1,Gain 5 Block. Put a card from your Discard Pile into your Hand.
+Defect,Hotfix,Skill,Common,Self,0,Exhaust. Gain 2 Focus this turn.,0,Gain 2 Focus this turn.
+Defect,Hyperbeam,Attack,Rare,AllEnemies,2,Deal 28 damage to ALL enemies. Lose 3 Focus.,2,Deal 36 damage to ALL enemies. Lose 3 Focus.
+Defect,Ice Lance,Attack,Rare,AnyEnemy,3,Deal 19 damage. Channel 3 Frost.,3,Deal 24 damage. Channel 3 Frost.
+Defect,Ignition,Skill,Rare,AnyAlly,1,Exhaust. Another player Channels Plasma.,1,Another player Channels Plasma.
+Defect,Iteration,Power,Uncommon,Self,1,"The first time you draw a Status each turn, draw 2 cards.",1,"The first time you draw a Status each turn, draw 3 cards."
+Defect,Leap,Skill,Common,Self,1,Gain 9 Block.,1,Gain 12 Block.
+Defect,Lightning Rod,Skill,Common,Self,1,"Gain 4 Block. At the start of the next 2 turns, Channel 1 Lightning.",1,"Gain 7 Block. At the start of the next 2 turns, Channel 1 Lightning."
+Defect,Loop,Power,Uncommon,Self,1,"At the start of your turn, trigger the passive ability of your rightmost Orb.",1,"At the start of your turn, trigger the passive ability of your rightmost Orb 2 times."
+Defect,Machine Learning,Power,Rare,Self,1,"At the start of your turn, draw 1 additional card.",1,"Innate. At the start of your turn, draw 1 additional card."
+Defect,Meteor Strike,Attack,Rare,AnyEnemy,5,Deal 24 damage. Channel 3 Plasma.,5,Deal 30 damage. Channel 3 Plasma.
+Defect,Modded,Skill,Rare,Self,0,Gain 1 Orb Slot. Draw 1 card. Increase this card's cost by 1.,0,Gain 1 Orb Slot. Draw 2 cards. Increase this card's cost by 1.
+Defect,Momentum Strike,Attack,Common,AnyEnemy,1,Deal 10 damage. Reduce this card's cost to 0 1 Energy.,1,Deal 13 damage. Reduce this card's cost to 0 1 Energy.
+Defect,Multi-Cast,Skill,Rare,Self,X,Evoke your rightmost Orb X times.,X,Evoke your rightmost Orb X+1 times.
+Defect,Null,Attack,Uncommon,AnyEnemy,2,Deal 10 damage. Apply 2 Weak. Channel 1 Dark.,2,Deal 13 damage. Apply 3 Weak. Channel 1 Dark.
+Defect,Overclock,Skill,Uncommon,Self,0,Draw 2 cards. Add a Burn into your Discard Pile.,0,Draw 3 cards. Add a Burn into your Discard Pile.
+Defect,Quadcast,Skill,Ancient,Self,1,Evoke your rightmost Orb 4 times.,0,Evoke your rightmost Orb 4 times.
+Defect,Rainbow,Skill,Rare,Self,2,Exhaust. Channel 1 Lightning. Channel 1 Frost. Channel 1 Dark.,2,Channel 1 Lightning. Channel 1 Frost. Channel 1 Dark.
+Defect,Reboot,Skill,Rare,Self,0,Exhaust. Shuffle ALL your cards into your Draw Pile. Draw 4 cards.,0,Exhaust. Shuffle ALL your cards into your Draw Pile. Draw 6 cards.
+Defect,Refract,Attack,Uncommon,AnyEnemy,3,Deal 9 damage twice. Channel 2 Glass.,3,Deal 12 damage twice. Channel 2 Glass.
+Defect,Rocket Punch,Attack,Uncommon,AnyEnemy,2,"Deal 13 damage. Draw 1 card. Whenever you create a Status, reduce this card's cost to 0 1 Energy until played.",2,"Deal 14 damage. Draw 2 cards. Whenever you create a Status, reduce this card's cost to 0 1 Energy until played."
+Defect,Scavenge,Skill,Uncommon,Self,1,"Exhaust a card. Next turn, gain 2 Energy.",1,"Exhaust a card. Next turn, gain 3 Energy."
+Defect,Scrape,Attack,Uncommon,AnyEnemy,1,Deal 7 damage. Draw 4 cards. Discard all cards drawn this way that do not cost 0 1 Energy.,1,Deal 10 damage. Draw 5 cards. Discard all cards drawn this way that do not cost 0 1 Energy.
+Defect,Shadow Shield,Skill,Uncommon,Self,2,Gain 11 Block. Channel 1 Dark.,2,Gain 15 Block. Channel 1 Dark.
+Defect,Shatter,Attack,Rare,AllEnemies,1,Deal 7 damage to ALL enemies. Evoke all of your Orbs twice.,1,Deal 11 damage to ALL enemies. Evoke all of your Orbs twice.
+Defect,Signal Boost,Skill,Rare,Self,1,Exhaust. The next Power you play is played an additional time.,0,Exhaust. The next Power you play is played an additional time.
+Defect,Skim,Skill,Uncommon,Self,1,Draw 3 cards.,1,Draw 4 cards.
+Defect,Smokestack,Power,Uncommon,Self,1,"Whenever you create a Status, deal 5 damage to ALL enemies.",1,"Whenever you create a Status, deal 7 damage to ALL enemies."
+Defect,Spinner,Power,Rare,Self,1,"At the start of your turn, Channel 1 Glass.",1,"Channel 1 Glass. At the start of your turn, Channel 1 Glass."
+Defect,Storm,Power,Uncommon,Self,1,"Whenever you play a Power, Channel 1 Lightning.",1,"Whenever you play a Power, Channel 2 Lightning."
+Defect,Strike,Attack,Basic,AnyEnemy,1,Deal 6 damage.,1,Deal 9 damage.
+Defect,Subroutine,Power,Uncommon,Self,1,"Whenever you play a Power, gain 1 Energy.",0,"Whenever you play a Power, gain 1 Energy."
+Defect,Sunder,Attack,Uncommon,AnyEnemy,3,"Deal 24 damage. If this kills an enemy, gain 3 Energy.",3,"Deal 32 damage. If this kills an enemy, gain 3 Energy."
+Defect,Supercritical,Skill,Rare,Self,0,Exhaust. Gain 4 Energy.,0,Exhaust. Gain 6 Energy.
+Defect,Sweeping Beam,Attack,Common,AllEnemies,1,Deal 6 damage to ALL enemies. Draw 1 card.,1,Deal 9 damage to ALL enemies. Draw 1 card.
+Defect,Synchronize,Skill,Uncommon,Self,1,Exhaust. Gain 2 Focus this turn for each unique Orb you have.,1,Gain 2 Focus this turn for each unique Orb you have.
+Defect,Synthesis,Attack,Uncommon,AnyEnemy,2,Deal 14 damage. The next Power you play costs 0 1 Energy.,2,Deal 20 damage. The next Power you play costs 0 1 Energy.
+Defect,Tempest,Skill,Uncommon,Self,X,Channel X Lightning.,X,Channel X+1 Lightning.
+Defect,Tesla Coil,Attack,Uncommon,AnyEnemy,0,Deal 3 damage. Trigger all Lightning against the enemy.,0,Deal 4 damage. Trigger all Lightning against the enemy twice.
+Defect,Thunder,Power,Uncommon,Self,1,"Whenever you Evoke Lightning, deal 6 damage to each enemy hit.",1,"Whenever you Evoke Lightning, deal 8 damage to each enemy hit."
+Defect,Trash to Treasure,Power,Rare,Self,1,"Whenever you create a Status, Channel 1 random Orb.",1,"Innate. Whenever you create a Status, Channel 1 random Orb."
+Defect,TURBO,Skill,Common,Self,0,Gain 2 Energy. Add a Void into your Discard Pile.,0,Gain 3 Energy. Add a Void into your Discard Pile.
+Defect,Uproar,Attack,Common,AnyEnemy,2,Deal 6 damage twice. Play a random Attack from your Draw Pile.,2,Deal 8 damage twice. Play a random Attack from your Draw Pile.
+Defect,Voltaic,Skill,Rare,Self,3,Exhaust. Channel Lightning equal to the Lightning already Channeled this combat.,3,Channel Lightning equal to the Lightning already Channeled this combat.
+Defect,White Noise,Skill,Uncommon,Self,1,Exhaust. Add a random Power into your Hand. It's free to play this turn.,0,Exhaust. Add a random Power into your Hand. It's free to play this turn.
+Defect,Zap,Skill,Basic,Self,1,Channel 1 Lightning.,0,Channel 1 Lightning.
+Deprecated,Deprecated Card,Unknown,Deprecated,,0,Exhaust. This card was removed in a recent update. Draw 1 card. Remove this from your Deck.,0,Exhaust. This card was removed in a recent update. Draw 1 card. Remove this from your Deck.
+Event,Apotheosis,Skill,Ancient,Self,2,Exhaust. Innate. Upgrade ALL your cards.,1,Exhaust. Innate. Upgrade ALL your cards.
+Event,Apparition,Skill,Ancient,Self,1,Ethereal. Exhaust. Gain 1 Intangible.,1,Exhaust. Gain 1 Intangible.
+Event,Brightest Flame,Skill,Ancient,Self,0,Gain 2 Energy. Draw 2 cards. Lose 1 Max HP.,0,Gain 3 Energy. Draw 3 cards. Lose 1 Max HP.
+Event,Byrd Swoop,Attack,Event,AnyEnemy,0,Deal 14 damage.,0,Deal 18 damage.
+Event,Caltrops,Power,Event,Self,1,"Whenever you are attacked, deal 3 damage back.",1,"Whenever you are attacked, deal 5 damage back."
+Event,Clash,Attack,Event,AnyEnemy,0,Can only be played if every card in your Hand is an Attack. Deal 14 damage.,0,Can only be played if every card in your Hand is an Attack. Deal 18 damage.
+Event,Distraction,Skill,Event,Self,1,Exhaust. Add a random Skill into your Hand. It's free to play this turn.,0,Exhaust. Add a random Skill into your Hand. It's free to play this turn.
+Event,Dual Wield,Skill,Event,Self,1,Choose an Attack or Power card. Add a copy of that card into your Hand.,1,Choose an Attack or Power card. Add 2 copies of that card into your Hand.
+Event,Enlightenment,Skill,Event,Self,0,Exhaust. Reduce the cost of ALL cards in your Hand to 1 this turn.,0,Exhaust. Reduce the cost of ALL cards in your Hand to 1 this combat.
+Event,Entrench,Skill,Event,Self,2,Double your Block.,1,Double your Block.
+Event,Exterminate,Attack,Event,AllEnemies,1,Deal 3 damage to ALL enemies 4 times.,1,Deal 4 damage to ALL enemies 4 times.
+Event,Feeding Frenzy,Skill,Event,Self,0,Gain 5 Strength this turn.,0,Gain 7 Strength this turn.
+Event,Hello World,Power,Event,Self,1,"At the start of your turn, add a random Common card into your Hand.",1,"Innate. At the start of your turn, add a random Common card into your Hand."
+Event,Mad Science,Unknown,Unknown,Unknown,0,??????,0,Innate. ??????
+Event,Maul,Attack,Ancient,AnyEnemy,1,Deal 5 damage twice. Increase the damage of ALL Maul cards by 1 this combat.,1,Deal 6 damage twice. Increase the damage of ALL Maul cards by 2 this combat.
+Event,Metamorphosis,Skill,Event,Self,2,Exhaust. Add 3 random Attacks into your Draw Pile. They're free to play this combat.,2,Exhaust. Add 5 random Attacks into your Draw Pile. They're free to play this combat.
+Event,Neow's Fury,Attack,Ancient,AnyEnemy,1,Exhaust. Deal 10 damage. Put up to 2 cards from your Discard Pile into your Hand.,1,Exhaust. Deal 14 damage. Put up to 3 cards from your Discard Pile into your Hand.
+Event,Outmaneuver,Skill,Event,Self,1,"Next turn, gain 2 Energy.",1,"Next turn, gain 3 Energy."
+Event,Peck,Attack,Event,AnyEnemy,1,Deal 2 damage 3 times.,1,Deal 2 damage 4 times.
+Event,Rebound,Attack,Event,AnyEnemy,1,Deal 9 damage. Put the next card you play this turn on top of your Draw Pile.,1,Deal 12 damage. Put the next card you play this turn on top of your Draw Pile.
+Event,Relax,Skill,Ancient,Self,3,"Exhaust. Gain 15 Block. Next turn, draw 2 cards and gain 2 Energy.",3,"Exhaust. Gain 17 Block. Next turn, draw 3 cards and gain 3 Energy."
+Event,Rip and Tear,Attack,Event,RandomEnemy,1,Deal 7 damage to a random enemy twice.,1,Deal 9 damage to a random enemy twice.
+Event,Squash,Attack,Event,AnyEnemy,1,Deal 10 damage. Apply 2 Vulnerable.,1,Deal 12 damage. Apply 3 Vulnerable.
+Event,Stack,Skill,Event,Self,1,Gain Block equal to the number of cards in your Discard Pile.,1,Gain Block equal to the number of cards in your Discard Pile +3.
+Event,Toric Toughness,Skill,Event,Self,2,Gain 5 Block. Gain 5 Block at the start of the next 2 turns.,2,Gain 7 Block. Gain 7 Block at the start of the next 2 turns.
+Event,Whistle,Attack,Ancient,AnyEnemy,3,Exhaust. Deal 33 damage. Stun the enemy.,3,Exhaust. Deal 44 damage. Stun the enemy.
+Event,Wish,Skill,Ancient,Self,0,Exhaust. Put a card from your Draw Pile into your Hand.,0,Exhaust. Retain. Put a card from your Draw Pile into your Hand.
+Ironclad,Aggression,Power,Rare,Self,1,"At the start of your turn, put a random Attack from your Discard Pile into your Hand and Upgrade it.",1,"Innate. At the start of your turn, put a random Attack from your Discard Pile into your Hand and Upgrade it."
+Ironclad,Anger,Attack,Common,AnyEnemy,0,Deal 6 damage. Add a copy of this card into your Discard Pile.,0,Deal 8 damage. Add a copy of this card into your Discard Pile.
+Ironclad,Armaments,Skill,Common,Self,1,Gain 5 Block. Upgrade a card in your Hand.,1,Gain 5 Block. Upgrade ALL cards in your Hand.
+Ironclad,Ashen Strike,Attack,Uncommon,AnyEnemy,1,Deal 6 damage. Deals 3 additional damage for each card in your Exhaust Pile.,1,Deal 6 damage. Deals 4 additional damage for each card in your Exhaust Pile.
+Ironclad,Barricade,Power,Rare,Self,3,Block is not removed at the start of your turn.,2,Block is not removed at the start of your turn.
+Ironclad,Bash,Attack,Basic,AnyEnemy,2,Deal 8 damage. Apply 2 Vulnerable.,2,Deal 10 damage. Apply 3 Vulnerable.
+Ironclad,Battle Trance,Skill,Uncommon,Self,0,Draw 3 cards. You cannot draw additional cards this turn.,0,Draw 4 cards. You cannot draw additional cards this turn.
+Ironclad,Blood Wall,Skill,Common,Self,2,Lose 2 HP. Gain 16 Block.,2,Lose 2 HP. Gain 20 Block.
+Ironclad,Bloodletting,Skill,Common,Self,0,Lose 3 HP. Gain 2 Energy.,0,Lose 3 HP. Gain 3 Energy.
+Ironclad,Bludgeon,Attack,Uncommon,AnyEnemy,3,Deal 32 damage.,3,Deal 42 damage.
+Ironclad,Body Slam,Attack,Common,AnyEnemy,1,Deal damage equal to your Block.,0,Deal damage equal to your Block.
+Ironclad,Brand,Skill,Rare,Self,0,Lose 1 HP. Exhaust 1 card. Gain 1 Strength.,0,Lose 1 HP. Exhaust 1 card. Gain 2 Strength.
+Ironclad,Break,Attack,Ancient,AnyEnemy,1,Deal 20 damage. Apply 5 Vulnerable.,1,Deal 30 damage. Apply 7 Vulnerable.
+Ironclad,Breakthrough,Attack,Common,AllEnemies,1,Lose 1 HP. Deal 9 damage to ALL enemies.,1,Lose 1 HP. Deal 13 damage to ALL enemies.
+Ironclad,Bully,Attack,Uncommon,AnyEnemy,0,Deal 4 damage. Deals 2 additional damage for each Vulnerable on the enemy.,0,Deal 4 damage. Deals 3 additional damage for each Vulnerable on the enemy.
+Ironclad,Burning Pact,Skill,Uncommon,Self,1,Exhaust 1 card. Draw 2 cards.,1,Exhaust 1 card. Draw 3 cards.
+Ironclad,Cascade,Skill,Rare,Self,X,Play the top X cards of your Draw Pile.,X,Play the top X+1 cards of your Draw Pile.
+Ironclad,Cinder,Attack,Common,AnyEnemy,2,Deal 18 damage. Exhaust 1 card at random.,2,Deal 24 damage. Exhaust 1 card at random.
+Ironclad,Colossus,Skill,Uncommon,Self,1,Gain 5 Block. You receive 50% less damage from Vulnerable enemies this turn.,1,Gain 8 Block. You receive 50% less damage from Vulnerable enemies this turn.
+Ironclad,Conflagration,Attack,Rare,AllEnemies,1,Deal 2 damage to ALL enemies 4 times.,1,Deal 2 damage to ALL enemies 5 times.
+Ironclad,Corruption,Power,Ancient,Self,3,"Skills cost 0 1 Energy. Whenever you play a Skill, Exhaust it.",2,"Skills cost 0 1 Energy. Whenever you play a Skill, Exhaust it."
+Ironclad,Crimson Mantle,Power,Rare,Self,1,"At the start of your turn, lose 1 HP and gain 8 Block.",1,"At the start of your turn, lose 1 HP and gain 10 Block."
+Ironclad,Cruelty,Power,Rare,Self,1,Vulnerable enemies take an additional 25% damage.,1,Vulnerable enemies take an additional 50% damage.
+Ironclad,Dark Embrace,Power,Rare,Self,2,"Whenever a card is Exhausted, draw 1 card.",1,"Whenever a card is Exhausted, draw 1 card."
+Ironclad,Defend,Skill,Basic,Self,1,Gain 5 Block.,1,Gain 8 Block.
+Ironclad,Demon Form,Power,Rare,Self,3,"At the start of your turn, gain 2 Strength.",3,"At the start of your turn, gain 3 Strength."
+Ironclad,Demonic Shield,Skill,Uncommon,AnyAlly,0,Exhaust. Lose 1 HP. Give another player Block equal to your Block.,0,Lose 1 HP. Give another player Block equal to your Block.
+Ironclad,Dismantle,Attack,Uncommon,AnyEnemy,1,"Deal 8 damage. If the enemy is Vulnerable, hits twice.",1,"Deal 10 damage. If the enemy is Vulnerable, hits twice."
+Ironclad,Dominate,Skill,Uncommon,AnyEnemy,1,Exhaust. Apply 1 Vulnerable. Gain 1 Strength for each Vulnerable on the enemy.,1,Exhaust. Apply 2 Vulnerable. Gain 1 Strength for each Vulnerable on the enemy.
+Ironclad,Drum of Battle,Skill,Uncommon,Self,1,"Draw 2 cards. When this card is Exhausted, gain 2 Energy.",1,"Draw 2 cards. When this card is Exhausted, gain 3 Energy."
+Ironclad,Evil Eye,Skill,Uncommon,Self,1,Gain 8 Block. Gain another 8 Block if you have Exhausted a card this turn.,1,Gain 11 Block. Gain another 11 Block if you have Exhausted a card this turn.
+Ironclad,Expect a Fight,Skill,Uncommon,Self,2,Gain 1 Energy for each Attack in your Hand. You cannot gain additional 1 Energy this turn.,1,Gain 1 Energy for each Attack in your Hand. You cannot gain additional 1 Energy this turn.
+Ironclad,Feed,Attack,Rare,AnyEnemy,1,"Exhaust. Deal 10 damage. If Fatal, raise your Max HP by 3.",1,"Exhaust. Deal 12 damage. If Fatal, raise your Max HP by 4."
+Ironclad,Feel No Pain,Power,Uncommon,Self,1,"Whenever a card is Exhausted, gain 3 Block.",1,"Whenever a card is Exhausted, gain 4 Block."
+Ironclad,Fiend Fire,Attack,Rare,AnyEnemy,2,Exhaust. Exhaust your Hand. Deal 7 damage for each card Exhausted.,2,Exhaust. Exhaust your Hand. Deal 10 damage for each card Exhausted.
+Ironclad,Fight Me!,Attack,Uncommon,AnyEnemy,2,Deal 5 damage twice. Gain 3 Strength. The enemy gains 1 Strength.,2,Deal 6 damage twice. Gain 4 Strength. The enemy gains 1 Strength.
+Ironclad,Flame Barrier,Skill,Uncommon,Self,2,"Gain 12 Block. Whenever you are attacked this turn, deal 4 damage back.",2,"Gain 16 Block. Whenever you are attacked this turn, deal 6 damage back."
+Ironclad,Forgotten Ritual,Skill,Uncommon,Self,1,"Exhaust. If you Exhausted a card this turn, gain 3 Energy.",1,"Exhaust. If you Exhausted a card this turn, gain 4 Energy."
+Ironclad,Grapple,Attack,Uncommon,AnyEnemy,1,"Deal 7 damage. Whenever you gain Block this turn, deal 5 damage to the enemy.",1,"Deal 9 damage. Whenever you gain Block this turn, deal 7 damage to the enemy."
+Ironclad,Havoc,Skill,Common,Self,1,Play the top card of your Draw Pile and Exhaust it.,0,Play the top card of your Draw Pile and Exhaust it.
+Ironclad,Headbutt,Attack,Common,AnyEnemy,1,Deal 9 damage. Put a card from your Discard Pile on top of your Draw Pile.,1,Deal 12 damage. Put a card from your Discard Pile on top of your Draw Pile.
+Ironclad,Hellraiser,Power,Rare,Self,2,"Whenever you draw a card containing “Strike”, it is played against a random enemy.",1,"Whenever you draw a card containing “Strike”, it is played against a random enemy."
+Ironclad,Hemokinesis,Attack,Uncommon,AnyEnemy,1,Lose 2 HP. Deal 15 damage.,1,Lose 2 HP. Deal 20 damage.
+Ironclad,Howl from Beyond,Attack,Uncommon,AllEnemies,3,"Deal 16 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it.",3,"Deal 21 damage to ALL enemies. At the end of your turn, if this is in your Exhaust Pile, play it."
+Ironclad,Impervious,Skill,Rare,Self,2,Exhaust. Gain 30 Block.,2,Exhaust. Gain 40 Block.
+Ironclad,Infernal Blade,Skill,Uncommon,Self,1,Exhaust. Add a random Attack into your Hand. It's free to play this turn.,0,Exhaust. Add a random Attack into your Hand. It's free to play this turn.
+Ironclad,Inferno,Power,Uncommon,Self,1,"At the start of your turn, lose 1 HP. Whenever you lose HP on your turn, deal 6 damage to ALL enemies.",1,"At the start of your turn, lose 1 HP. Whenever you lose HP on your turn, deal 9 damage to ALL enemies."
+Ironclad,Inflame,Power,Uncommon,Self,1,Gain 2 Strength.,1,Gain 3 Strength.
+Ironclad,Iron Wave,Attack,Common,AnyEnemy,1,Gain 5 Block. Deal 5 damage.,1,Gain 7 Block. Deal 7 damage.
+Ironclad,Juggernaut,Power,Rare,Self,2,"Whenever you gain Block, deal 6 damage to a random enemy.",2,"Whenever you gain Block, deal 8 damage to a random enemy."
+Ironclad,Juggling,Power,Uncommon,Self,1,Add a copy of the third Attack you play each turn into your Hand.,1,Innate. Add a copy of the third Attack you play each turn into your Hand.
+Ironclad,Mangle,Attack,Rare,AnyEnemy,3,Deal 15 damage. Enemy loses 10 Strength this turn.,3,Deal 20 damage. Enemy loses 15 Strength this turn.
+Ironclad,Molten Fist,Attack,Common,AnyEnemy,1,Exhaust. Deal 10 damage. Double the enemy's Vulnerable.,1,Exhaust. Deal 14 damage. Double the enemy's Vulnerable.
+Ironclad,Not Yet,Skill,Rare,Self,2,Exhaust. Heal 10 HP.,2,Exhaust. Heal 13 HP.
+Ironclad,Offering,Skill,Rare,Self,0,Exhaust. Lose 6 HP. Gain 2 Energy. Draw 3 cards.,0,Exhaust. Lose 6 HP. Gain 2 Energy. Draw 5 cards.
+Ironclad,One-Two Punch,Skill,Rare,Self,1,"This turn, your next >1?1 Attacks are played an extra time.",1,"This turn, your next >1?2 Attacks are played an extra time."
+Ironclad,Pact's End,Attack,Rare,AllEnemies,0,"If you have 3 or more cards in your Exhaust Pile, deal 17 damage to ALL enemies.",0,"If you have 3 or more cards in your Exhaust Pile, deal 23 damage to ALL enemies."
+Ironclad,Perfected Strike,Attack,Common,AnyEnemy,2,Deal 6 damage. Deals 2 additional damage for ALL your cards containing “Strike”.,2,Deal 6 damage. Deals 3 additional damage for ALL your cards containing “Strike”.
+Ironclad,Pillage,Attack,Uncommon,AnyEnemy,1,Deal 6 damage. Draw cards until you draw a non-Attack card.,1,Deal 9 damage. Draw cards until you draw a non-Attack card.
+Ironclad,Pommel Strike,Attack,Common,AnyEnemy,1,Deal 9 damage. Draw 1 card.,1,Deal 10 damage. Draw 2 cards.
+Ironclad,Primal Force,Skill,Rare,Self,0,Transform all Attacks in your Hand into Giant Rock.,0,Transform all Attacks in your Hand into Giant Rock+.
+Ironclad,Pyre,Power,Rare,Self,2,Gain 1 Energy at the start of each turn.,2,Gain 2 Energy at the start of each turn.
+Ironclad,Rage,Skill,Uncommon,Self,0,"Whenever you play an Attack this turn, gain 3 Block.",0,"Whenever you play an Attack this turn, gain 5 Block."
+Ironclad,Rampage,Attack,Uncommon,AnyEnemy,1,Deal 9 damage. Increase this card's damage by 5 this combat.,1,Deal 9 damage. Increase this card's damage by 9 this combat.
+Ironclad,Rupture,Power,Uncommon,Self,1,"Whenever you lose HP on your turn, gain 1 Strength.",1,"Whenever you lose HP on your turn, gain 2 Strength."
+Ironclad,Second Wind,Skill,Uncommon,Self,1,Exhaust all non-Attack cards in your Hand. Gain 5 Block for each card Exhausted.,1,Exhaust all non-Attack cards in your Hand. Gain 7 Block for each card Exhausted.
+Ironclad,Setup Strike,Attack,Common,AnyEnemy,1,Deal 7 damage. Gain 2 Strength this turn.,1,Deal 9 damage. Gain 3 Strength this turn.
+Ironclad,Shrug It Off,Skill,Common,Self,1,Gain 8 Block. Draw 1 card.,1,Gain 11 Block. Draw 1 card.
+Ironclad,Spite,Attack,Uncommon,AnyEnemy,0,"Deal 5 damage. If you lost HP this turn, hits 2 times.",0,"Deal 5 damage. If you lost HP this turn, hits 3 times."
+Ironclad,Stampede,Power,Uncommon,Self,2,"At the end of your turn, 1 random Attack in your Hand is played against a random enemy.",1,"At the end of your turn, 1 random Attack in your Hand is played against a random enemy."
+Ironclad,Stoke,Skill,Rare,Self,1,Exhaust your Hand. Add 1 random card into your Hand for each card Exhausted.,1,Exhaust your Hand. Add 1 random Upgraded card into your Hand for each card Exhausted.
+Ironclad,Stomp,Attack,Uncommon,AllEnemies,3,Deal 12 damage to ALL enemies. Costs 1 less 1 Energy for each Attack played this turn.,3,Deal 15 damage to ALL enemies. Costs 1 less 1 Energy for each Attack played this turn.
+Ironclad,Stone Armor,Power,Uncommon,Self,1,Gain 4 Plating.,1,Gain 6 Plating.
+Ironclad,Strike,Attack,Basic,AnyEnemy,1,Deal 6 damage.,1,Deal 9 damage.
+Ironclad,Sword Boomerang,Attack,Common,RandomEnemy,1,Deal 3 damage to a random enemy 3 times.,1,Deal 3 damage to a random enemy 4 times.
+Ironclad,Tank,Power,Rare,Self,1,Take double damage from enemies. Allies take half damage from enemies.,0,Take double damage from enemies. Allies take half damage from enemies.
+Ironclad,Taunt,Skill,Uncommon,AnyEnemy,1,Gain 7 Block. Apply 1 Vulnerable.,1,Gain 8 Block. Apply 2 Vulnerable.
+Ironclad,Tear Asunder,Attack,Rare,AnyEnemy,2,Deal 5 damage. Hits an additional time for each time you lost HP this combat.,2,Deal 7 damage. Hits an additional time for each time you lost HP this combat.
+Ironclad,Thrash,Attack,Rare,AnyEnemy,1,Deal 4 damage twice. Exhaust a random Attack in your Hand and add its damage to this card.,1,Deal 6 damage twice. Exhaust a random Attack in your Hand and add its damage to this card.
+Ironclad,Thunderclap,Attack,Common,AllEnemies,1,Deal 4 damage and apply 1 Vulnerable to ALL enemies.,1,Deal 7 damage and apply 1 Vulnerable to ALL enemies.
+Ironclad,Tremble,Skill,Common,AnyEnemy,1,Exhaust. Apply 3 Vulnerable.,1,Exhaust. Apply 4 Vulnerable.
+Ironclad,True Grit,Skill,Common,Self,1,Gain 7 Block. Exhaust 1 card at random.,1,Gain 9 Block. Exhaust 1 card.
+Ironclad,Twin Strike,Attack,Common,AnyEnemy,1,Deal 5 damage twice.,1,Deal 7 damage twice.
+Ironclad,Unmovable,Power,Rare,Self,2,"The first time you gain Block from a card each turn, double the amount gained.",1,"The first time you gain Block from a card each turn, double the amount gained."
+Ironclad,Unrelenting,Attack,Uncommon,AnyEnemy,2,Deal 14 damage. The next Attack you play costs 0 1 Energy.,2,Deal 20 damage. The next Attack you play costs 0 1 Energy.
+Ironclad,Uppercut,Attack,Uncommon,AnyEnemy,2,Deal 13 damage. Apply 1 Weak. Apply 1 Vulnerable.,2,Deal 13 damage. Apply 2 Weak. Apply 2 Vulnerable.
+Ironclad,Vicious,Power,Uncommon,Self,1,"Whenever you apply Vulnerable, draw 1 card.",1,"Whenever you apply Vulnerable, draw 2 cards."
+Ironclad,Whirlwind,Attack,Uncommon,AllEnemies,X,Deal 5 damage to ALL enemies X times.,X,Deal 8 damage to ALL enemies X times.
+Necrobinder,Afterlife,Skill,Common,Self,1,Exhaust. Summon 6.,1,Exhaust. Summon 9.
+Necrobinder,Banshee's Cry,Attack,Rare,AllEnemies,9,Deal 33 damage to ALL enemies. Costs 2 Energy less for each Ethereal card played this combat.,7,Deal 33 damage to ALL enemies. Costs 2 Energy less for each Ethereal card played this combat.
+Necrobinder,Blight Strike,Attack,Common,AnyEnemy,1,Deal 8 damage. Apply Doom equal to damage dealt.,1,Deal 10 damage. Apply Doom equal to damage dealt.
+Necrobinder,Bodyguard,Skill,Basic,Self,1,Summon 5.,1,Summon 7.
+Necrobinder,Bone Shards,Attack,Uncommon,AllEnemies,1,"If Osty is alive, he deals 9 damage to ALL enemies and you gain 9 Block. Osty dies.",1,"If Osty is alive, he deals 12 damage to ALL enemies and you gain 12 Block. Osty dies."
+Necrobinder,Borrowed Time,Skill,Uncommon,Self,1,Gain 4 Energy. Cards cost an additional 1 Energy this turn.,1,Gain 6 Energy. Cards cost an additional 1 Energy this turn.
+Necrobinder,Bury,Attack,Uncommon,AnyEnemy,4,Deal 52 damage.,4,Deal 63 damage.
+Necrobinder,Calcify,Power,Uncommon,Self,1,Osty's attacks deal 4 additional damage.,1,Osty's attacks deal 6 additional damage.
+Necrobinder,Call of the Void,Power,Rare,Self,1,"At the start of your turn, add 1 random card into your Hand. It gains Ethereal.",1,"Innate. At the start of your turn, add 1 random card into your Hand. It gains Ethereal."
+Necrobinder,Capture Spirit,Skill,Uncommon,AnyEnemy,1,Enemy loses 3 HP. Add 3 Souls into your Draw Pile.,1,Enemy loses 4 HP. Add 4 Souls into your Draw Pile.
+Necrobinder,Cleanse,Skill,Uncommon,Self,1,Summon 3. Exhaust 1 card from your Draw Pile.,1,Summon 5. Exhaust 1 card from your Draw Pile.
+Necrobinder,Countdown,Power,Uncommon,Self,1,"At the start of your turn, apply 6 Doom to a random enemy.",1,"At the start of your turn, apply 9 Doom to a random enemy."
+Necrobinder,Danse Macabre,Power,Uncommon,Self,1,"Whenever you play a card that costs 2 Energy or more, gain 4 Block.",1,"Whenever you play a card that costs 2 Energy or more, gain 6 Block."
+Necrobinder,Death March,Attack,Uncommon,AnyEnemy,1,Deal 8 damage. Deals 4 additional damage for each card drawn during your turn.,1,Deal 9 damage. Deals 6 additional damage for each card drawn during your turn.
+Necrobinder,Death's Door,Skill,Uncommon,Self,1,"Gain 6 Block. If you applied Doom this turn, gain Block 2 additional times.",1,"Gain 7 Block. If you applied Doom this turn, gain Block 2 additional times."
+Necrobinder,Deathbringer,Skill,Uncommon,AllEnemies,2,Apply 21 Doom and 1 Weak to ALL enemies.,2,Apply 26 Doom and 1 Weak to ALL enemies.
+Necrobinder,Debilitate,Attack,Uncommon,AnyEnemy,1,Deal 10 damage. Vulnerable and Weak are twice as effective against the enemy for the next 2 turns.,1,Deal 12 damage. Vulnerable and Weak are twice as effective against the enemy for the next 3 turns.
+Necrobinder,Defend,Skill,Basic,Self,1,Gain 5 Block.,1,Gain 8 Block.
+Necrobinder,Defile,Attack,Common,AnyEnemy,1,Ethereal. Deal 13 damage.,1,Ethereal. Deal 17 damage.
+Necrobinder,Defy,Skill,Common,AnyEnemy,1,Ethereal. Gain 6 Block. Apply 1 Weak.,1,Ethereal. Gain 9 Block. Apply 1 Weak.
+Necrobinder,Delay,Skill,Uncommon,Self,2,"Gain 11 Block. Next turn, gain 1 Energy.",2,"Gain 13 Block. Next turn, gain 2 Energy."
+Necrobinder,Demesne,Power,Rare,Self,3,"Ethereal. At the start of your turn, gain 1 Energy and draw 1 additional card.",2,"Ethereal. At the start of your turn, gain 1 Energy and draw 1 additional card."
+Necrobinder,Devour Life,Power,Rare,Self,1,"Whenever you play a Soul, Summon 1.",1,"Whenever you play a Soul, Summon 2."
+Necrobinder,Dirge,Skill,Uncommon,Self,X,Exhaust. Summon 3 X times. Add X Souls into your Draw Pile.,X,Exhaust. Summon 4 X times. Add X Souls+ into your Draw Pile.
+Necrobinder,Drain Power,Attack,Common,AnyEnemy,1,Deal 10 damage. Upgrade 2 random cards in your Discard Pile.,1,Deal 12 damage. Upgrade 3 random cards in your Discard Pile.
+Necrobinder,Dredge,Skill,Uncommon,Self,1,Exhaust. Put 3 cards from your Discard Pile into your Hand.,1,Exhaust. Retain. Put 3 cards from your Discard Pile into your Hand.
+Necrobinder,Eidolon,Skill,Rare,Self,2,"Exhaust your Hand. If 9 cards were Exhausted this way, gain 1 Intangible.",1,"Exhaust your Hand. If 9 cards were Exhausted this way, gain 1 Intangible."
+Necrobinder,End of Days,Skill,Rare,AllEnemies,3,Apply 29 Doom to ALL enemies. Kill enemies with at least as much Doom as HP.,3,Apply 37 Doom to ALL enemies. Kill enemies with at least as much Doom as HP.
+Necrobinder,Enfeebling Touch,Skill,Uncommon,AnyEnemy,1,Ethereal. Enemy loses 8 Strength this turn.,1,Ethereal. Enemy loses 11 Strength this turn.
+Necrobinder,Eradicate,Attack,Rare,AnyEnemy,X,Retain. Deal 11 damage X times.,X,Retain. Deal 14 damage X times.
+Necrobinder,Fear,Attack,Common,AnyEnemy,1,Ethereal. Deal 7 damage. Apply 1 Vulnerable.,1,Ethereal. Deal 8 damage. Apply 2 Vulnerable.
+Necrobinder,Fetch,Attack,Uncommon,AnyEnemy,0,"Osty deals 3 damage. If this is the first time this card has been played this turn, draw 1 card.",0,"Osty deals 6 damage. If this is the first time this card has been played this turn, draw 1 card."
+Necrobinder,Flatten,Attack,Common,AnyEnemy,2,Osty deals 12 damage. This card costs 0 1 Energy if Osty has attacked this turn.,2,Osty deals 16 damage. This card costs 0 1 Energy if Osty has attacked this turn.
+Necrobinder,Forbidden Grimoire,Power,Ancient,Self,2,"Eternal. At the end of combat, you may remove a card from your Deck.",1,"Eternal. At the end of combat, you may remove a card from your Deck."
+Necrobinder,Friendship,Power,Uncommon,Self,1,Lose 2 Strength. Gain 1 Energy at the start of each turn.,1,Lose 1 Strength. Gain 1 Energy at the start of each turn.
+Necrobinder,Glimpse Beyond,Skill,Rare,AllAllies,1,Exhaust. ALL players add 3 Souls into their Draw Pile.,1,Exhaust. ALL players add 4 Souls into their Draw Pile.
+Necrobinder,Grave Warden,Skill,Common,Self,1,Gain 8 Block. Add a Soul into your Draw Pile.,1,Gain 11 Block. Add a Soul into your Draw Pile.
+Necrobinder,Graveblast,Attack,Common,AnyEnemy,1,Exhaust. Deal 4 damage. Put a card from your Discard Pile into your Hand.,1,Deal 6 damage. Put a card from your Discard Pile into your Hand.
+Necrobinder,Hang,Attack,Rare,AnyEnemy,1,Deal 10 damage. Double the damage ALL Hang cards deal to this enemy.,1,Deal 13 damage. Double the damage ALL Hang cards deal to this enemy.
+Necrobinder,Haunt,Power,Uncommon,Self,1,"Whenever you play a Soul, a random enemy loses 6 HP.",1,"Whenever you play a Soul, a random enemy loses 8 HP."
+Necrobinder,High Five,Attack,Uncommon,AllEnemies,2,Osty deals 11 damage and applies 2 Vulnerable to ALL enemies.,2,Osty deals 13 damage and applies 3 Vulnerable to ALL enemies.
+Necrobinder,Invoke,Skill,Common,Self,1,"Next turn, Summon 2 and gain 2 Energy.",1,"Next turn, Summon 3 and gain 3 Energy."
+Necrobinder,Legion of Bone,Skill,Uncommon,AllAllies,2,Exhaust. ALL players Summon 6.,2,Exhaust. ALL players Summon 8.
+Necrobinder,Lethality,Power,Uncommon,Self,1,Ethereal. The first Attack each turn deals 50% additional damage.,1,Ethereal. The first Attack each turn deals 75% additional damage.
+Necrobinder,Melancholy,Skill,Uncommon,Self,3,Gain 13 Block. Reduce this card's cost by 1 Energy whenever ANYONE dies.,3,Gain 17 Block. Reduce this card's cost by 1 Energy whenever ANYONE dies.
+Necrobinder,Misery,Attack,Rare,AnyEnemy,0,Deal 7 damage. Apply any debuffs on the enemy to ALL other enemies.,0,Retain. Deal 9 damage. Apply any debuffs on the enemy to ALL other enemies.
+Necrobinder,Necro Mastery,Power,Rare,Self,2,"Summon 5. Whenever Osty loses HP, ALL enemies lose that much HP as well.",2,"Summon 8. Whenever Osty loses HP, ALL enemies lose that much HP as well."
+Necrobinder,Negative Pulse,Skill,Common,AllEnemies,1,Gain 5 Block. Apply 7 Doom to ALL enemies.,1,Gain 6 Block. Apply 11 Doom to ALL enemies.
+Necrobinder,Neurosurge,Power,Rare,Self,0,"Gain 3 Energy. Draw 2 cards. At the start of your turn, apply 3 Doom to yourself.",0,"Gain 4 Energy. Draw 2 cards. At the start of your turn, apply 3 Doom to yourself."
+Necrobinder,No Escape,Skill,Uncommon,AnyEnemy,1,"Apply 10 Doom, plus an additional 5 Doom for every 10 Doom already on this enemy.",1,"Apply 15 Doom, plus an additional 5 Doom for every 10 Doom already on this enemy."
+Necrobinder,Oblivion,Skill,Rare,AnyEnemy,0,"Whenever you play a card this turn, apply 3 Doom to the enemy.",0,"Whenever you play a card this turn, apply 4 Doom to the enemy."
+Necrobinder,Pagestorm,Power,Uncommon,Self,1,"Whenever you draw an Ethereal card, draw 1 card.",0,"Whenever you draw an Ethereal card, draw 1 card."
+Necrobinder,Parse,Skill,Uncommon,Self,1,Ethereal. Draw 3 cards.,1,Ethereal. Draw 4 cards.
+Necrobinder,Poke,Attack,Common,AnyEnemy,0,Osty deals 6 damage.,0,Osty deals 9 damage.
+Necrobinder,Protector,Attack,Ancient,AnyEnemy,1,Osty deals 10 damage. Deals additional damage equal to Osty's Max HP.,0,Osty deals 15 damage. Deals additional damage equal to Osty's Max HP.
+Necrobinder,Pull Aggro,Skill,Common,Self,2,Summon 4. Gain 7 Block.,2,Summon 5. Gain 9 Block.
+Necrobinder,Pull from Below,Attack,Uncommon,AnyEnemy,1,Deal 5 damage for each Ethereal card played this combat.,1,Deal 7 damage for each Ethereal card played this combat.
+Necrobinder,Putrefy,Skill,Uncommon,AnyEnemy,1,Exhaust. Apply 2 Weak. Apply 2 Vulnerable.,1,Exhaust. Apply 3 Weak. Apply 3 Vulnerable.
+Necrobinder,Rattle,Attack,Uncommon,AnyEnemy,1,Osty deals 7 damage. Hits an additional time for each other time he has attacked this turn.,1,Osty deals 9 damage. Hits an additional time for each other time he has attacked this turn.
+Necrobinder,Reanimate,Skill,Rare,Self,3,Exhaust. Summon 20.,3,Exhaust. Summon 25.
+Necrobinder,Reap,Attack,Common,AnyEnemy,3,Retain. Deal 27 damage.,3,Retain. Deal 33 damage.
+Necrobinder,Reaper Form,Power,Rare,Self,3,"Whenever Attacks deal damage, apply that much Doom.",3,"Retain. Whenever Attacks deal damage, apply that much Doom."
+Necrobinder,Reave,Attack,Common,AnyEnemy,1,Deal 9 damage. Add a Soul into your Draw Pile.,1,Deal 11 damage. Add a Soul+ into your Draw Pile.
+Necrobinder,Right Hand Hand,Attack,Uncommon,AnyEnemy,0,"Osty deals 4 damage. Whenever you play a card that costs 2 Energy or more, return this to your Hand from the Discard Pile.",0,"Osty deals 6 damage. Whenever you play a card that costs 2 Energy or more, return this to your Hand from the Discard Pile."
+Necrobinder,Sacrifice,Skill,Rare,Self,1,"Retain. If Osty is alive, he dies and you gain Block equal to double his Max HP.",0,"Retain. If Osty is alive, he dies and you gain Block equal to double his Max HP."
+Necrobinder,Scourge,Skill,Common,AnyEnemy,1,Apply 13 Doom. Draw 1 card.,1,Apply 16 Doom. Draw 2 cards.
+Necrobinder,Sculpting Strike,Attack,Common,AnyEnemy,1,Deal 9 damage. Add Ethereal to a card in your Hand.,1,Deal 12 damage. Add Ethereal to a card in your Hand.
+Necrobinder,Seance,Skill,Rare,Self,1,Ethereal. Transform a card in your Draw Pile into Soul.,0,Ethereal. Transform a card in your Draw Pile into Soul.
+Necrobinder,Sentry Mode,Power,Rare,Self,2,"At the start of your turn, add 1 Sweeping Gaze into your Hand.",1,"At the start of your turn, add 1 Sweeping Gaze into your Hand."
+Necrobinder,Severance,Attack,Uncommon,AnyEnemy,2,"Deal 13 damage. Add a Soul into your Draw Pile, Hand, and Discard Pile.",2,"Deal 18 damage. Add a Soul into your Draw Pile, Hand, and Discard Pile."
+Necrobinder,Shared Fate,Skill,Rare,AnyEnemy,0,Exhaust. Lose 2 Strength. Enemy loses 2 Strength.,0,Exhaust. Lose 2 Strength. Enemy loses 3 Strength.
+Necrobinder,Shroud,Power,Uncommon,Self,1,"Whenever you apply Doom, gain 2 Block.",1,"Whenever you apply Doom, gain 3 Block."
+Necrobinder,Sic 'Em,Attack,Uncommon,AnyEnemy,1,"Osty deals 5 damage. Whenever Osty hits this enemy this turn, Summon 3.",1,"Osty deals 6 damage. Whenever Osty hits this enemy this turn, Summon 4."
+Necrobinder,Sleight of Flesh,Power,Uncommon,Self,2,"Whenever you apply a debuff to an enemy, they take 9 damage.",2,"Whenever you apply a debuff to an enemy, they take 13 damage."
+Necrobinder,Snap,Attack,Common,AnyEnemy,1,Osty deals 7 damage. Add Retain to a card in your Hand.,1,Osty deals 10 damage. Add Retain to a card in your Hand.
+Necrobinder,Soul Storm,Attack,Rare,AnyEnemy,1,Deal 9 damage. Deals 2 additional damage for each Soul in your Exhaust Pile.,1,Deal 9 damage. Deals 3 additional damage for each Soul in your Exhaust Pile.
+Necrobinder,Sow,Attack,Common,AllEnemies,1,Retain. Deal 8 damage to ALL enemies.,1,Retain. Deal 11 damage to ALL enemies.
+Necrobinder,Spirit of Ash,Power,Rare,Self,1,"Whenever you play an Ethereal card, gain 4 Block.",1,"Whenever you play an Ethereal card, gain 5 Block."
+Necrobinder,Spur,Skill,Uncommon,Self,1,Retain. Summon 3. Osty heals 5 HP.,1,Retain. Summon 5. Osty heals 7 HP.
+Necrobinder,Squeeze,Attack,Rare,AnyEnemy,3,Osty deals 25 damage. Deals 5 additional damage for ALL your other Osty Attacks.,3,Osty deals 30 damage. Deals 6 additional damage for ALL your other Osty Attacks.
+Necrobinder,Strike,Attack,Basic,AnyEnemy,1,Deal 6 damage.,1,Deal 9 damage.
+Necrobinder,The Scythe,Attack,Rare,AnyEnemy,2,Exhaust. Deal 13 damage. Permanently increase this card's damage by 4.,2,Exhaust. Deal 13 damage. Permanently increase this card's damage by 5.
+Necrobinder,Time's Up,Attack,Rare,AnyEnemy,2,Exhaust. Deal damage equal to the enemy's Doom.,2,Exhaust. Retain. Deal damage equal to the enemy's Doom.
+Necrobinder,Transfigure,Skill,Rare,Self,1,Exhaust. Add Replay to a card in your Hand. It costs an extra 1 Energy.,1,Add Replay to a card in your Hand. It costs an extra 1 Energy.
+Necrobinder,Undeath,Skill,Rare,Self,0,Gain 7 Block. Add a copy of this card into your Discard Pile.,0,Gain 9 Block. Add a copy of this card into your Discard Pile.
+Necrobinder,Unleash,Attack,Basic,AnyEnemy,1,Osty deals 6 damage. Deals additional damage equal to Osty's current HP.,1,Osty deals 9 damage. Deals additional damage equal to Osty's current HP.
+Necrobinder,Veilpiercer,Attack,Uncommon,AnyEnemy,1,Deal 10 damage. The next Ethereal card you play costs 0 1 Energy.,1,Deal 13 damage. The next Ethereal card you play costs 0 1 Energy.
+Necrobinder,Wisp,Skill,Common,Self,0,Exhaust. Gain 1 Energy.,0,Exhaust. Retain. Gain 1 Energy.
+Quest,Byrdonis Egg,Quest,Quest,None,N/A,Unplayable. Can be hatched at a Rest Site.,N/A,Unplayable. Can be hatched at a Rest Site.
+Quest,Lantern Key,Quest,Quest,Self,N/A,Unplayable. Unlocks a special event in the next Act.,N/A,Unplayable. Unlocks a special event in the next Act.
+Quest,Spoils Map,Quest,Quest,Self,N/A,Unplayable. Marks a site of 600 extra Gold in the next Act.,N/A,Unplayable. Marks a site of 600 extra Gold in the next Act.
+Regent,Alignment,Skill,Uncommon,Self,0,Gain 2 Energy.,0,Gain 3 Energy.
+Regent,Arsenal,Power,Rare,Self,1,"Whenever you create a card, gain 1 Strength.",1,"Innate. Whenever you create a card, gain 1 Strength."
+Regent,Astral Pulse,Attack,Common,AllEnemies,0,Deal 6 damage to ALL enemies twice.,0,Deal 8 damage to ALL enemies twice.
+Regent,Beat into Shape,Attack,Rare,AnyEnemy,1,Deal 5 damage. Forge 5. Forges an additional 5 for every other time you've hit the enemy this turn.,1,Deal 7 damage. Forge 7. Forges an additional 7 for every other time you've hit the enemy this turn.
+Regent,BEGONE!,Skill,Common,Self,1,Choose a card in your Hand to Transform into Minion Strike.,1,Choose a card in your Hand to Transform into Minion Strike+.
+Regent,Big Bang,Skill,Rare,Self,0,Exhaust. Draw 1 card. Gain 1 Energy. Gain 1 Star. Forge 5.,0,Exhaust. Innate. Draw 1 card. Gain 1 Energy. Gain 1 Star. Forge 5.
+Regent,Black Hole,Power,Uncommon,Self,1,"Whenever you spend or gain Star, deal 3 damage to ALL enemies.",1,"Whenever you spend or gain Star, deal 4 damage to ALL enemies."
+Regent,Bombardment,Attack,Rare,AnyEnemy,3,"Exhaust. Deal 18 damage. At the start of your turn, if this is in your Exhaust Pile, play it.",3,"Exhaust. Deal 24 damage. At the start of your turn, if this is in your Exhaust Pile, play it."
+Regent,Bulwark,Skill,Uncommon,Self,2,Gain 12 Block. Forge 10.,2,Gain 15 Block. Forge 13.
+Regent,Bundle of Joy,Skill,Rare,Self,1,Exhaust. Add 3 random Colorless cards into your Hand.,1,Exhaust. Add 4 random Colorless cards into your Hand.
+Regent,Celestial Might,Attack,Common,AnyEnemy,2,Deal 6 damage 3 times.,2,Deal 6 damage 4 times.
+Regent,CHARGE!!,Skill,Uncommon,Self,1,Choose 2 cards in your Draw Pile to Transform into Minion Dive Bombs.,1,Choose 2 cards in your Draw Pile to Transform into Minion Dive Bombs+.
+Regent,Child of the Stars,Power,Uncommon,Self,1,"Whenever you spend Star, gain 2 Block for each Star spent.",1,"Whenever you spend Star, gain 3 Block for each Star spent."
+Regent,Cloak of Stars,Skill,Common,Self,0,Gain 7 Block.,0,Gain 10 Block.
+Regent,Collision Course,Attack,Common,AnyEnemy,0,Deal 11 damage. Add a Debris into your Hand.,0,Deal 15 damage. Add a Debris into your Hand.
+Regent,Comet,Attack,Rare,AnyEnemy,0,Deal 33 damage. Apply 3 Weak. Apply 3 Vulnerable.,0,Deal 44 damage. Apply 3 Weak. Apply 3 Vulnerable.
+Regent,Conqueror,Skill,Uncommon,AnyEnemy,1,Forge 3. Sovereign Blade deals double damage to the enemy this turn.,1,Forge 5. Sovereign Blade deals double damage to the enemy this turn.
+Regent,Convergence,Skill,Uncommon,Self,1,"Next turn, gain 1 Energy and 1 Star. Retain your Hand this turn.",1,"Next turn, gain 1 Energy and 2 Stars. Retain your Hand this turn."
+Regent,Cosmic Indifference,Skill,Common,Self,1,Gain 6 Block. Put a card from your Discard Pile on top of your Draw Pile.,1,Gain 9 Block. Put a card from your Discard Pile on top of your Draw Pile.
+Regent,Crash Landing,Attack,Rare,AllEnemies,1,Deal 21 damage to ALL enemies. Fill your Hand with Debris.,1,Deal 26 damage to ALL enemies. Fill your Hand with Debris.
+Regent,Crescent Spear,Attack,Common,AnyEnemy,1,Deal 8 damage. Deals 2 additional damage for ALL your cards that have a Star cost.,1,Deal 8 damage. Deals 3 additional damage for ALL your cards that have a Star cost.
+Regent,Crush Under,Attack,Common,AllEnemies,1,Deal 7 damage to ALL enemies. All enemies lose 1 Strength this turn.,1,Deal 8 damage to ALL enemies. All enemies lose 2 Strength this turn.
+Regent,"Decisions, Decisions",Skill,Rare,Self,0,Exhaust. Draw 3 cards. Choose a Skill in your Hand and play it 3 times.,0,Exhaust. Draw 5 cards. Choose a Skill in your Hand and play it 3 times.
+Regent,Defend,Skill,Basic,Self,1,Gain 5 Block.,1,Gain 8 Block.
+Regent,Devastate,Attack,Uncommon,AnyEnemy,1,Deal 30 damage.,1,Deal 40 damage.
+Regent,Dying Star,Attack,Rare,AllEnemies,1,Ethereal. Deal 9 damage to ALL enemies. ALL enemies lose 9 Strength this turn.,1,Ethereal. Deal 11 damage to ALL enemies. ALL enemies lose 11 Strength this turn.
+Regent,Falling Star,Attack,Basic,AnyEnemy,0,Deal 8 damage. Apply 1 Weak. Apply 1 Vulnerable.,0,Deal 12 damage. Apply 1 Weak. Apply 1 Vulnerable.
+Regent,Foregone Conclusion,Skill,Rare,Self,1,"Next turn, put 2 cards from your Draw Pile into your Hand.",1,"Next turn, put 3 cards from your Draw Pile into your Hand."
+Regent,Furnace,Power,Uncommon,Self,1,"At the start of your turn, Forge 5.",1,"At the start of your turn, Forge 7."
+Regent,Gamma Blast,Attack,Uncommon,AnyEnemy,0,Deal 13 damage. Apply 2 Weak. Apply 2 Vulnerable.,0,Deal 18 damage. Apply 2 Weak. Apply 2 Vulnerable.
+Regent,Gather Light,Skill,Common,Self,1,Gain 8 Block. Gain 1 Star.,1,Gain 11 Block. Gain 1 Star.
+Regent,Genesis,Power,Rare,Self,2,"At the start of your turn, gain 2 Stars.",2,"At the start of your turn, gain 3 Stars."
+Regent,Glimmer,Skill,Uncommon,Self,1,Draw 3 cards. Put 1 card from your Hand on top of your Draw Pile.,1,Draw 4 cards. Put 1 card from your Hand on top of your Draw Pile.
+Regent,Glitterstream,Skill,Common,Self,2,"Gain 11 Block. Next turn, gain 5 Block.",2,"Gain 13 Block. Next turn, gain 7 Block."
+Regent,Glow,Skill,Common,Self,1,"Gain 1 Star. Draw 1 card. Next turn, draw 1 card.",1,"Gain 2 Stars. Draw 1 card. Next turn, draw 1 card."
+Regent,GUARDS!!!,Skill,Rare,Self,2,Exhaust. Transform any number of cards in your Hand into Minion Sacrifice.,2,Exhaust. Transform any number of cards in your Hand into Minion Sacrifice+.
+Regent,Guiding Star,Attack,Common,AnyEnemy,1,Deal 12 damage. Draw 2 cards.,1,Deal 13 damage. Draw 3 cards.
+Regent,Hammer Time,Power,Rare,Self,2,"Whenever you Forge, all allies Forge as well.",1,"Whenever you Forge, all allies Forge as well."
+Regent,Heavenly Drill,Attack,Rare,AnyEnemy,X,Deal 8 damage X times. Double X if it's 4 or more.,X,Deal 10 damage X times. Double X if it's 4 or more.
+Regent,Hegemony,Attack,Uncommon,AnyEnemy,2,"Deal 15 damage. Next turn, gain 2 Energy.",2,"Deal 18 damage. Next turn, gain 3 Energy."
+Regent,Heirloom Hammer,Attack,Rare,AnyEnemy,2,Deal 20 damage. Choose a Colorless card in your Hand. Add a copy of that card into your Hand.,2,Deal 25 damage. Choose a Colorless card in your Hand. Add a copy of that card into your Hand.
+Regent,Hidden Cache,Skill,Common,Self,1,"Gain 1 Star. Next turn, gain 3 Stars.",1,"Gain 1 Star. Next turn, gain 4 Stars."
+Regent,I Am Invincible,Skill,Rare,Self,1,"Gain 10 Block. At the end of your turn, if this is on top of your Draw Pile, play it.",1,"Gain 13 Block. At the end of your turn, if this is on top of your Draw Pile, play it."
+Regent,Kingly Kick,Attack,Uncommon,AnyEnemy,4,"Deal 27 damage. Whenever you draw this card, reduce its cost by 1.",4,"Deal 35 damage. Whenever you draw this card, reduce its cost by 1."
+Regent,Kingly Punch,Attack,Uncommon,AnyEnemy,1,"Deal 8 damage. Whenever you draw this card, increase its damage by 4 this combat.",1,"Deal 10 damage. Whenever you draw this card, increase its damage by 6 this combat."
+Regent,Knockout Blow,Attack,Uncommon,AnyEnemy,3,"Deal 30 damage. If this kills an enemy, gain 5 Stars.",3,"Deal 38 damage. If this kills an enemy, gain 5 Stars."
+Regent,Know Thy Place,Skill,Common,AnyEnemy,0,Exhaust. Apply 1 Weak. Apply 1 Vulnerable.,0,Apply 1 Weak. Apply 1 Vulnerable.
+Regent,Largesse,Skill,Uncommon,AnyAlly,0,Another player adds 1 random Colorless card to their Hand.,0,Another player adds 1 random Upgraded Colorless card to their Hand.
+Regent,Lunar Blast,Attack,Uncommon,AnyEnemy,0,Deal 4 damage for each Skill already played this turn.,0,Deal 5 damage for each Skill already played this turn.
+Regent,Make It So,Attack,Rare,AnyEnemy,0,"Deal 6 damage. Every 3 Skills you play in a turn, put this into your Hand.",0,"Deal 9 damage. Every 3 Skills you play in a turn, put this into your Hand."
+Regent,Manifest Authority,Skill,Uncommon,Self,1,Gain 7 Block. Add 1 random Colorless card into your Hand.,1,Gain 8 Block. Add 1 random Upgraded Colorless card into your Hand.
+Regent,Meteor Shower,Attack,Ancient,AllEnemies,0,Deal 14 damage to ALL enemies. Apply 2 Weak and Vulnerable to ALL enemies.,0,Deal 21 damage to ALL enemies. Apply 2 Weak and Vulnerable to ALL enemies.
+Regent,Monarch's Gaze,Power,Rare,Self,2,"Whenever you attack an enemy, it loses 1 Strength this turn.",1,"Whenever you attack an enemy, it loses 1 Strength this turn."
+Regent,Monologue,Skill,Uncommon,Self,0,"Whenever you play a card this turn, gain 1 Strength this turn.",0,"Retain. Whenever you play a card this turn, gain 1 Strength this turn."
+Regent,Neutron Aegis,Power,Rare,Self,1,Gain 8 Plating.,1,Gain 11 Plating.
+Regent,Orbit,Power,Uncommon,Self,2,"Every 4 Energy you spend, gain 1 Energy.",1,"Every 4 Energy you spend, gain 1 Energy."
+Regent,Pale Blue Dot,Power,Uncommon,Self,1,"If you play 5 or more cards in a turn, draw 1 card at the start of your next turn.",1,"If you play 5 or more cards in a turn, draw 2 cards at the start of your next turn."
+Regent,Parry,Power,Uncommon,Self,1,Sovereign Blade now gains 10 Block.,1,Sovereign Blade now gains 14 Block.
+Regent,Particle Wall,Skill,Uncommon,Self,0,Gain 9 Block. Return this card to your Hand.,0,Gain 12 Block. Return this card to your Hand.
+Regent,Patter,Skill,Common,Self,1,Gain 8 Block. Gain 2 Vigor.,1,Gain 10 Block. Gain 3 Vigor.
+Regent,Photon Cut,Attack,Common,AnyEnemy,1,Deal 10 damage. Draw 1 card. Put 1 card from your Hand on top of your Draw Pile.,1,Deal 13 damage. Draw 2 cards. Put 1 card from your Hand on top of your Draw Pile.
+Regent,Pillar of Creation,Power,Uncommon,Self,1,"Whenever you create a card, gain 3 Block.",1,"Whenever you create a card, gain 4 Block."
+Regent,Prophesize,Skill,Uncommon,Self,2,Draw 6 cards.,2,Draw 9 cards.
+Regent,Quasar,Skill,Uncommon,Self,0,Choose 1 of 3 random Colorless cards to add into your Hand.,0,Choose 1 of 3 random Upgraded Colorless cards to add into your Hand.
+Regent,Radiate,Attack,Uncommon,AllEnemies,0,Deal 3 damage to ALL enemies for each 1 Star gained this turn.,0,Deal 4 damage to ALL enemies for each 1 Star gained this turn.
+Regent,Refine Blade,Skill,Common,Self,1,"Forge 9. Next turn, gain 1 Energy.",1,"Forge 13. Next turn, gain 1 Energy."
+Regent,Reflect,Skill,Uncommon,Self,1,Gain 15 Block. Blocked attack damage is reflected to your attacker this turn.,1,Gain 20 Block. Blocked attack damage is reflected to your attacker this turn.
+Regent,Resonance,Skill,Uncommon,AllEnemies,1,Gain 1 Strength. ALL enemies lose 1 Strength.,1,Gain 2 Strength. ALL enemies lose 1 Strength.
+Regent,Royal Gamble,Skill,Uncommon,Self,0,Exhaust. Gain 9 Star.,0,Exhaust. Retain. Gain 9 Star.
+Regent,Royalties,Power,Rare,Self,1,"At the end of combat, gain 30 Gold.",1,"At the end of combat, gain 40 Gold."
+Regent,Seeking Edge,Power,Rare,Self,1,Forge 7. Sovereign Blade now deals damage to ALL enemies.,1,Forge 11. Sovereign Blade now deals damage to ALL enemies.
+Regent,Seven Stars,Attack,Rare,AllEnemies,2,Deal 7 damage to ALL enemies 7 times.,1,Deal 7 damage to ALL enemies 7 times.
+Regent,Shining Strike,Attack,Uncommon,AnyEnemy,1,Deal 8 damage. Gain 2 Stars. Put this card on top of your Draw Pile.,1,Deal 11 damage. Gain 2 Stars. Put this card on top of your Draw Pile.
+Regent,Solar Strike,Attack,Common,AnyEnemy,1,Deal 9 damage. Gain 1 Star.,1,Deal 10 damage. Gain 2 Stars.
+Regent,Spectrum Shift,Power,Uncommon,Self,2,"At the start of your turn, add 1 random Colorless card into your Hand.",1,"At the start of your turn, add 1 random Colorless card into your Hand."
+Regent,Spoils of Battle,Skill,Common,Self,1,Forge 5. Draw 2 cards.,1,Forge 8. Draw 2 cards.
+Regent,Stardust,Attack,Uncommon,RandomEnemy,0,Deal 5 damage to a random enemy X times.,0,Deal 7 damage to a random enemy X times.
+Regent,Strike,Attack,Basic,AnyEnemy,1,Deal 6 damage.,1,Deal 9 damage.
+Regent,Summon Forth,Skill,Uncommon,Self,1,Put Sovereign Blade into your Hand from anywhere. Forge 8.,1,Put Sovereign Blade into your Hand from anywhere. Forge 11.
+Regent,Supermassive,Attack,Uncommon,AnyEnemy,1,Deal 5 damage. Deals 3 additional damage for each card you created this combat.,1,Deal 5 damage. Deals 4 additional damage for each card you created this combat.
+Regent,Sword Sage,Power,Rare,Self,2,Sovereign Blade gains Replay 1.,1,Sovereign Blade gains Replay 1.
+Regent,Terraforming,Skill,Uncommon,Self,1,Gain 6 Vigor.,1,Gain 8 Vigor.
+Regent,The Sealed Throne,Power,Ancient,Self,1,"Whenever you play a card, gain Star.",0,"Whenever you play a card, gain Star."
+Regent,The Smith,Skill,Rare,Self,1,Forge 30.,1,Forge 40.
+Regent,Tyranny,Power,Rare,Self,1,"At the start of your turn, draw 1 card and Exhaust 1 card from your Hand.",1,"Innate. At the start of your turn, draw 1 card and Exhaust 1 card from your Hand."
+Regent,Venerate,Skill,Basic,Self,1,Gain 2 Stars.,1,Gain 3 Stars.
+Regent,Void Form,Power,Rare,Self,3,Ethereal. End your turn. The first 2 cards you play each turn are free to play.,3,End your turn. The first 2 cards you play each turn are free to play.
+Regent,Wrought in War,Attack,Common,AnyEnemy,1,Deal 7 damage. Forge 7.,1,Deal 9 damage. Forge 9.
+Silent,Abrasive,Power,Rare,Self,3,Sly. Gain 1 Dexterity. Gain 4 Thorns.,3,Sly. Gain 1 Dexterity. Gain 6 Thorns.
+Silent,Accelerant,Power,Rare,Self,1,Poison is triggered 1 additional time.,1,Poison is triggered 2 additional times.
+Silent,Accuracy,Power,Uncommon,Self,1,Shivs deal 4 additional damage.,1,Shivs deal 6 additional damage.
+Silent,Acrobatics,Skill,Uncommon,Self,1,Draw 3 cards. Discard 1 card.,1,Draw 4 cards. Discard 1 card.
+Silent,Adrenaline,Skill,Rare,Self,0,Exhaust. Gain 1 Energy. Draw 2 cards.,0,Exhaust. Gain 2 Energy. Draw 2 cards.
+Silent,Afterimage,Power,Rare,Self,1,"Whenever you play a card, gain 1 Block.",1,"Innate. Whenever you play a card, gain 1 Block."
+Silent,Anticipate,Skill,Common,Self,0,Gain 2 Dexterity this turn.,0,Gain 3 Dexterity this turn.
+Silent,Assassinate,Attack,Rare,AnyEnemy,0,Innate. Exhaust. Deal 10 damage. Apply 1 Vulnerable.,0,Innate. Exhaust. Deal 13 damage. Apply 2 Vulnerable.
+Silent,Backflip,Skill,Common,Self,1,Gain 5 Block. Draw 2 cards.,1,Gain 8 Block. Draw 2 cards.
+Silent,Backstab,Attack,Uncommon,AnyEnemy,0,Exhaust. Innate. Deal 11 damage.,0,Exhaust. Innate. Deal 15 damage.
+Silent,Blade Dance,Skill,Common,Self,1,Exhaust. Add 3 Shivs into your Hand.,1,Exhaust. Add 4 Shivs into your Hand.
+Silent,Blade of Ink,Skill,Rare,Self,1,Add 2 Inky Shivs into your Hand.,1,Add 3 Inky Shivs into your Hand.
+Silent,Blur,Skill,Uncommon,Self,1,Gain 5 Block. Block is not removed at the start of your next turn.,1,Gain 8 Block. Block is not removed at the start of your next turn.
+Silent,Bouncing Flask,Skill,Uncommon,RandomEnemy,2,Apply 3 Poison to a random enemy 3 times.,2,Apply 3 Poison to a random enemy 4 times.
+Silent,Bubble Bubble,Skill,Uncommon,AnyEnemy,1,"If the enemy has Poison, apply 9 Poison.",1,"If the enemy has Poison, apply 12 Poison."
+Silent,Bullet Time,Skill,Rare,Self,3,You cannot draw additional cards this turn. ALL cards in your Hand are free to play this turn.,2,You cannot draw additional cards this turn. ALL cards in your Hand are free to play this turn.
+Silent,Burst,Skill,Rare,Self,1,"This turn, your next Skill is played an extra time.",1,"This turn, your next 2 Skills are played an extra time."
+Silent,Calculated Gamble,Skill,Uncommon,Self,0,"Exhaust. Discard your Hand, then draw that many cards.",0,"Exhaust. Retain. Discard your Hand, then draw that many cards."
+Silent,Cloak and Dagger,Skill,Common,Self,1,Gain 6 Block. Add 1 Shiv into your Hand.,1,Gain 6 Block. Add 2 Shivs into your Hand.
+Silent,Corrosive Wave,Skill,Rare,Self,1,"Whenever you draw a card this turn, apply 2 Poison to ALL enemies.",1,"Whenever you draw a card this turn, apply 3 Poison to ALL enemies."
+Silent,Dagger Spray,Attack,Common,AllEnemies,1,Deal 4 damage to ALL enemies twice.,1,Deal 6 damage to ALL enemies twice.
+Silent,Dagger Throw,Attack,Common,AnyEnemy,1,Deal 9 damage. Draw 1 card. Discard 1 card.,1,Deal 12 damage. Draw 1 card. Discard 1 card.
+Silent,Dash,Attack,Uncommon,AnyEnemy,2,Gain 10 Block. Deal 10 damage.,2,Gain 13 Block. Deal 13 damage.
+Silent,Deadly Poison,Skill,Common,AnyEnemy,1,Apply 5 Poison.,1,Apply 7 Poison.
+Silent,Defend,Skill,Basic,Self,1,Gain 5 Block.,1,Gain 8 Block.
+Silent,Deflect,Skill,Common,Self,0,Gain 4 Block.,0,Gain 7 Block.
+Silent,Dodge and Roll,Skill,Common,Self,1,"Gain 4 Block. Next turn, gain 4 Block.",1,"Gain 6 Block. Next turn, gain 6 Block."
+Silent,Echoing Slash,Attack,Rare,AllEnemies,1,Deal 10 damage to ALL enemies. Repeat this effect for each enemy killed.,1,Deal 13 damage to ALL enemies. Repeat this effect for each enemy killed.
+Silent,Envenom,Power,Rare,Self,2,"Whenever an Attack deals unblocked damage, apply 1 Poison.",2,"Whenever an Attack deals unblocked damage, apply 2 Poison."
+Silent,Escape Plan,Skill,Uncommon,Self,0,"Draw 1 card. If you draw a Skill, gain 3 Block.",0,"Draw 1 card. If you draw a Skill, gain 5 Block."
+Silent,Expertise,Skill,Uncommon,Self,1,Draw cards until you have 6 in your Hand.,1,Draw cards until you have 7 in your Hand.
+Silent,Expose,Skill,Uncommon,AnyEnemy,0,Exhaust. Remove all Artifact and Block from the enemy. Apply 2 Vulnerable.,0,Exhaust. Remove all Artifact and Block from the enemy. Apply 3 Vulnerable.
+Silent,Fan of Knives,Power,Rare,Self,2,Shivs now hit ALL enemies. Add 4 Shivs into your Hand.,2,Shivs now hit ALL enemies. Add 5 Shivs into your Hand.
+Silent,Finisher,Attack,Uncommon,AnyEnemy,1,Deal 6 damage for each Attack already played this turn.,1,Deal 8 damage for each Attack already played this turn.
+Silent,Flanking,Skill,Uncommon,AnyEnemy,2,The enemy takes double attack damage from other players this turn.,1,The enemy takes double attack damage from other players this turn.
+Silent,Flechettes,Attack,Uncommon,AnyEnemy,1,Deal 5 damage for each Skill in your Hand.,1,Deal 7 damage for each Skill in your Hand.
+Silent,Flick-Flack,Attack,Common,AllEnemies,1,Sly. Deal 6 damage to ALL enemies.,1,Sly. Deal 8 damage to ALL enemies.
+Silent,Follow Through,Attack,Uncommon,AllEnemies,1,"Deal 6 damage to ALL enemies. If the last card you played this turn was a Skill, apply 1 Weak to ALL enemies.",1,"Deal 8 damage to ALL enemies. If the last card you played this turn was a Skill, apply 2 Weak to ALL enemies."
+Silent,Footwork,Power,Uncommon,Self,1,Gain 2 Dexterity.,1,Gain 3 Dexterity.
+Silent,Grand Finale,Attack,Rare,AllEnemies,0,Can only be played if there are no cards in your Draw Pile. Deal 60 damage to ALL enemies.,0,Can only be played if there are no cards in your Draw Pile. Deal 75 damage to ALL enemies.
+Silent,Hand Trick,Skill,Uncommon,Self,1,Gain 7 Block. Add Sly to a Skill in your Hand this turn.,1,Gain 10 Block. Add Sly to a Skill in your Hand this turn.
+Silent,Haze,Skill,Uncommon,AllEnemies,3,Sly. Apply 4 Poison to ALL enemies.,3,Sly. Apply 6 Poison to ALL enemies.
+Silent,Hidden Daggers,Skill,Uncommon,Self,0,Discard 2 cards. Add 2 Shivs into your Hand.,0,Discard 2 cards. Add 2 Shivs+ into your Hand.
+Silent,Infinite Blades,Power,Uncommon,Self,1,"At the start of your turn, add 1 Shiv into your Hand.",1,"Innate. At the start of your turn, add 1 Shiv into your Hand."
+Silent,Knife Trap,Skill,Rare,AnyEnemy,2,Play every Shiv in your Exhaust Pile on the enemy.,2,Upgrade and play every Shiv in your Exhaust Pile on the enemy.
+Silent,Leading Strike,Attack,Common,AnyEnemy,1,Deal 3 damage. Add 2 Shivs into your Hand.,1,Deal 6 damage. Add 2 Shivs into your Hand.
+Silent,Leg Sweep,Skill,Uncommon,AnyEnemy,2,Apply 2 Weak. Gain 11 Block.,2,Apply 3 Weak. Gain 14 Block.
+Silent,Malaise,Skill,Rare,AnyEnemy,X,Exhaust. Enemy loses X Strength. Apply X Weak.,X,Exhaust. Enemy loses X+1 Strength. Apply X+1 Weak.
+Silent,Master Planner,Power,Rare,Self,2,"When you play a Skill, it gains Sly.",1,"When you play a Skill, it gains Sly."
+Silent,Memento Mori,Attack,Uncommon,AnyEnemy,1,Deal 9 damage. Deals 4 additional damage for each card discarded this turn.,1,Deal 11 damage. Deals 5 additional damage for each card discarded this turn.
+Silent,Mirage,Skill,Uncommon,Self,1,Exhaust. Gain Block equal to Poison on ALL enemies.,0,Exhaust. Gain Block equal to Poison on ALL enemies.
+Silent,Murder,Attack,Rare,AnyEnemy,3,Deal 1 damage. Deals 1 additional damage for each card drawn this combat.,2,Deal 1 damage. Deals 1 additional damage for each card drawn this combat.
+Silent,Neutralize,Attack,Basic,AnyEnemy,0,Deal 3 damage. Apply 1 Weak.,0,Deal 4 damage. Apply 2 Weak.
+Silent,Nightmare,Skill,Rare,Self,3,"Exhaust. Choose a card. Next turn, add 3 copies of that card into your Hand.",2,"Exhaust. Choose a card. Next turn, add 3 copies of that card into your Hand."
+Silent,Noxious Fumes,Power,Uncommon,Self,1,"At the start of your turn, apply 2 Poison to ALL enemies.",1,"At the start of your turn, apply 3 Poison to ALL enemies."
+Silent,Outbreak,Power,Uncommon,Self,1,"Every 3 times you apply Poison, deal 11 damage to ALL enemies.",1,"Every 3 times you apply Poison, deal 15 damage to ALL enemies."
+Silent,Phantom Blades,Power,Uncommon,Self,1,Shivs gain Retain. The first Shiv you play each turn deals 9 additional damage.,1,Shivs gain Retain. The first Shiv you play each turn deals 12 additional damage.
+Silent,Piercing Wail,Skill,Common,AllEnemies,1,Exhaust. ALL enemies lose 6 Strength this turn.,1,Exhaust. ALL enemies lose 8 Strength this turn.
+Silent,Pinpoint,Attack,Uncommon,AnyEnemy,3,Deal 15 damage. Costs 1 less 1 Energy for each Skill played this turn.,3,Deal 19 damage. Costs 1 less 1 Energy for each Skill played this turn.
+Silent,Poisoned Stab,Attack,Common,AnyEnemy,1,Deal 6 damage. Apply 3 Poison.,1,Deal 8 damage. Apply 4 Poison.
+Silent,Pounce,Attack,Uncommon,AnyEnemy,2,Deal 14 damage. The next Skill you play costs 0 1 Energy.,2,Deal 20 damage. The next Skill you play costs 0 1 Energy.
+Silent,Precise Cut,Attack,Uncommon,AnyEnemy,0,Deal 13 damage. Deals 2 less damage for each other card in your Hand.,0,Deal 16 damage. Deals 2 less damage for each other card in your Hand.
+Silent,Predator,Attack,Common,AnyEnemy,2,"Deal 15 damage. Next turn, draw 2 cards.",2,"Deal 20 damage. Next turn, draw 2 cards."
+Silent,Prepared,Skill,Common,Self,0,Draw 1 card. Discard 1 card.,0,Draw 2 cards. Discard 2 cards.
+Silent,Reflex,Skill,Uncommon,Self,3,Sly. Draw 2 cards.,3,Sly. Draw 3 cards.
+Silent,Ricochet,Attack,Common,RandomEnemy,2,Sly. Deal 3 damage to a random enemy 4 times.,2,Sly. Deal 3 damage to a random enemy 5 times.
+Silent,Scare,Skill,Uncommon,AllEnemies,0,Exhaust. Apply 1 Weak to ALL enemies.,0,Apply 1 Weak to ALL enemies.
+Silent,Serpent Form,Power,Rare,Self,3,"Whenever you play a card, deal 4 damage to a random enemy.",3,"Whenever you play a card, deal 6 damage to a random enemy."
+Silent,Shadow Step,Skill,Rare,Self,1,"Discard your Hand. Next turn, Attacks deal double damage.",0,"Discard your Hand. Next turn, Attacks deal double damage."
+Silent,Shadowmeld,Skill,Rare,Self,1,Double your Block gain this turn.,0,Double your Block gain this turn.
+Silent,Skewer,Attack,Uncommon,AnyEnemy,X,Deal 8 damage X times.,X,Deal 11 damage X times.
+Silent,Slice,Attack,Common,AnyEnemy,0,Deal 6 damage.,0,Deal 9 damage.
+Silent,Snakebite,Skill,Common,AnyEnemy,2,Retain. Apply 7 Poison.,2,Retain. Apply 10 Poison.
+Silent,Sneaky,Power,Rare,Self,2,"Sly. Whenever another player attacks an enemy, gain 1 Block.",2,"Sly. Whenever another player attacks an enemy, gain 2 Block."
+Silent,Speedster,Power,Uncommon,Self,2,"Whenever you draw a card during your turn, deal 2 damage to ALL enemies.",2,"Innate. Whenever you draw a card during your turn, deal 2 damage to ALL enemies."
+Silent,Storm of Steel,Skill,Rare,Self,1,Discard your Hand. Add 1 Shiv into your Hand for each card discarded.,1,Discard your Hand. Add 1 Shiv+ into your Hand for each card discarded.
+Silent,Strangle,Attack,Uncommon,AnyEnemy,1,"Deal 8 damage. Whenever you play a card this turn, the enemy loses 2 HP.",1,"Deal 10 damage. Whenever you play a card this turn, the enemy loses 3 HP."
+Silent,Strike,Attack,Basic,AnyEnemy,1,Deal 6 damage.,1,Deal 9 damage.
+Silent,Sucker Punch,Attack,Common,AnyEnemy,1,Deal 8 damage. Apply 1 Weak.,1,Deal 10 damage. Apply 2 Weak.
+Silent,Suppress,Attack,Ancient,AnyEnemy,0,Innate. Deal 11 damage. Apply 3 Weak.,0,Innate. Deal 17 damage. Apply 5 Weak.
+Silent,Survivor,Skill,Basic,Self,1,Gain 8 Block. Discard 1 card.,1,Gain 11 Block. Discard 1 card.
+Silent,Tactician,Skill,Uncommon,Self,3,Sly. Gain 1 Energy.,3,Sly. Gain 2 Energy.
+Silent,The Hunt,Attack,Rare,AnyEnemy,1,"Exhaust. Deal 10 damage. If Fatal, gain an additional card reward.",1,"Exhaust. Deal 15 damage. If Fatal, gain an additional card reward."
+Silent,Tools of the Trade,Power,Rare,Self,1,"At the start of your turn, draw 1 card and discard 1 card.",0,"At the start of your turn, draw 1 card and discard 1 card."
+Silent,Tracking,Power,Rare,Self,2,Weak enemies take double damage from Attacks.,1,Weak enemies take double damage from Attacks.
+Silent,Untouchable,Skill,Common,Self,2,Sly. Gain 6 Block.,2,Sly. Gain 9 Block.
+Silent,Up My Sleeve,Skill,Uncommon,Self,2,Add 3 Shivs into your Hand. Reduce this card's cost by 1.,2,Add 4 Shivs into your Hand. Reduce this card's cost by 1.
+Silent,Well-Laid Plans,Power,Uncommon,Self,1,"At the end of your turn, Retain up to 1 card.",1,"At the end of your turn, Retain up to 2 cards."
+Silent,Wraith Form,Power,Ancient,Self,3,"Gain 2 Intangible. At the start of your turn, lose 1 Dexterity.",3,"Gain 3 Intangible. At the start of your turn, lose 1 Dexterity."
+Status,Beckon,Status,Status,None,1,"At the end of your turn, if this is in your Hand, lose 6 HP.",1,"At the end of your turn, if this is in your Hand, lose 6 HP."
+Status,Burn,Status,Status,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 2 damage.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 2 damage."
+Status,Dazed,Status,Status,None,N/A,Ethereal. Unplayable. ,N/A,Ethereal. Unplayable. 
+Status,Debris,Status,Status,None,1,Exhaust. ,1,Exhaust. 
+Status,Frantic Escape,Status,Status,Self,1,Get farther away. Increase Sandpit by 1. Increase the cost of this card by 1.,1,Get farther away. Increase Sandpit by 1. Increase the cost of this card by 1.
+Status,Infection,Status,Status,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 3 damage.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 3 damage."
+Status,Slimed,Status,Status,None,1,Exhaust. Draw 1 card.,1,Exhaust. Draw 1 card.
+Status,Soot,Status,Status,None,N/A,Unplayable. ,N/A,Unplayable. 
+Status,Toxic,Status,Status,None,1,"Exhaust. At the end of your turn, if this is in your Hand, take 5 damage.",1,"Exhaust. At the end of your turn, if this is in your Hand, take 5 damage."
+Status,Void,Status,Status,None,N/A,"Unplayable. Ethereal. Whenever you draw this card, lose 1 Energy.",N/A,"Unplayable. Ethereal. Whenever you draw this card, lose 1 Energy."
+Status,Wither,Status,Status,None,N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 3 damage.",N/A,"Unplayable. At the end of your turn, if this is in your Hand, take 3 damage."
+Status,Wound,Status,Status,None,N/A,Unplayable. ,N/A,Unplayable. 
+Token,Disintegration,Status,Status,None,N/A,"At the end of your turn, take 6 damage.",N/A,"At the end of your turn, take 6 damage."
+Token,Fuel,Skill,Token,Self,0,Exhaust. Gain 1 Energy. Draw 1 card.,0,Exhaust. Gain 1 Energy. Draw 2 cards.
+Token,Giant Rock,Attack,Token,AnyEnemy,1,Deal 16 damage.,1,Deal 20 damage.
+Token,Luminesce,Skill,Token,Self,0,Exhaust. Retain. Gain 2 Energy.,0,Exhaust. Retain. Gain 3 Energy.
+Token,Mind Rot,Status,Status,None,N/A,Draw 1 fewer card each turn.,N/A,Draw 1 fewer card each turn.
+Token,Minion Dive Bomb,Attack,Token,AnyEnemy,0,Exhaust. Deal 13 damage.,0,Exhaust. Deal 16 damage.
+Token,Minion Sacrifice,Skill,Token,Self,0,Exhaust. Gain 8 Block.,0,Exhaust. Gain 11 Block.
+Token,Minion Strike,Attack,Token,AnyEnemy,0,Exhaust. Deal 6 damage. Draw 1 card.,0,Exhaust. Deal 9 damage. Draw 1 card.
+Token,Shiv,Attack,Token,AnyEnemy,0,Exhaust. Deal 4 damage.,0,Exhaust. Deal 6 damage.
+Token,Sloth,Status,Status,None,N/A,You cannot play more than 3 cards each turn.,N/A,You cannot play more than 3 cards each turn.
+Token,Soul,Skill,Token,Self,0,Exhaust. Draw 2 cards.,0,Exhaust. Draw 3 cards.
+Token,Sovereign Blade,Attack,Token,AnyEnemy,2,Retain. Deal 10 damage.,1,Retain. Deal 10 damage.
+Token,Sweeping Gaze,Attack,Token,RandomEnemy,0,Ethereal. Exhaust. Osty deals 10 damage to a random enemy.,0,Ethereal. Exhaust. Osty deals 15 damage to a random enemy.
+Token,Waste Away,Status,Status,None,N/A,Gain 1 less 1 Energy per turn.,N/A,Gain 1 less 1 Energy per turn.
