@@ -347,6 +347,7 @@ Save.DEFAULT_OPTIONS = {
   -- border block with the dissolve across a boundary (#1418).
   voidFill = "fade",
   uiLetterbox = "auto",
+  pixelFilter = "off",      -- PIXEL FILTER: off | xbrz
   musicVol = 7,             -- 0-7, like the GB's NR50 master volume
   sfxVol = 7,               -- 0-7
   musicFilter = 0,          -- low-pass steps, 0 = off

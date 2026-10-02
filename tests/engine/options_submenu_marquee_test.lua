@@ -81,8 +81,8 @@ T.check(find(menu.view, "mods"), "and MODS")
 
 local graphics = find(menu.view, "group.graphics")
 graphics.activate(game)
-T.eq(ids(game.stack:top().view), "colors,uiLetterbox,shaderfx,shaderfx2",
-  "GRAPHICS carries COLORS, UI LETTERBOX and both SHADER FX slots")
+T.eq(ids(game.stack:top().view), "colors,uiLetterbox,pixelFilter,shaderfx,shaderfx2",
+  "GRAPHICS carries COLORS, UI LETTERBOX, PIXEL FILTER and both SHADER FX slots")
 game.stack:pop()
 
 local extras = find(menu.view, "group.extras")

@@ -17,6 +17,7 @@ local Tilt = require("src.render.Tilt")
 local ShaderFX = require("src.render.ShaderFX")
 local Zoom = require("src.render.Zoom")
 local Letterbox = require("src.render.Letterbox")
+local PixelFilter = require("src.render.PixelFilter")
 local TileRenderer = require("src.render.TileRenderer")
 local GameSpeed = require("src.core.GameSpeed")
 local GameVersion = require("src.core.GameVersion")
@@ -390,6 +391,19 @@ local function buildRows(game)
         Letterbox.setMode(o.uiLetterbox)
         return true
       end },
+    -- Upscaling of the finished frame (src/render/PixelFilter.lua).  A SHADER
+    -- FX preset takes precedence while one is set, and the LOW performance
+    -- tier holds it off without rewriting the choice.
+    { id = "pixelFilter", label = Strings("PIXEL FILTER"),
+      value = function(g)
+        return Strings(PixelFilter.label(g.save.options.pixelFilter))
+      end,
+      step = function(g, dir)
+        local o = g.save.options
+        o.pixelFilter = PixelFilter.cycle(o.pixelFilter, dir)
+        PixelFilter.setMode(o.pixelFilter)
+        return true
+      end },
     { id = "shaderfx", label = Strings("SHADER FX"),
       value = function(g)
         return shaderfxLabel(ShaderFX.activeEntry("main"))
@@ -725,7 +739,7 @@ local GROUPS = {
   { id = "group.speed", label = "SPEED",
     members = { "textSpeed", "speedOverworld", "speedBattle", "speedMenu" } },
   { id = "group.graphics", label = "GRAPHICS",
-    members = { "colors", "uiLetterbox", "shaderfx", "shaderfx2" } },
+    members = { "colors", "uiLetterbox", "pixelFilter", "shaderfx", "shaderfx2" } },
   -- A mod's Pipelines row splices in after TILT and is in no group, so it
   -- stays on the top level rather than being swallowed into this page.
   { id = "group.extras", label = "EXTRAS",
