@@ -2941,8 +2941,11 @@ local function buildImportersPanel(imp, x, y, w, availH, m)
 
     local job = imp._importerJob
     local running = job ~= nil and job.id == desc.id
-    local runnable = desc.status ~= "planned" and not imp._importerJob
-    local label = running and Strings("Importing...") or Strings("Import dump")
+    local picking = imp.android and imp.pickerPendingKind == "importer"
+    local runnable = desc.status ~= "planned" and not imp._importerJob and not picking
+    local label = running and Strings("Importing...")
+      or (picking and imp.pickerPendingImporterId == desc.id
+        and Strings("Waiting for file...")) or Strings("Import dump")
     local bw = math.min(inner,
       Kit.textWidth("small", label) + math.floor(28 * m.s))
     btn(imp, px, ly, bw, m.btnH, "importer-" .. desc.id, label, {

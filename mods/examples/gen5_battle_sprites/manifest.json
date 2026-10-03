@@ -1,0 +1,13 @@
+{
+  "id": "GEN5_PRIVATE_SPRITES",
+  "name": "Gen 5 Battle Sprite Provider Example",
+  "version": "2.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "affects_link": false,
+  "games": ["red", "blue", "yellow", "gold", "silver", "crystal", "firered", "leafgreen", "emerald"],
+  "optional_assets": [{"importer": "gen5_bw", "pack": "battle_sprites", "version": ">=1.0.0"}],
+  "description": "Code-only provider example for battle sprites imported from your own Black/White ROM, with original-resolution frames. A renderer adapter consumes its API; missing artwork uses native graphics."
+}

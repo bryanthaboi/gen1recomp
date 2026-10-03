@@ -84,6 +84,27 @@ check(required.requiredPath.modId == "needs-source"
 check(removedPath == [[C:\LocalState\picked_required_import.bin]],
   "UWP removes its temporary required-import copy after validation")
 
+-- Importer descriptors, rather than the launcher's GB/GBA defaults, select
+-- the native ROM filter. The source bytes are validated by the importer.
+local pickedFormats
+love.system.pickFile = function(kind, formats)
+  pickedKind, pickedFormats = kind, formats
+  return true
+end
+local gen5 = RomImporter.new(function() end, { launcher = true })
+gen5:_beginImporterImport("gen5_bw")
+check(pickedKind == "rom" and pickedFormats == "nds",
+  "Gen 5 UWP picker receives the descriptor's NDS format")
+check(gen5.pickerPendingKind == "importer"
+    and gen5.pickerPendingImporterId == "gen5_bw",
+  "Gen 5 picker preserves importer routing")
+love.system.pickFile = function() return false end
+gen5.pickerPendingKind, gen5.pickerPendingImporterId = nil, nil
+gen5:_beginImporterImport("gen5_bw")
+check(gen5.pickerPendingKind == nil and gen5.pickerPendingImporterId == nil
+    and gen5._importerNotice ~= nil,
+  "failed native importer picker clears its pending route")
+
 love.system.getOS = saved.getOS
 love.system.pickFile = saved.pickFile
 love.system.getPickedFile = saved.getPickedFile

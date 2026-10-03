@@ -189,6 +189,7 @@ else
   echo "   luarocks install luacheck; CI installs and gates on it regardless)"
 fi
 
+run_tier "T0 Android importer copy lifecycle" python3 tests/android_importer_copy_test.py
 run_tier "T0 ROM builder version routing" python3 tests/build_rom_data_cli_test.py
 run_tier "T0 ROM manifest generator pin/overrides" python3 tests/rom_manifest_generator_test.py
 run_tier "T0 save conversion CLI" python3 tests/save_convert_cli_test.py
@@ -228,6 +229,7 @@ run_tier "T2 save editor: wheel scrolling" "$LUA" tests/save_editor_wheel_bug595
 run_tier "T2 save editor: pad / NX input" "$LUA" tests/save_editor_pad_input_test.lua
 run_tier "T2 save editor: gold / gen2 (fixtures)" "$LUA" tests/save_editor_gen2_tests.lua
 ACTIVE_GROUP=mods
+run_tier "T2 Gen 5 importer + provider suites" "$LUA" tests/run_gen5.lua
 run_tier "T4 mod-SDK" "$LUA" tests/run_modkit.lua
 run_tier "T4 modkit dev tooling (fixture)" "$LUA" tests/modkit_tests.lua
 

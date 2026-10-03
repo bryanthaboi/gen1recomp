@@ -1,0 +1,19 @@
+return {
+  summary = "Animated battle sprite provider using your own Black/White asset pack.",
+  author = "Gen1recomp contributors",
+  tags = { "cosmetic", "graphics", "developer" },
+  differences = {
+    changed = {},
+    added = { "API version 1 sprite provider for compatible battle renderer adapters" },
+    known = {
+      "Requires the native gen5_bw importer and a renderer consuming the provider API",
+      "Missing sprites and unsupported forms retain native artwork; long cycles need a 1.1 pack",
+      "Gallery examples stay disabled until explicitly installed",
+    },
+  },
+  credits = {
+    { who = "Gen1recomp contributors", for_ = "mod and imported asset-pack APIs" },
+    { who = "KillDaWill / AnimaEngine", for_ = "MIT-licensed format reference for the separate native importer" },
+  },
+  compat = { engine = ">=0.3.38 <2.0.0", modApi = 2 },
+}

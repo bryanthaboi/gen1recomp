@@ -1,25 +1,13 @@
 diff --git a/src/modules/system/uwp/FilePicker.cpp b/src/modules/system/uwp/FilePicker.cpp
 --- a/src/modules/system/uwp/FilePicker.cpp
 +++ b/src/modules/system/uwp/FilePicker.cpp
-@@ -56,6 +56,11 @@
- 			filters.Append(L".sav");
- 			destination = "picked_save.sav";
- 		}
+@@ -84,0 +85,5 @@
++		}
 +		else if (kind == "cart")
 +		{
 +			filters.Append(L".g1rcart");
 +			destination = "picked_cart.g1rcart";
-+		}
- 		else
- 		{
- 			filters.Append(L".gb");
-@@ -100,7 +105,8 @@
- bool pickFile(const char *kind)
- {
- 	std::string requestedKind = kind ? kind : "rom";
+@@ -157 +162,2 @@
 -	if (requestedKind != "rom" && requestedKind != "mod" && requestedKind != "sav")
 +	if (requestedKind != "rom" && requestedKind != "mod" && requestedKind != "sav"
 +			&& requestedKind != "cart")
- 		return false;
- 
- 	{

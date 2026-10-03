@@ -1,14 +1,59 @@
 diff --git a/src/modules/system/uwp/FilePicker.cpp b/src/modules/system/uwp/FilePicker.cpp
 --- a/src/modules/system/uwp/FilePicker.cpp
 +++ b/src/modules/system/uwp/FilePicker.cpp
-@@ -63,6 +63,9 @@
- 		else
- 		{
- 			filters.Append(L".gb");
- 			filters.Append(L".gbc");
-+			// FireRed and LeafGreen dumps are .gba. The staged copy keeps
-+			// the picked_rom.gb name; Lua routes the cart by size and SHA-1.
-+			filters.Append(L".gba");
- 			destination = "picked_rom.gb";
- 		}
- 
+@@ -3,0 +4 @@
++#include <vector>
+@@ -40 +41,23 @@
+-void openPicker(const std::string &kind)
++// Extensions are supplied by the Lua importer descriptor, without dots.
++// Validate before opening the asynchronous picker; never accept wildcards.
++bool parseRomFormats(const char *formats, std::vector<std::string> &extensions)
++{
++	std::string remaining = formats ? formats : "gb,gbc,gba";
++	if (remaining.empty()) return false;
++	for (size_t start = 0; start < remaining.size();)
++	{
++		size_t end = remaining.find(',', start);
++		std::string extension = remaining.substr(start, end == std::string::npos
++			? std::string::npos : end - start);
++		if (extension.empty() || extension.find_first_not_of(
++			"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != std::string::npos)
++			return false;
++		extensions.push_back("." + extension);
++		if (end == std::string::npos) return true;
++		start = end + 1;
++		if (start == remaining.size()) return false;
++	}
++	return false;
++}
++
++void openPicker(const std::string &kind, const std::vector<std::string> &extensions)
+@@ -65,2 +88,2 @@
+-			filters.Append(L".gb");
+-			filters.Append(L".gbc");
++			for (const auto &extension : extensions)
++				filters.Append(winrt::to_hstring(extension));
+@@ -131 +154 @@
+-bool pickFile(const char *kind)
++bool pickFile(const char *kind, const char *formats)
+@@ -134,0 +158,4 @@
++		return false;
++
++	std::vector<std::string> extensions;
++	if (requestedKind == "rom" && !parseRomFormats(formats, extensions))
+@@ -151 +178 @@
+-			[requestedKind]() { openPicker(requestedKind); });
++			[requestedKind, extensions]() { openPicker(requestedKind, extensions); });
+diff --git a/src/modules/system/uwp/FilePicker.h b/src/modules/system/uwp/FilePicker.h
+--- a/src/modules/system/uwp/FilePicker.h
++++ b/src/modules/system/uwp/FilePicker.h
+@@ -12 +12 @@
+-bool pickFile(const char *kind);
++bool pickFile(const char *kind, const char *formats = nullptr);
+diff --git a/src/modules/system/wrap_System.cpp b/src/modules/system/wrap_System.cpp
+--- a/src/modules/system/wrap_System.cpp
++++ b/src/modules/system/wrap_System.cpp
+@@ -163 +163,2 @@
+-	luax_pushboolean(L, uwp::pickFile(kind));
++	const char *formats = luaL_optstring(L, 2, nullptr);
++	luax_pushboolean(L, uwp::pickFile(kind, formats));

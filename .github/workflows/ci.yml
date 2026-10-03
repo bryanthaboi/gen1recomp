@@ -247,6 +247,12 @@ jobs:
         with:
           name: gen1recomp-xbox-uwp-payload
           path: .bazinga/work
+      # Rebuild the pinned native picker bridge before packaging; the vendored
+      # DLL predates descriptor-specific ROM filters. Keep the committed ANGLE
+      # runtime while rebuilding SDL2, LÖVE, LuaJIT and their vcpkg dependencies.
+      - name: Rebuild Xbox UWP picker dependencies
+        shell: pwsh
+        run: ./scripts/xbox-uwp/rebuild_dependencies.ps1 -SkipAngle -SkipPackage
       - name: Build Xbox UWP package
         shell: bash
         run: |
@@ -538,6 +544,12 @@ jobs:
             name: Gen 3 runtime
     steps:
       - uses: actions/checkout@v7
+
+      - name: set up Java 17 for Android picker copy tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       # LuaJIT, not lua5.4: LOVE 11.x embeds LuaJIT 2.1 and the engine is
       # written to Lua 5.1 semantics, so CI must run the interpreter the

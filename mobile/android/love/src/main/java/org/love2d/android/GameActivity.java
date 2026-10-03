@@ -142,6 +142,10 @@ public class GameActivity extends SDLActivity {
     // bad ROM instead of installing it (#553).
     private String pendingPickFilename = PICKED_ROM_FILENAME;
     private static final String STATE_PENDING_PICK = "pendingPickFilename";
+    private static final String STATE_PENDING_PICK_ACTIVE = "pendingPickActive";
+    // Process-wide: an Activity recreation must not open another picker while
+    // the old Activity's worker still owns a shared .part/final destination.
+    private static final PickerTransferGate pickerTransfer = new PickerTransferGate();
     // Absolute save directory physfs actually mounted, as reported by the
     // native bridge call that opened the picker (love/src/common/android.cpp,
     // bridgeSaveDirectory).  This activity used to recompute
@@ -276,6 +280,9 @@ public class GameActivity extends SDLActivity {
             // a recreated activity still lands under the basename it asked for.
             String pick = savedInstanceState.getString(STATE_PENDING_PICK);
             if (pick != null) pendingPickFilename = pick;
+            if (savedInstanceState.getBoolean(STATE_PENDING_PICK_ACTIVE, false)) {
+                pickerTransfer.restorePicker();
+            }
             String pickDir = savedInstanceState.getString(STATE_PENDING_PICK_DIR);
             if (pickDir != null) pendingPickSaveDir = pickDir;
             String create = savedInstanceState.getString(STATE_PENDING_CREATE);
@@ -645,6 +652,43 @@ public class GameActivity extends SDLActivity {
             && !normalized.endsWith("/..");
     }
 
+    private static boolean isImporterDestination(String relative) {
+        return relative != null
+            && relative.matches("picked_importer_[a-z0-9_-]+\\.bin");
+    }
+
+    private static final class PickerTransferGate {
+        private static final int IDLE = 0, PICKING = 1, RESULT = 2, COPYING = 3;
+        private int state = IDLE;
+        private boolean initialized = false;
+        synchronized boolean beginPicker() {
+            initialized = true;
+            if (state != IDLE) return false;
+            state = PICKING;
+            return true;
+        }
+        synchronized void restorePicker() {
+            // Only reconstruct a picker after process death. An old Activity's
+            // saved PICKING state must not re-arm a completed live-process job.
+            if (!initialized) {
+                state = PICKING;
+                initialized = true;
+            }
+        }
+        synchronized boolean claimResult() {
+            if (state != PICKING) return false;
+            state = RESULT;
+            return true;
+        }
+        synchronized boolean beginCopy() {
+            if (state != RESULT) return false;
+            state = COPYING;
+            return true;
+        }
+        synchronized boolean isPicking() { return state == PICKING; }
+        synchronized void finish() { initialized = true; state = IDLE; }
+    }
+
     /** Legacy single-argument entry; resolves the save dir itself. */
     @Keep
     public static boolean showFilePicker(String destFilename) {
@@ -655,67 +699,78 @@ public class GameActivity extends SDLActivity {
     public static boolean showFilePicker(String destFilename, String saveDir) {
         GameActivity self = (GameActivity) mSingleton;
         if (self == null) return false;
-        if (destFilename == null || destFilename.length() == 0) {
-            destFilename = PICKED_ROM_FILENAME;
-        }
-        // Remember where LOVE's filesystem is really mounted so
-        // onActivityResult copies the pick there, not into a recomputed
-        // (possibly different-volume) root (#604, #839).
-        self.pendingPickSaveDir = (saveDir != null) ? saveDir : "";
-        // Basename destinations keep the historical ROM/mod/save staging path.
-        // A nested destination is accepted only for an engine-generated mod
-        // baseroms path, then canonicalized beneath LOVE's mounted save root.
-        String normalizedDest = destFilename.replace('\\', '/');
-        boolean nested = normalizedDest.indexOf('/') >= 0;
-        if (nested && !isDirectRequiredDestination(normalizedDest)) {
-            Log.d("GameActivity", "refusing non-baseroms picker dest: " + destFilename);
+        if (!pickerTransfer.beginPicker()) {
+            Log.d("GameActivity", "file picker transfer already pending");
             return false;
         }
+        boolean opened = false;
         try {
-            File rootCanonical = self.saveIdentityDir().getCanonicalFile();
-            File destCanonical = new File(rootCanonical, normalizedDest).getCanonicalFile();
-            String rootPrefix = rootCanonical.getPath() + File.separator;
-            if (destCanonical.equals(rootCanonical)
-                    || !destCanonical.getPath().startsWith(rootPrefix)) {
-                Log.d("GameActivity", "refusing unsafe picker dest: " + destFilename);
+            if (destFilename == null || destFilename.length() == 0) {
+                destFilename = PICKED_ROM_FILENAME;
+            }
+            // Remember where LOVE's filesystem is really mounted so
+            // onActivityResult copies the pick there, not into a recomputed
+            // (possibly different-volume) root (#604, #839).
+            self.pendingPickSaveDir = (saveDir != null) ? saveDir : "";
+            // Basename destinations keep the historical ROM/mod/save staging path.
+            // A nested destination is accepted only for an engine-generated mod
+            // baseroms path, then canonicalized beneath LOVE's mounted save root.
+            String normalizedDest = destFilename.replace('\\', '/');
+            boolean nested = normalizedDest.indexOf('/') >= 0;
+            if (nested && !isDirectRequiredDestination(normalizedDest)) {
+                Log.d("GameActivity", "refusing non-baseroms picker dest: " + destFilename);
                 return false;
             }
-        } catch (IOException e) {
-            Log.d("GameActivity", "could not validate picker dest: " + e.getMessage());
-            return false;
-        }
+            try {
+                File rootCanonical = self.saveIdentityDir().getCanonicalFile();
+                File destCanonical = new File(rootCanonical, normalizedDest).getCanonicalFile();
+                String rootPrefix = rootCanonical.getPath() + File.separator;
+                if (destCanonical.equals(rootCanonical)
+                        || !destCanonical.getPath().startsWith(rootPrefix)) {
+                    Log.d("GameActivity", "refusing unsafe picker dest: " + destFilename);
+                    return false;
+                }
+            } catch (IOException e) {
+                Log.d("GameActivity", "could not validate picker dest: " + e.getMessage());
+                return false;
+            }
 
-        self.pendingPickFilename = normalizedDest;
-        if (android.os.Build.VERSION.SDK_INT >= 21 && !isTelevision(self)) {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            self.pendingPickFilename = normalizedDest;
+            if (android.os.Build.VERSION.SDK_INT >= 21 && !isTelevision(self)) {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                // The Storage Access Framework grants the returned content URI
+                // directly to this activity. Request the read grant explicitly as
+                // well: Android 13's scoped storage deliberately does not expose
+                // arbitrary paths or require broad media/storage permissions.
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    self.startActivityForResult(intent, FILE_PICKER_REQUEST_CODE);
+                    opened = true;
+                    return true;
+                } catch (Exception e) {
+                    // Some OEM / TV builds ship without DocumentsUI; fall through
+                    // to the GET_CONTENT chooser below instead of giving up (#584).
+                    Log.d("GameActivity", "could not open document picker: " + e.getMessage());
+                }
+            }
+            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("*/*");
-            // The Storage Access Framework grants the returned content URI
-            // directly to this activity. Request the read grant explicitly as
-            // well: Android 13's scoped storage deliberately does not expose
-            // arbitrary paths or require broad media/storage permissions.
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             try {
-                self.startActivityForResult(intent, FILE_PICKER_REQUEST_CODE);
+                self.startActivityForResult(
+                    Intent.createChooser(intent, "Choose a file"),
+                    FILE_PICKER_REQUEST_CODE);
+                opened = true;
                 return true;
             } catch (Exception e) {
-                // Some OEM / TV builds ship without DocumentsUI; fall through
-                // to the GET_CONTENT chooser below instead of giving up (#584).
-                Log.d("GameActivity", "could not open document picker: " + e.getMessage());
+                Log.d("GameActivity", "could not open file picker: " + e.getMessage());
+                return false;
             }
-        }
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-            self.startActivityForResult(
-                Intent.createChooser(intent, "Choose a file"),
-                FILE_PICKER_REQUEST_CODE);
-            return true;
-        } catch (Exception e) {
-            Log.d("GameActivity", "could not open file picker: " + e.getMessage());
-            return false;
+        } finally {
+            if (!opened) pickerTransfer.finish();
         }
     }
 
@@ -1702,6 +1757,7 @@ public class GameActivity extends SDLActivity {
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_PENDING_PICK, pendingPickFilename);
+        outState.putBoolean(STATE_PENDING_PICK_ACTIVE, pickerTransfer.isPicking());
         outState.putString(STATE_PENDING_PICK_DIR, pendingPickSaveDir);
         outState.putString(STATE_PENDING_CREATE, pendingCreateSuggestedName);
     }
@@ -1740,89 +1796,113 @@ public class GameActivity extends SDLActivity {
             return;
         }
         if (requestCode != FILE_PICKER_REQUEST_CODE) return;
-        final String destName = pendingPickFilename != null
-            ? pendingPickFilename : PICKED_ROM_FILENAME;
-        Uri uri = pickedUri(resultCode, data);
-        if (uri == null) {
-            Log.d("GameActivity", "file picker returned no file (cancelled?)");
-            if (isTelevision(this)) {
-                writeSaveDirFlag(PICK_ERROR_FILENAME, PICK_CANCELLED_PREFIX + destName);
-            }
+        if (!pickerTransfer.claimResult()) {
+            Log.d("GameActivity", "ignoring duplicate file picker result");
             return;
         }
-        File destDir = saveIdentityDir();
-        if (!destDir.exists() && !destDir.mkdirs()) {
-            Log.d("GameActivity", "could not create " + destDir);
-            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
-            return;
-        }
-        final boolean directRequired = isDirectRequiredDestination(destName);
-        final File destFile;
+        boolean handedOff = false;
         try {
-            File rootCanonical = destDir.getCanonicalFile();
-            destFile = new File(rootCanonical, destName).getCanonicalFile();
-            String rootPrefix = rootCanonical.getPath() + File.separator;
-            if (destFile.equals(rootCanonical)
-                    || !destFile.getPath().startsWith(rootPrefix)
-                    || (destName.indexOf('/') >= 0 && !directRequired)) {
-                Log.d("GameActivity", "refusing unsafe result dest: " + destName);
+            final String destName = pendingPickFilename != null
+                ? pendingPickFilename : PICKED_ROM_FILENAME;
+            Uri uri = pickedUri(resultCode, data);
+            if (uri == null) {
+                Log.d("GameActivity", "file picker returned no file (cancelled?)");
+                writeSaveDirFlag(PICK_ERROR_FILENAME, PICK_CANCELLED_PREFIX + destName);
+                return;
+            }
+            File destDir = saveIdentityDir();
+            if (!destDir.exists() && !destDir.mkdirs()) {
+                Log.d("GameActivity", "could not create " + destDir);
                 writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
                 return;
             }
-        } catch (IOException e) {
-            Log.d("GameActivity", "could not validate result dest: " + e.getMessage());
-            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
-            return;
-        }
-
-        // ACTION_OPEN_DOCUMENT is meant to land in the system documents UI, but
-        // some OEM shells (ColorOS) offer third-party file managers in a
-        // chooser, and those hand back either a provider URI this app has no
-        // grant for (SecurityException / FileNotFoundException) or a bare
-        // file:// path (unreadable without storage permission on targetSdk 34).
-        // Try the resolver, then the path, then tell Lua why nothing imported.
-        InputStream source = null;
-        try {
-            source = getContentResolver().openInputStream(uri);
-        } catch (Exception e) {
-            Log.d("GameActivity", "could not open picked file: " + e.getMessage());
-        }
-        if (source == null && "file".equals(uri.getScheme()) && uri.getPath() != null) {
+            final boolean directRequired = isDirectRequiredDestination(destName);
+            final File destFile;
             try {
-                source = new FileInputStream(uri.getPath());
-            } catch (FileNotFoundException e) {
-                Log.d("GameActivity", "could not open picked path: " + e.getMessage());
-            }
-        }
-        if (source == null) {
-            Log.d("GameActivity", "no readable stream for picked file " + uri);
-            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
-            return;
-        }
-        final InputStream pickedSource = source;
-        final File pickedRoot = destDir;
-        if (directRequired) {
-            // Optical-disc-sized imports must not block Android's UI thread and
-            // must not create a second picked_required_import.bin copy.
-            new Thread(new Runnable() {
-                @Override public void run() {
-                    PickCopyResult result = copyRequiredImport(pickedSource, destFile);
-                    if (!result.ok) {
-                        writeFlagFile(pickedRoot, PICK_ERROR_FILENAME, destName);
-                        return;
-                    }
-                    String marker = "v1\n" + destName + "\n" + result.md5 + "\n"
-                        + Long.toString(result.bytes) + "\n";
-                    writeFlagFile(pickedRoot, PICK_COMPLETE_FILENAME, marker);
+                File rootCanonical = destDir.getCanonicalFile();
+                destFile = new File(rootCanonical, destName).getCanonicalFile();
+                String rootPrefix = rootCanonical.getPath() + File.separator;
+                if (destFile.equals(rootCanonical)
+                        || !destFile.getPath().startsWith(rootPrefix)
+                        || (destName.indexOf('/') >= 0 && !directRequired)) {
+                    Log.d("GameActivity", "refusing unsafe result dest: " + destName);
+                    writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
+                    return;
                 }
-            }, "gen1recomp-required-import").start();
-            return;
-        }
+            } catch (IOException e) {
+                Log.d("GameActivity", "could not validate result dest: " + e.getMessage());
+                writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
+                return;
+            }
 
-        if (!copyAssetFile(pickedSource, destFile.getPath())) {
-            Log.d("GameActivity", "could not copy picked file to " + destFile);
-            destFile.delete();
-            writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
+            // ACTION_OPEN_DOCUMENT is meant to land in the system documents UI, but
+            // some OEM shells (ColorOS) offer third-party file managers in a
+            // chooser, and those hand back either a provider URI this app has no
+            // grant for (SecurityException / FileNotFoundException) or a bare
+            // file:// path (unreadable without storage permission on targetSdk 34).
+            // Try the resolver, then the path, then tell Lua why nothing imported.
+            InputStream source = null;
+            try {
+                source = getContentResolver().openInputStream(uri);
+            } catch (Exception e) {
+                Log.d("GameActivity", "could not open picked file: " + e.getMessage());
+            }
+            if (source == null && "file".equals(uri.getScheme()) && uri.getPath() != null) {
+                try {
+                    source = new FileInputStream(uri.getPath());
+                } catch (FileNotFoundException e) {
+                    Log.d("GameActivity", "could not open picked path: " + e.getMessage());
+                }
+            }
+            if (source == null) {
+                Log.d("GameActivity", "no readable stream for picked file " + uri);
+                writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
+                return;
+            }
+            final InputStream pickedSource = source;
+            final File pickedRoot = destDir;
+            if (directRequired || isImporterDestination(destName)) {
+                // Large importer sources must not block Android's UI thread. The
+                // final basename appears only when the complete copy is published.
+                if (!pickerTransfer.beginCopy()) {
+                    try { pickedSource.close(); } catch (IOException ignored) {}
+                    return;
+                }
+                try {
+                    new Thread(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                PickCopyResult result = copyRequiredImport(pickedSource, destFile);
+                                if (!result.ok) {
+                                    writeFlagFile(pickedRoot, PICK_ERROR_FILENAME, destName);
+                                    return;
+                                }
+                                if (directRequired) {
+                                    String marker = "v1\n" + destName + "\n" + result.md5 + "\n"
+                                        + Long.toString(result.bytes) + "\n";
+                                    writeFlagFile(pickedRoot, PICK_COMPLETE_FILENAME, marker);
+                                }
+                            } finally {
+                                pickerTransfer.finish();
+                            }
+                        }
+                    }, "gen1recomp-picker-import").start();
+                    handedOff = true;
+                } catch (RuntimeException e) {
+                    try { pickedSource.close(); } catch (IOException ignored) {}
+                    writeFlagFile(pickedRoot, PICK_ERROR_FILENAME, destName);
+                    Log.d("GameActivity", "could not start picker copy: " + e.getMessage());
+                }
+                return;
+            }
+
+            if (!copyAssetFile(pickedSource, destFile.getPath())) {
+                Log.d("GameActivity", "could not copy picked file to " + destFile);
+                destFile.delete();
+                writeSaveDirFlag(PICK_ERROR_FILENAME, destName);
+            }
+        } finally {
+            if (!handedOff) pickerTransfer.finish();
         }
     }
 
@@ -1859,6 +1939,7 @@ public class GameActivity extends SDLActivity {
         File parent = destination.getParentFile();
         File partial = new File(destination.getPath() + ".part");
         BufferedInputStream in = null;
+        boolean sourceWrapped = false;
         BufferedOutputStream out = null;
         FileOutputStream rawOut = null;
         try {
@@ -1866,6 +1947,7 @@ public class GameActivity extends SDLActivity {
             if (partial.exists() && !partial.delete()) return result;
             MessageDigest md5 = MessageDigest.getInstance("MD5");
             in = new BufferedInputStream(source, 1024 * 1024);
+            sourceWrapped = true;
             rawOut = new FileOutputStream(partial, false);
             out = new BufferedOutputStream(rawOut, 1024 * 1024);
             byte[] buf = new byte[1024 * 1024];
@@ -1897,6 +1979,7 @@ public class GameActivity extends SDLActivity {
             return result;
         } finally {
             try { if (in != null) in.close(); } catch (IOException ignored) {}
+            try { if (!sourceWrapped && source != null) source.close(); } catch (IOException ignored) {}
             try { if (out != null) out.close(); } catch (IOException ignored) {}
             try { if (rawOut != null) rawOut.close(); } catch (IOException ignored) {}
             if (!result.ok && partial.exists()) partial.delete();

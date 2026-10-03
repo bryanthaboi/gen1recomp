@@ -25,7 +25,17 @@ local ENTRY_PATTERN = "^[%l%d_%-]+[%l%d_%-/]*$"
 
 local LIST = {
   {
+    id = "gen5_bw", name = "Pokemon Black / White", status = "beta",
+    module = "src.import.gen5.BwImport",
+    summary = "Animated battle sprites from your own Black/White dump, shared by compatible mods.",
+    source = { name = "Pokemon Black or White untrimmed NDS cartridge dump",
+      formats = { "nds" }, sizes = { 268435456 } },
+    packs = {{ id = "battle_sprites", kind = "sprite", name = "Battle sprites",
+      description = "National dex 1-649, normal/shiny front/back and female variants; native 60 Hz timing." }},
+  },
+  {
     id = "pmd_red",
+    module = "src.import.pmd.PmdImport",
     name = "Pokémon Mystery Dungeon",
     status = "beta",
     summary = "All Pokémon sprite sheets and animations from Red Rescue Team.",
@@ -40,6 +50,7 @@ local LIST = {
   },
   {
     id = "lttp",
+    module = "src.import.lttp.LttpImport",
     name = "A Link to the Past",
     status = "beta",
     summary = "Sprites, tiles and sound out of your own Link to the Past cartridge dump.",

@@ -30,9 +30,10 @@ check(brand:find("assets/logo/gen1recomp_cover.png", 1, true)
   "Switch and Xbox tiles are generated from the cover")
 
 local patch = read("ports/uwp/third_party/love/patches/gba-file-picker.patch")
-check(patch:find('filters.Append(L".gba")', 1, true)
-    and patch:find('destination = "picked_rom.gb"', 1, true),
-  "UWP picker patch adds .gba and still stages the ROM for Lua")
+check(patch:find('formats ? formats : "gb,gbc,gba"', 1, true)
+    and patch:find('extensions.push_back("." + extension)', 1, true)
+    and patch:find('filters.Append(winrt::to_hstring(extension))', 1, true),
+  "UWP picker builds GB/GBC/GBA defaults and descriptor filters dynamically")
 
 local rebuild = read("scripts/xbox-uwp/rebuild_dependencies.ps1")
 local manifest = read("ports/uwp/third_party/manifest.json")

@@ -33,6 +33,12 @@ local function pickFile(...)
   return fn(...) and true or false
 end
 
+-- A staged importer pick owns its inbox and pending identity until publication
+-- or failure. Refocus and unrelated launcher actions must not replace it.
+function RomImporter:_importerPickPending()
+  return self.android and self.pickerPendingKind == "importer"
+end
+
 local CART_SCOPE = "cart_"
 
 local function cartOfScope(scope)
@@ -1211,6 +1217,7 @@ local function findPendingImporter(self)
     if love.filesystem.getInfo(name, "file") then
       return name, self.pickerPendingImporterId
     end
+    return nil
   end
 
   local Importers = require("src.import.Importers")
@@ -1830,8 +1837,15 @@ function RomImporter:focus(f)
   -- launcher that said nothing at all.
   local pickError = love.filesystem.getInfo("pick_error.flag", "file")
     and love.filesystem.read("pick_error.flag")
+  if pickError then love.filesystem.remove("pick_error.flag") end
+  if pickError and self:_importerPickPending() then
+    local destination = pickError:gsub("^cancelled:", "")
+    if destination ~= importerPickName(self.pickerPendingImporterId) then
+      -- A previous request's failure does not retire this transfer.
+      pickError = nil
+    end
+  end
   if pickError then
-    love.filesystem.remove("pick_error.flag")
     local text
     if pickError:find("cancelled:", 1, true) == 1 then
       text = "The file manager did not return a file. Try a different file "
@@ -1882,9 +1896,14 @@ function RomImporter:focus(f)
     return
   end
 
+  -- While an importer dump is still copying, unrelated ROMs/dependencies in
+  -- the save directory cannot complete or replace its request.
+  if self:_importerPickPending() and not findPendingImporter(self) then return end
+
   -- Current mobile bridge: the native picker has already streamed a raw
   -- dependency into mods/<id>/baseroms and published its digest/size marker.
-  local completedRequired = love.filesystem.getInfo(PICK_COMPLETE_FILENAME, "file")
+  local completedRequired = not self:_importerPickPending()
+    and love.filesystem.getInfo(PICK_COMPLETE_FILENAME, "file")
     and love.filesystem.read(PICK_COMPLETE_FILENAME)
   if completedRequired then
     love.filesystem.remove(PICK_COMPLETE_FILENAME)
@@ -2601,6 +2620,7 @@ end
 -- which focus/Choose consumes on return.
 -- NX: no HostShell/desktop picker -- rescan imports/mods/ inbox instead.
 function RomImporter:chooseMod()
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return end
   if self._hostPick or self._modInboxInstall then return end
   if self.isNX then
@@ -2987,6 +3007,7 @@ end
 -- its equivalent is an engine-owned imports/baseroms inbox that can be filled
 -- over MTP; every other native/mobile picker lands on the same validation path.
 function RomImporter:chooseRequiredImport(modId, importId)
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return end
   local manifest = requiredManifest(self, modId)
   if not manifest then return end
@@ -3132,6 +3153,7 @@ end
 -- Android mirrors ROM / mod import via love.system.pickFile("sav").
 -- NX: no HostShell/desktop picker -- rescan imports/saves/ inbox instead.
 function RomImporter:chooseSaveImport(version)
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return end
   version = self:_resolveSaveVersion(version)
   if self.isNX then
@@ -3306,6 +3328,7 @@ end
 -- picked ROM is still routed by its SHA-1, so choosing a Blue cart in the Red
 -- column imports Blue.
 function RomImporter:choose(version)
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return end
   self.chooseVersion = version or "red"
   if self.isNX then
@@ -3462,10 +3485,14 @@ function RomImporter:_pollPickedFiles(dt)
     end
     return
   end
-  local found = love.filesystem.getInfo("export_done.flag", "file") ~= nil
-    or love.filesystem.getInfo("pick_error.flag", "file") ~= nil
-    or love.filesystem.getInfo(PICK_COMPLETE_FILENAME, "file") ~= nil
-  if not found then
+  local importerPending = self:_importerPickPending()
+  local found = love.filesystem.getInfo("pick_error.flag", "file") ~= nil
+    or (not importerPending and (
+      love.filesystem.getInfo("export_done.flag", "file") ~= nil
+      or love.filesystem.getInfo(PICK_COMPLETE_FILENAME, "file") ~= nil))
+  if not found and self:_importerPickPending() then
+    found = findPendingImporter(self) ~= nil
+  elseif not found then
     for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
       local n = name:lower()
       if isRomFilename(n) or n == "picked_mod.zip" or n == "picked_save.sav"
@@ -3478,7 +3505,9 @@ function RomImporter:_pollPickedFiles(dt)
     end
   end
   if found then
-    self.pickPending = nil
+    -- An importer request is retired by focus only after consuming its own
+    -- published dump or failure. A refocus by itself is not completion.
+    if not importerPending then self.pickPending = nil end
     self:focus(true)
   end
 end
@@ -4544,6 +4573,7 @@ end
 -- the soft keyboard drop with the panel they belonged to; each tab's scroll
 -- offset persists inside the view's per-tab scroll container.
 function RomImporter:_beginImporterImport(importerId)
+  if self:_importerPickPending() then return end
   local Importers = require("src.import.Importers")
   local desc = Importers.get(importerId)
   if not desc or desc.status == "planned" then return end
@@ -4552,7 +4582,7 @@ function RomImporter:_beginImporterImport(importerId)
   if self.nativePicker and love.system.getPickedFile then
     self.pickerPendingKind = "importer"
     self.pickerPendingImporterId = importerId
-    if not pickFile("rom") then
+    if not pickFile("rom", table.concat(desc.source.formats or { "sfc" }, ",")) then
       self.pickerPendingKind, self.pickerPendingImporterId = nil, nil
       self._importerNotice = { text = "Could not open the file picker." }
     end
@@ -4603,9 +4633,9 @@ function RomImporter:_runImporter(importerId, path)
 end
 
 function RomImporter:_runImporterData(importerId, data)
-  local modules = { lttp = "src.import.lttp.LttpImport", pmd_red = "src.import.pmd.PmdImport" }
-  if not modules[importerId] then return end
-  local importer = require(modules[importerId])
+  local descriptor = require("src.import.Importers").get(importerId)
+  if not (descriptor and descriptor.module) then return end
+  local importer = require(descriptor.module)
   local source, err = importer.identify(data)
   if not source then
     self._importerNotice = { text = tostring(err) }
@@ -4624,6 +4654,8 @@ function RomImporter:_stepImporter()
   local job = self._importerJob
   if not job then return end
   local budget = job.id == "pmd_red" and 1 or 24
+  local clock = love and love.timer and love.timer.getTime
+  local deadline = job.id == "gen5_bw" and clock and (clock() + 0.006)
   while budget > 0 do
     budget = budget - 1
     if coroutine.status(job.co) == "dead" then break end
@@ -4650,6 +4682,9 @@ function RomImporter:_stepImporter()
       job.progress = value.done / value.total
       job.status = value.status or job.status
     end
+    -- Spend available launcher time instead of waiting a frame after every
+    -- small yield. Stop between slices so the UI keeps receiving updates.
+    if deadline and clock() >= deadline then break end
   end
 end
 
@@ -5207,6 +5242,7 @@ function RomImporter:_skinsImportButtonLabel()
 end
 
 function RomImporter:chooseSkin()
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return end
   if self.isNX then
     local found = #self:_ensureSkins(true)
@@ -5509,6 +5545,7 @@ end
 -- pick from getPickedFile, handhelds use the in-launcher browser, and desktop
 -- opens the OS dialog (async on Windows so the window keeps drawing).
 function RomImporter:importCartFile(version)
+  if self:_importerPickPending() then return end
   if self.workState == "working" then return false end
   if self._hostPick then return false end
   if self.isNX then
