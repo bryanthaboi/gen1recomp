@@ -6966,8 +6966,12 @@ function BattleState:drawTextArea()
     local ys = { 112, 128 }
     for li, line in ipairs(self.shown or {}) do
       local y = (ys[li] or 128) + off
+      -- pen by each glyph's own advance, like TextBox: a TTF font is not on
+      -- the 8px tile grid
+      local pen = 8
       for i = 1, #line do
-        drawGlyph(line[i], 8 + (i - 1) * 8, y)
+        drawGlyph(line[i], pen, y)
+        pen = pen + Font.advanceOf(line[i])
       end
     end
     -- the blinking down arrow ('▼', glyph $EE) while a \v CONT wait

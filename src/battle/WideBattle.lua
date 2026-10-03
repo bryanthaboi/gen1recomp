@@ -189,8 +189,11 @@ local function drawMessageBox(battle)
   local ys = { 112, 128 }
   for li, line in ipairs(battle.shown or {}) do
     local y = (ys[li] or 128) + off
+    -- same pen as BattleState:drawTextArea: per-glyph advance, not 8px cells
+    local pen = 8
     for i = 1, #line do
-      Font.drawCode(line[i], 8 + (i - 1) * 8, y)
+      Font.drawCode(line[i], pen, y)
+      pen = pen + Font.advanceOf(line[i])
     end
   end
   if (battle.msgWaiting or battle.msgPrompt) and battle.frame % 60 < 30 then

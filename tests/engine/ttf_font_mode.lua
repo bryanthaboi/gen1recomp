@@ -208,6 +208,44 @@ do
   T.eq(pens[3].x, 8 + latin * 2, "the ligature tile sits after the TTF pair")
 end
 
+-- ------------------------------------------------- so does the battle box
+
+-- the battle message box keeps its own draw loop (classic and wide layout);
+-- both have to move the pen the way TextBox does, or a TTF line is spread
+-- over the 8px grid and clipped at the box edge
+do
+  local BattleState = require("src.battle.BattleState")
+  local WideBattle = require("src.battle.WideBattle")
+  local function battle()
+    return setmetatable({
+      phase = "messages", current = {}, frame = 0, fieldCleared = true,
+      shown = { Font.encode("AB'd") },
+      bottomUIVisible = function() return true end,
+      extendedHUD = function() return false end,
+      drawPicsLayer = function() end,
+    }, BattleState)
+  end
+  local function pensOf(draw)
+    local pens = {}
+    local oldDraw = Font.drawCode
+    Font.drawCode = function(code, x)
+      if code >= BASE or code == 0xD0 then pens[#pens + 1] = x end
+    end
+    local ok, err = pcall(draw)
+    Font.drawCode = oldDraw
+    if not ok then error(err, 0) end
+    return pens
+  end
+  local classic = pensOf(function() battle():drawTextArea() end)
+  T.eq(#classic, 3, "the battle box draws three glyphs for AB'd")
+  T.eq(classic[2], 8 + latin, "its pen moves by the TTF advance, not 8px")
+  T.eq(classic[3], 8 + latin * 2, "and the ligature tile follows the pair")
+  local wide = pensOf(function() WideBattle.draw(battle()) end)
+  T.eq(#wide, 3, "the wide battle box draws the same three glyphs")
+  T.eq(wide[2], 8 + latin, "with the same per-glyph pen")
+  T.eq(wide[3], 8 + latin * 2, "up to the ligature tile")
+end
+
 -- ------------------------------------------------- the registry entry
 
 do
