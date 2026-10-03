@@ -78,6 +78,8 @@ Studio.EXPORTS = {
 Studio.BIND_GROUPS = {
   { title = "GAME BOY",
     specs = { "a", "b", "start", "select", "up", "down", "left", "right" } },
+  { title = "GBA / SHOULDERS",
+    specs = { "l", "r", "l|r" } },
   { title = "DIAGONALS",
     specs = { "left|up", "right|up", "left|down", "right|down" } },
   { title = "HOTKEYS",
@@ -95,11 +97,11 @@ Studio.BIND_GROUPS = {
   { title = "NO INPUT", specs = { "nul" } },
 }
 
-Studio.BIND_PARTS = { "left", "right", "up", "down", "a", "b", "start", "select" }
+Studio.BIND_PARTS = { "left", "right", "up", "down", "a", "b", "l", "r", "start", "select" }
 
 local PART_RANK = {
   left = 1, right = 2, up = 3, down = 4,
-  a = 5, b = 6, start = 7, select = 8,
+  a = 5, b = 6, l = 7, r = 8, start = 9, select = 10,
 }
 
 local function now()

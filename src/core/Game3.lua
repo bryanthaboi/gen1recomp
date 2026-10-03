@@ -407,10 +407,12 @@ function Game3:applyOptions(opts)
     end
   end
   if self.touchControls then
+    local g3 = type(opts.game3) == "table" and opts.game3 or nil
     self.touchControls:applyOptions({
-      touchControls = opts.touchControls,
-      haptics = opts.haptics,
-      hotbar = opts.hotbar,
+      touchControls = (g3 and g3.touchControls) or opts.touchControls,
+      haptics = (g3 and g3.haptics) or opts.haptics,
+      hotbar = (g3 and g3.hotbar ~= nil) and g3.hotbar or opts.hotbar,
+      generation = 3,
     })
   end
   if self.input and opts.bindings then

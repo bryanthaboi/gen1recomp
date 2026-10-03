@@ -7,6 +7,11 @@ TouchSkin.EXPORT_ROOT = "skins/_export"
 TouchSkin.GB_BUTTONS = {
   a = "a", b = "b", start = "start", select = "select",
   up = "up", down = "down", left = "left", right = "right",
+  l = "l", r = "r",
+  l1 = "l", r1 = "r",
+  l2 = "l", r2 = "r",
+  trigger_l = "l", trigger_r = "r",
+  shoulder_l = "l", shoulder_r = "r",
 }
 
 TouchSkin.HOTKEYS = {
@@ -30,6 +35,10 @@ local function trim(s)
 end
 
 local function unquote(s)
+  s = trim(s)
+  local quoted = s:match('^"([^"]*)"')
+  if quoted then return quoted end
+  s = s:gsub("%s*//.*$", ""):gsub("%s*#.*$", "")
   s = trim(s)
   local inner = s:match('^"(.*)"$')
   return inner or s
@@ -1005,7 +1014,7 @@ end
 TouchSkin.BINDS = {
   "nul",
   "up", "down", "left", "right",
-  "a", "b", "start", "select",
+  "a", "b", "l", "r", "start", "select",
   "left|up", "right|up", "left|down", "right|down",
   "hold_fast_forward", "toggle_fast_forward", "reset", "menu_toggle",
   "overlay_next",

@@ -11,7 +11,7 @@ DeltaSkin.GAME_TYPE_PREFIXES = {
   "public.aoshuang.game.",
 }
 
-DeltaSkin.SYSTEMS = { gb = true, gbc = true }
+DeltaSkin.SYSTEMS = { gb = true, gbc = true, gba = true }
 
 DeltaSkin.LEGACY_EXTS = { gbcskin = true, gbaskin = true, gbskin = true }
 
@@ -27,6 +27,9 @@ DeltaSkin.DEFAULT_TARGET_WIDTH = 1080
 DeltaSkin.INPUTS = {
   a = "a", b = "b", start = "start", select = "select",
   up = "up", down = "down", left = "left", right = "right",
+  l = "l", r = "r",
+  triggerl = "l", triggerr = "r",
+  shoulderl = "l", shoulderr = "r",
   menu = "menu_toggle",
   fastforward = "hold_fast_forward",
   togglefastforward = "toggle_fast_forward",

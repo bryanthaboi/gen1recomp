@@ -72,11 +72,11 @@ function Editor.load(opts)
     btn = love.graphics.newFont(18),
   }
   local optsTbl = SaveData.loadOptions()
-  local applied = optsTbl
   local GameVersion = require("src.core.GameVersion")
-  local gen2 = GameVersion.VERSIONS[opts.version]
-    and GameVersion.generation(opts.version) == 2
-  if gen2 then
+  local gen = GameVersion.VERSIONS[opts.version]
+    and GameVersion.generation(opts.version) or 1
+  local applied
+  if gen == 2 then
     local gold = type(optsTbl.gold) == "table" and optsTbl.gold or {}
     local hotbar = gold.hotbar
     if hotbar == nil then hotbar = optsTbl.hotbar end
@@ -84,6 +84,24 @@ function Editor.load(opts)
       touchControls = gold.touchControls,
       haptics = gold.haptics or optsTbl.haptics,
       hotbar = hotbar,
+      generation = 2,
+    }
+  elseif gen == 3 then
+    local g3 = type(optsTbl.game3) == "table" and optsTbl.game3 or {}
+    local hotbar = g3.hotbar
+    if hotbar == nil then hotbar = optsTbl.hotbar end
+    applied = {
+      touchControls = g3.touchControls or optsTbl.touchControls,
+      haptics = g3.haptics or optsTbl.haptics,
+      hotbar = hotbar,
+      generation = 3,
+    }
+  else
+    applied = {
+      touchControls = optsTbl.touchControls,
+      haptics = optsTbl.haptics,
+      hotbar = optsTbl.hotbar,
+      generation = 1,
     }
   end
   TouchControls:init()
@@ -158,10 +176,14 @@ local function persist()
     layouts = cfg.layouts,
   }
   local GameVersion = require("src.core.GameVersion")
-  if GameVersion.VERSIONS[Editor.version]
-      and GameVersion.generation(Editor.version) == 2 then
+  local gen = GameVersion.VERSIONS[Editor.version]
+    and GameVersion.generation(Editor.version) or 1
+  if gen == 2 then
     opts.gold = type(opts.gold) == "table" and opts.gold or {}
     opts.gold.touchControls = block
+  elseif gen == 3 then
+    opts.game3 = type(opts.game3) == "table" and opts.game3 or {}
+    opts.game3.touchControls = block
   else
     opts.touchControls = block
   end
@@ -383,7 +405,14 @@ function Editor.draw()
     if zone then
       love.graphics.setLineWidth(3 * s)
       col(PAL.green, 0.85)
-      love.graphics.circle("line", zone.cx, zone.cy, zone.w * 0.62)
+      if zone.shape == "squircle" or zone.shape == "rect" or Editor.drag.name == "l" or Editor.drag.name == "r" then
+        local bw = zone.w * 1.14
+        local bh = (zone.h or (zone.w * 0.50)) * 1.14
+        local radius = bh * 0.32
+        roundRect("line", zone.cx - bw / 2, zone.cy - bh / 2, bw, bh, radius)
+      else
+        love.graphics.circle("line", zone.cx, zone.cy, zone.w * 0.62)
+      end
     end
   end
 

@@ -56,11 +56,13 @@ local DPAD_DEAD = 0.16
 -- hit slop: how far past the visible edge a press still counts, as a
 -- multiplier on the control's half-width.  START/SELECT get more because
 -- the glyphs are small.
-local SLOP = { a = 1.3, b = 1.3, start = 1.4, select = 1.4 }
+local SLOP = { a = 1.3, b = 1.3, start = 1.4, select = 1.4, l = 1.25, r = 1.25 }
 local HOTBAR_SLOP = 1.4
 
-local BUTTONS = { "a", "b", "start", "select" }
-local CONTROLS = { "dpad", "a", "b", "start", "select", "hotbar" }
+local BUTTONS_GB = { "a", "b", "start", "select" }
+local BUTTONS_GBA = { "a", "b", "start", "select", "l", "r" }
+local BUTTONS = BUTTONS_GB
+local CONTROLS = { "dpad", "a", "b", "start", "select", "hotbar", "l", "r" }
 
 local HOTBAR = {
   { spec = "key:f1", label = "SAVE" },
@@ -88,6 +90,8 @@ local IMAGES = {
   dpad_right = "assets/touch/dpad_right.png",
   a = "assets/touch/a.png",
   b = "assets/touch/b.png",
+  l = "assets/touch/l.png",
+  r = "assets/touch/r.png",
   start = "assets/touch/start.png",
   select = "assets/touch/select.png",
 }
@@ -211,6 +215,16 @@ function TouchControls.normalizeConfig(tc)
   return out
 end
 
+function TouchControls:buttons()
+  if self and (self.shoulders or self.generation == 3) then return BUTTONS_GBA end
+  return BUTTONS_GB
+end
+
+function TouchControls:controls()
+  if self and (self.shoulders or self.generation == 3) then return CONTROLS end
+  return { "dpad", "a", "b", "start", "select", "hotbar" }
+end
+
 -- Pure default layout in LOVE units for a usable rect of size ww x wh at
 -- origin (ox, oy).  Shared by layout() and the editor's Reset path so
 -- defaults stay in one place.  ox/oy default to 0 for the headless tests
@@ -218,14 +232,17 @@ end
 -- the orientation's size multiplier: every width and the margin derive
 -- from dpadW, so scaling it moves the default centers with the art
 -- instead of letting bigger buttons hang off the edge.
-function TouchControls.defaultLayout(ww, wh, ox, oy, scale)
+function TouchControls.defaultLayout(ww, wh, ox, oy, scale, shoulders)
   ox, oy = ox or 0, oy or 0
   local short = math.min(ww, wh)
   local dpadW = math.min(180, short * 0.34) * clampScale(scale)
   local abW = dpadW * 0.46
+  local lrW = dpadW * 0.56
+  local lrH = lrW * 0.50
   local ssW = dpadW * 0.30
   local margin = dpadW * 0.12
-  return {
+  local isLandscape = (ww > wh)
+  local out = {
     dpad = { cx = ox + margin + dpadW / 2, cy = oy + wh - margin - dpadW / 2, w = dpadW },
     a = { cx = ox + ww - margin - abW * 0.55, cy = oy + wh - margin - abW * 1.75, w = abW },
     b = { cx = ox + ww - margin - abW * 1.60, cy = oy + wh - margin - abW * 0.55, w = abW },
@@ -233,6 +250,18 @@ function TouchControls.defaultLayout(ww, wh, ox, oy, scale)
     select = { cx = ox + ww / 2 - ssW * 0.60, cy = oy + wh - margin - ssW * 0.95, w = ssW },
     hotbar = { cx = ox + ww - margin - ssW * 0.70, cy = oy + margin + ssW * 0.70, w = ssW },
   }
+  if isLandscape then
+    -- Landscape: Float L and R comfortably above the D-pad and A/B cluster (+ 9% height clearance)
+    local shoulderY = oy + wh - margin - dpadW - lrH * 0.65 - wh * 0.09
+    out.l = { cx = ox + margin + lrW * 0.65, cy = shoulderY, w = lrW, h = lrH, shape = "squircle" }
+    out.r = { cx = ox + ww - margin - lrW * 0.65, cy = shoulderY, w = lrW, h = lrH, shape = "squircle" }
+  else
+    -- Portrait: Place L and R in the control deck above D-pad and A/B clusters with ample clearance (+ 9% height clearance)
+    local shoulderY = oy + wh - margin - dpadW - lrH * 0.90 - wh * 0.09
+    out.l = { cx = ox + margin + lrW * 0.65, cy = shoulderY, w = lrW, h = lrH, shape = "squircle" }
+    out.r = { cx = ox + ww - margin - lrW * 0.65, cy = shoulderY, w = lrW, h = lrH, shape = "squircle" }
+  end
+  return out
 end
 
 local function loadImages()
@@ -250,6 +279,8 @@ function TouchControls:init()
   self.active = wantsOverlay()
   TouchSkin.setOverlayLive(self.active)
   self.enabled = true
+  self.generation = nil
+  self.shoulders = false
   -- vibration level for presses (#806); applyOptions overwrites it from
   -- options.haptics, this is the value a harness that never applies options
   -- runs with
@@ -297,6 +328,12 @@ end
 function TouchControls:applyOptions(opts)
   local cfg = TouchControls.normalizeConfig(opts and opts.touchControls)
   self.enabled = cfg.enabled
+  self.generation = opts and (opts.generation or (opts.version and require("src.core.GameVersion").generation(opts.version))) or self.generation
+  if self.generation == nil then
+    local ok, GV = pcall(require, "src.core.GameVersion")
+    if ok and GV and GV.generation then self.generation = GV.generation() end
+  end
+  self.shoulders = (self.generation == 3) or (opts and opts.shoulders == true)
   -- haptics is a plain top-level option, not part of the layout config the
   -- launcher editor round-trips through config() (#806)
   self.haptics = TouchControls.normalizeHaptics(opts and opts.haptics)
@@ -399,9 +436,10 @@ local skinHitSet, applySkinSet
 
 -- Keep a control fully inside the usable rect [x0,y0]..[x1,y1].
 local function clampZone(zone, x0, y0, x1, y1)
-  local half = zone.w * 0.5
-  zone.cx = math.max(x0 + half, math.min(x1 - half, zone.cx))
-  zone.cy = math.max(y0 + half, math.min(y1 - half, zone.cy))
+  local halfW = zone.w * 0.5
+  local halfH = (zone.h or zone.w) * 0.5
+  zone.cx = math.max(x0 + halfW, math.min(x1 - halfW, zone.cx))
+  zone.cy = math.max(y0 + halfH, math.min(y1 - halfH, zone.cy))
 end
 
 -- The bucket for the orientation currently on screen (#633), created on
@@ -442,9 +480,9 @@ function TouchControls:layout()
   -- orientation picks which saved layout applies; rotating swaps buckets
   -- because sw/sh swapped, which is already the cache key above (#633)
   local bucket = self:currentBucket()
-  self.L = TouchControls.defaultLayout(sw, sh, ox, oy, bucket.scale)
+  self.L = TouchControls.defaultLayout(sw, sh, ox, oy, bucket.scale, self.shoulders)
   if bucket.positions then
-    for _, name in ipairs(CONTROLS) do
+    for _, name in ipairs(self:controls()) do
       local p = bucket.positions[name]
       local zone = self.L[name]
       if p and zone then
@@ -517,6 +555,13 @@ local function inCircle(zone, x, y, slop)
   return dx * dx + dy * dy <= r * r
 end
 
+local function inSquircle(zone, x, y, slop)
+  slop = slop or 1.25
+  local halfW = zone.w * 0.54 * slop
+  local halfH = (zone.h or (zone.w * 0.50)) * 0.54 * slop
+  return math.abs(x - zone.cx) <= halfW and math.abs(y - zone.cy) <= halfH
+end
+
 function TouchControls:hotbarItems()
   if self.hotbarControls then return self.hotbarControls end
   local out = {}
@@ -587,8 +632,14 @@ function TouchControls:hitTest(x, y)
   if self:hotbarShown() and inCircle(L.hotbar, x, y, HOTBAR_SLOP) then
     return "hotbar"
   end
-  for _, btn in ipairs(BUTTONS) do
-    if inCircle(L[btn], x, y, SLOP[btn]) then return btn end
+  for _, btn in ipairs(self:buttons()) do
+    local zone = L[btn]
+    if zone then
+      local isSq = zone.shape == "squircle" or zone.shape == "rect" or btn == "l" or btn == "r"
+      local hit = isSq and inSquircle(zone, x, y, SLOP[btn] or 1.25)
+                       or inCircle(zone, x, y, SLOP[btn] or 1.3)
+      if hit then return btn end
+    end
   end
   local dz = L.dpad
   local half = dz.w * 0.65
@@ -761,8 +812,9 @@ function TouchControls:touchpressed(id, x, y)
       return true
     end
   end
-  for _, btn in ipairs(BUTTONS) do
-    if inCircle(L[btn], x, y, SLOP[btn]) then
+  for _, btn in ipairs(self:buttons()) do
+    local zone = L[btn]
+    if zone and inCircle(zone, x, y, SLOP[btn] or 1.3) then
       self.touches[id] = { control = btn }
       pressBtn(self, btn)
       return true
@@ -863,7 +915,14 @@ end
 local function drawIcon(img, zone, pressed, alphaMul)
   alphaMul = alphaMul or 1
   love.graphics.setColor(1, 1, 1, (pressed and BACK_PRESSED or BACK) * alphaMul)
-  love.graphics.circle("fill", zone.cx, zone.cy, zone.w * 0.58)
+  if zone.shape == "squircle" or zone.shape == "rect" then
+    local bw = zone.w * 1.08
+    local bh = (zone.h or (zone.w * 0.50)) * 1.08
+    local radius = bh * 0.32
+    love.graphics.rectangle("fill", zone.cx - bw / 2, zone.cy - bh / 2, bw, bh, radius, radius)
+  else
+    love.graphics.circle("fill", zone.cx, zone.cy, zone.w * 0.58)
+  end
   local scale = zone.w / img:getWidth()
   love.graphics.setColor(1, 1, 1, (pressed and ALPHA_PRESSED or ALPHA) * alphaMul)
   love.graphics.draw(img, zone.cx - zone.w / 2,
@@ -931,8 +990,10 @@ function TouchControls:draw()
   local dir = dpadTouch and dpadTouch.dir
   drawIcon(dir and self.img["dpad_" .. dir] or self.img.dpad, L.dpad,
            dir ~= nil, alphaMul)
-  for _, btn in ipairs(BUTTONS) do
-    drawIcon(self.img[btn], L[btn], self.held[btn] ~= nil, alphaMul)
+  for _, btn in ipairs(self:buttons()) do
+    if self.img[btn] and L[btn] then
+      drawIcon(self.img[btn], L[btn], self.held[btn] ~= nil, alphaMul)
+    end
   end
 
   -- the +/- glyphs alone don't say which is which; shadowed so the text
