@@ -78,8 +78,24 @@ function FsIo.globPrefix(prefix)
   return matches
 end
 
--- existence probe that never shells out on Windows: directories do not
--- open() there at all, and rename-self succeeds for anything that exists
+-- Windows existence probe: `if exist "path\*"` is true only for a real
+-- directory (a file never matches its own "\*" glob, and a missing path
+-- matches neither). Shells out like listDir's Windows branch above --
+-- os.rename(path, path) was tried first as a shell-free rename-self probe,
+-- but it returns nil for real, existing directories on at least one
+-- Windows/LuaJIT (lovec.exe) build, which made every mod directory look
+-- absent to FsIo.isDir and silently zeroed out mod discovery.
+local function winIsDir(path)
+  local p = tostring(path):gsub("[/\\]+$", "")
+  local pipe = io.popen('if exist "' .. p .. '\\*" (echo dir_yes)')
+  if not pipe then return false end
+  local out = pipe:read("*a")
+  pipe:close()
+  return out:find("dir_yes", 1, true) ~= nil
+end
+
+-- existence probe: directories do not open() at all on Windows, so a nil
+-- handle there falls through to the shell probe above
 function FsIo.isDir(path)
   local handle = io.open(path, "rb")
   if handle then
@@ -88,7 +104,7 @@ function FsIo.isDir(path)
     if probe ~= nil then return false end
     if FsIo.isWindows then return false end -- opened but empty: a file
   elseif FsIo.isWindows then
-    return os.rename(path, path) == true
+    return winIsDir(path)
   end
   local ok = os.execute("test -d " .. quote(path))
   return ok == true or ok == 0
