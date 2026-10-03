@@ -351,8 +351,12 @@ local function getNavLayer(slot)
   local id = tostring(slot.id or "")
   local y = slot.y or 0
 
-  -- Layer 1: Top Bar (Settings / Gear, Close / Quit)
-  if id == "gear" or id == "settings" or id == "close" or id == "quit" or (y < 45 * Kit.scale and not id:match("^tab%-")) then
+  -- Layer 1: Top Bar (Settings / Gear, Close / Quit, Save Sync).  tab-sync
+  -- rides the gear's cluster; by its tab- prefix alone it fell into layer 2,
+  -- so Right from it found nothing and Up jumped sideways to the gear.
+  if id == "gear" or id == "settings" or id == "close" or id == "quit"
+      or id == "tab-sync"
+      or (y < 45 * Kit.scale and not id:match("^tab%-")) then
     return 1
   end
 
@@ -517,6 +521,31 @@ function Kit._resolveNav()
     end
     return
   elseif dir == "up" or dir == "down" then
+    -- Within the layer first: the nearest control above/below in the same
+    -- layer wins, so Down from the cart reaches the Scan / Import button under
+    -- it instead of jumping over it to the footer.  The horizontal gap weighs
+    -- double so a control straight below beats one off to the side.
+    do
+      local best, bestScore
+      for i = 1, n do
+        local c = Kit._nav[i]
+        if c.id ~= cur.id and getNavLayer(c) == curLayer then
+          local dy = (c.y + c.h / 2) - cy
+          local forward = dir == "down" and dy or -dy
+          if forward > 1 then
+            local gap = math.max(0, c.x - (cur.x + cur.w), cur.x - (c.x + c.w))
+            local score = forward + gap * 2
+            if not bestScore or score < bestScore then
+              best, bestScore = c, score
+            end
+          end
+        end
+      end
+      if best then
+        Kit.focusId = best.id
+        return
+      end
+    end
     -- VERTICAL LAYER NAVIGATION (Up/Down steps between layers: 1 <-> 2 <-> 3 <-> 4)
     local targetLayer = dir == "up" and (curLayer - 1) or (curLayer + 1)
     targetLayer = math.max(1, math.min(4, targetLayer))

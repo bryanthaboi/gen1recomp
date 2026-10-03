@@ -1,0 +1,8 @@
+# LÖVE for PS4 — pinned runtime (Tomas Morello)
+# https://github.com/tomasmorello/love-ps4/releases
+#
+# scripts/build_ps4.sh --fetch downloads <zip> from the release <tag> and refuses
+# it unless its SHA-256 matches. Bump both lines together.
+
+tag  v0.9.3
+love-ps4-0.9.3-runtime.zip  8cc66a447738a6772fc79775d7306791fb63542582e420cf08db8cb0420eded7

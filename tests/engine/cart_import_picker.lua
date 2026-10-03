@@ -80,6 +80,22 @@ eq(nx:importCartFile("red"), false, "an empty NX inbox does not invent a cart")
 check(nx._cartNotice:find("imports/carts/", 1, true) ~= nil,
   "and the notice names the MTP folder")
 
+-- PS4 shares the NX inbox (no file picker), with FTP in the hints.
+love.system.getOS = function() return "PS4" end
+Platform._resetForTests()
+local ps4 = RomImporter.new(function() end, { launcher = true })
+ps4._installCartFile = nx._installCartFile
+eq(ps4:_cartImportButtonLabel(), "Scan again", "PS4 cart button rescans the inbox")
+love.filesystem.write("imports/carts/inbox.g1rcart", "cart-bytes")
+eq(ps4:importCartFile("red"), true, "PS4 Import scans imports/carts/")
+eq(ps4.installed, "imports/carts/inbox.g1rcart", "and installs the inbox file")
+love.filesystem.remove("imports/carts/inbox.g1rcart")
+ps4.installed = nil
+eq(ps4:importCartFile("red"), false, "an empty PS4 inbox does not invent a cart")
+check(ps4._cartNotice:find("over FTP", 1, true) ~= nil
+    and ps4._cartNotice:find("DBI MTP", 1, true) == nil,
+  "and the notice says FTP, not the Switch's MTP")
+
 love.system.getOS = saved.getOS
 love.system.pickFile = saved.pickFile
 love.system.pickFileKinds = saved.pickFileKinds
