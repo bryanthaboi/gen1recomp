@@ -314,7 +314,9 @@ FieldRse.BY_NAME = {
   RemoveCameraObject = function()
     local ok, CameraObject = pcall(require, "src.core.game3.camera_object")
     local rt = package.loaded["src.core.game3.runtime"]
-    if ok and CameraObject and CameraObject.remove then pcall(CameraObject.remove, rt and rt._game) end
+    if ok and CameraObject and CameraObject.remove then
+      pcall(CameraObject.remove, rt and rt._game, { preserveFocus = true })
+    end
     return false
   end,
   -- pokeemerald/src/field_specials.c:1470

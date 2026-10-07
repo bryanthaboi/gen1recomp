@@ -462,6 +462,10 @@ function Map.load(mod, game, mapId, opts)
     return nil, "not a game3 map"
   end
   if not opts.seamless then
+    -- A warp (including a same-map warp) recenters the camera. Object-only
+    -- rebinds and movie return callbacks must retain scripted camera focus.
+    local CameraObject = package.loaded["src.core.game3.camera_object"]
+    if CameraObject then CameraObject.reset() end
     local StayMessage = package.loaded["src.ui.game3.message"]
     if StayMessage and StayMessage.closeStay then StayMessage.closeStay() end
   end

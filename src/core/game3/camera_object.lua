@@ -15,6 +15,16 @@ local CELL = 16
 CameraObject._eo = nil
 CameraObject._mapId = nil
 CameraObject._wrapped = false
+-- RSE changes the followed sprite without recentering the field camera.
+-- Keep that focus relative to the player while no camera object is alive.
+CameraObject._retainedFocus = nil
+
+local function retainedOffset(O)
+  local focus = CameraObject._retainedFocus
+  if focus and focus.mapId == O._mapId then return focus.dx, focus.dy end
+  CameraObject._retainedFocus = nil
+  return 0, 0
+end
 
 local function Objects()
   return package.loaded["src.core.game3.objects"]
@@ -64,7 +74,7 @@ end
 -- pokefirered/src/event_object_movement.c:2427
 function CameraObject.offset()
   local eo = live()
-  if not eo then return 0, 0 end
+  if not eo then return retainedOffset(Objects()) end
   local P = Player()
   local dx = (tonumber(eo.px) or 0) - (tonumber(P.px) or 0)
   local dy = (tonumber(eo.py) or 0) - (tonumber(P.py) or 0)
@@ -102,8 +112,11 @@ function CameraObject.spawn(game, opts)
   local O = Objects()
   local P = Player()
   local lid = CameraObject.LOCALID
-  local cx = tonumber(P.cellX) or 0
-  local cy = tonumber(P.cellY) or 0
+  local dx, dy = retainedOffset(O)
+  local px = (tonumber(P.px) or (tonumber(P.cellX) or 0) * CELL) + dx
+  local py = (tonumber(P.py) or (tonumber(P.cellY) or 0) * CELL) + dy
+  local cx = math.floor(px / CELL)
+  local cy = math.floor(py / CELL)
   opts = opts or {}
   local pool = O.spawnFromDefs({ {
     localId = lid,
@@ -117,8 +130,8 @@ function CameraObject.spawn(game, opts)
   if not eo then return nil end
   eo.visible = false
   eo.hidden = true
-  eo.px = tonumber(P.px) or (cx * CELL)
-  eo.py = tonumber(P.py) or (cy * CELL)
+  eo.px, eo.py = px, py
+  CameraObject._retainedFocus = nil
   eo.facing = opts.facing or P.facing or "down"
   O._byId[lid] = eo
   if not orderIndex(O._order, lid) then
@@ -132,10 +145,18 @@ function CameraObject.spawn(game, opts)
 end
 
 -- pokefirered/src/field_specials.c:325
-function CameraObject.remove(game)
+function CameraObject.remove(game, opts)
   local O = Objects()
   local lid = CameraObject.LOCALID
-  local eo = CameraObject._eo
+  local eo = live()
+  if opts and opts.preserveFocus then
+    -- pokeemerald/src/event_object_movement.c:2302: switching followed sprites
+    -- resets camera movement deltas, not the map's current camera focus.
+    local dx, dy = CameraObject.offset()
+    CameraObject._retainedFocus = { dx = dx, dy = dy, mapId = O._mapId }
+  else
+    CameraObject._retainedFocus = nil
+  end
   CameraObject._eo = nil
   CameraObject._mapId = nil
   local tr = O._tracks[lid]
@@ -154,6 +175,7 @@ function CameraObject.remove(game)
 end
 
 function CameraObject.reset()
+  CameraObject._retainedFocus = nil
   local O = package.loaded["src.core.game3.objects"]
   local lid = CameraObject.LOCALID
   if O and O._byId and O._byId[lid] and O._byId[lid] == CameraObject._eo then
