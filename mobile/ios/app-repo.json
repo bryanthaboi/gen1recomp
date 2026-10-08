@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.64",
+          "date": "2026-10-08",
+          "size": 56250108,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.64/gen1recomp++-0.3.64-ios.ipa",
+          "localizedDescription": "slam dunking on these hoes (the bugs)\n\n## Issues closed\n\n- #2759 [FireRed] Player loads standing on water when saving while surfing\n- #2761 surf doesn't persist -emerald \n- #2762 Game Breaks using flash on 3rd floor of cave seeing steven.\n- #2763 hidden ninja npc visiable before battle\n- #2764 weird positions dialog and character run over (Android)\n- #2765 Player render error when \"Tilt\" option is used\n- #2766 Gen 3: Battle menu cursor resets to Fight after using an item or Poké Ball\n- #2767 Slightly slow surfing\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.63",
           "date": "2026-10-08",
           "size": 56248514,
