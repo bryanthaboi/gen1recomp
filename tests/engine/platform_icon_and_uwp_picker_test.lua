@@ -43,17 +43,8 @@ check(rebuild:find("$metadata.sources.love.patch", 1, true)
     and rebuild:find("git apply --unidiff-zero $lovePatch", 1, true),
   "UWP dependency rebuild applies the picker patch")
 
-local function utf16z(text)
-  local out = {}
-  for i = 1, #text do
-    out[#out + 1] = text:sub(i, i) .. "\0"
-  end
-  return table.concat(out) .. "\0\0"
-end
-
 local dll = read("ports/uwp/third_party/love/bin/love.dll")
-check(dll:find(utf16z(".gb"), 1, true) and dll:find(utf16z(".gbc"), 1, true)
-    and dll:find(utf16z(".gba"), 1, true),
+check(dll:find("gb,gbc,gba", 1, true),
   "shipped UWP love.dll offers .gb, .gbc, and .gba")
 
 print("platform_icon_and_uwp_picker_test: ok")

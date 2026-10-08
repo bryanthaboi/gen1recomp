@@ -49,6 +49,8 @@ return {
   -- pokeruby/src/event_object_movement.c:1767
   invalidGfx = "OBJ_EVENT_GFX_LITTLE_BOY_1",
   fieldMoveScripts = true,
+  -- pokeruby/src/fldeff_flash.c:111
+  flashScript = "gUnknown_081B694A",
   fieldMoveGfx = {
     CUT_TREE = "OBJ_EVENT_GFX_CUTTABLE_TREE",
     ROCK_SMASH_ROCK = "OBJ_EVENT_GFX_BREAKABLE_ROCK",

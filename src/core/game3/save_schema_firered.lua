@@ -337,10 +337,10 @@ function Schema.toSaveTable(session)
     x = session.x,
     y = session.y,
     facing = session.facing,
-    biking = (package.loaded["src.core.game3.player"] and package.loaded["src.core.game3.player"].biking ~= nil)
-      and (package.loaded["src.core.game3.player"].biking == true)
-      or (session and session.biking == true)
-      or false,
+    biking = session.biking == true,
+    surfing = session.surfing,
+    underwater = session.underwater,
+    elevation = session.elevation,
     bikeType = session.bikeType,
     healMap = session.healMap,
     healX = session.healX,
@@ -460,6 +460,9 @@ function Schema.fromSaveTable(save)
     y = save.y or MapIds.newGameStart(version).y,
     facing = save.facing or "down",
     biking = save.biking == true,
+    surfing = save.surfing,
+    underwater = save.underwater,
+    elevation = tonumber(save.elevation),
     bikeType = save.bikeType,
     healMap = save.healMap,
     healX = save.healX,
@@ -515,7 +518,16 @@ function Schema.fromSaveTable(save)
   require("src.core.game3.save_sections").restore(save, session, version)
   require("src.core.game3.save_mon").each(session, require("src.core.game3.save_mon").normalize)
   rules.resetStateOnContinue(session)
+  session._savedAvatar = {
+    map = session.map, x = session.x, y = session.y,
+    surfing = session.surfing, underwater = session.underwater,
+    biking = session.biking, bikeType = session.bikeType, elevation = session.elevation,
+  }
+  local warpFlags = session.specialSaveWarpFlags
   rules.useContinueGameWarp(session)
+  if session.specialSaveWarpFlags ~= warpFlags or session._continueWarpDeferred then
+    session._savedAvatar = nil
+  end
   Schema.ensureMonBalls(session)
   local legacySecret = save.secretId == nil and session.secretId == nil
   Schema.repairOwnMons(session)

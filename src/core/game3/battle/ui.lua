@@ -63,6 +63,7 @@ Ui._pendingYesNo = nil
 Ui._session = nil
 Ui._active = 0
 Ui._actionCursor = {}
+Ui._actionCursorBattler = {}
 Ui._moveCursor = {}
 Ui._moveCursorMon = {}
 Ui._target = nil
@@ -228,6 +229,7 @@ function Ui.reset(opts)
   Ui._pendingYesNo = nil
   Ui._active = 0
   Ui._actionCursor = {}
+  Ui._actionCursorBattler = {}
   Ui._moveCursor = {}
   Ui._moveCursorMon = {}
   Ui._swap = nil
@@ -715,12 +717,14 @@ function Ui.openMenu(battlerId, opts)
   Ui._target = nil
   Ui._active = tonumber(battlerId) or 0
   Ui._partnerAction = opts and opts.partnerAction or nil
-  if is_double() then
-    -- pokefirered/src/battle_controller_player.c:2421
-    Ui._menuIndex = Ui._actionCursor[Ui._active] or 1
-  else
-    Ui._menuIndex = 1
+  local battler = Ui._st and State.battler(Ui._st, Ui._active)
+  -- pokefirered/src/battle_controller_player.c:2099
+  if Ui._actionCursorBattler[Ui._active] ~= battler then
+    Ui._actionCursorBattler[Ui._active] = battler
+    Ui._actionCursor[Ui._active] = 1
   end
+  -- pokefirered/src/battle_controller_player.c:2421
+  Ui._menuIndex = Ui._actionCursor[Ui._active] or 1
   Ui._pendingCommand = nil
   Ui._wally = nil
   local Wally = require("src.core.game3.battle.tutorial_wally")
@@ -1641,11 +1645,13 @@ function Ui.handleInput(input)
     local idx, moved = grid_nav(Ui._menuIndex, input, 4)
     if moved then
       Ui._menuIndex = idx
+      Ui._actionCursor[Ui._active] = idx
       play_select()
       return true
     end
     if input:wasPressed("a") then
       play_select()
+      Ui._actionCursor[Ui._active] = Ui._menuIndex
       if Ui._st and Ui._st.safari then
         -- pokefirered/src/battle_controller_safari.c:162
         local act = Commands.playerAction(Ui._st, Ui._menuIndex, nil)

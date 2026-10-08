@@ -6,13 +6,12 @@ local function read(path)
   f:close()
   return s
 end
-for _, path in ipairs({ ".github/workflows/ci.yml", ".github/workflows/release.yml" }) do
-  local workflow = read(path)
-  local rebuild = workflow:find("run: ./scripts/xbox-uwp/rebuild_dependencies.ps1 -SkipAngle -SkipPackage", 1, true)
-  local package = workflow:find("- name: Build Xbox UWP package", 1, true)
-  S.check(rebuild and package and rebuild < package,
-    path .. " rebuilds the native picker before packaging")
-end
+local dll = read("ports/uwp/third_party/love/bin/love.dll")
+S.check(dll:find("gb,gbc,gba", 1, true) ~= nil,
+  "shipped love.dll is built with the descriptor-format picker patch")
+S.check(dll:find((".g1rcart"):gsub(".", "%0\0"), 1, true) ~= nil
+    and dll:find("picked_cart.g1rcart", 1, true) ~= nil,
+  "shipped love.dll offers the .g1rcart cart picker")
 local manifest = require("src.link.Json").decode(read("ports/uwp/third_party/manifest.json"))
 local patch = read("ports/uwp/third_party/" .. manifest.sources.love.patch)
 S.check(patch:find('luaL_optstring(L, 2, nullptr)', 1, true) ~= nil,

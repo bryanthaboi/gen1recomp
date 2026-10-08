@@ -122,8 +122,10 @@ function Renderer:releaseCanvases()
   releaseCanvas(self.battleHUDCanvas); self.battleHUDCanvas = nil
   releaseCanvas(self.worldCanvas); self.worldCanvas = nil
   releaseCanvas(self.uprightCanvas); self.uprightCanvas = nil
+  releaseCanvas(self.tiltOverheadCanvas); self.tiltOverheadCanvas = nil
   self.worldActive = false
   self.uprightActive = false
+  self.uprightOccluded = false
   self.worldOverride = nil
 end
 
@@ -347,6 +349,7 @@ function Renderer:beginFrame(transparent)
   self.uiOpaque = not transparent
   self.worldActive = false
   self.uprightActive = false
+  self.uprightOccluded = false
   self.worldOverride = nil
   -- warp-fade overlay from Transition (issue #121); cleared each frame so
   -- a popped transition cannot leave a sticky black veil
@@ -588,6 +591,51 @@ function Renderer:tiltMesh()
     self._tiltMesh = ok and mesh or false
   end
   return self._tiltMesh or nil
+end
+
+function Renderer:occludeUprightActors(drawOverhead)
+  local mesh = self:tiltMesh()
+  if not mesh then return end
+  if self._tiltOcclusionShader == nil then
+    local source, replaced = TILT_SHADER:gsub("return Texel%(tex, tc / vScale%) %* color;", [[
+      float a = Texel(tex, tc / vScale).a;
+      if (a <= 0.0) discard;
+      return vec4(1.0 - a);
+    ]])
+    assert(replaced == 1)
+    self._tiltOcclusionShader = love.graphics.newShader(source)
+  end
+  local shader = self._tiltOcclusionShader
+  local vw, vh = self.worldCanvas:getWidth(), self.worldCanvas:getHeight()
+  local mask = self.tiltOverheadCanvas
+  if not mask or mask:getWidth() ~= vw or mask:getHeight() ~= vh then
+    if mask and mask.release then mask:release() end
+    mask = PixelCanvas.new(vw, vh, "linear")
+    self.tiltOverheadCanvas = mask
+  end
+  love.graphics.push("all")
+  love.graphics.origin()
+  love.graphics.setCanvas(mask)
+  love.graphics.setShader()
+  love.graphics.setStencilTest()
+  love.graphics.setScissor()
+  love.graphics.setBlendMode("alpha", "alphamultiply")
+  love.graphics.clear(0, 0, 0, 0)
+  love.graphics.setColor(1, 1, 1, 1)
+  drawOverhead()
+  love.graphics.pop()
+
+  love.graphics.push("all")
+  love.graphics.setShader(shader)
+  love.graphics.setStencilTest()
+  love.graphics.setScissor()
+  love.graphics.setBlendMode("multiply", "premultiplied")
+  love.graphics.setColor(1, 1, 1, 1)
+  mesh:setTexture(mask)
+  mesh:setVertices(Tilt.meshCorners(vw, vh))
+  love.graphics.draw(mesh)
+  love.graphics.pop()
+  self.uprightOccluded = true
 end
 
 -- Draw the world pass through the tilt projection.  Two steps: (1) a
@@ -1157,7 +1205,13 @@ function Renderer:endFrame(zones, worldZones)
       local M = self.UPRIGHT_MARGIN
       love.graphics.setColor(1, 1, 1, 1)
       love.graphics.setScissor(vux, vuy, vuw, vuh)
+      local blend, alpha
+      if self.uprightOccluded then
+        blend, alpha = love.graphics.getBlendMode()
+        love.graphics.setBlendMode("alpha", "premultiplied")
+      end
       love.graphics.draw(self.uprightCanvas, wox - M * sx, woy - M * sy, 0, sx, sy)
+      if self.uprightOccluded then love.graphics.setBlendMode(blend, alpha) end
       love.graphics.setScissor()
     end
     -- Screen-space warp fade (Transition) over the full world composite so

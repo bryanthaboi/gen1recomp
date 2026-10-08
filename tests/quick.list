@@ -113,6 +113,10 @@ tests/engine/fly_map_arrows_bug1892.lua
 tests/engine/formulas.lua
 tests/engine/frame_cap_display.lua
 tests/engine/frame_cap_legacy_loop_2106.lua
+tests/engine/game3_avatar_restore_2759_2761.lua
+tests/engine/game3_battle_action_cursor_2766.lua
+tests/engine/game3_cutscene_push_2764.lua
+tests/engine/game3_disguise_order_2763.lua
 tests/engine/game3_em_bike_doors_2637.lua
 tests/engine/game3_em_catch_prompt_2637.lua
 tests/engine/game3_frontier_obedience_2638.lua
@@ -120,11 +124,14 @@ tests/engine/game3_post_dex_background_2637.lua
 tests/engine/game3_rs_anim_names_test.lua
 tests/engine/game3_rs_bag_cursor_width_2709.lua
 tests/engine/game3_rs_bag_row_layout_2727.lua
+tests/engine/game3_rs_flash_2762.lua
 tests/engine/game3_rs_item_use_text_2699_test.lua
 tests/engine/game3_rs_starter_choose_scale_2703.lua
 tests/engine/game3_rs_summary_memo_location_2707.lua
 tests/engine/game3_speed_hotkey_test.lua
+tests/engine/game3_surf_speed_2767.lua
 tests/engine/game3_tent_save_reload_2638.lua
+tests/engine/game3_tilt_roof_2765.lua
 tests/engine/game3_wailmer_pail_2697_test.lua
 tests/engine/game_display_chord_test.lua
 tests/engine/game_speed_categories_test.lua
@@ -512,6 +519,7 @@ tests/engine/npc_stay_turns_bug2117.lua
 tests/engine/npc_walk_cadence_bug1303.lua
 tests/engine/nurse_bow_bug995.lua
 tests/engine/nx_display_test.lua
+tests/engine/nx_quit_policy_2720.lua
 tests/engine/nx_yellow_boot_test.lua
 tests/engine/oak_intro_cry_bug2481.lua
 tests/engine/oak_shrink_timing_2685.lua
@@ -754,6 +762,7 @@ tests/engine/yellow_oak_back_pikapic.lua
 tests/engine/yellow_viridian_old_man_bug2122.lua
 tests/engine/zero_damage_miss_ruleset_bug2153.lua
 tests/game3_back_pic_anims_2702_test.lua
+tests/game3_battle_action_cursor_2766_test.lua
 tests/game3_battle_anims_phase1_test.lua
 tests/game3_battle_rendering_test.lua
 tests/game3_battle_shiny_test.lua
@@ -810,6 +819,7 @@ tests/game3_quest_log_integration_test.lua
 tests/game3_reflection_neighbor_test.lua
 tests/game3_renewable_hidden_items_test.lua
 tests/game3_resident_caches_2695_test.lua
+tests/game3_rs_flash_2762_test.lua
 tests/game3_rs_naming_kb_crop_2701_test.lua
 tests/game3_rs_pokedex_palette_2710_test.lua
 tests/game3_runtime_camera_object_test.lua

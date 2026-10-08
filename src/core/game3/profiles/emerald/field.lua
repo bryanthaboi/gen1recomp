@@ -53,6 +53,8 @@ return {
   invalidGfx = "OBJ_EVENT_GFX_NINJA_BOY",
   -- pokeemerald/data/scripts/field_move_scripts.inc:60
   fieldMoveScripts = true,
+  -- pokeemerald/data/scripts/flash.inc:1
+  flashScript = "EventScript_UseFlash",
   -- pokeemerald/include/constants/event_objects.h:89
   fieldMoveGfx = {
     CUT_TREE = "OBJ_EVENT_GFX_CUTTABLE_TREE",

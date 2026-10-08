@@ -273,12 +273,6 @@ jobs:
           "UWP_PFX=$pfx" | Out-File $env:GITHUB_ENV -Append
           "UWP_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File $env:GITHUB_ENV -Append
           "UWP_PUBLISHER=$($cert.Subject)" | Out-File $env:GITHUB_ENV -Append
-
-
-
-      - name: Rebuild Xbox UWP picker dependencies
-        shell: pwsh
-        run: ./scripts/xbox-uwp/rebuild_dependencies.ps1 -SkipAngle -SkipPackage
       - name: Build Xbox UWP package
         shell: bash
         run: |

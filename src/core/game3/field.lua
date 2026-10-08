@@ -1417,9 +1417,20 @@ function Field.executeFieldMove(payload)
           Flags.setFlag(Space.store, nil, payload.flag, true)
         end
       end
-      FieldEffects.startFlash(function()
-        Field.locked = false
-      end)
+      local profile = lazyReq("src.core.game3.profile").forSession(Field._session)
+      local script = profile.field and profile.field.flashScript
+      if script then
+        local Space = lazyReq("src.core.game3.scripting.space")
+        local key = assert(Space.scriptKey(script), "ROM Flash script is not in the script cache: " .. script)
+        assert(Space.vm, "Flash requires the field script VM")
+        -- pokeruby/src/script.c:230
+        Space.vm.ctx.fieldControlsLocked = true
+        assert(Space.startScript(key), "ROM Flash script could not start: " .. script)
+      else
+        FieldEffects.startFlash(function()
+          Field.locked = false
+        end)
+      end
     end)
   elseif act == "dig" or act == "braille_rs_dig" then
     Field.locked = true

@@ -1641,6 +1641,11 @@ function love.quit()
     require("src.import.LauncherWindow").observe(0)
     require("src.import.LauncherWindow").flush()
   end
+  local osName = love.system and love.system.getOS and love.system.getOS()
+  if osName == "NX" then
+    endProcessOnce()
+    return
+  end
   if editorMode and EditorApp.quit then
     -- true blocks the quit (unsaved-changes prompt).  A quit that proceeds
     -- must fall through to the worker shutdowns below instead of returning:
@@ -1667,7 +1672,6 @@ function love.quit()
   -- docs/modding.md's core.quit_to_launcher entry) may veto returning to
   -- this Lua launcher via that hook. Vanilla behavior (used when no mod
   -- claims the hook) is exactly the condition below.
-  local osName = love.system and love.system.getOS and love.system.getOS()
   local mobile = (osName == "Android" or osName == "iOS")
   local wouldReturnToLauncher = PlatformHooks.quitToLauncher(function()
     return Game and not Importer and not quitToLauncher and not scripted

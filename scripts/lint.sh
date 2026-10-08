@@ -9,6 +9,7 @@
 #
 #   scripts/lint.sh            full advisory report over every shipped tree
 #   scripts/lint.sh --gate     only the codes CI blocks on (0xx, 1xx, 511)
+#   scripts/lint.sh --ci       full report in one pass, fails only on gate codes
 #   scripts/lint.sh src tools  lint specific paths
 #
 # Install once with:  luarocks install luacheck
@@ -25,10 +26,11 @@ cd "$(dirname "$0")/.."
 DEFAULT_PATHS=(main.lua conf.lua src data/scripts mods tools)
 
 GATE=0
-if [ "${1:-}" = "--gate" ]; then
-  GATE=1
-  shift
-fi
+CI=0
+case "${1:-}" in
+  --gate) GATE=1; shift ;;
+  --ci) CI=1; shift ;;
+esac
 
 export PATH="$(pwd)/node_modules/.bin:${HOME:-}/.luarocks/bin:$PATH"
 
@@ -69,6 +71,19 @@ fi
 
 if [ "$GATE" = "1" ]; then
   exec luacheck "${PATHS[@]}" -q --codes --only 0 1 511
+fi
+
+if [ "$CI" = "1" ]; then
+  report="$(luacheck "${PATHS[@]}" --codes --no-color)"
+  printf '%s\n' "$report"
+  gate="$(printf '%s\n' "$report" | grep -E '\((E|W)(0[0-9][0-9]|1[0-9][0-9]|511)\)' || true)"
+  if [ -n "$gate" ]; then
+    echo
+    echo "gate failures (0xx, 1xx, 511):"
+    printf '%s\n' "$gate"
+    exit 1
+  fi
+  exit 0
 fi
 
 luacheck "${PATHS[@]}"

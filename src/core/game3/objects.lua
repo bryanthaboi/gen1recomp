@@ -1173,11 +1173,11 @@ local function tickMotion(eo, game, ctx)
 end
 
 --- Scripted one-cell step (no collision — FRLG applymovement forces).
-function Objects.scriptStep(eo, dir, run, slow, fast)
+function Objects.scriptStep(eo, dir, run, slow, fast, frames)
   if not eo then return false end
   local P = Player()
   if eo == P then
-    return P.scriptStep and P.scriptStep(dir, run, slow, fast)
+    return P.scriptStep and P.scriptStep(dir, run, slow, fast, frames)
   end
   if eo.moving then return false end
   local d = DELTA[dir]
@@ -1188,6 +1188,7 @@ function Objects.scriptStep(eo, dir, run, slow, fast)
   -- pokefirered/src/event_object_movement.c:5333 StartRunningAnim
   if run then eo.stepFrames = slow and RUN_SLOW_FRAMES or RUN_FRAMES end
   if fast then eo.stepFrames = RUN_FRAMES end
+  if frames then eo.stepFrames = frames end
   eo.frozen = true
   eo.scriptBusy = true
   return true
@@ -1307,9 +1308,9 @@ local function advanceTrack(lid, tr, game)
   if type(act) == "table" then
     if act.kind == "step" then
       if eo == Player() then
-        if Player().scriptStep then Player().scriptStep(act.dir, act.run, act.slow, act.fast) end
+        if Player().scriptStep then Player().scriptStep(act.dir, act.run, act.slow, act.fast, act.frames) end
       elseif eo then
-        Objects.scriptStep(eo, act.dir, act.run, act.slow, act.fast)
+        Objects.scriptStep(eo, act.dir, act.run, act.slow, act.fast, act.frames)
       end
     elseif act.kind == "jump" then
       if eo == Player() then
@@ -1355,6 +1356,7 @@ local function advanceTrack(lid, tr, game)
       Objects.revealTrainer(eo)
     elseif act.kind == "turn" then
       Objects.scriptFace(eo, act.dir)
+      if act.frames then tr.sleep = act.frames end
     elseif act.kind == "face_player" then
       -- pokefirered/src/event_object_movement.c:6772 MovementAction_FacePlayer_Step0
       if eo and eo ~= Player() then

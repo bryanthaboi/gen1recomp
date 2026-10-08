@@ -219,10 +219,21 @@ function Runtime.start(mod, game, session, opts)
       end
     end
     Player.biking = keepBike
-    if session then session.biking = keepBike end
+    local Collision = lazyReq("src.core.game3.collision")
+    if def then Collision.bindMap(game, session.map, def) end
+    local savedAvatar = session._savedAvatar
+    if savedAvatar and (savedAvatar.map ~= session.map or savedAvatar.x ~= session.x
+        or savedAvatar.y ~= session.y or session._continueWarpDeferred) then savedAvatar = nil end
+    local adoptedAvatar = (session.surfing ~= nil or session.underwater ~= nil) and {
+      surfing = session.surfing, underwater = session.underwater,
+      biking = keepBike, bikeType = session.bikeType, elevation = session.elevation,
+    } or nil
+    Map.applyInitialAvatar(session, def, savedAvatar or adoptedAvatar)
+    session._savedAvatar = nil
+    if session then session.biking = Player.biking end
     if game and game.save then
-      game.save.biking = keepBike
-      if game.save.position then game.save.position.biking = keepBike end
+      game.save.biking = Player.biking
+      if game.save.position then game.save.position.biking = Player.biking end
     end
     Player.syncSavePosition(game)
     -- Space.onMapEnter already ran (or will run) from afterMap — don't double.
@@ -233,6 +244,8 @@ function Runtime.start(mod, game, session, opts)
       x = session.x,
       y = session.y,
       facing = session.facing,
+      initialLoad = true,
+      enterVia = opts.reason == "continue" and "continue" or nil,
       depth1Connections = true,
     })
     log("warped via game3 map loader → " .. tostring(session.map))

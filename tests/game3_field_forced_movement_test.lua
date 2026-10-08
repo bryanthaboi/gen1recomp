@@ -223,8 +223,9 @@ local rc, curFrames = walkAndSettle("right")
 eq(rc, "step", "the surfer paddles one cell east into the current")
 eq(Player.cellX, 16, "the eastward current runs them to the corner")
 eq(Player.cellY, 1, "the northward current then lifts them up the column")
+-- pokefirered/src/field_player_avatar.c:509
 -- pokefirered/src/event_object_movement.c:8925 sStepTimes
-eq(curFrames, 16 + 10 * 6, "one paddle plus ten current pushes")
+eq(curFrames, 8 + 10 * 6, "one paddle plus ten current pushes")
 eq(ForcedMovement.forced, false, "leaving the current clears the forced flag")
 
 print("[test] 8. a forced step rolls no encounter and burns no step counter")

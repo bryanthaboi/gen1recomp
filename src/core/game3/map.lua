@@ -453,9 +453,40 @@ function Map.ensureMidLayout(game, mapId, def)
   return def.midLayout
 end
 
---- Load a Sevii map under game3 ownership (pret enter order).
--- 1) Bind game3 player + collision + EventObjects
--- 2) Objects.loadMap then Space.runEnterScripts (ON_TRANSITION → ON_FRAME)
+-- pokeemerald/src/overworld.c:911
+-- pokefirered/src/overworld.c:878
+function Map.applyInitialAvatar(session, def, saved, previous)
+  if not session then return end
+  local Player = require("src.core.game3.player")
+  if saved and (saved.surfing ~= nil or saved.underwater ~= nil) then
+    Player.restoreAvatar(saved)
+    return
+  end
+  local Flags = require("src.core.game3.scripting.flags")
+  local version = session.version or require("src.core.game3.profile").active().id
+  local cruiseId = Flags.forVersion(version).IDS.FLAG_SYS_CRUISE_MODE
+  local cruise = cruiseId and Flags.getFlag(session, nil, cruiseId)
+  local mapType = def and tonumber(def.mapType)
+  local isRse = session and require("src.core.game3.profile").family(session) == "rse"
+  local Collision = require("src.core.game3.collision")
+  local surfable = Collision.isSurfable(Collision.behavior(Player.cellX, Player.cellY))
+  local mapId = session and session.map or ""
+  local seafoam = not isRse and (mapId == "FR_SEAFOAM_ISLANDS_B3F" or mapId == "FR_SEAFOAM_ISLANDS_B4F")
+  Player.surfing, Player.underwater = false, false
+  if cruise and mapType ~= 8 then
+    Player.biking = false
+    if mapType == 6 then Player.facing = "right" end
+  elseif mapType == 5 then
+    Player.underwater, Player.biking = true, false
+  elseif surfable and not seafoam then
+    Player.surfing, Player.biking = true, false
+  end
+  if previous and ((previous.underwater and Player.surfing)
+      or (previous.surfing and Player.underwater)) then
+    Player.facing = previous.facing
+  end
+end
+
 function Map.load(mod, game, mapId, opts)
   opts = opts or {}
   if not MapIds.isGame3Map(mapId) then
@@ -557,6 +588,13 @@ function Map.load(mod, game, mapId, opts)
   local session = (Runtime.getSession and Runtime.getSession()) or (game and game.session)
   local save = game and game.save
   local Player = require("src.core.game3.player")
+  local previousAvatar = { surfing = Player.surfing, underwater = Player.underwater, facing = Player.facing }
+  local savedAvatar = session and session._savedAvatar
+  if (opts.enterVia or Map._nextEnterVia) ~= "continue" or not savedAvatar
+      or savedAvatar.map ~= mapId or savedAvatar.x ~= x or savedAvatar.y ~= y
+      or (session and session._continueWarpDeferred) then
+    savedAvatar = nil
+  end
   local onCyclingRoad = Player.isOnCyclingRoad and Player.isOnCyclingRoad(session, x, y, def)
   local wasBiking = (Player.biking == true)
   if opts.initialLoad and not wasBiking then
@@ -613,7 +651,6 @@ function Map.load(mod, game, mapId, opts)
   end
   -- pokefirered/src/overworld.c:2145 SetPlayerAvatarTransitionFlags
   Player.biking = keepBike
-  Player.syncSavePosition(game)
 
   local okFv, FieldView = pcall(require, "src.core.game3.field_view")
   if okFv and FieldView then FieldView._nativeDirty = true end
@@ -645,6 +682,15 @@ function Map.load(mod, game, mapId, opts)
     -- the host map (collision.lua: "Prefer owned grid; fall back to host map").
     Collision.clear()
   end
+
+  if not opts.seamless then
+    Map.applyInitialAvatar(session, def, savedAvatar, previousAvatar)
+    if session then
+      session._savedAvatar = nil
+      session.facing = Player.facing
+    end
+  end
+  Player.syncSavePosition(game)
 
   Map._warmPairs = not opts.seamless or nil
   -- pret GroundEffect_SpawnOnTallGrass when warping onto grass.

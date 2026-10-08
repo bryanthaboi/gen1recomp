@@ -851,8 +851,6 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
   -- Park one cell before landing and keep the step running so the seam does
   -- not hitch (same world pixels the neighbor strip already showed).
   local CELL = 16
-  local WALK_FRAMES = 16
-  local RUN_FRAMES = 8
   Player.cellX, Player.cellY = lx - d[1], ly - d[2]
   Player.px, Player.py = Player.cellX * CELL, Player.cellY * CELL
   Player.facing = dir
@@ -865,7 +863,7 @@ function Collision.tryConnection(game, fromX, fromY, dir, run)
   Player.dismounting = Player.surfing and not landingWater or false
   if Player.dismounting then lazyReq("src.core.game3.audio").stopSurfMusic() end
   Player.spriteYOffset = 0
-  Player.stepFrames = run and RUN_FRAMES or WALK_FRAMES
+  Player.stepFrames, Player.running = Player.ordinaryStepFrames(run)
   Player.syncSavePosition(g)
 
   if Collision.isGrass and Collision.isGrass(lx, ly) then

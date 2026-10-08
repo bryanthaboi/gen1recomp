@@ -28,20 +28,29 @@ diff --git a/src/modules/system/uwp/FilePicker.cpp b/src/modules/system/uwp/File
 +}
 +
 +void openPicker(const std::string &kind, const std::vector<std::string> &extensions)
-@@ -65,2 +88,2 @@
+@@ -62,0 +86,5 @@
++		else if (kind == "cart")
++		{
++			filters.Append(L".g1rcart");
++			destination = "picked_cart.g1rcart";
++		}
+@@ -65,2 +93,2 @@
 -			filters.Append(L".gb");
 -			filters.Append(L".gbc");
 +			for (const auto &extension : extensions)
 +				filters.Append(winrt::to_hstring(extension));
-@@ -131 +154 @@
+@@ -131 +159 @@
 -bool pickFile(const char *kind)
 +bool pickFile(const char *kind, const char *formats)
-@@ -134,0 +158,4 @@
+@@ -134 +162,6 @@
+-	if (requestedKind != "rom" && requestedKind != "mod" && requestedKind != "sav")
++	if (requestedKind != "rom" && requestedKind != "mod" && requestedKind != "sav"
++			&& requestedKind != "cart")
 +		return false;
 +
 +	std::vector<std::string> extensions;
 +	if (requestedKind == "rom" && !parseRomFormats(formats, extensions))
-@@ -151 +178 @@
+@@ -151 +184 @@
 -			[requestedKind]() { openPicker(requestedKind); });
 +			[requestedKind, extensions]() { openPicker(requestedKind, extensions); });
 diff --git a/src/modules/system/uwp/FilePicker.h b/src/modules/system/uwp/FilePicker.h

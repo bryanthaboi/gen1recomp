@@ -1043,7 +1043,14 @@ function Game3:saveGame()
   end)
   if FieldModules.enabled("questLog", self.session) then QuestRecorder.save(self) end
   local P = package.loaded["src.core.game3.player"]
-  if P and P.facing and not P.moving and P.cellX == self.session.x and P.cellY == self.session.y then self.session.facing = P.facing end
+  if P and P.facing and not P.moving and P.cellX == self.session.x and P.cellY == self.session.y then
+    self.session.facing = P.facing
+    self.session.surfing = P.surfing == true
+    self.session.underwater = P.underwater == true
+    self.session.biking = P.biking == true
+    self.session.bikeType = P.bikeType
+    self.session.elevation = P.elevation
+  end
   local save = Schema.toSaveTable(self.session)
   local rules = Schema.rulesFor(self.session.version)
   if rules.saveLocation then

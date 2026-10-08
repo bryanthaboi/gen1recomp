@@ -192,6 +192,7 @@ function Player.reset(x, y, facing)
   -- whiteout out of the water must not leave surfing set -- Collision.canEnter
   -- reads Player.surfing and would treat water as walkable on land.
   Player.surfing = false
+  Player.underwater = false
   Player.surfHopping = false
   Player.dismounting = false
   Player.prevCellX = Player.cellX
@@ -230,6 +231,18 @@ function Player.syncFromSession(session)
   if session.bikeType ~= nil then
     Player.bikeType = session.bikeType
   end
+  Player.restoreAvatar(session)
+end
+
+-- pokeemerald/src/field_player_avatar.c:1373
+function Player.restoreAvatar(state)
+  if not state then return end
+  Player.underwater = state.underwater == true
+  Player.surfing = not Player.underwater and state.surfing == true
+  Player.biking = not Player.underwater and not Player.surfing and state.biking == true
+  Player.bikeType = state.bikeType
+  if state.elevation ~= nil then Player.elevation = tonumber(state.elevation) or 3 end
+  Player.surfHopping, Player.dismounting = false, false
 end
 
 function Player.syncFromHost(game)
@@ -249,17 +262,27 @@ end
 --- Write avatar coords into save.position (ferry / host save). No host entity mirror.
 function Player.syncSavePosition(game)
   local save = game and game.save
-  if not (save and save.position) then return end
-  save.position.x = Player.cellX
-  save.position.y = Player.cellY
-  save.position.facing = Player.facing
-  save.position.biking = (Player.biking == true)
-  save.biking = (Player.biking == true)
+  if save then
+    if save.position then
+      save.position.x = Player.cellX
+      save.position.y = Player.cellY
+      save.position.facing = Player.facing
+      save.position.biking = Player.biking == true
+    end
+    save.biking = Player.biking == true
+    save.surfing = Player.surfing == true
+    save.underwater = Player.underwater == true
+    save.elevation = Player.elevation
+  end
   local session = package.loaded["src.core.game3.runtime"]
   session = session and session.getSession and session.getSession()
   if session then
     session.biking = (Player.biking == true)
-    if session.map then
+    session.surfing = Player.surfing == true
+    session.underwater = Player.underwater == true
+    session.bikeType = Player.bikeType
+    session.elevation = Player.elevation
+    if session.map and save and save.position then
       save.position.map = session.map
     end
   end
@@ -629,7 +652,19 @@ function Player.tryMove(dir, game, run)
   end
 
   beginStep(tx, ty, run, false)
+  if not Player.jumping and not Player.biking then
+    Player.stepFrames, Player.running = Player.ordinaryStepFrames(run)
+  end
   return "step"
+end
+
+-- pokeemerald/src/field_player_avatar.c:651
+function Player.ordinaryStepFrames(run)
+  if Player.surfHopping or Player.dismounting then return WALK_FRAMES, false end
+  if Player.surfing and not Player.underwater and not Player.biking and not Player.action then
+    return RUN_FRAMES, false
+  end
+  return run and RUN_FRAMES or WALK_FRAMES, run == true
 end
 
 -- pokefirered/src/metatile_behavior.c:668 MetatileBehavior_IsCyclingRoadPullDownTile
@@ -777,7 +812,7 @@ function Player.forcedStep(dir, frames, opts)
 end
 
 --- Forced script step (applymovement localId 0xFF) — skips collision.
-function Player.scriptStep(dir, run, slow, fast)
+function Player.scriptStep(dir, run, slow, fast, frames)
   if Player.moving then return false end
   local d = DELTA[dir or Player.facing]
   if not d then return false end
@@ -804,6 +839,7 @@ function Player.scriptStep(dir, run, slow, fast)
   -- pokefirered/src/event_object_movement.c:9029 UpdateRunSlowAnim
   if run and slow then Player.stepFrames = RUN_SLOW_FRAMES end
   if fast then Player.stepFrames = RUN_FRAMES end
+  if frames then Player.stepFrames = frames end
   return true
 end
 
@@ -942,7 +978,6 @@ local function finishStep(game)
   Player.jumpType = nil
   Player.spriteYOffset = 0
   Player.updateElevation(Player.cellX, Player.cellY)
-  Player.syncSavePosition(game)
 
   -- Surf landing / dismount state transitions
   local wasSurfing = Player.surfing or Player.dismounting
@@ -969,6 +1004,7 @@ local function finishStep(game)
       end)
     end
   end
+  Player.syncSavePosition(game)
 
   if ModRuntime.wants("world.stepped") then
     local Map = package.loaded["src.core.game3.map"]

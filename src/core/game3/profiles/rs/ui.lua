@@ -41,6 +41,8 @@ TextAliases.gText_NothingToCut = "OtherText_NothingToCut"
 TextAliases.gText_CantSurfHere = "OtherText_CantSurf"
 TextAliases.gText_AlreadySurfing = "OtherText_AlreadySurfing"
 TextAliases.gText_CantUseHere = "OtherText_CantUseThatHere"
+-- pokeruby/src/party_menu.c:250
+TextAliases.gText_InUseAlready_PM = "OtherText_CantUseThatHere"
 TextAliases.gText_NotEnoughHp = "OtherText_NotEnoughHP"
 TextAliases.gText_CantUseUntilNewBadge = "gOtherText_CantBeUsedBadge"
 -- pokeruby/data/field_move_scripts.inc:10

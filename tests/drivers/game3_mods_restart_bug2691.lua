@@ -83,7 +83,11 @@ return function(game)
     U.wait(1)
   end
   check(game.boot ~= nil, "boot reached")
+  local Runtime = require("src.mods.Runtime")
+  local safeMode = Runtime.safeMode
+  Runtime.safeMode = false
   try("title", function() titleOptions(game) end)
+  Runtime.safeMode = safeMode
   try("new_game", function() game:_handleBootAction({ action = "new_game", name = "RED" }) end)
   for _ = 1, 600 do
     if game.phase == "field" then break end

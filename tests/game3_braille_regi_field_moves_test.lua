@@ -26,6 +26,22 @@ package.loaded["src.core.game3.field_effects"] = {
   startRockSmash = function(_, _, _, done) calls.rock = calls.rock + 1; done() end,
   startFlash = function(done) calls.flash = calls.flash + 1; done() end,
 }
+local scriptVm = { ctx = {} }
+package.loaded["src.core.game3.scripting.space"] = {
+  vm = scriptVm,
+  scriptKey = function(name)
+    T.eq(name, "EventScript_UseFlash", "ordinary Emerald Flash resolves its profile ROM label")
+    return "fixture_flash"
+  end,
+  startScript = function(key)
+    T.eq(key, "fixture_flash", "ordinary Emerald Flash dispatches the resolved cached script")
+    T.check(scriptVm.ctx.fieldControlsLocked, "ordinary Emerald Flash gives the VM the field lock")
+    calls.flash, calls.flashScript = calls.flash + 1, key
+    scriptVm.ctx.fieldControlsLocked = nil
+    package.loaded["src.core.game3.field"].unlock()
+    return true
+  end,
+}
 
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("emerald")
@@ -82,6 +98,8 @@ local function testCase(case)
   T.eq(calls.puzzle, shouldOpen and 1 or 0, case.name .. " calls the door effect exactly when valid")
   T.eq(calls.rock, not case.puzzle and not steel and 1 or 0, case.name .. " preserves normal Rock Smash")
   T.eq(calls.flash, not case.puzzle and steel and 1 or 0, case.name .. " preserves normal Flash")
+  T.eq(calls.flashScript, not case.puzzle and steel and session.version == "emerald" and "fixture_flash" or nil,
+    case.name .. " dispatches the Emerald cached Flash script only for ordinary Emerald Flash")
   T.eq(Field._locks.default, nil, case.name .. " releases only the move lock")
   T.eq(Field.locked, case.namedLock == true, case.name .. " preserves named lock ownership")
   if shouldOpen then

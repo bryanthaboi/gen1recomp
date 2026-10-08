@@ -513,14 +513,18 @@ local function sortActors(a, b)
   return a.subpriority > b.subpriority
 end
 
+local drawOrderObjects = {}
+
 -- event_object_movement.c:7739-7754, scrcmd.c:1130
 local function applyDrawOrder(actors, underActors, overActors, camY)
   underActors = underActors or {}
   overActors = overActors or {}
   for i = #underActors, 1, -1 do underActors[i] = nil end
   for i = #overActors, 1, -1 do overActors[i] = nil end
+  for obj in pairs(drawOrderObjects) do drawOrderObjects[obj] = nil end
   for _, a in ipairs(actors) do
     local obj = a.eventObject
+    if obj then drawOrderObjects[obj] = a end
     if (obj and obj.fixedPriority) or a.fixedPriority then
       a.fixedPriority = true
       if obj and obj.fixedClass == nil then obj.fixedClass = a.priority or actorPriority(a) end
@@ -541,6 +545,11 @@ local function applyDrawOrder(actors, underActors, overActors, camY)
     else
       underActors[#underActors + 1] = a
     end
+  end
+  -- pokeemerald/src/field_effect_helpers.c:1365
+  for _, a in ipairs(actors) do
+    local linked = a.disguiseObject and drawOrderObjects[a.disguiseObject]
+    if linked then a.subpriority = (linked.subpriority - 1) % 256 end
   end
   table.sort(underActors, sortActors)
   table.sort(overActors, sortActors)
@@ -1787,6 +1796,7 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     for _, a in ipairs(underActors) do
       drawSingleActor(game, mapDef, a, camX, camY)
     end
+    if usedNative and opts.endUnderActors then opts.endUnderActors(drawNativeOverTiles) end
   end
 
   -- pret BG1: metatile top layer covers normal OW sprites (roofs, desk counters, trees).

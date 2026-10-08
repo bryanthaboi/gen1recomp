@@ -135,7 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: install luajit
-        run: sudo apt-get update && sudo apt-get install -y luajit
+        uses: ./.github/actions/setup-luajit
       - name: Switch offline selftest
         run: bash scripts/switch/selftest_build_switch.sh
       - name: verify_payload self-test
@@ -248,12 +248,6 @@ jobs:
         with:
           name: gen1recomp-xbox-uwp-payload
           path: .bazinga/work
-
-
-
-      - name: Rebuild Xbox UWP picker dependencies
-        shell: pwsh
-        run: ./scripts/xbox-uwp/rebuild_dependencies.ps1 -SkipAngle -SkipPackage
       - name: Build Xbox UWP package
         shell: bash
         run: |
@@ -446,6 +440,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+      - name: install ccache
+        run: sudo apt-get install -y --no-install-recommends ccache
+      - name: restore native build cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ccache
+          key: android-ccache-${{ github.run_id }}
+          restore-keys: android-ccache-
       - name: set up Android SDK
         uses: android-actions/setup-android@v4
         with:
@@ -465,7 +468,16 @@ jobs:
             "build-tools;36.0.0" \
             "ndk;25.2.9519653"
       - name: build Android APK
-        run: scripts/build_android.sh --version 0.0.0
+        env:
+          NDK_CCACHE: ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_COMPILERCHECK: content
+          CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros
+          CCACHE_MAXSIZE: 1G
+        run: |
+          ccache -z
+          scripts/build_android.sh --version 0.0.0
+          ccache -s
       - name: upload Android artifact
         uses: actions/upload-artifact@v7
         with:
@@ -557,7 +569,7 @@ jobs:
       # written to Lua 5.1 semantics, so CI must run the interpreter the
       # game actually ships with or it would green-light 5.4-only syntax.
       - name: install luajit
-        run: sudo apt-get update && sudo apt-get install -y luajit
+        uses: ./.github/actions/setup-luajit
 
       - name: install Pillow
         run: python3 -m pip install --upgrade pillow
@@ -661,7 +673,7 @@ jobs:
       # the MK305 dump check key-diffs shipped tables through luajit, and
       # modkit treats a missing interpreter as a fatal MK100 -- without
       # this install the gate would fail instead of failing open
-      - run: sudo apt-get update && sudo apt-get install -y luajit
+      - uses: ./.github/actions/setup-luajit
       - run: python3 -m pip install --upgrade pillow
 
       # constraint 1, enforced automatically: a committed mod that ships
@@ -690,16 +702,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: install luacheck
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y lua5.4 liblua5.4-dev luarocks
-          sudo luarocks install luacheck || sudo apt-get install -y lua-check
-          luacheck --version
+        uses: ./.github/actions/setup-luajit
+        with:
+          luacheck: 'true'
 
-      - name: luacheck gate (undefined globals, unreachable code)
-        run: ./scripts/lint.sh --gate
-
-      - name: luacheck full report (advisory)
-        continue-on-error: true
-        run: ./scripts/lint.sh
+      - name: luacheck (fails on undefined globals, unreachable code)
+        run: ./scripts/lint.sh --ci

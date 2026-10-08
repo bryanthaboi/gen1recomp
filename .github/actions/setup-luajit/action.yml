@@ -1,0 +1,43 @@
+name: set up LuaJIT
+description: Pinned LuaJIT 2.1 (the commit ports/uwp/third_party/manifest.json builds LOVE with), optionally with luacheck, cached across runs
+inputs:
+  luacheck:
+    description: also install luarocks and luacheck
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.local/luajit
+        key: luajit-${{ runner.os }}-${{ runner.arch }}-4886b676a698acc4bbdf54adfabb3e33a8c020e8-luarocks-3.12.2-luacheck-1.2.0-${{ inputs.luacheck }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        LUAJIT_COMMIT: 4886b676a698acc4bbdf54adfabb3e33a8c020e8
+        LUAROCKS_VERSION: 3.12.2
+        LUACHECK_VERSION: 1.2.0
+        WITH_LUACHECK: ${{ inputs.luacheck }}
+      run: |
+        set -euo pipefail
+        prefix="$HOME/.local/luajit"
+        work="$(mktemp -d)"
+        cd "$work"
+        curl -fsSL --retry 3 "https://github.com/LuaJIT/LuaJIT/archive/$LUAJIT_COMMIT.tar.gz" | tar -xz
+        make -C "LuaJIT-$LUAJIT_COMMIT" -j"$(nproc)" PREFIX="$prefix" >/dev/null
+        make -C "LuaJIT-$LUAJIT_COMMIT" install PREFIX="$prefix" >/dev/null
+        if [ "$WITH_LUACHECK" = "true" ]; then
+          curl -fsSL --retry 3 "https://luarocks.github.io/luarocks/releases/luarocks-$LUAROCKS_VERSION.tar.gz" | tar -xz
+          cd "luarocks-$LUAROCKS_VERSION"
+          ./configure --prefix="$prefix" --with-lua="$prefix" --with-lua-interpreter=luajit \
+            --with-lua-include="$prefix/include/luajit-2.1" >/dev/null
+          make >/dev/null
+          make install >/dev/null
+          "$prefix/bin/luarocks" install luacheck "$LUACHECK_VERSION" >/dev/null
+        fi
+    - shell: bash
+      run: |
+        echo "$HOME/.local/luajit/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/luajit/bin/luajit" -v
+        if [ "${{ inputs.luacheck }}" = "true" ]; then "$HOME/.local/luajit/bin/luacheck" --version; fi

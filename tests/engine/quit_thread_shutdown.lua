@@ -217,7 +217,13 @@ check(source("src/net/Fetch.lua"):find("registerProcessShutdown(Fetch.shutdown)"
 
 local returnBody = mainSrc:match("local function returnToLauncher%(opts%)(.-)\nend\n") or ""
 check(quitHook:find("returnToLauncher()", 1, true) ~= nil,
-      "love.quit routes a game window close to returnToLauncher on every platform")
+      "love.quit retains the desktop game window returnToLauncher route")
+local nxAt = quitHook:find('if osName == "NX" then', 1, true)
+local editorAt = quitHook:find("if editorMode and EditorApp.quit then", 1, true)
+local platformAt = quitHook:find("PlatformHooks.quitToLauncher", 1, true)
+check(nxAt ~= nil and editorAt ~= nil and platformAt ~= nil
+      and nxAt < editorAt and nxAt < platformAt,
+      "NX application exit precedes editor and platform quit vetoes")
 check(quitHook:find("inProcessReturn", 1, true) == nil,
       "no platform keeps the old in-process launcher swap")
 local joinAt = returnBody:find("endProcessOnce()", 1, true)

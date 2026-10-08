@@ -89,6 +89,7 @@ Movement.decodeRse = rseAction
 
 function Movement.decodeAction(b)
   b = tonumber(b) or 0
+  local rseFamily = require("src.core.game3.profile").family(nil) == "rse"
   if b == Movement.STEP_END or b == 0xFF then
     return { kind = "end" }
   end
@@ -104,10 +105,10 @@ function Movement.decodeAction(b)
   if b >= 0x14 and b <= 0x17 then
     return { kind = "jump", dir = DIR[b - 0x14], distance = 2 }
   end
-  -- Delay 1 / 2 / 4 / 8 / 16 frames (scaled up for host step rate).
+  -- pokeemerald/src/event_object_movement.c:5609
   if b >= 0x18 and b <= 0x1C then
-    local frames = ({ [0x18] = 2, [0x19] = 4, [0x1A] = 8, [0x1B] = 16, [0x1C] = 32 })[b]
-    return { kind = "sleep", frames = frames or 8 }
+    local frames = 2 ^ (b - 0x18)
+    return { kind = "sleep", frames = rseFamily and frames or frames * 2 }
   end
   -- Walk fast / in-place / faster walks → step or turn-in-place.
   if b >= 0x1D and b <= 0x20 then
@@ -116,13 +117,20 @@ function Movement.decodeAction(b)
     return { kind = "step", dir = DIR[b - 0x1D], fast = fast }
   end
   if b >= 0x21 and b <= 0x30 then
-    return { kind = "turn", dir = DIR[(b - 0x21) % 4] }
+    -- pokeemerald/src/event_object_movement.c:5811
+    local frames = rseFamily and b >= 0x2D and 4 or nil
+    return { kind = "turn", dir = DIR[(b - 0x21) % 4], frames = frames }
+  end
+  -- pokeemerald/src/event_object_movement.c:5827
+  if rseFamily and b >= 0x31 and b <= 0x34 then
+    return { kind = "step", dir = DIR[b - 0x31], frames = 6 }
   end
   if b >= 0x35 and b <= 0x38 then
     return { kind = "step", dir = DIR[b - 0x35] }
   end
   if b >= 0x39 and b <= 0x3C then
-    return { kind = "step", dir = DIR[b - 0x39] }
+    -- pokeemerald/src/event_object_movement.c:5956
+    return { kind = "step", dir = DIR[b - 0x39], frames = rseFamily and 2 or nil }
   end
   -- pokefirered/src/event_object_movement.c:5333 StartRunningAnim (MOVE_SPEED_FAST_1)
   if b >= 0x3D and b <= 0x40 then
