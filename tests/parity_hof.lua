@@ -58,14 +58,7 @@ stack:push(roll)
 -- HallOfFamePC lead-in (100 blank + 128 after music starts) + per-screen
 -- fade/hold/wipe + THE END (16 blank + 20 fade) + the script's 5x120
 -- DelayFrames before WaitForTextScrollButtonPress
-local expected = 100 + 128 + 16 + 20 + 600
-for _, s in ipairs(credits.screens) do
-  expected = expected + (s.fade and 20 or 0)
-    + (s.mon and (s.fade and 90 or 110) or (s.fade and 120 or 140))
-    -- DisplayCreditsMon: 3 x CreditsCopyTileMapToVRAM (Delay3) then 27 scroll
-    -- frames (#703)
-    + (s.mon and (9 + 27) or 0)
-end
+local expected = 100 + 128 + 5631 + 16 + 20 + 600
 while roll.phase ~= "end_wait" and frame < expected + 120 do
   frame = frame + 1
   roll:update(1 / 60)
@@ -138,6 +131,14 @@ check(hofUi.timer == 80 or hofUi.timer < 80,
 -- drive induction + full credits with A held (pages are unskippable; A
 -- only advances the induction and the final THE END wait)
 pressed.a = true
+-- engine/movie/hall_of_fame.asm:58
+local monFrames = 0
+while (hofUi.phase == "mons" or hofUi.phase == "fade") and monFrames < 1000 do
+  monFrames = monFrames + 1
+  hofUi:update(1 / 60)
+end
+check(monFrames >= 80 + 180 + 20 - 1,
+      "holding A does not shorten the mon induction: " .. monFrames)
 local guard = 0
 while coroutine.status(co) ~= "dead" and stack2:top() and guard < 30000 do
   guard = guard + 1

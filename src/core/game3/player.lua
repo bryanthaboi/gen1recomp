@@ -17,6 +17,8 @@ local Player = {}
 local CELL = 16
 local WALK_FRAMES = 16
 local RUN_FRAMES = 8
+-- pokefirered/src/event_object_movement.c:6163
+local WALK_IN_PLACE_SLOW_FRAMES = 32
 -- pokefirered/src/event_object_movement.c:9029 UpdateRunSlowAnim
 local RUN_SLOW_FRAMES = 11
 local BIKE_FRAMES = 4
@@ -532,6 +534,31 @@ function Player.fieldTriggers(game, dir)
     or stepTriggers(game, dir, Player.facing, Player.cellX + d[1], Player.cellY + d[2])
 end
 
+-- pokefirered/src/field_player_avatar.c:1005 PlayCollisionSoundIfNotFacingWarp
+local function playCollisionSoundIfNotFacingWarp(dir)
+  local beh = Collision.behavior(Player.cellX, Player.cellY)
+  if Collision.arrowWarpDir(beh) == dir then return end
+  if Collision.isStairWarpBehavior(beh) and Collision.stairWarpDir(beh) == dir then
+    return
+  end
+  if dir == "up"
+      and Collision.isWarpDoor(Collision.behavior(Player.cellX, Player.cellY - 1)) then
+    return
+  end
+  local Audio = lazyReq("src.core.game3.audio")
+  if Audio.playSe then Audio.playSe(lazyReq("src.core.game3.se_ids").SE_WALL_HIT) end
+end
+
+-- pokefirered/src/field_player_avatar.c:878 PlayerOnBikeCollide
+-- pokefirered/src/field_player_avatar.c:884 PlayerNotOnBikeCollide
+local function playerCollide(dir)
+  playCollisionSoundIfNotFacingWarp(dir)
+  Player.startAction({
+    frames = Player.biking and WALK_FRAMES or WALK_IN_PLACE_SLOW_FRAMES,
+    walk = "normal",
+  })
+end
+
 function Player.tryMove(dir, game, run)
   if Player.moving or Player.boulderPush then return nil end
   if not DELTA[dir] then return nil end
@@ -624,6 +651,8 @@ function Player.tryMove(dir, game, run)
         and Collision.tryConnection(game, Player.cellX, Player.cellY, dir, run) then
       return "connection"
     end
+    -- pokefirered/src/field_player_avatar.c:504
+    playerCollide(dir)
     return "blocked", why
   end
   local RG = package.loaded["src.core.game3.rotating_gate"]
@@ -777,6 +806,11 @@ function Player.forceStep(dir, onDone)
   Player.facing = dir or Player.facing
   Player._onStepDone = onDone
   beginStep(Player.cellX + d[1], Player.cellY + d[2], false, false)
+  -- pokeemerald/src/field_screen_effect.c:699
+  if Player.biking then
+    Player.stepFrames = WALK_FRAMES
+    Player.running = false
+  end
   return true
 end
 

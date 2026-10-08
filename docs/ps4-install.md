@@ -8,7 +8,8 @@ runtime in one installable package. Install it, then import your own legal
 > set that up.
 
 PS4 port by [Tomas Morello](https://github.com/tomasmorello), on
-[LÖVE for PS4](https://github.com/tomasmorello/love-ps4) (LÖVE 11.5).
+[LÖVE for PS4](https://github.com/tomasmorello/love-ps4) (LÖVE 11.5), built from
+the [bryanthaboi/love-ps4](https://github.com/bryanthaboi/love-ps4) fork.
 
 **Tested on real hardware:** Pokemon Red, Blue and Yellow (ROM import, play,
 save and load, mods, returning to the launcher). **Not tested yet:** Gold,
@@ -25,6 +26,11 @@ Silver, Crystal, FireRed and LeafGreen. They may work; reports are welcome.
 Updating: install the newer `.pkg` the same way; it installs over the old one.
 Saves, imported ROMs and mods live in `/data/love/pokemon-love2d/`, outside the
 package. **Do not delete that folder** when updating.
+
+If FTP or a file manager cannot open `/data/love/cache` or
+`/data/love/pokemon-love2d` (installs from 0.3.63 and earlier created them
+locked), install the current package and launch it once: it unlocks the whole
+`/data/love` folder on first start.
 
 ## 2. Import your ROM
 
@@ -70,4 +76,5 @@ scripts/build_ps4.sh --fetch --fused --version X.Y.Z
 
 Needs the OpenOrbis PS4 Toolchain v0.5.4 packaging tools (`OO_PS4_TOOLCHAIN`)
 and bash 4+. The runtime is downloaded from a pinned LÖVE for PS4 release and
-verified against `scripts/ps4/love-ps4-runtime.sha256`.
+verified against `scripts/ps4/love-ps4-runtime.sha256`, which names the repo
+(`bryanthaboi/love-ps4`) and tag to fetch.

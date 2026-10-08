@@ -62,6 +62,16 @@ local function stage()
   return Anim.stage()
 end
 
+local TRAINER_STEVEN_PARTNER = 3075
+
+-- pokeemerald/src/battle_intro.c:113
+function IntroSeq.win0Rows(f)
+  if f < 1 then return 80, 80 end
+  local top = math.max(48, 81 - f)
+  if f > 33 then top = math.max(0, 48 - 4 * (f - 33)) end
+  return top, 161 - top
+end
+
 local function present_of(key)
   if type(key) ~= "number" then return Anim.present(key) end
   return Anim.present(key) or (key < 2 and Anim.present(State.sideOf(key))) or nil
@@ -385,6 +395,11 @@ function IntroSeq.begin(st, opts)
   local s = stage()
   s.slide = 0
   s.slideDone = false
+  -- pokeemerald/src/battle_main.c:636
+  s.win0 = nil
+  if not (st.partner and st.partner.trainerId ~= TRAINER_STEVEN_PARTNER) then
+    s.win0 = { 80, 80 }
+  end
   s.trainer.player.visible = false
   s.trainer.enemy.visible = false
   s.ball.visible = false
@@ -598,12 +613,17 @@ local function run_step(step)
     end
     Anim.tweenStage(frames, function(u)
       s.slide = u
+      if s.win0 then
+        local top, bottom = IntroSeq.win0Rows(math.floor(u * frames + 0.5))
+        if top <= 0 then s.win0 = nil else s.win0[1], s.win0[2] = top, bottom end
+      end
       if u * frames >= unlockAt then
         s.slideDone = true
         start_sprite_slide()
       end
     end, function()
       s.slide = 1
+      s.win0 = nil
       s.slideDone = true
       start_sprite_slide()
       bgDone = true

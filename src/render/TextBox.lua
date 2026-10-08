@@ -141,6 +141,8 @@ function TextBox.new(game, text, onDone, opts)
   -- engine/events/vending_machine.asm:4
   self.moneyOnShown = opts and opts.moneyOnShown
   self.auto = opts and opts.auto
+  -- home/print_text.asm:8
+  self.noLetterDelay = opts and opts.noLetterDelay
   self.stay = opts and opts.stay
   -- engine/events/hidden_events/cinnabar_gym_quiz.asm:119
   self.preSound = opts and opts.preSound
@@ -683,6 +685,7 @@ function step(self, dt)
   local delay = NAME_DELAYS[rawSpeed] or rawSpeed or 3
   if delay ~= 1 and delay ~= 3 and delay ~= 5 then delay = 3 end
   if input:isDown("a") or input:isDown("b") then delay = 1 end
+  if self.noLetterDelay then delay = 0 end
   self.charTimer = (self.charTimer or 0) + 1
   while self.charTimer >= delay do
     self.charTimer = self.charTimer - delay

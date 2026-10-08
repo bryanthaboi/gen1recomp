@@ -1,5 +1,3 @@
--- Party menu — pret PARTY_LAYOUT_SINGLE (windows + FONT_SMALL + OAM sprites).
-
 local Stack = require("src.ui.game3.stack")
 local Chrome = require("src.ui.game3.chrome")
 local Window = require("src.ui.game3.window")
@@ -1183,6 +1181,7 @@ end
 
 function PartyMenu.showMessage(text, onDismiss)
   local pages = TextIR.splitPages(tostring(text), true)
+  PartyMenu._messageStd = false
   local function show(i)
     PartyMenu.mode = "message"
     PartyMenu._messageText = pages[i]
@@ -1193,6 +1192,12 @@ function PartyMenu.showMessage(text, onDismiss)
     end
   end
   show(1)
+end
+
+-- pokeemerald/src/party_menu.c:2459
+function PartyMenu.showStdMessage(text, onDismiss)
+  PartyMenu.showMessage(text, onDismiss)
+  PartyMenu._messageStd = true
 end
 
 local function show_rom_message(key, vars, onDismiss)
@@ -1902,7 +1907,9 @@ function PartyMenu.handleInput(input)
           local res = FieldMoves.fromMenu(act, ctx)
           if not res or not res.ok then
             se("SE_SELECT") -- pokefirered/src/party_menu.c:3910
-            PartyMenu.showMessage((res and res.text) or RomText.plain("gText_CantUseHere"), function()
+            -- pokeemerald/src/party_menu.c:3727
+            local show = (res and res.badge) and PartyMenu.showMessage or PartyMenu.showStdMessage
+            show((res and res.text) or RomText.plain("gText_CantUseHere"), function()
               PartyMenu.mode = "list"
             end)
           else
@@ -2864,7 +2871,13 @@ function PartyMenu.draw()
       end
     end
   elseif PartyMenu.mode == "message" then
-    if p and p.drawMessage then p.drawMessage(PartyMenu._messageText) else
+    if p and p.drawMessage then p.drawMessage(PartyMenu._messageText)
+    elseif PartyMenu._messageStd then
+      -- pokeemerald/src/data/party_menu.h:419
+      Window.stdFrame(Window.template(1, 17, 21, 2))
+      FrlgFont.draw(PartyMenu._messageText or "", 1 * 8 + ins.msgX, 17 * 8 + ins.msgY, { colors = FrlgFont.COLOR.NORMAL })
+      PartyChrome.drawCancelButton(184, 136, false)
+    else
     Window.stdFrame(Window.template(1, 15, 28, 4))
     if PartyMenu._messageText then
       local wrapped = FrlgFont.wrap(PartyMenu._messageText, 216)

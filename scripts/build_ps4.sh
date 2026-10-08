@@ -23,9 +23,8 @@
 #             OpenOrbis PS4 Toolchain v0.5.4 (bin/linux or bin/macos with
 #             PkgTool.Core and create-gp4), plus bash 4+.
 #
-# The runtime is LÖVE 11.5 for PS4 by Tomas Morello
-# (https://github.com/tomasmorello/love-ps4), pinned the way love-nx is pinned
-# for the Switch.
+# The runtime is LÖVE 11.5 for PS4 by Tomas Morello, built from the
+# bryanthaboi/love-ps4 fork and pinned the way love-nx is pinned for the Switch.
 #
 # Non-goals: installing on a console, FTP uploads, ROM handling.
 set -euo pipefail
@@ -61,10 +60,11 @@ manifest_field() { # manifest_field <key>
   printf '%s' "$v"
 }
 TAG="$(manifest_field tag)"
+REPO="$(manifest_field repo)"
 ZIP_NAME="love-ps4-${TAG#v}-runtime.zip"
 RUNTIME_DIR="$ROOT/.bazinga/love-ps4/$TAG"
 ZIP="$RUNTIME_DIR/$ZIP_NAME"
-BASE_URL="${GEN1_LOVE_PS4_BASE_URL:-https://github.com/tomasmorello/love-ps4/releases/download/$TAG}"
+BASE_URL="${GEN1_LOVE_PS4_BASE_URL:-https://github.com/$REPO/releases/download/$TAG}"
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'

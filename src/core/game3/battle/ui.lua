@@ -74,7 +74,7 @@ Ui._partnerAction = nil
 -- pokefirered/src/battle_script_commands.c:5149
 local BATTLE_YESNO = { left = 24, top = 9, style = "battle" }
 
--- pret sBattlerCoords (singles) — CreateSprite CENTER before pic y_offset
+-- pokeemerald/src/battle_anim_mons.c:38
 local ENEMY_MON = { x = 176, y = 40 }
 local PLAYER_MON = { x = 72, y = 80 }
 
@@ -2835,6 +2835,15 @@ function Ui.draw(w, h)
     if st and not dbl and Ui.litHealthboxShown() then
       Healthbox.draw("player", Anim.shownBattler("player", st.player), { oy = Ui.bounceOffset("hb", 0) })
     end
+  end
+
+  -- pokeemerald/src/battle_main.c:631
+  local win0 = stage and stage.win0
+  if win0 then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", 0, 0, w, win0[1])
+    love.graphics.rectangle("fill", 0, win0[2], w, h - win0[2])
+    love.graphics.setColor(1, 1, 1, 1)
   end
 
   local BagMenu = package.loaded["src.ui.game3.bag_menu"]

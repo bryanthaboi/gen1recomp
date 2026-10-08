@@ -9,15 +9,15 @@
 --   CRED_TEXT_MON       text appears at once, hold 110, mon wipe
 --   CRED_TEXT_FADE      fade in, hold 120, next screen replaces the text
 --   CRED_TEXT           text appears at once, hold 140
--- The mon wipe is DisplayCreditsMon: three CreditsCopyTileMapToVRAM copies
--- (9 frames of Delay3, text still up), then the middle band scrolls left 8px
--- per frame for 27 frames (ScrollCreditsMonLeft x7 then x20) while the next
--- CreditsMons entry crosses right-to-left as a black silhouette
+-- The mon wipe is DisplayCreditsMon: LoadFrontSpriteByMonIndex and three
+-- CreditsCopyTileMapToVRAM copies (text still up), then the middle band
+-- scrolls left 8px per frame for 27 frames (ScrollCreditsMonLeft x7 then
+-- x20) while the next CreditsMons entry crosses right-to-left as a black silhouette
 -- (BGP %11111100), leaving the band blank; BGP is left at %11000000, which
 -- is why every post-wipe screen is a FADE variant.  CRED_COPYRIGHT
 -- composes the Nintendo / Creatures inc. / GAME FREAK inc. block on its
 -- screen (LoadCopyrightTiles: rows 7/9/11 from column 2).  CRED_THE_END
--- waits 16 frames on the blank band, shows the interleaved THE END
+-- waits on the blank band, shows the interleaved THE END
 -- letters at tile (4,8), and runs one more FadeInCredits (a no-op: the
 -- letters are color 3, so they are black from the start).
 --
@@ -47,20 +47,20 @@ local FADE_STEPS = { 0, 1 / 3, 2 / 3, 1 }
 local FADE_STEP_FRAMES = 5
 local FADE_FRAMES = FADE_STEP_FRAMES * #FADE_STEPS -- 20
 
--- DelayFrames after each screen's text is up (Credits .next1/.next2)
-local HOLD_FADE_MON = 90
-local HOLD_MON = 110
-local HOLD_FADE = 120
-local HOLD_TEXT = 140
-
-local WIPE_FRAMES = 27 -- ScrollCreditsMonLeft: 7 + 20 calls, 8px/frame
--- DisplayCreditsMon runs three CreditsCopyTileMapToVRAM calls (vBGMap0+$c,
--- vBGMap0, vBGMap1) before the first scroll, and each one ends in `jp Delay3`
--- (home/palettes.asm), so the credits text sits still for 9 more frames on
--- every mon screen.  Dropping them ran the 15 mon screens 135 frames short and
--- brought THE END up 2.2s early against a credits theme whose length is fixed
--- by the ROM program (Music_Credits is 5880 frames and does not loop), which
--- is what made the song look like it overran the roll (#703).
+-- engine/movie/credits.asm:220
+local TIMING_RB = {
+  holdFadeMon = 90, holdMon = 110, holdFade = 120, holdText = 140,
+  theEndBlank = 16, -- engine/movie/credits.asm:246
+  wipe = 27, -- engine/movie/credits.asm:82
+  monPrep = { 58, 61, 57, 52, 37, 49, 56, 44, 49, 54, 36, 49, 55, 59, 60 },
+}
+-- pokeyellow engine/movie/credits.asm:248
+local TIMING_YELLOW = {
+  holdFadeMon = 102, holdMon = 122, holdFade = 132, holdText = 152,
+  theEndBlank = 24, -- pokeyellow engine/movie/credits.asm:276
+  wipe = 28, -- pokeyellow engine/movie/credits.asm:86
+  monPrep = { 76, 75, 70, 76, 47, 64, 75, 53, 62, 78, 44, 63, 70, 74, 74, 67 },
+}
 local MON_PREP_FRAMES = 9
 
 -- LoadCopyrightTiles (engine/movie/title.asm CopyrightTextString): tile
@@ -118,6 +118,7 @@ function Credits.new(game, onDone, onTheEnd)
   self.phase = "white"
   self.timer = 100 -- HallOfFamePC: ClearScreen + 100 DelayFrames
   self.shade = 0
+  self.monsShown = 0
 
   -- assets (all optional; missing ones fall back to Font glyphs)
   self.endImg = tryImage(self.theEnd and self.theEnd.path)
@@ -145,6 +146,7 @@ function Credits.new(game, onDone, onTheEnd)
   self.yellowCopy = GameVersion.isYellow()
     or (title and title.layout == "yellow_pikachu")
   self.copyPrefix = self.yellowCopy and COPY_PREFIX_YELLOW or COPY_PREFIX_RB
+  self.timing = GameVersion.isYellow() and TIMING_YELLOW or TIMING_RB
   self.nineImg = self.yellowCopy and tryImage(
     title and title.nine and title.nine.path
       or "assets/generated/title/nine.png") or nil
@@ -170,8 +172,8 @@ function Credits:nextScreen()
   local screen = self.screens[self.index]
   self.screen = screen
   if not screen then
-    self.phase = "end_blank" -- .showTheEnd: ld c, 16 on the blank band
-    self.timer = 16
+    self.phase = "end_blank"
+    self.timer = self.timing.theEndBlank
     return
   end
   if screen.fade then
@@ -182,7 +184,7 @@ function Credits:nextScreen()
     -- no fade: BGP was left black by the previous screen's fade
     self.phase = "hold"
     self.shade = 1
-    self.timer = screen.mon and HOLD_MON or HOLD_TEXT
+    self.timer = screen.mon and self.timing.holdMon or self.timing.holdText
   end
 end
 
@@ -218,19 +220,21 @@ function Credits:update(dt)
   elseif self.phase == "fade" then
     self.shade = 1
     self.phase = "hold"
-    self.timer = self.screen.mon and HOLD_FADE_MON or HOLD_FADE
+    self.timer = self.screen.mon and self.timing.holdFadeMon
+      or self.timing.holdFade
   elseif self.phase == "hold" then
     if self.screen.mon then
       -- the text stays up through DisplayCreditsMon's VRAM copies; the
       -- silhouette only starts moving once ScrollCreditsMonLeft does
       self.phase = "mon_prep"
-      self.timer = MON_PREP_FRAMES
+      self.monsShown = self.monsShown + 1
+      self.timer = self.timing.monPrep[self.monsShown] or MON_PREP_FRAMES
     else
       self:nextScreen()
     end
   elseif self.phase == "mon_prep" then
     self.phase = "wipe"
-    self.timer = WIPE_FRAMES
+    self.timer = self.timing.wipe
     self.monImg, self.monTint = self:monSprite(self.screen.mon)
   elseif self.phase == "wipe" then
     self.monImg = nil
@@ -357,7 +361,7 @@ function Credits:draw()
   elseif self.phase == "wipe" then
     -- ScrollCreditsMonLeft: the middle band scrolls left 8px/frame while
     -- the silhouette enters from the right edge one screen behind it
-    local s = (WIPE_FRAMES - self.timer) * 8
+    local s = (self.timing.wipe - self.timer) * 8
     self:drawPage(self.screen, -s, 1)
     self:drawMon(160 - s)
   elseif self.phase == "end_fade" or self.phase == "end_hold"
