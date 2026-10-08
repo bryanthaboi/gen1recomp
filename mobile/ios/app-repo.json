@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.65",
+          "date": "2026-10-08",
+          "size": 56251113,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.65/gen1recomp++-0.3.65-ios.ipa",
+          "localizedDescription": "sue me ? ???? no... SUE U!\n\n## Issues closed\n\n- #2768 Broken palette\n- #2770 Dialogue inconsistencies\n- #2771 Incomplete/broken using field moves animation\n- #2772 [Modding API] Wrong pokemon.sprite callback value (\"kind\") in Summary screen\n- #2773 [Save Editor] Edit BP currency in Emerald\n- #2775 [Ruby] Berries not growing\n- #2778 MY EYES! MY EYES!\n- #2779 Player reflection shows the wrong frame while fishing (RSE and FRLG)\n- #2780 Missing battle animation and sound effect for Gen 2\n- #2781 No fishing animation while surfing or cycling (RSE and FRLG)\n- #2782 Surfing.. on land?\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.64",
           "date": "2026-10-08",
           "size": 56250108,
