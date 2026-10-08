@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.66",
+          "date": "2026-10-08",
+          "size": 56251569,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.66/gen1recomp++-0.3.66-ios.ipa",
+          "localizedDescription": "shiddy doo\n\n## Issues closed\n\n- #2784 Issue entering buildings while riding a bike\n- #2785 Able to fast-forward through Hall of Fame\n- #2786 Credits roll too fast\n- #2787 No bumping sfx\n- #2789 battle transition incomplete\n- #2790 \"Can't use that here.\" dialogue inconsistency\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.65",
           "date": "2026-10-08",
           "size": 56251113,
