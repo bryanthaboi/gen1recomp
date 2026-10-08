@@ -30,6 +30,9 @@ function M.draw(S, Kit, x, y, w, h)
   if Gen.hasVolcanicAsh(S.save, S.version) then
     fields[#fields + 1] = { "volcanicAsh", "Volcanic Ash", Gen.volcanicAsh(S.save, S.version) }
   end
+  if Gen.hasBattlePoints(S.save, S.version) then
+    fields[#fields + 1] = { "battlePoints", "Battle Points", Gen.battlePoints(S.save, S.version) }
+  end
   local contentH = S._trainerHeight or 0
   S.trainerScroll = Kit.scrollPixels(x, y, w, h, S.trainerScroll or 0, contentH)
   Kit.pushClip(x, y, w, h)
@@ -38,7 +41,8 @@ function M.draw(S, Kit, x, y, w, h)
   for _, f in ipairs(fields) do
     if f[1] ~= "name" then
       local hi = ({ id = 65535, secretId = 65535, money = 999999, coins = 9999, buenaPoints = 30,
-        berryPowder = Gen.BERRY_POWDER_MAX, volcanicAsh = Gen.VOLCANIC_ASH_MAX })[f[1]]
+        berryPowder = Gen.BERRY_POWDER_MAX, volcanicAsh = Gen.VOLCANIC_ASH_MAX,
+        battlePoints = Gen.BATTLE_POINTS_MAX })[f[1]]
       cy = cy
         + Touch.value(
           S,
@@ -54,6 +58,7 @@ function M.draw(S, Kit, x, y, w, h)
               or f[1] == "buenaPoints" and "Blue Card points for Buena's prizes. Choose 0 to 30."
               or f[1] == "berryPowder" and "Powder from Berry Crush, spent at the Berry Powder shop. Choose 0 to 99999."
               or f[1] == "volcanicAsh" and "Ash collected in the Soot Sack, spent at the Glass Workshop. Choose 0 to 9999."
+              or f[1] == "battlePoints" and "Battle Frontier points, spent at the Exchange Service Corner. Choose 0 to 9999."
               or "Part of your trainer identity. Changing it can affect who owns a Pokémon.",
           },
           cx,

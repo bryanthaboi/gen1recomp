@@ -1,5 +1,5 @@
 -- Game3 map loader. Owns Sevii enter: player, collision, EventObjects, Space scripts.
--- Talk/interact is Field.interact. Do not call host setMap/warpToMapId here —
+-- Talk/interact is Field.interact. Do not call host setMap/warpToMapId here:
 -- MAPSETUP.WARP races ON_FRAME and wipes applymovement tracks (Bill intro).
 
 local MapIds = require("src.core.game3.map_ids")
@@ -683,13 +683,6 @@ function Map.load(mod, game, mapId, opts)
     Collision.clear()
   end
 
-  if not opts.seamless then
-    Map.applyInitialAvatar(session, def, savedAvatar, previousAvatar)
-    if session then
-      session._savedAvatar = nil
-      session.facing = Player.facing
-    end
-  end
   Player.syncSavePosition(game)
 
   Map._warmPairs = not opts.seamless or nil
@@ -823,6 +816,15 @@ function Map.load(mod, game, mapId, opts)
     end
   elseif Space and Space.onMapEnter then
     Space.onMapEnter(mod or Runtime._mod, mapId, game, world)
+  end
+  -- pokeemerald/src/overworld.c:2172
+  if not opts.seamless then
+    Map.applyInitialAvatar(session, def, savedAvatar, previousAvatar)
+    if session then
+      session._savedAvatar = nil
+      session.facing = Player.facing
+    end
+    Player.syncSavePosition(game)
   end
   -- pokeemerald/src/overworld.c:870
   if session and not opts.seamless and require("src.core.game3.capabilities").has(session, "tv")

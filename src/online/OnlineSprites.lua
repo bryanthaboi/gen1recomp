@@ -172,7 +172,7 @@ local function gen3Front(version, mon)
   end }
   Pokemon._front, Pokemon._spinda, Pokemon._spindaPics = {}, nil, {}
   local ok, entry = pcall(Pokemon.frontPic, gen3PicSpecies(mon), nil,
-    Pokemon.isShiny(mon), mon.personality)
+    Pokemon.isShiny(mon), mon.personality, "online")
   Pokemon._cache, Pokemon._front, Pokemon._spinda, Pokemon._spindaPics =
     was[1], was[2], was[3], was[4]
   return ok and type(entry) == "table" and entry.image or false

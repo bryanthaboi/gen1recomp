@@ -424,7 +424,7 @@ function PcChrome.drawLeftDataPanel(hoveredMon, frame, mosaic)
 
   -- pokefirered/src/pokemon_storage_system_data.c:1034, :1057 MON_DATA_SPECIES_OR_EGG
   local sp = Pokemon.speciesOrEgg(hoveredMon)
-  local sprite = Pokemon.monFrontPic(hoveredMon)
+  local sprite = Pokemon.monFrontPic(hoveredMon, nil, "box")
   if sprite and sprite.image then
     love.graphics.setColor(1, 1, 1, 1)
     local sw, sh = sprite.image:getDimensions()

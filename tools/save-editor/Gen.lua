@@ -478,6 +478,28 @@ function Gen.setBerryPowder(save, amount, version)
   return true
 end
 
+Gen.BATTLE_POINTS_MAX = 9999 -- pokeemerald/include/constants/battle_frontier.h:48
+
+function Gen.hasBattlePoints(save, version)
+  if type(save) ~= "table" or Gen.of(save, version) ~= 3 then return false end
+  return versionOf(save, version) == "emerald"
+end
+
+-- pokeemerald/include/global.h:449
+function Gen.battlePoints(save, version)
+  if not Gen.hasBattlePoints(save, version) or type(save.frontier) ~= "table" then return 0 end
+  return tonumber(save.frontier.battlePoints) or 0
+end
+
+function Gen.setBattlePoints(save, amount, version)
+  if not Gen.hasBattlePoints(save, version) or type(amount) ~= "number" or amount ~= amount
+      or amount < 0 or amount > Gen.BATTLE_POINTS_MAX or amount ~= math.floor(amount) then return false end
+  if save.frontier ~= nil and type(save.frontier) ~= "table" then return false end
+  save.frontier = save.frontier or {}
+  save.frontier.battlePoints = amount
+  return true
+end
+
 Gen.VOLCANIC_ASH_MAX = 9999 -- pokeemerald/src/field_tasks.c:773
 
 function Gen.hasVolcanicAsh(save, version)

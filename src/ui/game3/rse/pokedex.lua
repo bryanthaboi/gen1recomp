@@ -313,7 +313,7 @@ local function monPic(s, dexNum)
   -- pokeemerald/src/pokedex.c:4654
   if sp == C.species.byName.SPECIES_UNOWN then personality = tonumber(dex.unownPersonality) or 0 end
   if sp == C.species.byName.SPECIES_SPINDA then personality = tonumber(dex.spindaPersonality) or 0 end
-  local entry = P.frontPic(P.picSpecies(sp, personality), nil, false, personality)
+  local entry = P.frontPic(P.picSpecies(sp, personality), nil, false, personality, "dex")
   return entry and entry.image or nil
 end
 
@@ -2188,7 +2188,7 @@ function tasks.caught(s)
     s.state = 4
   elseif st == 4 then
     local img = pokemon().frontPic(pokemon().picSpecies(Pokedex.speciesOf(c.dexNum), c.personality or 0), nil, false,
-      c.personality or 0)
+      c.personality or 0, "dex")
     c.mon = { dexNum = c.dexNum, img = img and img.image, x = MON_PAGE_X, y = MON_PAGE_Y, x2 = 0, y2 = 0, prio = 0,
       affine = false, scaleY = 1 }
     s.monSprites = { [0] = c.mon }
@@ -2238,7 +2238,7 @@ function tasks.caughtExit(s)
     -- pokeemerald/src/pokedex.c:4069
     local species = Pokedex.speciesOf(c.dexNum)
     local pic = pokemon().frontPic(pokemon().picSpecies(species, c.personality or 0), nil, c.shiny,
-      c.personality or 0)
+      c.personality or 0, "dex")
     c.mon.img = assert(pic and pic.image, "caught mon palette missing from the cache")
     Pokedex.Host._s = nil
     Stack.pop(Pokedex.ID)

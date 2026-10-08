@@ -120,7 +120,7 @@ eq(stops, 0, "forced bridge keeps Surf music")
 setup("emerald", { water, shore }, true, 1)
 check(Player.forcedStep("right", 8), "forced shore step accepted")
 check(Player.dismounting and Player.jumping, "forced shore starts dismount")
-eq(Player.stepFrames, 16, "forced shore retains dismount timing")
+eq(Player.stepFrames, 32, "forced shore retains dismount timing")
 settle()
 check(not Player.surfing, "forced shore finishes on foot")
 

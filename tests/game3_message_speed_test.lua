@@ -27,7 +27,13 @@ local function exercise(version, speed, text)
   Hud.update(game, 1 / 60)
   T.eq(Message._page, 1, version .. " opening A preserves first paragraph at option " .. speed)
   T.eq(Message.currentPage(), first, "opening A keeps first paragraph text")
-  T.check(Message.isWaiting(), "opening A finishes first paragraph reveal")
+  T.check(Message.isTyping() and Message._revealed == 1, "opening A leaves first paragraph typing")
+  T.check(not Message._spedUp, "opening A does not arm the print speed-up")
+  for _ = 1, 2000 do
+    if Message.isWaiting() then break end
+    Message.tick()
+  end
+  T.check(Message.isWaiting(), "first paragraph finishes printing")
   Message.advance()
   T.eq(Message._page, 2, "fresh A advances exactly once")
   T.check(Message.isTyping(), "second paragraph starts typing")
@@ -45,6 +51,25 @@ for _, version in ipairs({ "firered", "leafgreen", "emerald" }) do
     T.eq(Message._revealed, 1, version .. " no-input glyph interval " .. delay)
     Message.tick()
     T.eq(Message._revealed, 2, version .. " next glyph after " .. delay .. " ticks")
+    Message.showStay("ABCDEFGH")
+    local held = {
+      wasPressed = function() return false end,
+      isDown = function(_, key) return key == "a" end,
+    }
+    Message.tick()
+    Hud.update({ input = held }, 1 / 60)
+    Message.tick()
+    Message.tick()
+    T.eq(Message._revealed, delay > 1 and 1 or 3, version .. " held A without a fresh press keeps option " .. speed .. " pacing")
+    if delay > 1 then
+      Hud.update(game, 1 / 60)
+      T.check(Message._spedUp, version .. " fresh A during a glyph delay arms the speed-up")
+      Message.tick()
+      T.eq(Message._revealed, 2, version .. " fresh A skips the rest of that glyph delay")
+      Hud.update({ input = held }, 1 / 60)
+      Message.tick()
+      T.eq(Message._revealed, 3, version .. " held A after the fresh press prints a glyph per frame")
+    end
     Message.showStay(ir, { speed = 0 })
     T.check(Message.isWaiting() and Message._revealed == Message._total,
       version .. " explicit speed zero stays instant at option " .. speed)

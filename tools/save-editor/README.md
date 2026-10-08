@@ -94,6 +94,10 @@ It accepts whole numbers from 0 to 9999 and supports Undo/Redo. Edits update
 `VAR_ASH_GATHER_COUNT`, the Soot Sack currency spent at the Glass Workshop;
 Lua saves and cartridge `.sav` export preserve that same variable. Other
 editions do not show the row.
+Emerald also shows Battle Points in Trainer and Items / Wallet: the Battle
+Frontier balance spent at the Exchange Service Corner. It accepts whole numbers
+from 0 to 9999 and supports Undo/Redo; the `.sav` export writes the Frontier
+`battlePoints` word and leaves the trainer card's earned-BP total alone.
 
 **Undo/Redo** and Ctrl/Cmd+Z (Shift+Z to redo) retain up to eight session snapshots.
 Snapshots preserve unknown metadata. Saving establishes the clean history point;

@@ -504,7 +504,7 @@ local function draw_confetti()
 end
 
 local function draw_mon(s, dim)
-  local pic = Pokemon.monFrontPic(s.mon)
+  local pic = Pokemon.monFrontPic(s.mon, nil, "hof")
   if not (pic and pic.image) then return end
   local sh = dim and shader() or nil
   if sh then

@@ -159,6 +159,44 @@ else
   check(false, "src.core.game3.field loads: " .. tostring(Field))
 end
 
+print("[test] 6. fishing wins over surf and bike graphics")
+do
+  local avatars = { player = {
+    { state = "NORMAL", male = 100, female = 200 },
+    { state = "MACH_BIKE", male = 101, female = 201 },
+    { state = "ACRO_BIKE", male = 102, female = 202 },
+    { state = "SURFING", male = 103, female = 203 },
+    { state = "FISHING", male = 104, female = 204 },
+  } }
+  for _, c in ipairs({
+    { "surfing", { surfing = true, fishing = true } },
+    { "mach bike", { biking = true, bikeType = "mach", fishing = true } },
+    { "acro bike", { biking = true, bikeType = "acro", fishing = true } },
+  }) do
+    local st = OwSprites.avatarState(c[2])
+    check(st == "FISHING" and OwSprites.avatarGraphicsId(st, false, avatars) == 104,
+      "avatar table: fishing while " .. c[1] .. " uses the fishing sprite (got " .. tostring(st) .. ")")
+  end
+  check(OwSprites.avatarState({ surfing = true }) == "SURFING", "avatar table: surfing without a rod stays SURFING")
+
+  local savedManifest, savedAttempted = OwSprites._manifest, OwSprites._manifestAttempted
+  OwSprites._manifest, OwSprites._manifestAttempted = {}, true
+  local Versions = require("src.import.gba.versions")
+  local fish = Versions.OW_PLAYER_MALE_FISH or 4
+  for _, c in ipairs({
+    { "surfing", { surfing = true, fishing = true } },
+    { "biking", { biking = true, fishing = true } },
+  }) do
+    local gid = OwSprites.playerGraphicsId(nil, c[2])
+    check(gid == fish, "legacy ids: fishing while " .. c[1] .. " uses the fishing sprite (got " .. tostring(gid) .. ")")
+  end
+  OwSprites._manifest, OwSprites._manifestAttempted = savedManifest, savedAttempted
+
+  local f = OwSprites.pose({ frameCount = 12, quads = {} }, "down", 0, false,
+    { fishing = true, fishFrame = 3, frame = 5 })
+  check(f == 11, "fishing pose beats an acro bike frame override (got " .. tostring(f) .. ")")
+end
+
 if failed > 0 then
   print("[test] FAILED " .. failed)
   os.exit(1)

@@ -197,8 +197,12 @@ have; on Ruby, Sapphire and Emerald those requires are reported like any other n
 adapter. `python3 tools/modkit.py gen3check` reads `"frlg"` and `"rse"` as a
 Gen 3 claim.
 
-On every Gen 3 game, `pokemon.sprite` and `pokemon.icon` fire for battle pics
-and for menu icons (party, summary, PC, trade, naming). The icon hook gets the
+On every Gen 3 game, `pokemon.sprite` and `pokemon.icon` fire for mon pics
+and for menu icons (party, summary, PC, trade, naming). The sprite hook's
+`ctx.kind` names the screen with the Gen 1 and Gen 2 values: `battle`,
+`summary`, `dex` (Pokedex and the caught-mon registration), `evolution`,
+`hatch`, `hof` (Hall of Fame and its PC), `trade`, `box`, `credits`,
+`overworld` (the script pic window and the starter bag) and `online`. The icon hook gets the
 Gen 1 `ctx` (`species`, `mon`, `kind = "icon"`, `data`) plus `gen3Species`,
 and the vanilla path is the cache `.rgba`. Return a PNG path to swap the icon:
 a 32x64 sheet gives both animation frames, a 32x32 image is one frame shown on

@@ -55,6 +55,23 @@ local frlgModules = nil
 local FRLG_REFL_CULL = 64
 local objectPoseOpts = {}
 local playerPoseOpts = {}
+
+-- pokeemerald/src/field_effect_helpers.c:138
+function FieldEffects.playerReflectionPose(P, Ow)
+  local o = playerPoseOpts
+  local fieldMove = (P.fieldMoveAnim and P.fieldMoveAnim > 0) or false
+  o.fieldMove = fieldMove
+  o.fieldMoveFrame = fieldMove and Ow.fieldMoveFrame
+    and Ow.fieldMoveFrame((P.fieldMoveTotal or P.fieldMoveAnim) - P.fieldMoveAnim, P.fieldMoveKind) or nil
+  local Field = package.loaded["src.core.game3.field"]
+  local fishFrame, fishX2, fishY2
+  if not fieldMove and Field and Field.fishingPose then fishFrame, fishX2, fishY2 = Field.fishingPose() end
+  o.fishing = fishFrame ~= nil
+  o.fishFrame = fishFrame
+  o.running = P.runPose and P.runPose() or nil
+  o.frame = P.surfJumpFrame and P.surfJumpFrame() or P.acroFrame and P.acroFrame() or nil
+  return o, fishX2 or 0, fishY2 or 0
+end
 local function isFrlgReflective(behavior)
   if not frlgReflective then
     local MB = lazyReq("src.core.game3.mb")
@@ -164,17 +181,17 @@ local function drawFrlgReflections(camX, camY)
     local gid = Ow.playerGraphicsId(Runtime._game, P)
     local spr = gid and Ow.getDraw(gid)
     if spr then
-      playerPoseOpts.running = P.runPose and P.runPose() or nil
+      local opts, x2, y2 = FieldEffects.playerReflectionPose(P, Ow)
       local frame, flip = Ow.pose(spr, P.facing, P.walkPhase and P.walkPhase() or 0,
-        P.drawFlip and P.drawFlip() or false, playerPoseOpts)
+        P.drawFlip and P.drawFlip() or false, opts)
       if drawFrlgReflection(P, gid, frame, flip, camX, camY,
-          behaviorAt, Ow) then drawn = drawn + 1 end
+          behaviorAt, Ow, nil, nil, x2, y2) then drawn = drawn + 1 end
     end
   end
   FieldEffects.lastFrlgReflections = drawn
 end
 
-drawFrlgReflection = function(obj, graphicsId, frame, hflip, camX, camY, behaviorAt, Ow, ox, oy)
+drawFrlgReflection = function(obj, graphicsId, frame, hflip, camX, camY, behaviorAt, Ow, ox, oy, x2, y2)
   local spr = Ow.getReflectionDraw and Ow.getReflectionDraw(graphicsId)
   if not (spr and spr.quads and spr.quads[frame]) then return false end
   ox, oy = ox or 0, oy or 0
@@ -183,8 +200,8 @@ drawFrlgReflection = function(obj, graphicsId, frame, hflip, camX, camY, behavio
   local pcx, pcy = obj.cellX + ox, obj.cellY + oy
   if not frlgReflectionType(cx, cy, pcx, pcy, spr.width, spr.height, behaviorAt) then return false end
   local w, h = spr.width, spr.height
-  local left = (obj.px or (cx - ox) * CELL) + ox * CELL + (16 - w) / 2
-  local top = (obj.py or (cy - oy) * CELL) + oy * CELL + 14
+  local left = (obj.px or (cx - ox) * CELL) + ox * CELL + (16 - w) / 2 + (x2 or 0)
+  local top = (obj.py or (cy - oy) * CELL) + oy * CELL + 14 - (y2 or 0)
   local x0, x1 = math.floor(left / CELL), math.floor((left + w - 1) / CELL)
   local y0, y1 = math.floor(top / CELL), math.floor((top + h - 1) / CELL)
   local q = frlgReflectionQuad or love.graphics.newQuad(0, 0, 1, 1, spr.width, spr.height * spr.frameCount)

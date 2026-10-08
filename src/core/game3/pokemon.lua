@@ -1444,12 +1444,12 @@ function Pokemon.monPicSpecies(mon)
   return Pokemon.picSpecies(Pokemon.speciesOf(mon), mon and mon.personality)
 end
 
-function Pokemon.monFrontPic(mon, form)
-  return Pokemon.frontPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon), mon and mon.personality)
+function Pokemon.monFrontPic(mon, form, kind)
+  return Pokemon.frontPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon), mon and mon.personality, kind)
 end
 
-function Pokemon.monBackPic(mon, form)
-  return Pokemon.backPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon))
+function Pokemon.monBackPic(mon, form, kind)
+  return Pokemon.backPic(Pokemon.monPicSpecies(mon), form, Pokemon.isShiny(mon), kind)
 end
 
 -- pokefirered/src/pokemon_icon.c:1116
@@ -1693,11 +1693,11 @@ function Pokemon.frontPic(species, form, shiny, personality)
 end
 
 -- pokefirered/src/pokedex_screen.c:2212
-function Pokemon.dexFrontPic(species, personality)
+function Pokemon.dexFrontPic(species, personality, kind)
   local p = (tonumber(personality) or 0) % 4294967296
   -- include/constants/pokemon.h:185
   local shiny = Pokemon.isShiny({ personality = p, otId = 8, otSecretId = 0 })
-  return Pokemon.frontPic(Pokemon.picSpecies(species, p), 0, shiny, p)
+  return Pokemon.frontPic(Pokemon.picSpecies(species, p), 0, shiny, p, kind or "dex")
 end
 
 -- pokefirered/src/pokedex_screen.c:3058

@@ -221,7 +221,7 @@ function HofPc.draw()
   local sh = shader()
   for i, mon in ipairs(list) do
     local p = pos[i]
-    local pic = p and Pokemon.monFrontPic(mon)
+    local pic = p and Pokemon.monFrontPic(mon, nil, "hof")
     if pic and pic.image then
       local dim = i ~= HofPc._mon
       if dim and sh then

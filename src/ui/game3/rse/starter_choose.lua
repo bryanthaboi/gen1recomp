@@ -300,7 +300,7 @@ end
 local function monImage(species)
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
   if not ok then return nil end
-  local e = Pokemon.frontPic(species)
+  local e = Pokemon.frontPic(species, nil, nil, nil, "overworld")
   return e and e.image or nil
 end
 

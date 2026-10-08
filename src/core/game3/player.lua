@@ -353,10 +353,6 @@ function Player.drawFlip()
   return Player.stepFlip and true or false
 end
 
-local SURF_HOP_Y = {
-  -2, -4, -6, -8, -9, -10, -10, -9, -8, -6, -4, -2, 0, 0, 0, 0,
-}
-
 --- pret DoJumpSpriteMovement y2 for JUMP_DISTANCE_FAR + JUMP_TYPE_HIGH.
 function Player.jumpSpriteY()
   if not Player.jumping then return 0 end
@@ -367,10 +363,6 @@ function Player.jumpSpriteY()
     local idx = (Player.stepFrames or 16) >= 32 and math.floor((progress - 1) / 2) or (progress - 1)
     local t = JUMP_Y[Player.jumpType] or JUMP_Y_HIGH
     return t[idx + 1] or 0
-  end
-  if Player.surfHopping or Player.dismounting then
-    local idx = math.min(progress, #SURF_HOP_Y)
-    return SURF_HOP_Y[idx] or 0
   end
   -- After frame N's Step1, sTimer == N; y2 = sJumpY_High[sTimer >> 1].
   local idx = math.floor((progress - 1) / 2)
@@ -406,8 +398,10 @@ local function beginStep(tx, ty, run, ledge)
   Player.jumping = ledge and true or false
   Player.spriteYOffset = 0
   if Player.surfHopping or Player.dismounting then
-    Player.stepFrames = 16
+    -- pokeemerald/src/event_object_movement.c:8495 DoJumpSpecialSpriteMovement
+    Player.stepFrames = JUMP_FRAMES
     Player.jumping = true
+    Player.jumpType = "high"
   elseif ledge then
     Player.stepFrames = JUMP_FRAMES
   elseif Player.biking then
@@ -811,7 +805,7 @@ function Player.forcedStep(dir, frames, opts)
   return true
 end
 
---- Forced script step (applymovement localId 0xFF) — skips collision.
+--- Forced script step (applymovement localId 0xFF): skips collision.
 function Player.scriptStep(dir, run, slow, fast, frames)
   if Player.moving then return false end
   local d = DELTA[dir or Player.facing]
@@ -843,7 +837,7 @@ function Player.scriptStep(dir, run, slow, fast, frames)
   return true
 end
 
---- Forced script jump (applymovement localId 0xFF) — hops over ledges / gaps.
+--- Forced script jump (applymovement localId 0xFF): hops over ledges / gaps.
 function Player.scriptJump(dir, distance)
   if Player.moving then return false end
   distance = distance or 1
@@ -926,6 +920,14 @@ local ACRO_FRAMES = {
   standBack = { down = { 9, 0 }, up = { 13, 1 }, left = { 17, 2 }, right = { 17, 2 } },
   pedal = { down = { 21, 10, 22, 10 }, up = { 23, 14, 24, 14 }, left = { 25, 18, 26, 18 }, right = { 25, 18, 26, 18 } },
 }
+
+-- pokeemerald/src/data/object_events/object_event_anims.h:392
+local SURF_JUMP_FRAME = { down = 9, up = 10, left = 11, right = 11 }
+
+function Player.surfJumpFrame()
+  if not ((Player.surfHopping or Player.dismounting) and Player.jumping and Player.moving) then return nil end
+  return SURF_JUMP_FRAME[Player.facing] or 9
+end
 
 function Player.acroFrame()
   local a = Player.acroAnim
@@ -1174,7 +1176,7 @@ function Player.canDash()
   local Space = package.loaded["src.core.game3.scripting.space"]
   local store = Space and Space.getStore and Space.getStore()
   if not store then
-    -- Field not scripted yet — deny dash (shoes not granted).
+    -- Field not scripted yet: deny dash (shoes not granted).
     return false
   end
   local Flags = lazyReq("src.core.game3.scripting.flags")

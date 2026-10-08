@@ -841,6 +841,20 @@ function Ops.setTrainerProperty(S, key, value)
     if Gen.berryPowder(S.save, S.version) == n then return true end
     Gen.setBerryPowder(S.save, n, S.version)
     return Ops.mark(S, "Berry Powder updated")
+  elseif key == "battlePoints" then
+    if not Gen.hasBattlePoints(S.save, S.version) then
+      return Ops.say(S, "Battle Points are only in Emerald")
+    end
+    local n = tonumber(value)
+    if not n or n ~= n or n < 0 or n > Gen.BATTLE_POINTS_MAX or n ~= math.floor(n) then
+      return Ops.say(S, "Battle Points must be a whole number from 0 to 9999")
+    end
+    if S.save.frontier ~= nil and type(S.save.frontier) ~= "table" then
+      return Ops.say(S, "Invalid Battle Frontier state")
+    end
+    if Gen.battlePoints(S.save, S.version) == n then return true end
+    Gen.setBattlePoints(S.save, n, S.version)
+    return Ops.mark(S, "Battle Points updated")
   else
     local max = ({id=65535,secretId=65535,money=999999,coins=9999})[key]
     local n=tonumber(value)

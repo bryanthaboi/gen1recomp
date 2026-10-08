@@ -868,7 +868,7 @@ local function draw_mon_scene()
     local wins = mon.def.windows
     if mon.shown == 0 then
       local Pokemon = require("src.core.game3.pokemon")
-      local pic = Pokemon.frontPic(mon.def.species)
+      local pic = Pokemon.frontPic(mon.def.species, nil, nil, nil, "credits")
       if pic and pic.image then
         love.graphics.draw(pic.image, wins[1].left * 8, wins[1].top * 8)
       end

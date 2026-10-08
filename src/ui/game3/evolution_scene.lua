@@ -102,7 +102,7 @@ end
 local function evo_pic(species)
   local mon = EvolutionScene._mon
   return Pokemon.frontPic(Pokemon.picSpecies(species, mon and mon.personality), nil, Pokemon.isShiny(mon),
-    mon and mon.personality)
+    mon and mon.personality, "evolution")
 end
 
 -- pokeemerald/src/evolution_scene.c:1674

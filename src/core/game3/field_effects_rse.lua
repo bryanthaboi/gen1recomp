@@ -889,10 +889,11 @@ local function drawReflections(camX, camY)
     local ok, gid = pcall(Ow.playerGraphicsId, rt and rt._game)
     local spr = ok and gid and Ow.getDraw(gid)
     if spr then
+      local opts, x2, fishY2 = FE().playerReflectionPose(P, Ow)
       local frame, flip = Ow.pose(spr, P.facing, P.walkPhase and P.walkPhase() or 0,
-        P.drawFlip and P.drawFlip() or false, { running = P.runPose and P.runPose() or nil })
-      local y2 = P.jumpSpriteY and P.jumpSpriteY() or 0
-      drawReflection(P, gid, frame, flip, 0, y2, camX, camY)
+        P.drawFlip and P.drawFlip() or false, opts)
+      local y2 = (P.jumpSpriteY and P.jumpSpriteY() or 0) + fishY2
+      drawReflection(P, gid, frame, flip, x2, y2, camX, camY)
     end
   end
   coverReflections(camX, camY)

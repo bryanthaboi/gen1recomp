@@ -314,6 +314,8 @@ function Rtc.timeMinutes(t)
   return 24 * 60 * (t.days or 0) + 60 * (t.hours or 0) + (t.minutes or 0)
 end
 
+Rtc.IMPORT_HOST_CLOCK_WINDOW = 366 * SECONDS_PER_DAY
+
 function Rtc.anchorToLastUpdate(session)
   if type(session) ~= "table" then return 0 end
   local last = session.lastBerryTreeUpdate
@@ -325,6 +327,8 @@ function Rtc.anchorToLastUpdate(session)
     + (last.hours + off.hours) * 3600 + (last.minutes + off.minutes) * 60
     + (last.seconds + off.seconds)
   local cur = Rtc.getDayCount(host) * SECONDS_PER_DAY + host.hour * 3600 + host.minute * 60 + host.second
+  local behind = cur - target
+  if behind >= 0 and behind <= Rtc.IMPORT_HOST_CLOCK_WINDOW then return 0 end
   session.rtcSkew = target - cur
   return session.rtcSkew
 end

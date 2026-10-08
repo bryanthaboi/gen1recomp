@@ -29,7 +29,7 @@ function MonPic.show(species, x, y, opts)
   local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
   if ok and Pokemon then
     -- pokefirered/src/field_effect.c:610
-    local entry = Pokemon.frontPic(Pokemon.picSpecies(species, 0x8000), nil, false, 0x8000)
+    local entry = Pokemon.frontPic(Pokemon.picSpecies(species, 0x8000), nil, false, 0x8000, "overworld")
     if entry and entry.image then
       MonPic._img = entry.image
       MonPic._w = entry.w or 64

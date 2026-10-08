@@ -1689,7 +1689,7 @@ function BattleState:afterAnimFor(side, kind)
   return "ANIM_PLAYER_DAMAGE"
 end
 
--- engine/battle_anims/anim_commands.asm:1200 PlayHitSound
+-- engine/battle_anims/anim_commands.asm:1313 PlayHitSound
 function BattleState:playHitSound(effectiveness)
   if not effectiveness or effectiveness == 0 then return end
   if effectiveness > 10 then self:playSfx("Sfx_SuperEffective")
@@ -1752,6 +1752,17 @@ end
 -- pages a text box.
 function BattleState:stepAnim(input)
   if not self.anim then return end
+  local hit = self.anim.hitSound
+  if hit ~= nil then
+    -- engine/battle_anims/anim_commands.asm:91-93
+    local waited = self.anim.hitWait or 0
+    if Sound.sfxBusy() and waited < EXP_WAIT_SFX_CAP then
+      self.anim.hitWait = waited + 1
+      return
+    end
+    self.anim.hitSound = nil
+    self:playHitSound(hit)
+  end
   if input and (input:wasPressed("b") or input:wasPressed("start")) then
     -- Cut short: only the explicit latches (a caught mon) survive a skip.
     self:latchCaughtPic()
@@ -2283,14 +2294,13 @@ function BattleState:advanceQueue()
       self:clearVanishReveal(event.side)
     end
     if not started then
-      -- BATTLE SCENE off skips the move script but still runs wBattleAfterAnim
-      -- (anim_commands.asm:55-72 .disabled fallthrough).
+      -- engine/battle_anims/anim_commands.asm:77-93
       local options = self.game and self.game.options
       local name = self:afterAnimFor(event.side, event.afterAnim)
       if options and options.battleScene == false and name then
         if self:animForId(name, event.side) then
           if event.afterAnim == "damage" then
-            self:playHitSound(event.effectiveness)
+            self.anim.hitSound = event.effectiveness
           end
           self.afterAnimPlayed = true
         end

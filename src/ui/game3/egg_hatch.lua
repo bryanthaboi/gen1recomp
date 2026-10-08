@@ -158,7 +158,7 @@ EggHatch._finish = finish_scene
 local function hatched_pic()
   local mon = EggHatch._mon
   return Pokemon.frontPic(Pokemon.picSpecies(EggHatch._species, mon and mon.personality), nil,
-    Pokemon.isShiny(mon), mon and mon.personality)
+    Pokemon.isShiny(mon), mon and mon.personality, "hatch")
 end
 
 function EggHatch.start(mon, opts)
@@ -193,7 +193,7 @@ function EggHatch.start(mon, opts)
   if not BattleChrome._installed then BattleChrome.install(nil) end
   if Message.setFrame then Message.setFrame("battle") end
   pcall(hatched_pic)
-  pcall(Pokemon.frontPic, Pokemon.SPECIES_EGG)
+  pcall(Pokemon.frontPic, Pokemon.SPECIES_EGG, nil, nil, nil, "hatch")
   Stack.push(STACK_ID, EggHatch, { hideBelow = true, fullscreen = true })
   return true
 end
@@ -428,7 +428,7 @@ function EggHatch.draw()
       local quad = eggs.quads[EggHatch._eggFrame or 0] or eggs.quads[0]
       love.graphics.draw(eggs.image, quad, x, EGG_Y, 0, 1, 1, HATCH_W / 2, HATCH_H / 2)
     else
-      local eggPic = Pokemon.frontPic(Pokemon.SPECIES_EGG)
+      local eggPic = Pokemon.frontPic(Pokemon.SPECIES_EGG, nil, nil, nil, "hatch")
       if eggPic and eggPic.image then
         love.graphics.draw(eggPic.image, x, EGG_Y, 0, 1, 1, 32, 32)
       end

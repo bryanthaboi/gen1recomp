@@ -29,6 +29,8 @@ Message._delay = 0
 Message._waiting = false -- page fully revealed; waiting for A/B
 Message._speedIdx = 1 -- 0 slow / 1 mid / 2 fast
 Message._speedUp = false
+Message._spedUp = false
+Message._delayTick = false
 
 -- pret sTextSpeedFrameDelays (options 0/1/2)
 local SPEED_DELAYS = { 8, 4, 1 }
@@ -122,6 +124,7 @@ local function beginPage()
   Message._arrowTicks = 0
   Message._waiting = (Message._total == 0)
   Message._speedUp = false
+  Message._delayTick = false
   -- pokefirered/src/text_printer.c:91
   if Message._frame == "braille" then
     Message._revealed = Message._total
@@ -239,6 +242,8 @@ function Message.show(text, opts)
   end
   Message._pages = split_pages(plain)
   Message._page = 1
+  -- pokeemerald/src/text.c:285
+  Message._spedUp = false
   beginPage()
   if instant then
     Message.skipReveal()
@@ -294,7 +299,6 @@ function Message.advance()
   if Message._choice then return end
   if Message._autoScroll and Message._waiting and Message._page < #Message._pages then return end
 
-  -- While typing: first A/B finishes the page (pret canABSpeedUpPrint).
   if not Message._waiting then
     Message.skipReveal()
     return
@@ -377,23 +381,33 @@ function Message.tick()
     Message._waiting = true
     return
   end
-  -- Held A/B: zero inter-glyph delay (canABSpeedUpPrint).
-  if Message._speedUp then
+  -- pokeemerald/src/text.c:944
+  if Message._speedUp and Message._spedUp then
     Message._delay = 0
   end
   if Message._delay > 0 then
     Message._delay = Message._delay - 1
+    Message._delayTick = true
     return
   end
+  Message._delayTick = false
   Message._revealed = Message._revealed + 1
   if Message._revealed >= Message._total then
     Message._waiting = true
   else
     local d = SPEED_DELAYS[Message._speedIdx + 1] or 4
-    -- Match AddTextPrinter quirk: nonzero speed is stored decremented.
+    -- pokeemerald/src/text.c:296
     if d > 0 then d = d - 1 end
-    Message._delay = Message._speedUp and 0 or d
+    Message._delay = d
   end
+end
+
+-- pokeemerald/src/text.c:950
+function Message.pressAB()
+  if rsPrinter() or not Message.open or Message._waiting then return end
+  if not Message._delayTick then return end
+  Message._spedUp = true
+  Message._delay = 0
 end
 
 -- pokeemerald/src/scrcmd.c:1292
@@ -405,7 +419,6 @@ function Message.setAutoScroll()
   return true
 end
 
---- Hold A/B to run at fast speed (field message canABSpeedUpPrint).
 function Message.setSpeedUp(held)
   if rsPrinter() then return end
   Message._speedUp = held and true or false

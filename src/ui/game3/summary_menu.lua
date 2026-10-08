@@ -745,7 +745,7 @@ local function draw_left_sprites(mon, page)
   local flip = not mon_no_flip(mon)
 
   if s.pic then
-    local front = Pokemon.monFrontPic(mon)
+    local front = Pokemon.monFrontPic(mon, nil, "summary")
     if front and front.image then
       local iw, ih = front.w or 64, front.h or 64
       love.graphics.setColor(1, 1, 1, 1)
@@ -1071,7 +1071,7 @@ local function draw_page_egg(mon)
 
   local pic = coords().monPic or { x = 60, y = 65 }
   local cx, cy = pic.x or 60, pic.y or 65
-  local front = Pokemon.frontPic(species)
+  local front = Pokemon.frontPic(species, nil, nil, nil, "summary")
   if front and front.image and love and love.graphics then
     local iw = front.w or 64
     local ih = front.h or 64

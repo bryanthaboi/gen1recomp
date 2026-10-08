@@ -814,7 +814,7 @@ local function drawMons(st)
       love.graphics.setColor(r * mr + cr, g * mg + cg, b * mb + cb, a)
       love.graphics.rectangle("fill", s.x - size / 2, s.y - size / 2, size, size)
       local species = Pokemon.speciesFromNational(s.nat)
-      local pic = species and Pokemon.dexFrontPic(species, Dex.defaultPersonality(st.session and st.session.dex, species))
+      local pic = species and Pokemon.dexFrontPic(species, Dex.defaultPersonality(st.session and st.session.dex, species), "credits")
       if pic and pic.image then
         local w, h = pic.image:getDimensions()
         drawFaded(st, pic.image, s.x - w * k / 2, s.y - h * k / 2, k, k, a)

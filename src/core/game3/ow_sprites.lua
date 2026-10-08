@@ -36,7 +36,7 @@ local function fieldBlock()
 end
 
 local function owRoot()
-  -- Must follow Dataset.mountExtractRoots() — do not bake CACHE_ROOT at require.
+  -- Must follow Dataset.mountExtractRoots(): do not bake CACHE_ROOT at require.
   return (Extract.CACHE_ROOT or "data/generated/gba") .. "/ow"
 end
 
@@ -333,6 +333,11 @@ function OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
   if not spr then return 0, false end
 
   local flip = (facing == "right")
+  if opts and opts.fishing and spr.frameCount >= 12 then
+    local g = math.max(0, math.min(3, tonumber(opts.fishFrame) or 3))
+    return OwSprites.fishingAbsFrame(facing, g), flip
+  end
+
   if opts and opts.frame ~= nil then
     local f = tonumber(opts.frame) or 0
     if f < 0 then f = 0 end
@@ -348,12 +353,7 @@ function OwSprites.pose(spr, facing, walkPhase, stepFlip, opts)
     return 9, false
   end
 
-  if opts and opts.fishing and spr.frameCount >= 12 then
-    local g = math.max(0, math.min(3, tonumber(opts.fishFrame) or 3))
-    return OwSprites.fishingAbsFrame(facing, g), flip
-  end
-
-  if opts and opts.fieldMove and spr.frameCount >= 6 then
+  if opts and opts.fieldMove and spr.frameCount >= 5 then
     local f = tonumber(opts.fieldMoveFrame) or 4
     if f >= spr.frameCount then f = 0 end
     return f, false
@@ -490,9 +490,10 @@ function OwSprites.avatarState(P)
   if not P then return "NORMAL" end
   if P.fieldMoveAnim and P.fieldMoveAnim > 0 then return "FIELD_MOVE" end
   if P.underwater then return "UNDERWATER" end
-  if (P.surfing and not P.dismounting) or P.flyRide then return "SURFING" end
-  if P.biking then return P.bikeType == "acro" and "ACRO_BIKE" or "MACH_BIKE" end
+  -- pokeemerald/src/field_player_avatar.c:1428
   if P.fishing then return "FISHING" end
+  if (P.surfing and not P.dismounting) or P.flyRide or (P.surfJumpFrame and P.surfJumpFrame()) then return "SURFING" end
+  if P.biking then return P.bikeType == "acro" and "ACRO_BIKE" or "MACH_BIKE" end
   if P.watering then return "WATERING" end
   return "NORMAL"
 end
@@ -534,19 +535,19 @@ function OwSprites.playerGraphicsId(game, player)
       return isFemale and (Versions.OW_PLAYER_FEMALE_FIELD_MOVE or 10)
                        or (Versions.OW_PLAYER_MALE_FIELD_MOVE or 3)
     end
-    -- If jumping / hop onto/off water, maintain normal or surfing sprite during arc
+    -- pokefirered/src/field_player_avatar.c:1716
+    if P.fishing then
+      return isFemale and (Versions.OW_PLAYER_FEMALE_FISH or 11)
+                       or (Versions.OW_PLAYER_MALE_FISH or 4)
+    end
     -- pokefirered/src/field_effect.c:3294
-    if (P.surfing and not P.dismounting) or P.flyRide then
+    if (P.surfing and not P.dismounting) or P.flyRide or (P.surfJumpFrame and P.surfJumpFrame()) then
       return isFemale and (Versions.OW_PLAYER_FEMALE_SURF or 9)
                        or (Versions.OW_PLAYER_MALE_SURF or 2)
     end
     if P.biking then
       return isFemale and (Versions.OW_PLAYER_FEMALE_BIKE or 8)
                        or (Versions.OW_PLAYER_MALE_BIKE or 1)
-    end
-    if P.fishing then
-      return isFemale and (Versions.OW_PLAYER_FEMALE_FISH or 11)
-                       or (Versions.OW_PLAYER_MALE_FISH or 4)
     end
   end
 

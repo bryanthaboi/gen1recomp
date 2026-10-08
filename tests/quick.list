@@ -380,6 +380,7 @@ tests/engine/gen2_yesno_typing_bug2085.lua
 tests/engine/gen3_dex_summary_keys_2461.lua
 tests/engine/gen3_jp_names_2706.lua
 tests/engine/gen3_pokemon_icon_hook_bug2693.lua
+tests/engine/gen3_pokemon_sprite_kind_bug2772.lua
 tests/engine/gen3_save_rs_tv_test.lua
 tests/engine/gen3_shim_engine_require.lua
 tests/engine/generated_data_decoder_test.lua
@@ -634,6 +635,7 @@ tests/engine/save_convert_extra_flags.lua
 tests/engine/save_convert_toggle_objects.lua
 tests/engine/save_editor_volcanic_ash_2752.lua
 tests/engine/save_editor_berry_powder_2698.lua
+tests/engine/save_editor_battle_points_2773.lua
 tests/engine/save_editor_buena_points_2640.lua
 tests/engine/save_editor_custom_maps.lua
 tests/engine/save_editor_unown_form_2726.lua

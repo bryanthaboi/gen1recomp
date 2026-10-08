@@ -287,7 +287,9 @@ function Hud.update(game, _dt, inputTop)
     if aPress then
       local onLast = Message.isWaiting()
         and Message._page >= #(Message._pages or {})
-      if Message._stay and onLast then
+      if not Message.isWaiting() then
+        Message.pressAB()
+      elseif Message._stay and onLast then
         -- Stay on last page: waitbuttonpress / yesnobox own the A press.
         if Hud._waitButton then
           local cb = Hud._waitButton

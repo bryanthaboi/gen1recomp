@@ -225,9 +225,8 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
     o.b = Texel(lut, vec2((v.b + 0.5) / 32.0, y)).r;
   } else {
     vec3 h = floor(v / 2.0);
-    float idx = h.r + h.g * 16.0 + h.b * 256.0;
-    float x = mod(idx, 64.0);
-    float yy = floor(idx / 64.0) + dtable * 64.0;
+    float x = h.r + mod(h.g, 4.0) * 16.0;
+    float yy = floor(h.g / 4.0) + h.b * 4.0 + dtable * 64.0;
     o = Texel(dlut, vec2((x + 0.5) / 64.0, (yy + 0.5) / 384.0)).rgb;
   }
   return vec4(o, c.a) * color;

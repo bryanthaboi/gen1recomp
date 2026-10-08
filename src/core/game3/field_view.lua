@@ -742,7 +742,8 @@ local function collectGame3Actors(game, mapDef, camX, camY, px, py, facing, walk
     a.fishing = fishFrame ~= nil
     a.fishFrame = fishFrame
     a.running = PlayerMod and PlayerMod.runPose and PlayerMod.runPose() or nil
-    a.frame = PlayerMod and PlayerMod.acroFrame and PlayerMod.acroFrame() or nil
+    a.frame = PlayerMod and (PlayerMod.surfJumpFrame and PlayerMod.surfJumpFrame()
+      or PlayerMod.acroFrame and PlayerMod.acroFrame()) or nil
     a.sprite = playerSpriteName(game)
     a.graphicsId = useOw and OwSprites.playerGraphicsId(game) or nil
     a.priority = nil
@@ -1112,7 +1113,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
   local NativeTileset = modNativeTileset()
   if not (NativeTileset and NativeTileset.ready and NativeTileset.ready(pair)) then
     if not FieldView._loggedNativeFallback then
-      log("native unavailable for " .. tostring(pair) .. " — Gen2 atlas fallback")
+      log("native unavailable for " .. tostring(pair) .. ": Gen2 atlas fallback")
       FieldView._loggedNativeFallback = true
     end
     return false
@@ -1376,7 +1377,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
   return true
 end
 
---- BG2 overhead (building eaves, desk tops) — draw after OW sprites.
+--- BG2 overhead (building eaves, desk tops): draw after OW sprites.
 local function drawNativeOverTiles()
   local batches = FieldView._nativeOverBatches
   if not batches then return end
@@ -1655,7 +1656,7 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     if mapId then session.map = mapId end
   end
 
-  -- pret CameraUpdate: always track the player. No map-rect clamp — edges
+  -- pret CameraUpdate: always track the player. No map-rect clamp: edges
   -- show connected neighbors (or border), same as walking mid-town.
   local camX = math.floor(px + CELL / 2 - canvasW / 2)
   local camY = math.floor(py + CELL / 2 - canvasH / 2)
