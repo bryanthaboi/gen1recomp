@@ -484,6 +484,9 @@ function BattleBridge.start(mod, game, foe, opts)
     if okF and Fade and Fade.begin and not opts.headless and opts.fade ~= false then
       Fade.begin(Fade.MODE.FROM_BLACK, 1)
     end
+    -- pokeemerald/src/field_player_avatar.c:883
+    local FieldFx = package.loaded["src.core.game3.field_effects"]
+    if FieldFx and FieldFx.resetSurfBob then FieldFx.resetSurfBob() end
     -- pokefirered/src/battle_setup.c:432
     local okS, Space = pcall(require, "src.core.game3.scripting.space")
     if okS and Space and Space.returnToField then

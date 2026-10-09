@@ -57,13 +57,12 @@ local function storeOf(session, opts)
   local Runtime = package.loaded["src.core.game3.runtime"]
   local live = Runtime and Runtime.getSession and Runtime.getSession() or nil
   if Space and Space.store and (live == nil or live == session) then return Space.store end
-  if type(session) == "table" then
-    session.store = session.store or { flags = {}, vars = {} }
+  if type(session) == "table" and type(session.store) == "table" then
     session.store.flags = session.store.flags or {}
     session.store.vars = session.store.vars or {}
     return session.store
   end
-  return nil
+  return { flags = {}, vars = {} }
 end
 
 local function flags()

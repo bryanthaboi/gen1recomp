@@ -234,6 +234,7 @@ function Field.update(_dt)
   if NativesEvents and NativesEvents.pollWalkaway then
     NativesEvents.pollWalkaway(Space and Space.vm, input)
   end
+  lazyReq("src.core.game3.field_effects").stepSurfBob()
   Player.update(game, walkInput)
   lazyReq("src.world.game3.Follower").update(game)
   Field.updateWaterfall(game)

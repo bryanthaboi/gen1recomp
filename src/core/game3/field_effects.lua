@@ -18,7 +18,8 @@ FieldEffects._sheets = {} -- [name] = { image = ..., quads = ..., fw = ..., fh =
 FieldEffects._fx = nil    -- tall grass
 FieldEffects._anims = {}  -- transient active field animations
 FieldEffects._ground = nil -- pokefirered/src/event_object_movement.c:8721
-FieldEffects._surfClock = 0
+FieldEffects._surfBob = nil
+FieldEffects._underwaterBob = nil
 FieldEffects._logged = false
 -- pokefirered/src/scrcmd.c:2051 — gFieldEffectArguments, written by
 -- setfieldeffectargument and read by the effect that dofieldeffect starts.
@@ -404,7 +405,8 @@ function FieldEffects.install(cache)
   FieldEffects._fx = nil
   FieldEffects._anims = {}
   FieldEffects._ground = nil
-  FieldEffects._surfClock = 0
+  FieldEffects._surfBob = nil
+  FieldEffects._underwaterBob = nil
   FieldEffects._logged = false
   local FieldView = modFieldView()
   if FieldView and FieldView.setCameraPanning then
@@ -1643,6 +1645,62 @@ function FieldEffects.groundEffects()
   end
 end
 
+-- pokeemerald/src/field_effect_helpers.c:1052 UpdateSurfBlobFieldEffect
+function FieldEffects.stepSurfBob()
+  local SurfBob = lazyReq("src.core.game3.surf_bob")
+  local P = package.loaded["src.core.game3.player"]
+  if P and P.underwater then
+    FieldEffects._surfBob = nil
+    -- pokeemerald/src/field_player_avatar.c:893
+    FieldEffects._underwaterBob = FieldEffects._underwaterBob or SurfBob.newUnderwater()
+    SurfBob.tickUnderwater(FieldEffects._underwaterBob)
+    return
+  end
+  FieldEffects._underwaterBob = nil
+  if not (P and (P.surfing or P.surfHopping or P.dismounting)) then
+    FieldEffects._surfBob = nil
+    return
+  end
+  local b = FieldEffects._surfBob
+  if not b then
+    b = SurfBob.newBlob(rse() and "rse" or "frlg")
+    FieldEffects._surfBob = b
+  end
+  SurfBob.syncAnim(b, P.facing or "down")
+  local x, y = P.cellX, P.cellY
+  if P.moving then x, y = P.targetX or x, P.targetY or y end
+  local Collision = package.loaded["src.core.game3.collision"]
+  SurfBob.syncPosition(b, x, y, Collision and Collision.elevationAt)
+  local state = SurfBob.BOB_PLAYER_AND_MON
+  if P.surfHopping then
+    state = SurfBob.BOB_NONE
+  elseif P.dismounting then
+    -- pokeemerald/src/field_player_avatar.c:1671
+    state = SurfBob.BOB_JUST_MON
+  end
+  SurfBob.tick(b, state)
+end
+
+-- pokeemerald/src/field_player_avatar.c:883
+function FieldEffects.resetSurfBob()
+  FieldEffects._surfBob = nil
+  FieldEffects._underwaterBob = nil
+end
+
+function FieldEffects.surfBlobY2()
+  local b = FieldEffects._surfBob
+  return b and b.y2 or 0
+end
+
+function FieldEffects.surfPlayerY2()
+  local P = package.loaded["src.core.game3.player"]
+  if P and P.underwater then
+    local u = FieldEffects._underwaterBob
+    return u and u.y2 or 0
+  end
+  return lazyReq("src.core.game3.surf_bob").playerY2(FieldEffects._surfBob)
+end
+
 -- ---------------------------------------------------------------- Step & Update
 function FieldEffects.step()
   FieldEffects.groundEffects()
@@ -1678,9 +1736,6 @@ function FieldEffects.step()
       end
     end
   end
-
-  -- Surfing blob clock (48 ticks per frame * 2 frames = 96 ticks per loop)
-  FieldEffects._surfClock = (FieldEffects._surfClock + 1) % 96
 
   -- Update active transient animations
   local active = {}
@@ -1949,7 +2004,9 @@ function FieldEffects.drawBehind(camX, camY)
     local surfSheet = load_sheet("surf_blob", 32, 32, 6)
     if surfSheet then
       local facing = P.facing or "down"
-      local step = math.floor(FieldEffects._surfClock / 48) % 2
+      local b = FieldEffects._surfBob
+      local step = b and lazyReq("src.core.game3.surf_bob").animCmdIndex(b) or 0
+      local bob = b and b.y2 or 0
       local frameIdx = 0
       local flip = false
 
@@ -1975,15 +2032,13 @@ function FieldEffects.drawBehind(camX, camY)
       if q then
         local sx, sy
         if P.surfHopping then
-          -- Player is hopping onto water: blob is in position on the destination tile
           sx = (P.targetX or P.cellX) * CELL - camX - 8
-          sy = (P.targetY or P.cellY) * CELL - camY - 8
+          sy = (P.targetY or P.cellY) * CELL - camY - 8 + bob
         elseif P.dismounting then
-          -- Player is hopping off water to land: blob remains at origin tile
           sx = P.cellX * CELL - camX - 8
-          sy = P.cellY * CELL - camY - 8
+          sy = P.cellY * CELL - camY - 8 + bob
         else
-          local bob = (not P.moving and not P.jumping) and ((step == 1) and -1 or 0) or 0
+          -- pokeemerald/src/field_effect_helpers.c:1131
           sx = P.px - camX - 8
           sy = P.py - camY - 8 + bob
         end

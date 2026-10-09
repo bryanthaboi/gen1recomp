@@ -156,7 +156,7 @@ function Dive.useDive(slot, mon)
       Field.lock()
       t.state = 1
       -- pokeemerald/src/field_effect.c:1924
-      lazyReq("src.core.game3.field_move_show_mon").start(t.mon, { pose = true }, function() t.state = 2 end)
+      lazyReq("src.core.game3.field_move_show_mon").start(t.mon, { pose = false }, function() t.state = 2 end)
       return false
     elseif t.state == 1 then
       Field.lock()

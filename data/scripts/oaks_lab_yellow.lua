@@ -11,8 +11,12 @@
 -- a lab loss (OaksLabRivalEndBattleScript), and Route 22's first battle
 -- upgrades FLAREON back to JOLTEON (Route22Rival1AfterBattleScript).
 
+local Sound = require("src.core.Sound")
+
 local OAK1 = 3
 local RIVAL = 1
+-- pokeyellow engine/overworld/movement.asm:871
+local FAST = { stepFrames = 16 }
 
 -- engine/overworld/pathfinding.asm:36-70 (FindPathToPlayer): step whichever
 local function findPathRows(rows, objIndex, sx, sy, tx, ty)
@@ -338,17 +342,20 @@ return {
       table.insert(rows, { "move_npc", RIVAL, side, 1 })
       table.insert(rows, { "move_npc", RIVAL, "down", 1 })
       table.insert(rows, { "face_player_dir", side })
-      table.insert(rows, { "move_npc", RIVAL, "down", 1 })
+      -- pokeyellow scripts/OaksLab.asm:431
+      table.insert(rows, { "walk_npc", RIVAL, { "down" }, FAST })
       table.insert(rows, { "face_player_dir", "down" })
-      table.insert(rows, { "move_npc", RIVAL, "down", 4 })
+      table.insert(rows, { "walk_npc", RIVAL, { "down", "down", "down", "down" }, FAST })
       table.insert(rows, { "hide_object", "OAKS_LAB", "OAKSLAB_RIVAL" })
       table.insert(rows, { "play_music", "Music_OaksLab" })
       -- OaksLabPikachuEscapesPokeballScript: the follower reaches the map (#1009)
       table.insert(rows, { "face_player_dir", "up" })
       table.insert(rows, { "set_field", "pikachuInBall", false })
+      -- pokeyellow scripts/OaksLab.asm:1094
+      table.insert(rows, { "show_text", "_OaksLabPikachuDislikesPokeballsText1", false,
+        { preSound = function() return Sound.playPikaCry(game.data, 2) end } })
+      -- pokeyellow scripts/OaksLab.asm:478
       table.insert(rows, { "spawn_pikachu_follower" })
-      table.insert(rows, { "play_cry", "PIKACHU" })
-      table.insert(rows, { "show_text", "_OaksLabPikachuDislikesPokeballsText1" })
       table.insert(rows, { "show_text", "_OaksLabPikachuDislikesPokeballsText2" })
       ow.runner:run(rows, { npc = rival })
       return true

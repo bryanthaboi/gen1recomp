@@ -78,6 +78,11 @@ local function checkExit(rows, from, side, totalDowns, turnAfterDowns)
   while rows[j] and rows[j][1] ~= "hide_object" do
     local r = rows[j]
     if isMove(r, "down") then downs = downs + r[4] end
+    if r[1] == "walk_npc" and r[2] == 1 then
+      for _, d in ipairs(r[3]) do
+        if d == "down" then downs = downs + 1 end
+      end
+    end
     if r[1] == "face_player_dir" and r[2] == side then sideTurnAt = downs end
     if r[1] == "face_player_dir" and r[2] == "down" then downTurnAt = downs end
     j = j + 1

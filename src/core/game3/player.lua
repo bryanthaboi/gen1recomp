@@ -318,6 +318,12 @@ local function walkInPlaceFrames()
   return Player.walkInPlaceFast and RUN_FRAMES or WALK_FRAMES
 end
 
+local function surfBobY()
+  if not (Player.surfing or Player.underwater) then return nil end
+  local FieldEffects = package.loaded["src.core.game3.field_effects"]
+  return FieldEffects and FieldEffects.surfPlayerY2 and FieldEffects.surfPlayerY2() or 0
+end
+
 -- pokefirered/src/field_effect.c:1215 FallWarpEffect_4
 local function warp_owns_sprite()
   local Warp = package.loaded["src.core.game3.warp"]
@@ -398,7 +404,7 @@ local function beginStep(tx, ty, run, ledge)
   Player.targetY = ty
   Player.running = (not ledge) and run and true or false
   Player.jumping = ledge and true or false
-  Player.spriteYOffset = 0
+  Player.spriteYOffset = (not ledge) and surfBobY() or 0
   if Player.surfHopping or Player.dismounting then
     -- pokeemerald/src/event_object_movement.c:8495 DoJumpSpecialSpriteMovement
     Player.stepFrames = JUMP_FRAMES
@@ -1205,10 +1211,9 @@ function Player.tick(game)
       end
     end
     if Player.action then return tickAction() end
-    if Player.surfing and not Player.jumping then
-      local okFx, FieldEffects = pcall(lazyReq, "src.core.game3.field_effects")
-      local clock = (okFx and FieldEffects and FieldEffects._surfClock) or 0
-      Player.spriteYOffset = (math.floor(clock / 48) % 2 == 1) and -1 or 0
+    local bobY = (not Player.jumping) and surfBobY() or nil
+    if bobY then
+      Player.spriteYOffset = bobY
     elseif not Player.walkInPlace and not warp_owns_sprite() then
       Player.spriteYOffset = 0
     end
@@ -1227,7 +1232,7 @@ function Player.tick(game)
   if Player.jumping then
     Player.spriteYOffset = Player.jumpSpriteY()
   else
-    Player.spriteYOffset = 0
+    Player.spriteYOffset = surfBobY() or 0
   end
   -- pokefirered/src/data/object_events/object_event_anims.h:556
   if Player.spinning then
@@ -1237,6 +1242,8 @@ function Player.tick(game)
   end
   if Player.progress >= frames then
     finishStep(game)
+    local bobY = (not Player.moving) and surfBobY() or nil
+    if bobY then Player.spriteYOffset = bobY end
     return true
   end
   return false

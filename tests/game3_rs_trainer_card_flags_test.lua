@@ -51,7 +51,16 @@ for _, version in ipairs({ "ruby", "sapphire" }) do
   card = Policy.generate(stale)
   check(card.hasPokedex == true, version .. " live script store: pokedex row shown")
   check(owned(card) == "1,2,3,4,5,6,7,8", version .. " live script store: all badges (" .. owned(card) .. ")")
+
+  local withEmpty = { version = version, name = "MAY", flags = saved.flags, vars = saved.vars, store = { flags = {}, vars = {} } }
+  card = Policy.generate(withEmpty)
+  check(card.hasPokedex == true, version .. " empty session.store + live store: pokedex row shown")
+  check(owned(card) == "1,2,3,4,5,6,7,8", version .. " empty session.store + live store: live badges (" .. owned(card) .. ")")
   package.loaded["src.core.game3.scripting.space"] = nil
+
+  card = Policy.generate(withEmpty)
+  check(card.hasPokedex == true, version .. " empty session.store, no live store: session.flags pokedex")
+  check(owned(card) == "1,4", version .. " empty session.store, no live store: session.flags badges 1,4 (" .. owned(card) .. ")")
 end
 
 if failed > 0 then
