@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.68",
+          "date": "2026-10-09",
+          "size": 56253722,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.68/gen1recomp++-0.3.68-ios.ipa",
+          "localizedDescription": "Oops I make a oopsie\n\n## Issues closed\n\n- #2799 Pokémon emerald stuck for a few frames when collide while running\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.67",
           "date": "2026-10-09",
           "size": 56252813,
