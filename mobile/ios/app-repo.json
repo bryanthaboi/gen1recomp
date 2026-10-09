@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.69",
+          "date": "2026-10-09",
+          "size": 56262155,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.69/gen1recomp++-0.3.69-ios.ipa",
+          "localizedDescription": "Bacons last resort\n\n## Issues closed\n\n- #2802 generic party indicator (slide-in and out animation and no sfx)\n- #2803 no side background\n- #2804 Minor incorrect Pikachu eye color\n- #2805 Save Edit Nature Type Causes Crash\n- #2806 Cannot get pokemon back from Daycare\n- #2807 badges on trainer card do not show\n- #2808 Sound effect missing when entering Hall of Fame\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.68",
           "date": "2026-10-09",
           "size": 56253722,
