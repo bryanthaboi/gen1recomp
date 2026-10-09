@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.71",
+          "date": "2026-10-09",
+          "size": 56263935,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.71/gen1recomp++-0.3.71-ios.ipa",
+          "localizedDescription": "This one's for [non problematic musical artist]\n\n## Issues closed\n\n- #2813 issue with bobbing animation on water and underwater\n- #2814 Issue #2807 is still not working\n- #2815 issues with the lab interlude\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.70",
           "date": "2026-10-09",
           "size": 56262211,
