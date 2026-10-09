@@ -79,21 +79,16 @@ GB_SHADES = (
 
 
 def _apply_title_obp0(image):
-    """Title rOBP0=%11100000 ($E0): OBJ shades 1 and 2 → white, 3 → black.
-
-    Eye OAM is baked into the MEWMON-colored BG PNG; without this remap the
-    shade-1 glints become body yellow under the title palette
-    (pokeyellow engine/movie/title.asm after PlacePikachu).
-    """
+    # engine/movie/title.asm:76
     pixels = image.load()
     w, h = image.size
-    mid, dark = GB_SHADES[1][0], GB_SHADES[2][0]
+    light = GB_SHADES[1][0]
     for y in range(h):
         for x in range(w):
             r, g, b, a = pixels[x, y]
             if a == 0:
                 continue
-            if abs(r - mid) <= 2 or abs(r - dark) <= 2:
+            if abs(r - light) <= 2:
                 pixels[x, y] = GB_SHADES[0]
     return image
 
@@ -1923,7 +1918,7 @@ def extract_field(rom, symbols, manifest, out_dir, assets_dir):
             pikachu.paste(eye, (px, py), eye)
         _save_png(pikachu, os.path.join(assets_dir, "title/pikachu.png"))
 
-        # Blink overlays (half/closed) — same OBP remap as open eyes.
+        # Blink overlays (half/closed): same OBP remap as open eyes.
         eye_layout = (
             (1, 24, 16, True), (0, 32, 16, True),
             (3, 24, 24, True), (2, 32, 24, True),

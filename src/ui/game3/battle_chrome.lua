@@ -191,6 +191,7 @@ function BattleChrome.install(cache)
   BattleChrome._terrains = setmetatable({}, TERRAIN_MT)
   BattleChrome._terrainInfo = {}
   BattleChrome._terrainMissing = {}
+  BattleChrome._entries = {}
   BattleChrome._quads = {}
   BattleChrome._logged = false
   local root = battle_root()
@@ -219,7 +220,7 @@ function BattleChrome.install(cache)
   if pb and eb and tb and next(BattleChrome._terrainInfo) then
     log("battle chrome ready (v" .. tostring(m.format or "?") .. ")")
   else
-    log("battle chrome missing — re-run --pokemon extract")
+    log("battle chrome missing: re-run --pokemon extract")
   end
 end
 
@@ -354,6 +355,52 @@ function BattleChrome.drawTerrain(key, enemyOx, playerOx, bgOx)
     return true
   end
   return false
+end
+
+function BattleChrome.entry(key)
+  local cache = BattleChrome._entries
+  if not cache then cache = {}; BattleChrome._entries = cache end
+  local hit = cache[key]
+  if hit ~= nil then return hit or nil end
+  local m = BattleChrome._manifest or {}
+  local info = type(m.entries) == "table" and m.entries[key] or nil
+  if not info then
+    error("battle chrome: manifest has no entry background for " .. tostring(key), 0)
+  end
+  local img = rgba_to_image(read_bytes(battle_root() .. "/" .. info.file), info.w, info.h)
+  if not img then
+    if love and love.graphics then
+      error("battle chrome: " .. tostring(info.file) .. " is not in the cache", 0)
+    end
+    cache[key] = false
+    return nil
+  end
+  local e = { image = img, w = info.w, h = info.h }
+  cache[key] = e
+  return e
+end
+
+-- pokeemerald/src/battle_bg.c:135
+function BattleChrome.drawEntry(key, scrollX, scrollY, alpha)
+  local e = BattleChrome.entry(key)
+  if not e then return false end
+  alpha = alpha or 1
+  if alpha <= 0 then return true end
+  local x = -((math.floor(scrollX or 0)) % 256)
+  local y = -(math.floor(scrollY or 0))
+  love.graphics.setColor(1, 1, 1, alpha)
+  love.graphics.draw(e.image, x, y)
+  love.graphics.draw(e.image, x + 256, y)
+  if y + e.h < 160 then
+    love.graphics.draw(e.image, x, y + 512)
+    love.graphics.draw(e.image, x + 256, y + 512)
+  end
+  if y > 0 then
+    love.graphics.draw(e.image, x, y - 512)
+    love.graphics.draw(e.image, x + 256, y - 512)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  return true
 end
 
 --- Draw clean background wallpaper without battle platforms (e.g. for evolution scene).
@@ -736,7 +783,7 @@ local PARTY_BALL_TILE = {
   caught = 70,
 }
 
-function BattleChrome.drawPartyBall(x, y, kind)
+function BattleChrome.drawPartyBall(x, y, kind, alpha)
   local ti = PARTY_BALL_TILE[kind or "ok"] or PARTY_BALL_TILE.ok
   local q = elements_tile_quad(ti)
   if not q or not BattleChrome._elements then
@@ -746,41 +793,60 @@ function BattleChrome.drawPartyBall(x, y, kind)
     end
     return
   end
-  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setColor(1, 1, 1, alpha or 1)
   love.graphics.draw(BattleChrome._elements, q, x, y)
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 function BattleChrome.drawCaughtBall(x, y)
   BattleChrome.drawPartyBall(x, y, "caught")
 end
 
+local function party_bar_segment(i)
+  local key = "party_bar_seg_" .. i
+  local q = BattleChrome._quads[key]
+  if not q then
+    q = love.graphics.newQuad(i * 32, 0, 32, 8, BattleChrome._partyBar:getDimensions())
+    BattleChrome._quads[key] = q
+  end
+  return q
+end
+
+-- pokeemerald/src/battle_interface.c:575
+local EXIT_SEGMENTS = { 0, 1, 2, 2, 2, 3 }
+
 --- Draw party summary bar and 6 ball slots (1:1 with pokefirered CreatePartyStatusSummarySprites).
 -- Player: base (136, 96), un-flipped bar (<=====), balls at y=92 from x=160..210 (left-to-right).
 -- Opponent: base (104, 40), H-flipped bar (=====>), balls at y=36 from x=30..80 (right-aligned).
-function BattleChrome.drawPartyBar(x, y, balls, ox, isOpponent)
+function BattleChrome.drawPartyBar(x, y, balls, ox, isOpponent, opts)
   ox = tonumber(ox) or 0
   balls = balls or {}
-  if isOpponent then
-    local barX = x + ox
-    if BattleChrome._partyBar then
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(BattleChrome._partyBar, barX, y, 0, -1, 1)
+  opts = opts or {}
+  local alpha = opts.alpha or 1
+  local ballOx = opts.ballOx
+  local hidden = opts.ballHidden or {}
+  local barX = x + ox
+  local sx = isOpponent and -1 or 1
+  if BattleChrome._partyBar then
+    love.graphics.setColor(1, 1, 1, alpha)
+    if opts.extended then
+      for n, seg in ipairs(EXIT_SEGMENTS) do
+        love.graphics.draw(BattleChrome._partyBar, party_bar_segment(seg), barX + sx * 32 * (n - 1), y, 0, sx, 1)
+      end
+    else
+      love.graphics.draw(BattleChrome._partyBar, barX, y, 0, sx, 1)
     end
-    for i = 1, 6 do
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  for i = 1, 6 do
+    if not hidden[i] then
       local kind = balls[i] or "empty"
-      local bx = (x + ox) - 24 - 10 * (6 - i)
-      BattleChrome.drawPartyBall(bx, y - 7, kind)
-    end
-  else
-    local barX = x + ox
-    if BattleChrome._partyBar then
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(BattleChrome._partyBar, barX, y, 0, 1, 1)
-    end
-    for i = 1, 6 do
-      local kind = balls[i] or "empty"
-      local bx = (x + ox) + 24 + 10 * (i - 1)
-      BattleChrome.drawPartyBall(bx, y - 8, kind)
+      local bOx = ballOx and (ballOx[i] or 0) or ox
+      if isOpponent then
+        BattleChrome.drawPartyBall(x + bOx - 24 - 10 * (6 - i), y - 7, kind, alpha)
+      else
+        BattleChrome.drawPartyBall(x + bOx + 24 + 10 * (i - 1), y - 8, kind, alpha)
+      end
     end
   end
 end

@@ -72,6 +72,237 @@ function IntroSeq.win0Rows(f)
   return top, 161 - top
 end
 
+local SLIDE_KIND = { [0] = 1, [1] = 1, [2] = 2, [3] = 2, [4] = 2, [5] = 1, [6] = 1, [7] = 1, [8] = 3, [9] = 3 }
+local ENV_LONG_GRASS, ENV_SAND, ENV_UNDERWATER, ENV_WATER = 1, 2, 3, 4
+
+-- pokeemerald/src/battle_intro.c:37
+function IntroSeq.entrySlide(st, key)
+  if not st or st.link then return nil end
+  if st.partner and st.partner.trainerId ~= TRAINER_STEVEN_PARTNER then return nil end
+  local env = tonumber(st.terrain) or 9
+  if key == "frontier" then return 3, env end
+  if key == "groudon" or key == "kyogre" then
+    local game = require("src.core.game3.profile").forSession().id
+    if game ~= "ruby" then return 2, ENV_UNDERWATER end
+  end
+  return SLIDE_KIND[env] or 3, env
+end
+
+local function water_y(n)
+  local P = require("src.core.game3.battle.anim_port.g3_pret")
+  local d6 = 0
+  local y = 0
+  for _ = 1, n do
+    y = P.div(P.Sin2(d6 + 90), 512) - 8
+    if d6 < 180 then d6 = d6 + 4 else d6 = d6 + 6 end
+    if d6 == 360 then d6 = 0 end
+  end
+  return y
+end
+
+-- pokeemerald/src/battle_intro.c:86
+function IntroSeq.entryFrame(kind, env, n)
+  if n >= 154 then return nil end
+  local k = n - 66
+  if kind == 1 then
+    local y = 0
+    -- pokeemerald/src/battle_intro.c:129
+    if k > 0 then y = (env == ENV_LONG_GRASS) and -math.min(2 * k, 80) or -math.min(k, 56) end
+    return 6 * n, y, 1
+  elseif kind == 2 then
+    -- pokeemerald/src/battle_intro.c:171
+    local x = ((env == ENV_UNDERWATER) and 6 or 8) * n
+    local y = (env == ENV_WATER) and water_y(n) or 0
+    local eva = 16
+    if k > 0 then eva = math.max(0, 16 - (math.floor((k - 1) / 4) + 1)) end
+    return x, y, eva / 16
+  end
+  -- pokeemerald/src/battle_intro.c:283
+  local eva = 8
+  if k > 0 then eva = math.max(0, 8 - (math.floor((k - 1) / 6) + 1)) end
+  return 8 * n, 0, eva / 16
+end
+
+local function tray_se(name, pan)
+  pcall(function() Audio.playSe(SE[name], { pan = pan }) end)
+end
+
+local function tray_spawn(bar, fn)
+  local Task = require("src.core.game3.task")
+  if bar.task then Task.cancel(bar.task); Anim._stageTasks[bar.task] = nil end
+  local t = Task.spawn(function() return fn() end, { onDone = function(task) Anim._stageTasks[task.id] = nil end })
+  bar.task = t.id
+  Anim._stageTasks[t.id] = true
+  return t
+end
+
+local function accel_step(b)
+  local v = b.d3 + 56
+  b.d3 = v - v % 16
+  return math.floor(v / 16)
+end
+
+-- pokeemerald/src/battle_interface.c:1817
+function IntroSeq.trayEnterTick(bar, isOpponent)
+  if bar.ox ~= 0 then bar.ox = bar.ox + bar.d0 end
+  local busy = bar.ox ~= 0
+  for i = 1, 6 do
+    local b = bar.ballState[i]
+    if not b.done then
+      busy = true
+      if b.delay > 0 then
+        b.delay = b.delay - 1
+      else
+        -- pokeemerald/src/battle_interface.c:1833
+        local move = accel_step(b)
+        if isOpponent then
+          b.x2 = math.min(0, b.x2 + move)
+        else
+          b.x2 = math.max(0, b.x2 - move)
+        end
+        if b.x2 == 0 then
+          b.done = true
+          local pan = isOpponent and -64 or 63
+          tray_se((bar.balls[i] or "empty") == "empty" and "SE_BALL_TRAY_EXIT" or "SE_BALL_TRAY_BALL", pan)
+        end
+      end
+      bar.ballOx[i] = b.x2
+    end
+  end
+  return not busy
+end
+
+-- pokeemerald/src/battle_interface.c:1450
+function IntroSeq.trayEnterState(bar, balls, isOpponent)
+  bar.visible = true
+  bar.balls = balls or { "ok" }
+  bar.alpha = 1
+  bar.extended = false
+  bar.exiting = false
+  bar.ox = isOpponent and -100 or 100
+  bar.d0 = isOpponent and 5 or -5
+  bar.ballOx, bar.ballHidden, bar.ballState = {}, {}, {}
+  for i = 1, 6 do
+    local delay = isOpponent and ((7 - i) * 7 + 10) or ((i - 1) * 7 + 10)
+    local x2 = isOpponent and -120 or 120
+    bar.ballState[i] = { delay = delay, x2 = x2, d3 = 0, done = false }
+    bar.ballOx[i] = x2
+  end
+  return bar
+end
+
+function IntroSeq.showTray(s, side, balls, delay)
+  local bar = s.partyBar[side]
+  local isOpponent = side == "enemy"
+  IntroSeq.trayEnterState(bar, balls, isOpponent)
+  if Anim._headless then
+    bar.ox = 0
+    for i = 1, 6 do bar.ballState[i].done, bar.ballState[i].x2, bar.ballOx[i] = true, 0, 0 end
+    return
+  end
+  local wait = delay or 0
+  bar.visible = wait == 0
+  if wait == 0 then tray_se("SE_BALL_TRAY_ENTER", 0) end
+  tray_spawn(bar, function()
+    if wait > 0 then
+      wait = wait - 1
+      if wait == 0 then
+        bar.visible = true
+        -- pokeemerald/src/battle_interface.c:1666
+        tray_se("SE_BALL_TRAY_ENTER", 0)
+      end
+      return false
+    end
+    return IntroSeq.trayEnterTick(bar, isOpponent)
+  end)
+end
+
+-- pokeemerald/src/battle_interface.c:1671
+function IntroSeq.trayExitState(bar, isOpponent)
+  bar.exiting = true
+  bar.extended = true
+  bar.blend = 16
+  bar.blendTick = 0
+  bar.alpha = 1
+  bar.d0 = (bar.d0 or (isOpponent and 5 or -5))
+  bar.d0 = bar.d0 >= 0 and math.floor(bar.d0 / 2) or -math.floor(-bar.d0 / 2)
+  bar.d1 = 0
+  bar.ballState = bar.ballState or {}
+  bar.ballOx = bar.ballOx or {}
+  bar.ballHidden = bar.ballHidden or {}
+  for i = 1, 6 do
+    local b = bar.ballState[i] or { x2 = 0 }
+    bar.ballState[i] = b
+    b.delay = isOpponent and 7 * (6 - i) or 7 * (i - 1)
+    b.d3 = 0
+    b.x2 = b.x2 or 0
+    b.done = false
+  end
+  return bar
+end
+
+local function tray_center_x(i, isOpponent)
+  local m = require("src.ui.game3.battle_chrome").manifest() or {}
+  if isOpponent then
+    local x = (m.partyBarOpponent and m.partyBarOpponent.x) or 104
+    return x - 24 - 10 * (6 - i) + 4
+  end
+  local x = (m.partyBarPlayer and m.partyBarPlayer.x) or 136
+  return x + 24 + 10 * (i - 1) + 4
+end
+
+function IntroSeq.trayExitTick(bar, isOpponent)
+  -- pokeemerald/src/battle_interface.c:1823
+  bar.d1 = bar.d1 + 32
+  local step = math.floor(bar.d1 / 16)
+  if bar.d0 > 0 then bar.ox = bar.ox + step else bar.ox = bar.ox - step end
+  bar.d1 = bar.d1 % 16
+  for i = 1, 6 do
+    local b = bar.ballState[i]
+    if not b.done then
+      if b.delay > 0 then
+        b.delay = b.delay - 1
+      else
+        -- pokeemerald/src/battle_interface.c:1878
+        local move = accel_step(b)
+        if isOpponent then b.x2 = b.x2 + move else b.x2 = b.x2 - move end
+        local cx = tray_center_x(i, isOpponent) + b.x2
+        if cx > 248 or cx < -8 then
+          b.done = true
+          bar.ballHidden[i] = true
+        end
+      end
+      bar.ballOx[i] = b.x2
+    end
+  end
+  -- pokeemerald/src/battle_interface.c:1727
+  if bar.blend > 0 then
+    if bar.blendTick % 2 == 0 then bar.blend = bar.blend - 1 end
+    bar.blendTick = bar.blendTick + 1
+    bar.alpha = math.max(0, bar.blend) / 16
+    return false
+  end
+  -- pokeemerald/src/battle_interface.c:1740
+  bar.blend = bar.blend - 1
+  if bar.blend == -1 then
+    bar.visible = false
+    bar.alpha = 0
+  end
+  return bar.blend <= -3
+end
+
+function IntroSeq.hideTray(s, side)
+  local bar = s.partyBar[side]
+  if not bar.visible and not bar.task then return end
+  local isOpponent = side == "enemy"
+  if Anim._headless or not bar.ballState then
+    bar.visible = false
+    return
+  end
+  IntroSeq.trayExitState(bar, isOpponent)
+  tray_spawn(bar, function() return IntroSeq.trayExitTick(bar, isOpponent) end)
+end
+
 local function present_of(key)
   if type(key) ~= "number" then return Anim.present(key) end
   return Anim.present(key) or (key < 2 and Anim.present(State.sideOf(key))) or nil
@@ -427,6 +658,12 @@ function IntroSeq.begin(st, opts)
 
   local playerGender = (st.oldManTutorial and 5) or (st.backPicOverride) or opts.playerGender or 0
   s.bgSlide = { enemyOx = -240, playerOx = 240 }
+  s.entry = nil
+  local entryKey = require("src.core.game3.battle.bg").sheetKey()
+  local kind, env = IntroSeq.entrySlide(st, entryKey)
+  if kind then
+    s.entry = { key = entryKey, kind = kind, env = env, x = 0, y = 0, alpha = (kind == 3) and 0.5 or 1 }
+  end
   s.trainer.player.visible = true
   s.trainer.player.gender = playerGender
   s.trainer.player.ox = 240
@@ -611,8 +848,13 @@ local function run_step(step)
         try_advance()
       end)
     end
-    Anim.tweenStage(frames, function(u)
+    Anim.tweenStage(frames, function(u, t)
       s.slide = u
+      local e = s.entry
+      if e then
+        local x, y, alpha = IntroSeq.entryFrame(e.kind, e.env, t and t.frames or math.floor(u * frames + 0.5))
+        if x then e.x, e.y, e.alpha = x, y, alpha else s.entry = nil end
+      end
       if s.win0 then
         local top, bottom = IntroSeq.win0Rows(math.floor(u * frames + 0.5))
         if top <= 0 then s.win0 = nil else s.win0[1], s.win0[2] = top, bottom end
@@ -624,6 +866,7 @@ local function run_step(step)
     end, function()
       s.slide = 1
       s.win0 = nil
+      s.entry = nil
       s.slideDone = true
       start_sprite_slide()
       bgDone = true
@@ -701,21 +944,11 @@ local function run_step(step)
   end
 
   if kind == "partybar" then
-    s.partyBar.enemy.visible = true
-    s.partyBar.enemy.ox = -100
-    s.partyBar.enemy.balls = d.enemyBalls or { "ok" }
-    s.partyBar.player.visible = true
-    s.partyBar.player.ox = 100
-    s.partyBar.player.balls = d.playerBalls or { "ok" }
-    wait_busy()
-    Anim.tweenStage(d.frames or 20, function(u)
-      s.partyBar.enemy.ox = -100 + 100 * u
-      s.partyBar.player.ox = 100 - 100 * u
-    end, function()
-      s.partyBar.enemy.ox = 0
-      s.partyBar.player.ox = 0
-      advance()
-    end)
+    -- pokeemerald/src/battle_controller_player.c:3022
+    IntroSeq.showTray(s, "player", d.playerBalls, 0)
+    -- pokeemerald/src/battle_controller_opponent.c:1938
+    IntroSeq.showTray(s, "enemy", d.enemyBalls, 2)
+    advance()
     return
   end
 
@@ -744,7 +977,7 @@ local function run_step(step)
     else
       to = (d.toX or -40) - 80
     end
-    s.partyBar[side].visible = false
+    IntroSeq.hideTray(s, side)
     wait_busy()
     Anim.tweenStage(d.frames or 35, function(u)
       tr.ox = from + (to - from) * u
@@ -775,7 +1008,8 @@ local function run_step(step)
     local tr = s.trainer.enemy
     local exitFrom = tr.ox or 0
     local exitTo = (d.toX or 280) - 176
-    s.partyBar.enemy.visible = false
+    -- pokeemerald/src/battle_controller_opponent.c:1884
+    IntroSeq.hideTray(s, "enemy")
     wait_busy()
     -- pret OpponentHandleIntroTrainerBallThrow: starts linear slide-out (35 frames)
     -- AND StartSendOutAnim (16f delay + 12f emergence).
@@ -853,7 +1087,8 @@ local function run_step(step)
       tr.gender = (IntroSeq._opts and IntroSeq._opts.playerGender) or 0
       tr.frame = TrainerPic.backIdleFrame(tr.gender)
     end
-    s.partyBar.player.visible = false
+    -- pokeemerald/src/battle_controller_player.c:2955
+    IntroSeq.hideTray(s, "player")
     -- pokeemerald/src/battle_controller_player.c:2931
     local pose = TrainerPic.backAnims(tr.gender).throw
     local poseFrame, poseLeft, poseI = 0, 0, 0

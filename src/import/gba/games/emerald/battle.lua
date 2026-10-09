@@ -165,6 +165,9 @@ return function(V)
       { key = "drake", cfg = env("gBattleEnvironmentTiles_Stadium", "gBattleEnvironmentTilemap_Stadium",
         "gBattleEnvironmentPalette_StadiumDrake") },
     },
+    -- pokeemerald/src/battle_bg.c:1174
+    entry_rayquaza = { tiles = lz("gBattleEnvironmentAnimTiles_Rayquaza"),
+      tilemap = lz("gBattleEnvironmentAnimTilemap_Rayquaza") },
     -- pokeemerald/src/battle_bg.c:163
     window_templates = { normal = sym("sStandardBattleWindowTemplates"), arena = sym("sBattleArenaWindowTemplates") },
     window_template_counts = {

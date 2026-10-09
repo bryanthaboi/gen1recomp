@@ -96,12 +96,7 @@ local function natureOf(mon)
 end
 
 local function natureName(id)
-  local ok, name = pcall(function()
-    local RomText = require("src.core.game3.rom_text")
-    local key = RomText.key("gNatureNamePointers", id)
-    if not RomText.has(key) then key = RomText.key("gNatureNames", id) end
-    return RomText.plain(key)
-  end)
+  local ok, name = pcall(function() return require("src.core.game3.summary_data").NATURES[id] end)
   return ok and name and titleCase(name) or tostring(id)
 end
 

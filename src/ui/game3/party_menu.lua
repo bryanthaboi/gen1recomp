@@ -498,10 +498,11 @@ local function destroy_party_oam()
   PartyMenu._summaryIcon = nil
 end
 
+-- pokefirered/src/party_menu.c:2664
 local SUB_STATUS = 0
 local SUB_ITEM = 0
-local SUB_BALL = 4
-local SUB_MON = 8
+local SUB_BALL = 8
+local SUB_MON = 4
 
 local HOLD_ICONS_SUB = "/pokemon/party/"
 
@@ -821,7 +822,7 @@ end
 local function flush_party_sprites()
   local mine = {}
   each_party_sprite(function(s) mine[s] = true end)
-  for _, s in ipairs(Oam.buildOamBuffer()) do
+  for _, s in ipairs(Oam.buildOamBuffer(true)) do
     if mine[s] and s.clip ~= FLUSHED_CLIP then
       Oam.flushOne(s)
       s.clip = FLUSHED_CLIP

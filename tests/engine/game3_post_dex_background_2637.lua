@@ -15,10 +15,12 @@ local function terrain(tr)
 end
 for id = 0, cfg.terrain_count - 1 do
   local tr = { tiles = 100 + id * 3, pal = 101 + id * 3, tilemap = 102 + id * 3 }
+  tr.entryTiles, tr.entryTilemap = tr.tiles, tr.tilemap
   terrain(tr)
   terrainRows[#terrainRows + 1] = { key = Extract.TERRAIN_KEYS[id], id = id, cfg = tr }
 end
 for _, scene in ipairs(cfg.scenes) do terrain(scene.cfg) end
+data[cfg.entry_rayquaza.tiles], data[cfg.entry_rayquaza.tilemap] = gfx, map
 Extract.requireTerrainTable = function() return terrainRows end
 Lz77.decompress = function(_, offset) return data[offset] or string.rep("\0", 32) end
 local rom = { get = function() return 0 end, u16 = function() return 0 end }
@@ -65,6 +67,8 @@ for _, edition in ipairs(profiles) do
     terrain(row)
     pointer(tableBase + id * 20, row.tiles)
     pointer(tableBase + id * 20 + 4, row.tilemap)
+    pointer(tableBase + id * 20 + 8, row.tiles)
+    pointer(tableBase + id * 20 + 12, row.tilemap)
     pointer(tableBase + id * 20 + 16, row.pal)
     rows[#rows + 1] = row
   end

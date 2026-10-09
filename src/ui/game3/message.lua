@@ -493,7 +493,9 @@ function Message.drawText()
   if rse then
     -- pokeemerald/src/text.c:792
     if Message._waiting and not Message._held and not Message._autoScroll
-        and (rse.lastPage or Message._page < #Message._pages) then
+        and (rse.lastPage or Message._page < #Message._pages
+          -- pokeemerald/src/text.c:1171
+          or (Message._frame == "battle" and not Message._stay)) then
       local n = math.floor((Message._arrowTicks or 0) / (rse.period or ((rse.delay or 0) + 1)))
       Chrome.promptArrow(endX or baseX, endY or baseY, n)
     end

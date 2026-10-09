@@ -154,7 +154,7 @@ function Gen.game3CacheReady()
     return false
   end
   local RomText = require("src.core.game3.rom_text")
-  local natureTable = (version == "ruby" or version == "sapphire") and "gNatureNames" or "gNatureNamePointers"
+  local natureTable = require("src.core.game3.summary_data").natureTable(version)
   if RomText.has(RomText.key(natureTable, 0)) then return true end
   require("src.core.game3.scripting.space").bundle = nil
   return false

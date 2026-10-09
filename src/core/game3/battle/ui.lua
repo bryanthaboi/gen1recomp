@@ -2655,12 +2655,12 @@ local function draw_party_bars(stage)
   local enemy = stage.partyBar.enemy
   if enemy and enemy.visible then
     local pos = m.partyBarOpponent or { x = 104, y = 40 }
-    BattleChrome.drawPartyBar(enemy.x or pos.x, enemy.y or pos.y, enemy.balls, enemy.ox, true)
+    BattleChrome.drawPartyBar(enemy.x or pos.x, enemy.y or pos.y, enemy.balls, enemy.ox, true, enemy)
   end
   local player = stage.partyBar.player
   if player and player.visible then
     local pos = m.partyBarPlayer or { x = 136, y = 96 }
-    BattleChrome.drawPartyBar(pos.x, pos.y, player.balls, player.ox, false)
+    BattleChrome.drawPartyBar(pos.x, pos.y, player.balls, player.ox, false, player)
   end
 end
 
@@ -2797,6 +2797,11 @@ function Ui.draw(w, h)
   Anim.drawParticles(201, 999)
   end
   if Anim.endParticleFrame then Anim.endParticleFrame() end
+  local entry = stage and stage.entry
+  if entry then
+    -- pokeemerald/src/battle_bg.c:1198
+    BattleChrome.drawEntry(entry.key, entry.x, entry.y, entry.alpha)
+  end
   LevelUpStreaks.draw(st)
   draw_intro_ball(stage)
   -- pokefirered/src/pokeball.c:770

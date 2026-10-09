@@ -5,10 +5,21 @@ local Strings = require("src.core.Strings")
 local RomText = require("src.core.game3.rom_text")
 local SummaryData = {}
 
-local NATURE_KEYS = {}
-for i = 0, 24 do NATURE_KEYS[i] = RomText.key("gNatureNamePointers", i) end
+-- pokeruby/src/data/text/nature_names_en.h:27
+local RS_NATURE_TABLE = { ruby = "gNatureNames", sapphire = "gNatureNames" }
+
+function SummaryData.natureTable(version)
+  return RS_NATURE_TABLE[version or require("src.core.GameVersion").get()] or "gNatureNamePointers"
+end
+
 -- src/data/text/nature_names.h:27
-SummaryData.NATURES = RomText.lazy(NATURE_KEYS)
+SummaryData.NATURES = setmetatable({}, {
+  __index = function(_, k)
+    local id = tonumber(k)
+    if not id or id < 0 or id > 24 or id % 1 ~= 0 then return nil end
+    return RomText.at(SummaryData.natureTable(), id)
+  end,
+})
 
 -- Stat multipliers per nature [natureId] = { stat = 1.1 / 0.9 / 1.0 }
 -- Stats: atk, def, spAtk, spDef, spd

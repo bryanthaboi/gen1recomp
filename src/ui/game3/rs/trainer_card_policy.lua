@@ -7,11 +7,18 @@ function P.generate(session, version)
   local C = require("src.core.game3.constants").of(version)
   local Dex = require("src.core.game3.dex")
   local Policy = require("src.core.game3.profiles.rs.pokedex")
-  local store, stats = s.store or s, s.gameStats or {}
+  local Space = package.loaded["src.core.game3.scripting.space"]
+  local Runtime = package.loaded["src.core.game3.runtime"]
+  local current = Runtime and Runtime.getSession and Runtime.getSession()
+  local live = s.store == nil and (current == nil or current == s) and Space and Space.getStore and Space.getStore() or nil
+  local store, stats = s.store or live or s, s.gameStats or {}
   local tower = s.battleTower or {}
   local function flag(name)
-    local v = (store.flags or {})[C:require("flags", name)]
-    if v == nil then v = (store.flags or {})[name] end
+    local id, flags = C:require("flags", name), store.flags or {}
+    local v = flags[id]
+    if v == nil then v = flags[tostring(id)] end
+    if v == nil then v = flags[string.format("0x%X", id)] end
+    if v == nil then v = flags[name] end
     return v == true or v == 1
   end
   -- save_menu_util.c:118

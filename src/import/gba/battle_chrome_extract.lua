@@ -8,13 +8,14 @@ local CacheBlob = require("src.import.CacheBlob")
 
 local BattleChromeExtract = {}
 
-BattleChromeExtract.FORMAT_VERSION = 7
+BattleChromeExtract.FORMAT_VERSION = 8
 BattleChromeExtract.CACHE_SUB = "pokemon/battle"
 BattleChromeExtract.REQUIRED = {
   "pokemon/battle/manifest.lua",
   "pokemon/battle/textbox.rgba",
   "pokemon/battle/healthbox_player.rgba",
   "pokemon/battle/terrain_building.rgba",
+  "pokemon/battle/entry_grass.rgba",
 }
 
 -- src/battle_bg.c:439
@@ -438,9 +439,12 @@ function BattleChromeExtract.terrainTable(get, cfg)
     local off = base + id * BattleChromeExtract.TERRAIN_ENTRY_SIZE
     local tiles = ptr_offset(u32(off))
     local tilemap = ptr_offset(u32(off + 4))
+    local entryTiles = ptr_offset(u32(off + 8))
+    local entryTilemap = ptr_offset(u32(off + 12))
     local pal = ptr_offset(u32(off + 16))
-    if not (key and tiles and tilemap and pal) then return nil end
-    out[id + 1] = { key = key, id = id, cfg = { tiles = tiles, tilemap = tilemap, pal = pal } }
+    if not (key and tiles and tilemap and entryTiles and entryTilemap and pal) then return nil end
+    out[id + 1] = { key = key, id = id, cfg = { tiles = tiles, tilemap = tilemap, pal = pal,
+      entryTiles = entryTiles, entryTilemap = entryTilemap } }
   end
   local grass = cfg.terrain_grass
   local first = out[1].cfg
@@ -502,6 +506,38 @@ local function bake_terrain(get, cache, root, key, tr)
   return { w = trW, h = trH, postDexFile = postDexFile }
 end
 
+-- pokeemerald/src/battle_bg.c:1198
+local function bake_entry(get, cache, root, key, tiles, tilemap, pal)
+  local eMap = Lz77.decompress(get, tilemap)
+  local rows = math.floor(byte_len(eMap) / 64)
+  if rows < 1 then error("battle_chrome_extract: entry tilemap empty for " .. key) end
+  local rgba, w, h = bake_tilemap_rgba(Lz77.decompress(get, tiles), Lz77.decompress(get, pal), eMap, 32, rows,
+    { bgPalBase = 2 })
+  local file = "entry_" .. key .. ".rgba"
+  cache:write(root .. "/" .. file, rgba)
+  return string.format('    %s = { file = %q, w = %d, h = %d },', key, file, w, h)
+end
+
+-- pokeemerald/src/battle_bg.c:1124
+local function scene_entry(cfg, rows, key)
+  local function row(k)
+    for _, t in ipairs(rows) do if t.key == k then return t.cfg end end
+    error("battle_chrome_extract: no terrain row " .. k)
+  end
+  if key == "rayquaza" and cfg.entry_rayquaza then return cfg.entry_rayquaza end
+  if key == "groudon" or key == "kyogre" then
+    -- pokeruby/src/battle_bg.c:679
+    if cfg.gameLayout == "rs" then
+      local r = row(Versions.active() == "ruby" and "cave" or "underwater")
+      return { tiles = r.entryTiles, tilemap = r.entryTilemap }
+    end
+    local r = row(key == "groudon" and "cave" or "underwater")
+    return { tiles = r.entryTiles, tilemap = r.entryTilemap }
+  end
+  local r = row("building")
+  return { tiles = r.entryTiles, tilemap = r.entryTilemap }
+end
+
 -- pokeemerald/src/battle_bg.c:859
 function BattleChromeExtract.runRse(rom, cache, opts, cfg)
   local cacheRoot = opts.cacheRoot or default_cache_root()
@@ -538,9 +574,15 @@ function BattleChromeExtract.runRse(rom, cache, opts, cfg)
     terrainMeta[t.key] = bake_terrain(get, cache, root, t.key, t.cfg)
     terrainOrder[#terrainOrder + 1] = t.key
   end
+  local entryLines = {}
+  for _, t in ipairs(terrains) do
+    entryLines[#entryLines + 1] = bake_entry(get, cache, root, t.key, t.cfg.entryTiles, t.cfg.entryTilemap, t.cfg.pal)
+  end
   for _, sc in ipairs(cfg.scenes or {}) do
     terrainMeta[sc.key] = bake_terrain(get, cache, root, sc.key, sc.cfg)
     terrainOrder[#terrainOrder + 1] = sc.key
+    local e = scene_entry(cfg, terrains, sc.key)
+    entryLines[#entryLines + 1] = bake_entry(get, cache, root, sc.key, e.tiles, e.tilemap, sc.cfg.pal)
   end
   local terrainLines, sceneKeys = {}, {}
   for _, key in ipairs(terrainOrder) do
@@ -575,6 +617,9 @@ function BattleChromeExtract.runRse(rom, cache, opts, cfg)
   terrains = {
 %s
   },
+  entries = {
+%s
+  },
   environments = { %s },
   scenes = { %s },
   elementsTiles = %d,
@@ -606,7 +651,8 @@ function BattleChromeExtract.runRse(rom, cache, opts, cfg)
   },
 }
 ]], BattleChromeExtract.FORMAT_VERSION, tw, th, grass.w, grass.h,
-    table.concat(terrainLines, "\n"), table.concat(envKeys, ", "), table.concat(sceneKeys, ", "), elTiles,
+    table.concat(terrainLines, "\n"), table.concat(entryLines, "\n"), table.concat(envKeys, ", "),
+    table.concat(sceneKeys, ", "), elTiles,
     pal_list(rom, cfg.healthbox_pal), pal_list(rom, cfg.healthbar_pal), table.concat(winPalList, ", "),
     table.concat(tbPalList, ", "), pal_list(rom, cfg.pp_text_pal),
     window_rows(rom, wt.normal, wc.normal), window_rows(rom, wt.arena, wc.arena))
@@ -666,6 +712,11 @@ function BattleChromeExtract.run(rom, cache, opts)
     end
   end
 
+  local entryLines = {}
+  for _, t in ipairs(terrains) do
+    entryLines[#entryLines + 1] = bake_entry(get, cache, root, t.key, t.cfg.entryTiles, t.cfg.entryTilemap, t.cfg.pal)
+  end
+
   local grass = terrainMeta.grass or { w = 256, h = 256 }
   local terrainLines = {}
   for _, key in ipairs(terrainOrder) do
@@ -685,6 +736,9 @@ function BattleChromeExtract.run(rom, cache, opts)
   textboxW = %d, textboxH = %d,
   terrainW = %d, terrainH = %d,
   terrains = {
+%s
+  },
+  entries = {
 %s
   },
   partySummaryBar = { file = "party_summary_bar.rgba", w = 128, h = 8 },
@@ -712,7 +766,7 @@ function BattleChromeExtract.run(rom, cache, opts)
 }
 ]], BattleChromeExtract.FORMAT_VERSION, tw, th,
     grass.w, grass.h,
-    table.concat(terrainLines, "\n"))
+    table.concat(terrainLines, "\n"), table.concat(entryLines, "\n"))
   cache:write(root .. "/manifest.lua", manifest)
 
   return { root = root, textboxW = tw, textboxH = th, terrains = terrainOrder }
@@ -783,6 +837,7 @@ function BattleChromeExtract.ready(cache, cacheRoot)
   return valid_file(root .. "/manifest.lua", 20)
     and valid_file(root .. "/healthbox_player.rgba", 128 * 64 * 4)
     and valid_file(root .. "/terrain_building.rgba", 100)
+    and valid_file(root .. "/entry_grass.rgba", 100)
 end
 
 return BattleChromeExtract

@@ -5,14 +5,14 @@
 local Versions = {}
 
 Versions.ROM_SIZE = 16777216
--- v53: outdoor LAB continuity — shared Y cuts, frlg bias, mid cohere, MRF.
+-- v53: outdoor LAB continuity: shared Y cuts, frlg bias, mid cohere, MRF.
 -- v67: extract-first MapEvents + script BFS (cache is script/event source of truth)
 -- v68: native FRLG mid atlas + pret map palettes (demake 2bpp still stored)
 -- Text charmap $F0=':' fix lives in text_ir.lua; re-run script extract to refresh
 -- cached strings (live cache was patched in-place for the yen→colon bug).
--- v72: naming keyboard 1:1 — cursor 2×2 frames, cropped KB, CLEAR row text
+-- v72: naming keyboard 1:1: cursor 2×2 frames, cropped KB, CLEAR row text
 -- v75: restore title_screen.png composite + press_start / copyright aliases
--- v76: intro movie layout — copyright crop, GF sprite coords, scene1 frames
+-- v76: intro movie layout: copyright crop, GF sprite coords, scene1 frames
 -- v77: GF presents center fix, scene3 gengar/bg pal, copyright x=0 crop
 -- v78: scene2 PLTT slot shift, scene1 128px frames, scene3 grass 64×32
 -- v79: title flames 10-frame sheet; title screen on Bg+Oam compositor
@@ -29,27 +29,27 @@ Versions.ROM_SIZE = 16777216
 -- v100: location preview screens (sMapPreviewScreenData artwork) + ROM-derived
 --       mapsec names and sDungeonInfo dungeon descriptions.
 -- v111: hidden-item bitfield fix in extract_map_events (id % 256, qty % 128).
--- v112: deoxys_rock_fragments field effect — the Birth Island meteorite shatter
+-- v112: deoxys_rock_fragments field effect: the Birth Island meteorite shatter
 --       had no artwork, so the rock simply vanished instead of breaking apart.
 --       Both branches had taken 111 for unrelated cache layouts, so this merge
 --       moves the Deoxys artwork onto its own number instead of sharing one.
--- v113: script opcode layouts corrected against pret asm/macros/event.inc —
+-- v113: script opcode layouts corrected against pret asm/macros/event.inc -
 --       comparestat is {byte,word} (was {byte,half}), setptr / loadbytefromptr /
 --       setptrbyte each carry a leading byte plus a word (were shorter).  The
 --       old sizes mis-decoded every instruction after one, so every cached
 --       script is stale.
--- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon — eggs were drawn
+-- v114: pokemon/icons/412.rgba, the SPECIES_EGG menu icon: eggs were drawn
 --       with the icon of the species they hatch into.
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
 -- v121: chrome/fonts/japanese_{normal,small}_* and japanese_widths.lua, the
 --       cart's Japanese fonts, for text a Japanese translation mod prints.
-Versions.CACHE_VERSION = 133
+Versions.CACHE_VERSION = 134
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
 -- Audio pack (M4A banks / DirectSound samples / cries).
 Versions.AUDIO_VERSION = 6
--- FireRed USA 1.0 (BPRE) — located by structural scan (entry0 ms=me=0, SE_SELECT ms=me=2).
+-- FireRed USA 1.0 (BPRE): located by structural scan (entry0 ms=me=0, SE_SELECT ms=me=2).
 Versions.AUDIO = {
   song_table = 0x4A32CC,   -- gSongTable file offset
   song_count = 347,        -- ids 0 .. MUS_TEACHY_TV_MENU (346)
@@ -102,7 +102,7 @@ Versions.FONT_LATIN_WIDTHS = 0x207300       -- sFontNormalLatinGlyphWidths
 Versions.FONT_GLYPH_BYTES = 64              -- 0x20 u16s per latin glyph
 Versions.MENU_CURSOR_GLYPH = 0xEF           -- gText_SelectorArrow2
 
--- Pokémon species pack (names / icons / types / stats / abilities) — FireRed USA 1.0.
+-- Pokémon species pack (names / icons / types / stats / abilities): FireRed USA 1.0.
 Versions.POKEMON_VERSION = 3
 Versions.NUM_SPECIES = 412                -- SPECIES_NONE .. last (incl. egg/forms)
 Versions.SPECIES_NAMES = 0x245EE0         -- gSpeciesNames
@@ -288,7 +288,7 @@ Versions.MAP_PREVIEW_COUNT = 28
 Versions.MAP_PREVIEW_ENTRY_SIZE = 16
 Versions.MAP_PREVIEW_TYPE_CAVE = 0         -- MPS_TYPE_CAVE
 Versions.MAP_PREVIEW_TYPE_FOREST = 1       -- MPS_TYPE_FOREST
--- CopyToBgTilemapBufferRect(2, tilemap, 0, 0, 32, 20) — 640 u16 = 1280 bytes.
+-- CopyToBgTilemapBufferRect(2, tilemap, 0, 0, 32, 20): 640 u16 = 1280 bytes.
 Versions.MAP_PREVIEW_TILEMAP_W = 32
 Versions.MAP_PREVIEW_TILEMAP_H = 20
 -- Each entry's palptr holds 0x40 bytes (32 BGR555 colours = BG banks 13 and 14);
@@ -303,9 +303,9 @@ Versions.MAP_PREVIEW_PALETTE_BANKS = 2
 -- the sole bank-0 references sit in the off-screen padding columns 30-31.
 Versions.MAP_PREVIEW_BANK_LO = 13
 Versions.MAP_PREVIEW_BANK_HI = 14
--- sMapsecName_* — one 0xFF-terminated string per mapsec, ascending, contiguous.
+-- sMapsecName_*: one 0xFF-terminated string per mapsec, ascending, contiguous.
 Versions.MAPSEC_NAMES = 0x3EECFC
--- sRegionMapSectionIdToName[] — 109 pointers into the block above; usable as a
+-- sRegionMapSectionIdToName[]: 109 pointers into the block above; usable as a
 -- defensive cross-check (table[i] == offset of the i-th string).
 Versions.MAPSEC_NAME_POINTERS = 0x3F1CAC
 Versions.MAPSEC_FIRST = 88                 -- MAPSEC_PALLET_TOWN
@@ -386,7 +386,7 @@ Versions.BATTLE_MOVES = 0x250C04
 Versions.BATTLE_MOVE_SIZE = 12
 Versions.MOVES_COUNT = 355 -- MOVE_NONE .. last Gen3 move id inclusive span
 
--- Battle anim IR pack — ROM-native bytecode extraction (FireRed USA 1.0).
+-- Battle anim IR pack: ROM-native bytecode extraction (FireRed USA 1.0).
 -- Addresses verified by structural scan of the ROM.
 Versions.BATTLE_ANIMS_VERSION = 5
 Versions.BATTLE_ANIMS = {
@@ -1395,7 +1395,7 @@ Versions.BATTLE_ANIM_SPECIAL_NAMES = {
   [6] = "MON_TO_SUBSTITUTE",
 }
 
--- Wild encounters (FireRed USA 1.0): gWildMonHeaders[] — 20-byte entries,
+-- Wild encounters (FireRed USA 1.0): gWildMonHeaders[]: 20-byte entries,
 -- terminated by mapGroup/mapNum = 0xFF. Verified via Route 1 land fingerprint.
 Versions.WILD_MON_HEADERS = 0x3C9CB8
 Versions.WILD_MON_HEADER_SIZE = 20
@@ -1436,7 +1436,7 @@ Versions.FIELD_EFFECTS = {
   -- pokefirered/src/field_effect.c:3963 sImages_DeoxysRockFragment
   -- (graphics/field_effects/pics/deoxys_rock_fragment_*.png, 4x 8x8 4bpp).
   -- The palette is sDeoxysObjectPals[10] (0x3F6206 + 10*32), the fully
-  -- awakened red ramp step — the puzzle is always solved by the time the rock
+  -- awakened red ramp step: the puzzle is always solved by the time the rock
   -- shatters, so the shards are always red.
   deoxys_rock_fragments = {
     pic = 0x3CBDB0, pal = 0x3F6346, w = 8, h = 8, frames = 4,
@@ -2652,7 +2652,7 @@ Versions.NUM_MAP_GROUPS = 43 -- pret map_groups.json group_order length
 Versions.G_MAP_LAYOUTS = 0x34EB8C
 
 -- FireRed USA 1.0 MapHeader file offsets (verified against local dump).
--- Legacy hand list — prefer MapTree.walk(gMapGroups) for new extract.
+-- Legacy hand list: prefer MapTree.walk(gMapGroups) for new extract.
 -- Shared layouts (House3 / Harbor / PC 2F) disambiguated by header proximity
 -- to One Island Network Center (0x351B6C).
 Versions.MAP_HEADERS = {
@@ -2683,7 +2683,7 @@ local FIRERED_10_LAYOUTS = {
   OneIsland_KindleRoad = { offset = 0x324330, width = 24, height = 140 },
   OneIsland_TreasureBeach = { offset = 0x325D94, width = 24, height = 40 },
   OneIsland_PokemonCenter_1F = { offset = 0x33A7CC, width = 19, height = 11 },
-  -- Shared Pokémon Center 2F bin (several maps); first hit is fine — identical data.
+  -- Shared Pokémon Center 2F bin (several maps); first hit is fine: identical data.
   OneIsland_PokemonCenter_2F = { offset = 0x2D59B4, width = 15, height = 10 },
   Island_Harbor = { offset = 0x343DFC, width = 17, height = 13 },
   House3 = { offset = 0x2D5BF0, width = 11, height = 9 },
@@ -2764,7 +2764,7 @@ Versions.WARPS = {
   },
 }
 
--- FireRed USA 1.0 — verified against local dump + pret bins.
+-- FireRed USA 1.0: verified against local dump + pret bins.
 local FIRERED_10 = {
   id = "firered_1_0",
   game = "firered",

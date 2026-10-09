@@ -609,7 +609,7 @@ M.POKEMON_TOWER_7F = {
       -- collected and the Route 16 SNORLAX sealed the map. The arrival
       -- mat itself is inert until stepped off (warpEntryCell), which is
       -- what makes the vanilla coordinates safe.
-      { "warp", "MR_FUJIS_HOUSE", 3, 7, "up" },           -- 8
+      { "warp", "MR_FUJIS_HOUSE", 3, 7, "up", true },     -- 8
     },
   },
 }

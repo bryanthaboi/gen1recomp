@@ -21,8 +21,8 @@ CacheContract.VERSION_FORMAT = {
   silver = "rom-cache-v15:",
   crystal = "rom-cache-v15-crystal6:",
   -- engine/overworld/map_sprites.asm:181, engine/battle/animations.asm:2600
-  -- data/pikachu/pikachu_pic_animation.asm:340
-  yellow = "rom-cache-v12-yellow2:",
+  -- data/pikachu/pikachu_pic_animation.asm:340, engine/movie/title.asm:76
+  yellow = "rom-cache-v12-yellow3:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
   firered = "rom-cache-v25-firered:",
   leafgreen = "rom-cache-v10-leafgreen:",

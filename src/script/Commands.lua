@@ -392,8 +392,9 @@ function Commands.start_battle(ctx, kind, a, b)
   runner:yield()
 end
 
-function Commands.warp(ctx, mapId, x, y, facing)
+function Commands.warp(ctx, mapId, x, y, facing, door)
   local runner = ctx.runner
+  if door then ctx.overworld.doorWarp = true end
   ctx.overworld:startWarpTo(mapId, x, y, facing, function()
     runner:resume()
   end)

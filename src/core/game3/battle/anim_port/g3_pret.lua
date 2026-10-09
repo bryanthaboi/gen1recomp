@@ -687,6 +687,7 @@ local function setup(s, vm, tmplName)
     s.quad = nil
   end
   s.pri = 2
+  s._pz = nil
   s.callbackData = nil
 end
 
