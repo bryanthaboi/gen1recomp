@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.67",
+          "date": "2026-10-09",
+          "size": 56252813,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.67/gen1recomp++-0.3.67-ios.ipa",
+          "localizedDescription": "I'm eating hot and spicy cheez its rn\n\n## Issues closed\n\n- #2793 Text advance indicator at the end of dialogue sections\n- #2794 Unintentional Visual Glitch (Shiny Sparkle )\n- #2795 Emerald Pokédex Cry Needle is not correct.\n- #2796 Crash when trying to start Emerald on PS4\n- #2797 Pokémon Stats and Data Are Altered or Lost When Transferring Between Generations Using the Box System\n- #2798 Trainer card doesn't change after two stars\n\n## Contributors\n\n- @artyrambles\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.66",
           "date": "2026-10-08",
           "size": 56251569,
