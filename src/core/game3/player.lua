@@ -556,7 +556,43 @@ local function playerCollide(dir)
   Player.startAction({
     frames = Player.biking and WALK_FRAMES or WALK_IN_PLACE_SLOW_FRAMES,
     walk = "normal",
+    interruptible = not Player.biking,
   })
+end
+
+function Player.cancelAction()
+  if not Player.action then return end
+  Player.action = nil
+  Player.spriteYOffset = 0
+  Player.walkInPlace = false
+  Player.walkInPlaceFast = false
+end
+
+-- pokeemerald/src/field_player_avatar.c:353 TryInterruptObjectEventSpecialAnim
+-- pokefirered/src/field_player_avatar.c:156 TryInterruptObjectEventSpecialAnim
+local function tryInterruptAction(game, dir)
+  local a = Player.action
+  if not (a and a.interruptible and dir) then return false end
+  if dir ~= Player.facing then
+    Player.cancelAction()
+    return true
+  end
+  -- pokeemerald/src/field_player_avatar.c:372
+  local Profile = package.loaded["src.core.game3.profile"] or lazyReq("src.core.game3.profile")
+  if Profile.forSession(nil).id ~= "emerald" then return false end
+  local d = DELTA[dir]
+  local ok = Collision.canEnter(game, Player.cellX + d[1], Player.cellY + d[2], {
+    fromX = Player.cellX,
+    fromY = Player.cellY,
+    dir = dir,
+    surfing = Player.surfing or Player.underwater,
+    elevation = Player.currentElevation,
+  })
+  if ok then
+    Player.cancelAction()
+    return true
+  end
+  return false
 end
 
 function Player.tryMove(dir, game, run)
@@ -917,6 +953,7 @@ function Player.startAction(opts)
     turnTo = opts.turnTo,
     walk = opts.walk,
     done = opts.done,
+    interruptible = opts.interruptible,
   }
   Player.acroAnim = opts.acroAnim
   if opts.walk then
@@ -1255,7 +1292,7 @@ function Player.update(game, input)
     if BikeRse then BikeRse.historyUpdate(input) end
   end
   if Player.moving then return end
-  if Player.action then return end
+  if Player.action and not tryInterruptAction(game, dirs_from_input(input)) then return end
   if Player.biking then
     local BikeRse = rseBike()
     -- pokeemerald/src/field_player_avatar.c:393 MovePlayerAvatarUsingKeypadInput
