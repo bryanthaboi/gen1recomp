@@ -589,6 +589,17 @@ local function wait_busy()
   SwitchSeq._waiting = true
 end
 
+local function play_release_cry(st, d)
+  local side = step_side(d)
+  local b = step_battler(st, d)
+  local sp = b and (b.species or (b.mon and (b.mon.species or b.mon.speciesId)))
+  if sp then
+    -- pokefirered/src/pokeball.c:782
+    local IntroSeq = require("src.core.game3.battle.intro_seq")
+    Audio.playCry(sp, IntroSeq.releaseCryMode(b.mon), (side == "player") and -25 or 25)
+  end
+end
+
 local function run_step(step)
   if not step then return end
   local kind = step.kind
@@ -777,6 +788,12 @@ local function run_step(step)
 
   if kind == "shiny_check" then
     local b = step_battler(st, d)
+    local nextStep = SwitchSeq._steps and SwitchSeq._steps[SwitchSeq._i + 1]
+    if nextStep and nextStep.kind == "cry" and not nextStep.cryPlayed then
+      -- pokeemerald/src/pokeball.c:665
+      play_release_cry(st, nextStep.data or {})
+      nextStep.cryPlayed = true
+    end
     if ShinySeq.start(b, d.id ~= nil and d.id or d.side or "enemy", function()
       advance()
     end) then
@@ -788,14 +805,7 @@ local function run_step(step)
   end
 
   if kind == "cry" then
-    local side = step_side(d)
-    local b = step_battler(st, d)
-    local sp = b and (b.species or (b.mon and (b.mon.species or b.mon.speciesId)))
-    if sp then
-      -- pokefirered/src/pokeball.c:782
-      local IntroSeq = require("src.core.game3.battle.intro_seq")
-      Audio.playCry(sp, IntroSeq.releaseCryMode(b.mon), (side == "player") and -25 or 25)
-    end
+    if not step.cryPlayed then play_release_cry(st, d) end
     SwitchSeq._waiting = true
     SwitchSeq._waitingCry = true
     return

@@ -2584,7 +2584,7 @@ function Pokedex.draw(s)
       end
       if page == PAGE.CRY and s.cryNeedle and not ex.select then
         love.graphics.draw(s.cryNeedle, 184 + (s.cryNeedleX or 0), 80 + (s.cryNeedleY or 0),
-          (s.cry and s.cry.needle.rotation or 0) * 2 * math.pi / 256, 1, 1, 32, 32)
+          -(s.cry and s.cry.needle.rotation or 0) * 2 * math.pi / 256, 1, 1, 32, 32)
       end
     end
   end

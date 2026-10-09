@@ -72,20 +72,16 @@ do
   local e=entry("gold",7)
   local a,lines=assert(Migration.convert(e,"firered"))
   local b=assert(Migration.convert(e,"firered"))
-  T.eq(Serializer.encode(a.ivs),Serializer.encode(b.ivs),"IV roll is deterministic for one record")
-  local perfect=0
-  for _,iv in pairs(a.ivs) do
-    T.check(iv>=0 and iv<=31,"IV within 0-31")
-    if iv==31 then perfect=perfect+1 end
-  end
-  T.check(perfect>=3,"at least three perfect IVs")
+  T.eq(Serializer.encode(a.ivs),Serializer.encode(b.ivs),"IVs are deterministic for one record")
+  local want={hp=29,atk=15,def=7,spe=19,spa=9,spd=9}
+  for key,iv in pairs(want) do T.eq(a.ivs[key],iv,"IV "..key.." is DV*2+1") end
   for key,ev in pairs(a.evs) do T.eq(ev,0,"EV "..key.." reset") end
   T.eq(a.abilityNum,1,"species with a second ability takes the second slot")
   T.eq(a.pokeball,4,"Poké Ball")
   T.eq(a.modernFatefulEncounter,false,"ordinary species has no fateful flag")
   T.eq(lines.natureExp,125500,"preview exposes source EXP for the nature helper")
   local other=assert(Migration.convert(entry("gold",8),"firered"))
-  T.check(Serializer.encode(other.ivs)~=Serializer.encode(a.ivs),"different records roll different IVs")
+  T.eq(Serializer.encode(other.ivs),Serializer.encode(a.ivs),"same DVs give the same IVs on any record")
   local shiny=entry("gold",9);shiny.mon.dvs={attack=15,defense=10,speed=10,special=10}
   local s=assert(Migration.convert(shiny,"emerald"))
   T.check(require("src.core.game3.pokemon").isShiny(s),"DV shininess survives with an EXP nature")
@@ -93,8 +89,7 @@ end
 
 for _,case in ipairs({{"red","MEW",151},{"gold","MEW",151},{"gold","CELEBI",251}}) do
   local out=assert(Migration.convert(entry(case[1],3,case[2]),"emerald"))
-  local perfect=0;for _,iv in pairs(out.ivs) do if iv==31 then perfect=perfect+1 end end
-  T.check(perfect>=5,case[2].." from "..case[1].." gets five perfect IVs")
+  T.eq(out.ivs.spa,out.ivs.spd,case[2].." from "..case[1].." copies Special into both Sp. stats")
   T.eq(out.abilityNum,0,case[2].." keeps its only ability")
   T.eq(out.modernFatefulEncounter,case[3]==151,case[2].." fateful flag matches the Mew obedience check")
 end

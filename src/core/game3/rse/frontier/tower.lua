@@ -247,11 +247,13 @@ function Tower.toBattleTowerMon(mon)
   local ivs, evs = mon.ivs or {}, mon.evs or {}
   local held = tonumber(mon.heldItem or mon.item) or 0
   if held == D.constants():require("items", "ITEM_ENIGMA_BERRY") then held = 0 end
+  local otId = (tonumber(mon.otId) or 0) % 4294967296
+  if mon.otSecretId ~= nil then otId = otId % 65536 + (tonumber(mon.otSecretId) or 0) % 65536 * 65536 end
   return {
     species = tonumber(mon.species) or 0, heldItem = held, moves = Util.deepCopy(mon.moves or {}),
     level = tonumber(mon.level) or 0, ppBonuses = tonumber(mon.ppBonuses) or 0,
     hpEV = evs.hp or 0, attackEV = evs.atk or 0, defenseEV = evs.def or 0, speedEV = evs.spe or 0,
-    spAttackEV = evs.spa or 0, spDefenseEV = evs.spd or 0, otId = tonumber(mon.otId) or 0,
+    spAttackEV = evs.spa or 0, spDefenseEV = evs.spd or 0, otId = otId,
     hpIV = ivs.hp or 0, attackIV = ivs.atk or 0, defenseIV = ivs.def or 0, speedIV = ivs.spe or 0,
     spAttackIV = ivs.spa or 0, spDefenseIV = ivs.spd or 0, abilityNum = tonumber(mon.abilityNum) or 0,
     personality = tonumber(mon.personality) or 0, nickname = mon.nickname or "",

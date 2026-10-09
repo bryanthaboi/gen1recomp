@@ -22,7 +22,7 @@ UI.HELP = {
   Backup = "restores Box and its linked saves together. your current collection gets backed up first. older incomplete backups won’t restore.",
   Events = "tickets for event trips in the linked game. collect the ticket, then use the normal ship route. story requirements still apply.",
   Migration = "same pokémon, new generation. check the changes first. the original stays archived so you can switch back.",
-  MigrationPolicy = "Gen 2 and Gen 3 never had an official transfer route. G1R converts what fits and blocks what doesn’t. Gen 1 and 2 to Gen 3 follows Pokémon Bank: nature from EXP, three perfect IVs, EVs reset, Poké Ball.",
+  MigrationPolicy = "Gen 2 and Gen 3 never had an official transfer route. G1R converts what fits and blocks what doesn’t. Gen 1 and 2 to Gen 3 follows Pokémon Bank: nature from EXP, IVs from DVs, EVs reset, Poké Ball.",
   Items = "store bag items here, then send them to another game's bag. gen 1 and 2 share a stash. changing a ball uses one up.",
 }
 local HELP_TITLES = { Box = "Box storage",

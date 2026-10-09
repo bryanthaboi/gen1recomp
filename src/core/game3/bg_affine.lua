@@ -1,11 +1,25 @@
-local ffi = require("ffi")
 local bit = require("bit")
 
 local Affine = {}
 
+local FLT_MAX = 3.4028234663852886e38
+
 local function f32(x)
-  return tonumber(ffi.new("float", x))
+  if x ~= x or x == 0 or x == math.huge or x == -math.huge then return x end
+  local m, e = math.frexp(x)
+  local bits = e < -125 and 24 - (-125 - e) or 24
+  if bits < 0 then return 0 * x end
+  local s = math.ldexp(m, bits)
+  local r = math.floor(s)
+  local d = s - r
+  if d > 0.5 or (d == 0.5 and r % 2 == 1) then r = r + 1 end
+  local v = math.ldexp(r, e - bits)
+  if v > FLT_MAX then return math.huge end
+  if v < -FLT_MAX then return -math.huge end
+  return v
 end
+
+Affine.f32 = f32
 
 local function trunc(x)
   if x >= 0 then return math.floor(x) end

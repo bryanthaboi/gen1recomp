@@ -429,13 +429,13 @@ function TextBox:arrowVisible()
   if self.sfxWait then return false end
   if self.waiting then return true end
   -- ../pokecrystal/home/text.asm:566 DoneText
-  -- pokered home/text_script.asm:96 -> home/joypad2.asm:71-72
-  if self.waitButton and self:isGold() then return false end
+  -- pokered home/text_script.asm:96 -> home/joypad2.asm:60-61, home/window.asm:247-250
+  local autoPrompt = self.auto and self.auto.promptFirst and not self.autoPrompted
+  local stayPrompt = self.stay and self.stay.prompt and not self.stayShown
+  if self.waitButton and not (autoPrompt or stayPrompt) then return false end
   return not not (self.done and not self.choice
-    and (not self.auto
-         or (self.auto.promptFirst and not self.autoPrompted))
-    and (not self.stay
-         or (self.stay.prompt and not self.stayShown)))
+    and (not self.auto or autoPrompt)
+    and (not self.stay or stayPrompt))
 end
 
 -- home/text.asm:209

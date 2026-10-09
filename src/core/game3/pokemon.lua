@@ -178,7 +178,7 @@ function Pokemon.install(cache)
   if Pokemon._names then
     log("species pack ready (" .. tostring(Pokemon._manifest and Pokemon._manifest.numSpecies) .. ")")
   else
-    log("species pack missing — re-import FireRed ROM")
+    log("species pack missing: re-import FireRed ROM")
   end
   Pokemon._runReloadHooks()
 end
@@ -349,7 +349,7 @@ function Pokemon.expYield(species)
   return (meta and tonumber(meta.expYield)) or 0
 end
 
---- ROM BaseStats.growthRate — pret GROWTH_* index into gExperienceTables.
+--- ROM BaseStats.growthRate: pret GROWTH_* index into gExperienceTables.
 function Pokemon.growthRate(species)
   local meta = Pokemon.speciesMeta(species)
   return (meta and tonumber(meta.growthRate) or 0) % 6
@@ -1433,8 +1433,9 @@ function Pokemon.isShiny(mon)
   if not mon then return false end
   if mon.isShiny ~= nil then return not not mon.isShiny end
   local p = (tonumber(mon.personality) or 0) % 4294967296
-  local tid = (tonumber(mon.otId or mon.trainerId) or 0) % 65536
-  local sid = (tonumber(mon.otSecretId) or 0) % 65536
+  local full = (tonumber(mon.otId or mon.trainerId) or 0) % 4294967296
+  local tid = full % 65536
+  local sid = (tonumber(mon.otSecretId) or math.floor(full / 65536)) % 65536
   local value = bit.bxor(bit.bxor(tid, sid), bit.bxor(math.floor(p / 65536), p % 65536))
   return value < 8
 end

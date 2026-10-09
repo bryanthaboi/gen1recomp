@@ -98,8 +98,8 @@ end
 do
   local box, beeps = finished("SEA COTTAGE\nBILL lives here!{DONE}")
   eq(box.waitButton, true, "an extracted `done` text is a WaitButton box")
-  -- home/text_script.asm:96 -> home/joypad2.asm:71-72
-  check(box:arrowVisible(), "and still blinks the arrow WaitForTextScrollButtonPress draws")
+  -- home/text_script.asm:96 -> home/joypad2.asm:60-61, home/window.asm:247-250
+  check(not box:arrowVisible(), "and WaitForTextScrollButtonPress never shows the arrow")
   eq(select(2, box:arrowPos()), 128, "at hlcoord 18,16")
   -- SFX_PRESS_AB lives only in ManualTextScroll, home/joypad2.asm:90-92
   eq(beeps, 0, "and closes silently")

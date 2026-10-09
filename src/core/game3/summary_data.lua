@@ -41,7 +41,7 @@ end
 --- Growth Rates matching pokefirered/src/data/pokemon/experience_tables.h
 -- Enum order = pret GROWTH_MEDIUM_FAST..GROWTH_SLOW (species meta.growthRate from ROM).
 -- Tables hardcode [0]=0, [1]=1 for every rate; formulas apply from level 2 up
--- (Medium Slow at n=1 is negative — pret stores 1).
+-- (Medium Slow at n=1 is negative, pret stores 1).
 local function calc_exp(growthRate, n)
   n = tonumber(n) or 0
   if n <= 0 then return 0 end
@@ -140,12 +140,13 @@ end
 function SummaryData.isShiny(mon)
   if not mon then return false end
   if mon.isShiny ~= nil then return not not mon.isShiny end
-  local p = tonumber(mon.personality) or 0
-  local otId = tonumber(mon.otId) or 0
-  local secretId = tonumber(mon.otSecretId) or 0
+  local p = (tonumber(mon.personality) or 0) % 4294967296
+  local full = (tonumber(mon.otId) or 0) % 4294967296
+  local otId = full % 65536
+  local secretId = (tonumber(mon.otSecretId) or math.floor(full / 65536)) % 65536
 
-  local pHigh = bit.rshift(p, 16)
-  local pLow = bit.band(p, 0xFFFF)
+  local pHigh = math.floor(p / 65536)
+  local pLow = p % 65536
   local trainerXor = bit.bxor(otId, secretId)
   local pidXor = bit.bxor(pHigh, pLow)
   return bit.bxor(trainerXor, pidXor) < 8

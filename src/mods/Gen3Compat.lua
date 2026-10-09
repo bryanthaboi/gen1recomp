@@ -2084,7 +2084,7 @@ Gen3Compat.centredSprite = centredEntry
 
 local function samePath(path) return path end
 
-local function hookedEntry(side, species, form, vanilla, kind)
+local function hookedEntry(side, species, form, vanilla, kind, shiny)
   if not Runtime.wantsHook("pokemon.sprite") then return vanilla end
   local P = g3("pokemon")
   local path = spriteOverrides[side][species]
@@ -2092,7 +2092,8 @@ local function hookedEntry(side, species, form, vanilla, kind)
   local g = live()
   local ctx = { data = g and dataProxy(g.data), species = Gen3Compat.speciesName(species),
                 gen3Species = species, form = form, side = side, kind = kind or "battle",
-                trueColor = true, path = path }
+                trueColor = true, path = path,
+                shiny = shiny }
   local hooked = Runtime.call("pokemon.sprite", samePath, path, ctx)
   if type(hooked) ~= "string" or hooked == path or isVanillaPic(hooked) then
     return vanilla
@@ -2163,7 +2164,8 @@ local function hookedIcon(species, mon, vanilla)
   local g = live()
   local ctx = { data = g and dataProxy(g.data), species = Gen3Compat.speciesName(species),
                 gen3Species = species, mon = mon, kind = "icon", trueColor = true,
-                path = path }
+                path = path
+               }
   local hooked = Runtime.call("pokemon.icon", samePath, path, ctx)
   if hooked == nil or hooked == false then return blankIcon(vanilla) end
   if type(hooked) ~= "string" or hooked == path or isVanillaPic(hooked) then
@@ -2202,7 +2204,7 @@ local function wrapPics(P)
       local path = sp and (tonumber(form) or 0) == 0 and spriteOverrides.front[sp]
       local entry = path and centredEntry(path)
       if not entry then entry = frontOrig(species, form, shiny, personality) end
-      if sp then return hookedEntry("front", sp, form, entry, kind) end
+      if sp then return hookedEntry("front", sp, form, entry, kind, shiny) end
       return entry
     end
     P.frontSprite = P.frontPic
@@ -2213,7 +2215,7 @@ local function wrapPics(P)
       local path = sp and (tonumber(form) or 0) == 0 and spriteOverrides.back[sp]
       local entry = path and centredEntry(path)
       if not entry then entry = backOrig(species, form, shiny) end
-      if sp then return hookedEntry("back", sp, form, entry, kind) end
+      if sp then return hookedEntry("back", sp, form, entry, kind, shiny) end
       return entry
     end
   end

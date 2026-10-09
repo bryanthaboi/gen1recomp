@@ -589,16 +589,24 @@ local function gatherRse(session)
     local save = { version = session.version, dex = session.dex, flags = store and store.flags or session.flags,
       vars = store and store.vars or session.vars }
     c.caughtMonsCount = Dex.summaryCount(save)
-    -- pokeemerald/src/trainer_card.c:719
-    local hoennMax = Dex.regionalMax(session.version)
-    allHoenn = hoennMax > 0
-    for n = 1, hoennMax do
-      local nat = nil
-      for sp, on in pairs(type(session.dex) == "table" and (session.dex.caught or session.dex.owned) or {}) do
-        if on and Dex.regionalNumber(tonumber(sp) or 0, session.version) == n then nat = sp break end
-      end
-      if not nat then allHoenn = false break end
+    -- pokeemerald/src/pokedex.c:4387
+    local have = {}
+    for sp, on in pairs(type(session.dex) == "table" and (session.dex.caught or session.dex.owned) or {}) do
+      local n = on and on ~= 0 and Dex.regionalNumber(tonumber(sp) or 0, session.version)
+      if n then have[n] = true end
     end
+    local need = Dex.regionalMax(session.version) - 2
+    allHoenn = need > 0
+    for n = 1, need do
+      if not have[n] then allHoenn = false break end
+    end
+  end
+  -- pokeemerald/src/trainer_card.c:745
+  if carried then
+    c.hasAllPaintings = session.hasAllPaintings == true
+  else
+    local ContestUtil = require("src.core.game3.rse.contest_util")
+    c.hasAllPaintings = ContestUtil.countPlayerMuseumPaintings(session) >= 5
   end
   c.pokeblocksWithFriends = capped_stat(session, 34, "pokeblocksWithFriends", 0xFFFF)
   c.contestsWithFriends = capped_stat(session, 35, "contestsWithFriends", 999)
@@ -617,7 +625,7 @@ local function gatherRse(session)
   local stars = 0
   if c.hasHofResult then stars = stars + 1 end
   if allHoenn then stars = stars + 1 end
-  if session.hasAllPaintings then stars = stars + 1 end
+  if c.hasAllPaintings then stars = stars + 1 end
   if symbols then stars = stars + 1 end
   c.stars = math.min(4, carried and tonumber(session.stars) or stars)
   c.cardType = "emerald"
@@ -767,6 +775,7 @@ function TrainerCard.backTexts(c)
 end
 
 TrainerCard.cardData = gather
+TrainerCard.rseCardData = gatherRse
 
 local function draw_texts(list)
   for _, e in ipairs(list) do

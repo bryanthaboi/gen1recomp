@@ -55,18 +55,17 @@ return function(game)
     U.wait(4)
   end
   check("the text finished", tb.done == true)
-  -- home/text_script.asm:96 -> home/joypad2.asm:71-72
-  check("a `done` text still blinks the arrow", tb:arrowVisible())
+  -- home/text_script.asm:96 -> home/joypad2.asm:60-61, home/window.asm:247-250
+  check("a `done` text ends with no arrow", not tb:arrowVisible())
   -- home/joypad2.asm:90-92
   check("and closes without SFX_PRESS_AB", tb.waitButton == true)
   tb.blink = 0
-  U.shot(game, DIR .. "/bug2116_2_done_arrow_no_beep.png")
+  U.shot(game, DIR .. "/bug2116_2_done_no_arrow_no_beep.png")
 
   U.log(pass and "RESULT: ALL PASS" or "RESULT: SEE FAILURES ABOVE")
   U.log("bug2116_1_cont_arrow.png: the blinking triangle sits on the same")
   U.log("row as the second line of text, not jammed on the bottom border.")
-  U.log("bug2116_2_done_arrow_no_beep.png: the final page of a `done` text")
-  U.log("still shows the triangle -- WaitForTextScrollButtonPress blinks it")
-  U.log("for every Gen 1 text; only the A-press beep is missing.")
+  U.log("bug2116_2_done_no_arrow_no_beep.png: the final page of a `done` text")
+  U.log("shows no triangle and closes without the A-press beep.")
   U.log("Shots are in " .. DIR)
 end

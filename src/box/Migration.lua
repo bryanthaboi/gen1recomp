@@ -81,29 +81,11 @@ local function pidFor(mon,def,national,dvs,shiny,nature)
   pidCache[key]=found
   return found or nil
 end
-local function roller(...)
-  local state=0x2545F491
-  for _,value in ipairs({...}) do
-    state=bit.bxor(state,bit.tobit(math.floor(tonumber(value) or 0)%4294967296))
-    state=bit.bxor(state,bit.lshift(state,13));state=bit.bxor(state,bit.rshift(state,17));state=bit.bxor(state,bit.lshift(state,5))
-  end
-  if state==0 then state=1 end
-  return function(n)
-    state=bit.bxor(state,bit.lshift(state,13));state=bit.bxor(state,bit.rshift(state,17));state=bit.bxor(state,bit.lshift(state,5))
-    return (state%4294967296)%n
-  end
-end
-Migration.PERFECT={[151]=5,[251]=5}
-local IV_LABELS={hp="HP",atk="Attack",def="Defense",spe="Speed",spa="Sp. Atk",spd="Sp. Def"}
-local function bankIvs(id,national)
-  local roll=roller(id,national)
-  local keys={"hp","atk","def","spe","spa","spd"}
-  for i=#keys,2,-1 do local j=roll(i)+1;keys[i],keys[j]=keys[j],keys[i] end
-  local ivs,perfect={}, {}
-  for i,key in ipairs(keys) do
-    if i<=(Migration.PERFECT[national] or 3) then ivs[key]=31;perfect[#perfect+1]=IV_LABELS[key] else ivs[key]=roll(32) end
-  end
-  return ivs,perfect
+local function ivsFromDvs(dvs)
+  dvs=dvs or {}
+  local function iv(dv) return clamp(dv,0,15)*2+1 end
+  local special=iv(dvs.special)
+  return {hp=iv(dvs.hp or Mon.hpDV(dvs)),atk=iv(dvs.attack),def=iv(dvs.defense),spe=iv(dvs.speed),spa=special,spd=special}
 end
 local function dvsFor(mon,def,national,generation)
   local iv=mon.ivs or {}
@@ -129,6 +111,43 @@ local function dvsFor(mon,def,national,generation)
   if not best then return nil,"Gen 2 cannot preserve this combination of gender, shininess and form." end
   best.hp=Mon.hpDV(best)
   return best
+end
+local IV_KEYS={"hp","atk","def","spe","spa","spd"}
+local CAUGHT={"caughtTime","caughtLevel","caughtLocation","caughtByGender","caughtData"}
+local ORIGIN3={"metLocation","metLevel","metGame","pokeball","otGender","language","ribbons","championRibbon","contest"}
+local function lastOrigin(entry,generation)
+  local archives=type(entry.archives)=="table" and entry.archives or {}
+  for i=#archives,1,-1 do
+    local archive=archives[i]
+    if type(archive)=="table" and archive.generation==generation and type(archive.mon)=="table" then return archive end
+  end
+end
+local function sameDvs(a,b)
+  if type(a)~="table" or type(b)~="table" then return false end
+  for _,key in ipairs({"attack","defense","speed","special"}) do if a[key]~=b[key] then return false end end
+  return true
+end
+local function sameIvs(a,b)
+  if type(a)~="table" or type(b)~="table" then return false end
+  for _,key in ipairs(IV_KEYS) do if a[key]~=b[key] then return false end end
+  return true
+end
+local function statExpFromEffort(evs)
+  local out={}
+  for _,pair in ipairs(KEYS) do
+    local effort=math.floor(clamp((evs or {})[pair[1]],0,255)/4)*4
+    out[pair[2]]=math.max(out[pair[2]] or 0,effort^2)
+  end
+  return out
+end
+local function statExpOf(statExp,key)
+  statExp=type(statExp)=="table" and statExp or {}
+  local value=statExp[key]
+  if value==nil and key=="special" then value=statExp.specialAttack end
+  return clamp(value,0,65535)
+end
+local function effortFromStatExp(statExp,key)
+  return math.min(255,math.ceil(math.sqrt(statExpOf(statExp,key))))
 end
 local function expAt(data,species,level)
   if data.generation==3 then
@@ -218,15 +237,43 @@ function Migration.convert(entry,version,opts)
     end
   elseif type(mon.personality)~="number" or type(mon.ivs)~="table" then return nil,"The native personality or IVs are missing." end
   if g2==3 then
-    local sourceExp=math.floor(tonumber(mon.exp or mon.experience) or expAt(from,mon.species,d.level))
-    local nature=sourceExp%25
-    local pid=pidFor(mon,def,national,mon.dvs,Mon.vanillaShiny(mon.dvs),nature)
-    if not pid then return nil,"No personality can preserve this Pokémon's gender, shininess and form." end
-    out.personality,out.otSecretId,out.nature=pid,0,nature
-    local perfect
-    out.ivs,perfect=bankIvs(entry.id,national)
+    local home=lastOrigin(entry,3)
+    local hm=home and home.mon
+    local shiny=Mon.vanillaShiny(mon.dvs)
+    local pid,nature,sourceExp
+    if hm and type(hm.personality)=="number" and hm.otId==out.otId then
+      local p,wanted=hm.personality,gender2({genderRatio=def.genderRatio},mon.dvs)
+      if gender3(def.genderRatio,p)==wanted
+          and Pokemon.isShiny({personality=p,otId=out.otId,otSecretId=hm.otSecretId or 0})==shiny
+          and (national~=201 or Pokemon.unownLetter(p)+1==Unown.letterFromDVs(mon.dvs)) then
+        pid,nature=p,p%25
+      end
+    end
+    if pid then
+      out.personality,out.otSecretId,out.nature=pid,hm.otSecretId or 0,nature
+    else
+      sourceExp=math.floor(tonumber(mon.exp or mon.experience) or expAt(from,mon.species,d.level))
+      nature=sourceExp%25
+      pid=pidFor(mon,def,national,mon.dvs,shiny,nature)
+      if not pid then return nil,"No personality can preserve this Pokémon's gender, shininess and form." end
+      out.personality,out.otSecretId,out.nature=pid,0,nature
+    end
+    local restoredIvs
+    if hm and type(hm.ivs)=="table" then
+      local input=Store.copy(hm);input._boxVersion=home.version
+      if sameDvs(dvsFor(input,from.pokemon[mon.species],national,g1),mon.dvs) then restoredIvs=Store.copy(hm.ivs) end
+    end
+    out.ivs=restoredIvs or ivsFromDvs(mon.dvs)
     out.evs={}
-    for _,pair in ipairs(KEYS) do out.evs[pair[1]]=0 end
+    local forward=hm and statExpFromEffort(hm.evs)
+    for _,pair in ipairs(KEYS) do
+      local key,old=pair[1],hm and type(hm.evs)=="table" and clamp(hm.evs[pair[1]],0,255) or nil
+      if old==nil then out.evs[key]=0
+      elseif statExpOf(mon.statExp,pair[2])==forward[pair[2]] then out.evs[key]=old
+      else out.evs[key]=math.max(old,effortFromStatExp(mon.statExp,pair[2])) end
+    end
+    local total=0;for _,key in ipairs(IV_KEYS) do total=total+out.evs[key] end
+    if total>510 then for _,key in ipairs(IV_KEYS) do out.evs[key]=math.floor(out.evs[key]*510/total) end end
     out.friendship=mon.isEgg and clamp(mon.happiness or mon.eggCycles,0,255) or clamp(mon.happiness or 70,0,255)
     out.eggCycles=mon.isEgg and out.friendship or nil
     out.heldItem,out.pp=targetItem or 0,pps
@@ -234,47 +281,89 @@ function Migration.convert(entry,version,opts)
     out.markings=entry.markings or 0
     local pair=to.abilities and to.abilities[species] or {}
     out.abilityNum=(pair[2] or 0)~=0 and 1 or 0
-    out.language,out.otGender=2,mon.caughtGender or 0
+    if hm and (hm.abilityNum==0 or hm.abilityNum==1 and (pair[2] or 0)~=0) then out.abilityNum=hm.abilityNum end
+    out.language,out.otGender=2,Mon.caughtGenderOf(mon.caughtByGender)=="girl" and 1 or 0
     -- include/constants/region_map_sections.h:229
     out.metLocation,out.metLevel,out.metGame,out.pokeball=255,out.level,MET_GAME[version],4
+    out.modernFatefulEncounter=false
+    if hm then
+      for _,key in ipairs(ORIGIN3) do if hm[key]~=nil then out[key]=Store.copy(hm[key]) end end
+      out.modernFatefulEncounter=hm.modernFatefulEncounter==true
+    end
     -- src/battle_util.c:3898
-    out.modernFatefulEncounter=national==151
+    out.modernFatefulEncounter=out.modernFatefulEncounter or national==151
     local ability=pair[out.abilityNum+1] or pair[1]
     local NATURES=require("src.box.Metadata").NATURES
-    note("Nature from EXP: "..sourceExp.." % 25 = "..nature..", "..NATURES[nature+1]..".")
-    lines.natureExp,lines.ivs,lines.perfect=sourceExp,Store.copy(out.ivs),perfect
     local up,down=math.floor(nature/5)+1,nature%5+1
     local short={"Atk","Def","Spe","SpA","SpD"}
-    fact("Nature",NATURES[nature+1]..(up~=down and " +"..short[up].." -"..short[down] or ""),"new")
-    fact("Ability",ability and to.abilityNames and label(to.abilityNames[ability],ability) or "First slot","new")
-    fact("EVs","Reset to 0","lost")
-    fact("Ball","Poké Ball","new")
-    fact("Shiny",Mon.vanillaShiny(mon.dvs) and "Yes" or "No","kept")
-    if out.modernFatefulEncounter then fact("Mew","Obeys in battle","new") end
-    note("IVs: "..table.concat(perfect,", ").." set to 31; the rest rolled 0 to 31.")
-    note("EVs reset to 0.")
-    note("Ability: "..tostring(ability and to.abilityNames and label(to.abilityNames[ability],ability) or "first slot")
-      ..(out.abilityNum==1 and " (second slot)." or "."))
-    note("DV shininess, gender and Unown letter are preserved. Secret ID 0.")
-    note("Origin: Poké Ball, met level "..out.level..", fateful encounter location."
-      ..(out.modernFatefulEncounter and " Fateful encounter flag set, so Mew obeys." or ""))
+    local abilityName=ability and to.abilityNames and label(to.abilityNames[ability],ability)
+    lines.ivs=Store.copy(out.ivs)
+    if sourceExp then
+      note("Nature from EXP: "..sourceExp.." % 25 = "..nature..", "..NATURES[nature+1]..".")
+      lines.natureExp=sourceExp
+    else
+      note("Personality, nature and Secret ID restored from the original Gen 3 record.")
+    end
+    fact("Nature",NATURES[nature+1]..(up~=down and " +"..short[up].." -"..short[down] or ""),sourceExp and "new" or "kept")
+    fact("Ability",abilityName or "First slot",hm and "kept" or "new")
+    fact("EVs",hm and "Restored" or "Reset to 0",hm and "kept" or "lost")
+    fact("Ball",hm and "Original" or "Poké Ball",hm and "kept" or "new")
+    fact("Shiny",shiny and "Yes" or "No","kept")
+    if out.modernFatefulEncounter and national==151 then fact("Mew","Obeys in battle",hm and "kept" or "new") end
+    if restoredIvs then note("IVs restored from the original Gen 3 record.")
+    else note("IVs: each DV doubled plus 1; Special fills both Sp. Atk and Sp. Def.") end
+    note(hm and "EVs restored from the original Gen 3 record; Stat Exp gained since raises them." or "EVs reset to 0.")
+    note("Ability: "..tostring(abilityName or "first slot")..(out.abilityNum==1 and " (second slot)." or "."))
+    note("DV shininess, gender and Unown letter are preserved."..(hm and "" or " Secret ID 0."))
+    if hm then note("Origin: met data, ball, ribbons and contest stats restored from the original Gen 3 record.")
+    else
+      note("Origin: Poké Ball, met level "..out.level..", fateful encounter location."
+        ..(out.modernFatefulEncounter and " Fateful encounter flag set, so Mew obeys." or ""))
+    end
   elseif g1==3 then
-    local input=Store.copy(mon);input._boxVersion=entry.version
-    local dvs,why=dvsFor(input,def,national,g2)
-    if not dvs then return nil,why end
-    out.dvs,out.statExp=dvs,{}
-    for _,pair in ipairs(KEYS) do
-      local effort=math.floor(clamp((mon.evs or {})[pair[1]],0,255)/4)*4
-      out.statExp[pair[2]]=math.max(out.statExp[pair[2]] or 0,effort^2)
+    local home=lastOrigin(entry,g2)
+    local hm=home and home.mon
+    local dvs,why
+    if hm and type(hm.dvs)=="table" then
+      local was=Catalog.describe(home.version,hm)
+      if was and was.national and sameIvs(ivsFromDvs(hm.dvs),mon.ivs) then
+        dvs={attack=hm.dvs.attack,defense=hm.dvs.defense,speed=hm.dvs.speed,special=hm.dvs.special}
+        dvs.hp=Mon.hpDV(dvs)
+      end
+    end
+    local restored=dvs~=nil
+    if not dvs then
+      local input=Store.copy(mon);input._boxVersion=entry.version
+      dvs,why=dvsFor(input,def,national,g2)
+      if not dvs then return nil,why end
+    end
+    out.dvs,out.statExp=dvs,statExpFromEffort(mon.evs)
+    if hm then
+      for _,pair in ipairs(KEYS) do
+        out.statExp[pair[2]]=math.max(out.statExp[pair[2]],statExpOf(hm.statExp,pair[2]))
+      end
     end
     out.happiness=g2==2 and clamp(mon.friendship or mon.happiness or 70,0,255) or nil
-    out.caughtLevel,out.caughtLocation,out.caughtGender=g2==2 and out.level or nil,g2==2 and 0 or nil,g2==2 and (mon.otGender or 0) or nil
-    note("IVs → nearest DVs preserving shininess"..(g2==2 and ", gender and Unown letter." or " as a latent DV pattern."))
+    if g2==2 then
+      local met=tonumber(mon.metLevel) or 0
+      out.caughtTime,out.caughtLocation=0,0
+      out.caughtLevel=math.min(63,met>=1 and math.floor(met) or out.level)
+      out.caughtByGender=mon.otGender==1 and "girl" or "boy"
+      if hm then for _,key in ipairs(CAUGHT) do if hm[key]~=nil then out[key]=Store.copy(hm[key]) end end end
+    end
+    if restored then
+      note("DVs restored from the original Gen "..g2.." record.")
+    else
+      note("IVs → nearest DVs preserving shininess"..(g2==2 and ", gender and Unown letter." or " as a latent DV pattern."))
+    end
     note(("DVs: Attack %d · Defense %d · Speed %d · Special %d · HP %d"):format(dvs.attack,dvs.defense,dvs.speed,dvs.special,dvs.hp))
-    note("EVs → Stat Exp; Special uses the greater Special Attack/Defense effort. HP DV is derived.")
+    note("EVs → Stat Exp; Special uses the greater Special Attack/Defense effort. HP DV is derived."
+      ..(hm and " The original Stat Exp is kept where it is higher." or ""))
+    if g2==2 then note(hm and "Caught data restored from the original Gen 2 record." or "Caught level and trainer gender come from the Gen 3 met data.") end
     note("Nature, ability, Secret ID, ball, ribbons, contests and Gen 3 origin data remain only in the archive.")
     lines.dvs={hp=dvs.hp,atk=dvs.attack,def=dvs.defense,spe=dvs.speed,spc=dvs.special}
-    fact("Stat Exp","From EVs","new")
+    fact("DVs",restored and "Restored" or "From IVs",restored and "kept" or "new")
+    fact("Stat Exp",hm and "Restored" or "From EVs",hm and "kept" or "new")
     fact("Archived","Nature, ability, ball, ribbons","lost")
   else
     local prepared=Store.copy(mon);prepared.species=mon.species
