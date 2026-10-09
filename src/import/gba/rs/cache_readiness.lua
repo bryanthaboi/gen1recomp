@@ -25,7 +25,7 @@ local PACKS = {
 }
 
 local MODULES = {
-  {"pokemon/battle/manifest.lua", {format = 7, layout = "rse", assetLayout = "rs",
+  {"pokemon/battle/manifest.lua", {format = require("src.import.gba.battle_chrome_extract").FORMAT_VERSION, layout = "rse", assetLayout = "rs",
     elementsLayoutVersion = 1, elementsTableTiles = 66, elementsTiles = 118, elementsSourceBytes = 3776}, false, true},
   {"trainers/manifest.lua", {version = 5, backPicCompression = "lz77", backPicCount = 3, backPicFrames = 4}},
   {"decorations/decorations.lua", {assetLayout = "rs", packVersion = 1, format_version = 1}},
@@ -39,6 +39,7 @@ local MODULES = {
   {"intro/rs/scenery/manifest.lua", {layout = "rs", format = 1}, true},
   {"title/manifest.lua", {layout = "rs", format = 1}, true},
 }
+M.MODULES = MODULES
 
 local function read(fs, path)
   local fn = fs and (fs.read or fs.readAt)
