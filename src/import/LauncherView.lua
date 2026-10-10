@@ -2944,7 +2944,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       segLine("small", segs, px, ly, textW)
     elseif orderSort and mod.orderNote then
       Kit.text("small", Kit.ellipsize("small", Strings(mod.orderNote), textW),
-        px, ly, PAL.yellow)
+        px, ly, mod.orderNoteOptional and PAL.detail or PAL.yellow)
     elseif (mod.description or "") ~= "" then
       Kit.text("small", Kit.ellipsize("small", mod.description, textW),
         px, ly, PAL.detail)
@@ -5279,7 +5279,8 @@ local function buildModActionsModal(imp, m)
   if not mod then imp._modActions = nil return end
   local hasGit = mod.github and mod.github ~= ""
   local depSpecs = mod.dependencySpecs or (mod.manifest and mod.manifest.dependencySpecs)
-  local hasDeps = depSpecs and #depSpecs > 0
+  local optSpecs = mod.manifest and mod.manifest.optionalSpecs
+  local hasDeps = (depSpecs and #depSpecs > 0) or (optSpecs and #optSpecs > 0)
   local imports = mod.imports or mod.requiredImports
   local hasImports = imports and #imports > 0
   local info = hasGit and imp:_modUpdateInfo(mod.id)
@@ -5924,7 +5925,7 @@ local function buildDepResolverModal(imp, m)
   local n = #(res.deps or {})
   local anyUnsatisfied = false
   for _, d in ipairs(res.deps or {}) do
-    if d.status ~= "satisfied" and d.status ~= "disabled" then anyUnsatisfied = true; break end
+    if not d.optional and d.status ~= "satisfied" and d.status ~= "disabled" then anyUnsatisfied = true; break end
   end
 
   local totalContentH = n > 0 and (n * rowH + (n - 1) * gap) or 0
@@ -5948,7 +5949,9 @@ local function buildDepResolverModal(imp, m)
   cy = cy + Kit.textHeight("button") + math.floor(4 * m.s)
 
   -- Subtitle / intro
-  local subText = Strings("This mod requires additional dependencies or has conflicts:")
+  local subText = res.hasIssues
+    and Strings("This mod requires additional dependencies or has conflicts:")
+    or Strings("Dependencies for this mod:")
   Kit.text("small", subText, px + pad, cy, PAL.muted)
   cy = cy + Kit.textHeight("small") + math.floor(10 * m.s)
 
@@ -6019,6 +6022,18 @@ local function buildDepResolverModal(imp, m)
       else
         statusText = Strings("Missing")
         statusCol = PAL.red
+      end
+      if dep.kind == "optional" then
+        if dep.status == "satisfied" then
+          statusText = Strings("Optional: installed (v%s)", tostring(dep.installedVersion or "?"))
+        elseif dep.status == "incompatible" then
+          statusText = Strings("Optional: installed v%s, works with %s", tostring(dep.installedVersion or "?"), tostring(dep.range or ""))
+        else
+          statusText = Strings("Optional: not installed")
+        end
+        statusCol = dep.status == "satisfied" and PAL.green or PAL.muted
+      elseif dep.kind == "dependency" then
+        statusText = Strings("Required: ") .. statusText
       end
       Kit.text("micro", statusText, ix, ry + math.floor(8 * m.s) + Kit.textHeight("small") + math.floor(2 * m.s), statusCol)
 
@@ -6120,7 +6135,7 @@ local function buildDepResolverModal(imp, m)
       kind = "accent", font = "small",
       action = function()
         for _, dep in ipairs(res.deps or {}) do
-          if dep.github and dep.status ~= "satisfied" and dep.status ~= "disabled" and imp._startDepPull then
+          if not dep.optional and dep.github and dep.status ~= "satisfied" and dep.status ~= "disabled" and imp._startDepPull then
             imp:_startDepPull(dep)
           end
         end

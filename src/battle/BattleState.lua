@@ -5927,7 +5927,10 @@ function BattleState:finish()
   -- the battle screen closes; leaving battle brings back the map theme,
   -- like the overworld reload's PlayDefaultMusicFadeOutCurrent
   -- (home/overworld.asm:2343-2348)
-  require("src.core.Music").restoreMap(self.data)
+  -- engine/battle/core.asm:928
+  if not (self.result == "win" and self.musicKind == "final") then
+    require("src.core.Music").restoreMap(self.data)
+  end
   self.game.stack:pop()
   Runtime.emit("battle.ended", { battle = self, result = self.result or "run" })
   -- Coming back from the battle screen is a fade, not a cut: EnterMap sees

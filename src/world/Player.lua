@@ -272,7 +272,14 @@ local function textBoxUp()
 end
 
 function Player:walkPhase()
-  if textBoxUp() then return 0 end
+  if textBoxUp() then
+    -- engine/overworld/movement.asm:49
+    if not self.moving then
+      self.bumpFrames = nil
+      self.animClock = 0
+    end
+    return 0
+  end
   -- moving, the land-frame after a completed step, or an active wall-bonk
   -- (issue #230) animate; a standing sprite otherwise
   if not self.moving and not self.stepLanded

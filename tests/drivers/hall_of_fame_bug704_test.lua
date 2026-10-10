@@ -232,6 +232,10 @@ return function(game)
   -- y=88) before the front pic scrolls in.  Catch it mid-sweep, wait the
   -- sweep out, then catch the front pic partway through its own scroll.
   for _ = 1, 300 do
+    if hof.phase ~= "intro" then break end
+    U.wait(1)
+  end
+  for _ = 1, 300 do
     if hof.phase ~= "back" or (hof.scrollX or 0) <= 56 then break end
     U.wait(1)
   end

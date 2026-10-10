@@ -114,9 +114,9 @@ end
 -- Resolves the best-known GitHub owner/repo string for a dependency spec, if any.
 function LauncherMods.resolveDependencyRepo(depId, parentManifest, installedDep)
   if not depId or depId == "" then return nil end
-  -- 1. Check spec hint if parentManifest dependencySpecs carries it
-  if parentManifest and parentManifest.dependencySpecs then
-    for _, spec in ipairs(parentManifest.dependencySpecs) do
+  for _, specs in ipairs({ parentManifest and parentManifest.dependencySpecs or {},
+      parentManifest and parentManifest.optionalSpecs or {} }) do
+    for _, spec in ipairs(specs) do
       if spec.id == depId and spec.github then
         return spec.github
       end
@@ -169,10 +169,16 @@ function LauncherMods.checkDependencies(manifest, options, version, installedMan
   local depsResult = {}
   local hasIssues = false
 
-  -- 1. Hard Dependencies (dependencySpecs)
-  if type(manifest.dependencySpecs) == "table" then
-    for _, spec in ipairs(manifest.dependencySpecs) do
-      if not version or ModTargets.specApplies(spec, version) then
+  local depIdsSeen = {}
+  for _, group in ipairs({
+    { specs = manifest.dependencySpecs, kind = "dependency" },
+    { specs = manifest.optionalSpecs, kind = "optional" },
+  }) do
+    for _, spec in ipairs(type(group.specs) == "table" and group.specs or {}) do
+      if not depIdsSeen[spec.id]
+          and (not version or ModTargets.specApplies(spec, version)) then
+        depIdsSeen[spec.id] = true
+        local required = group.kind == "dependency"
         local depId = spec.id
         local range = spec.range
         local installedDep = installedMap[depId]
@@ -181,10 +187,10 @@ function LauncherMods.checkDependencies(manifest, options, version, installedMan
 
         if not installedDep then
           status = "missing"
-          hasIssues = true
+          if required then hasIssues = true end
         elseif range and not Semver.satisfies(installedDep.version, range) then
           status = "incompatible"
-          hasIssues = true
+          if required then hasIssues = true end
         end
 
         local ghRepo = LauncherMods.resolveDependencyRepo(depId, manifest, installedDep)
@@ -195,7 +201,8 @@ function LauncherMods.checkDependencies(manifest, options, version, installedMan
           name = (installedDep and installedDep.name) or depId,
           range = range,
           status = status,
-          kind = "dependency",
+          kind = group.kind,
+          optional = not required,
           installedVersion = installedVersion,
           github = ghRepo,
           safeUrl = safeUrl,
@@ -366,20 +373,31 @@ function LauncherMods.deriveList(manifests, options, version)
     row.loadRank = rank[row.id] or (#full + 1)
     local m = byId[row.id]
     local after
-    local function consider(spec)
+    local seen, names = {}, { required = {}, optional = {} }
+    local function consider(spec, group)
       local dep = spec and spec.id
-      if dep and dep ~= row.id and rank[dep] and rank[dep] > row.loadRank
+      if dep and dep ~= row.id and not seen[dep] and rank[dep]
+          and rank[dep] > row.loadRank
           and ModTargets.specApplies(spec, version, generation) then
+        seen[dep] = true
+        local list = names[group]
+        list[#list + 1] = tostring(byId[dep] and byId[dep].name or dep)
         if not after or rank[dep] > rank[after] then after = dep end
       end
     end
-    for _, spec in ipairs(m.dependencySpecs or {}) do consider(spec) end
-    for _, spec in ipairs(m.optionalSpecs or {}) do consider(spec) end
+    for _, spec in ipairs(m.dependencySpecs or {}) do consider(spec, "required") end
+    for _, spec in ipairs(m.optionalSpecs or {}) do consider(spec, "optional") end
     if after then
-      local dep = byId[after]
+      local parts = {}
+      if #names.required > 0 then
+        parts[#parts + 1] = table.concat(names.required, ", ") .. " (required)"
+      end
+      if #names.optional > 0 then
+        parts[#parts + 1] = table.concat(names.optional, ", ") .. " (optional)"
+      end
       row.orderAfter = after
-      row.orderNote = "Loads after " .. tostring(dep and dep.name or after)
-        .. " (dependency)"
+      row.orderNote = "Loads after " .. table.concat(parts, "; ")
+      row.orderNoteOptional = #names.required == 0
     end
   end
   return out

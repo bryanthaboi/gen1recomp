@@ -23,6 +23,11 @@ HallOfFame.isOpaque = true
 -- SGB: SetPal_PokemonWholeScreen for the mon on display
 function HallOfFame:sgbPalettes(game)
   local P = require("src.render.PaletteFX")
+  if self.phase == "intro" then
+    local ow = game.overworld
+    if ow and ow.sgbPalettes then return ow:sgbPalettes(game) end
+    return nil
+  end
   if self.phase == "player" or self.phase == "player_dex"
       or self.phase == "player_rating" then
     return P.wholeNamed(game.data, "MEWMON")
@@ -67,6 +72,13 @@ local INFO_HOLD = 80
 local HOF_HOLD = 180
 local FADE_FRAMES = 20
 
+-- scripts/HallOfFame.asm:24
+local INTRO_DELAY = 3
+-- home/fade.asm:26
+local INTRO_FADE = 24
+-- engine/movie/hall_of_fame.asm:4
+local INTRO_HOLD = 100
+
 -- HoFPrintTextAndDelay after each dex line
 local DEX_HOLD = 120
 
@@ -91,7 +103,10 @@ function HallOfFame.new(game, onDone)
   self.onDone = onDone
   self.index = 0
   self.timer = 0
-  self.phase = "mons"
+  self.phase = "intro"
+  self.introT = 0
+  self.isOpaque = false
+  self.introFade = require("src.render.Transition").whiteOut(game)
   self.sprites = {} -- species -> image or false
   self.spriteTrueColor = {} -- species -> full-color art flag (#637)
   self.backs = {} -- species (or "@player") -> back image or false (#847)
@@ -107,12 +122,21 @@ function HallOfFame.new(game, onDone)
   return self
 end
 
-function HallOfFame:enter()
-  local data = self.game.data
-  if data.audio and data.audio.songs and data.audio.songs.Music_HallOfFame then
-    pcall(Music.play, data, "Music_HallOfFame")
+function HallOfFame:updateIntro()
+  self.introT = self.introT + 1
+  if self.introT == INTRO_DELAY + 1 then
+    -- engine/movie/hall_of_fame.asm:283
+    Music.fadeOut(10)
   end
-  self:nextMon()
+  if self.introT > INTRO_DELAY + INTRO_FADE then self.isOpaque = true end
+  if self.introT >= INTRO_DELAY + INTRO_FADE + INTRO_HOLD then
+    -- engine/movie/hall_of_fame.asm:38
+    local data = self.game.data
+    if data.audio and data.audio.songs and data.audio.songs.Music_HallOfFame then
+      pcall(Music.play, data, "Music_HallOfFame")
+    end
+    self:nextMon()
+  end
 end
 
 function HallOfFame:nextMon()
@@ -194,6 +218,10 @@ function HallOfFame:update(dt)
   -- .ScrollPic with d = $a0, e = 4: the back pic crosses the screen right to
   -- left and is gone before the front pic starts.  Both scrolls are plain
   -- DelayFrame loops in the ROM, so neither takes a button (#847).
+  if self.phase == "intro" then
+    self:updateIntro()
+    return
+  end
   if self.phase == "back" then
     self.scrollX = self.scrollX - SCROLL_SPEED
     if self.scrollX <= BACK_END_X then
@@ -370,6 +398,13 @@ function HallOfFame:drawPlayerStats()
 end
 
 function HallOfFame:draw()
+  if self.phase == "intro" and not self.isOpaque then
+    if self.introT > INTRO_DELAY then
+      self.introFade.t = self.introT - INTRO_DELAY
+      self.introFade:draw()
+    end
+    return
+  end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", 0, 0, 160, 144)
 

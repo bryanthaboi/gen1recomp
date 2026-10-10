@@ -242,6 +242,10 @@ return function(game)
   -- ---------------------------------------------------------------
   -- the back-pic sweep ahead of the first front pic
   -- ---------------------------------------------------------------
+  for _ = 1, 300 do
+    if hof.phase ~= "intro" then break end
+    U.wait(1)
+  end
   check("the induction opens on the back pic sweep, at the right edge",
         hof.phase == "back" and (hof.scrollX or 0) > 96)
   local sweepShot = false

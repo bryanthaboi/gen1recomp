@@ -355,7 +355,7 @@ function FldeffMisc.hallOfFameRecord()
       -- pokeemerald/src/field_effect.c:1156
       playSe("SE_BALL")
       local o = OFFS[i] or OFFS[1]
-      balls[i] = Rse().spawn("pokeball_glow", { layer = "front", x = ox + 117 + o[1] + 4, y = oy + 52 + o[2] + 4,
+      balls[i] = Rse().spawn("pokeball_glow", { layer = "front", x = ox + 117 + o[1], y = oy + 52 + o[2],
         stopOnEnd = false, keep = function() return FldeffMisc._active[name] == token end })
     end
     if t == n * 25 + 32 then

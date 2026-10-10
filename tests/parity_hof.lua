@@ -114,7 +114,14 @@ check(getmetatable(stack2:top()) == HallOfFame, "induction showcase pushed")
 -- $c0 -> $a0) and only then scrolls the front pic in (#847), so the
 -- induction opens on the back pass.
 local hofUi = stack2:top()
-eq(hofUi.phase, "back", "induction opens on the back pic sweep (#847)")
+eq(hofUi.phase, "intro", "induction opens on the fade to white")
+local introGuard = 0
+while hofUi.phase == "intro" and introGuard < 400 do
+  introGuard = introGuard + 1
+  hofUi:update(1 / 60)
+end
+eq(introGuard, 3 + 24 + 100, "Delay3 + GBFadeOutToWhite + 100 DelayFrames before the sweep")
+eq(hofUi.phase, "back", "the back pic sweep follows the fade (#847)")
 eq(hofUi.scrollX, 160, "back pic enters at the right edge (hSCX = $c0)")
 -- drive the back sweep and the front scroll so the info box is armed
 local scrollGuard = 0
