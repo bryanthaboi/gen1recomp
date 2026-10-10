@@ -79,6 +79,44 @@ Environment variables for fine-tuning (configured in `gen1recomp-sbc.sh`):
 | `POKEPORT_CPU_GOVERNOR` | `schedutil` | CPU scaling governor (`schedutil`, `performance`, `ondemand`) |
 
 
+## Bundled LuaJIT
+
+The pack does not use PortMaster's `libluajit-5.1.so.2`. That one is LuaJIT
+2.1.0-beta3 (2017), which segfaulted 3 of 3 runs with the JIT on (TrimUI
+Brick). The pack ships a pinned LuaJIT 2.1 build instead (commit
+`c6ffc141a8762b41703f9287d63d93622a13dd8f`, MIT, license in
+`licenses/LuaJIT-COPYRIGHT`). It is compiled from source in a Debian bullseye
+aarch64 container (glibc 2.31, GC64, `make amalg`) by
+`scripts/luajit/build_luajit.sh`, and the build checks the version string and
+the glibc requirement before and after zipping. On the TrimUI Brick it ran a
+26-minute JIT-on soak with no crash.
+
+The JIT still stays **off by default** on these builds: LÖVE turns it off on
+arm64, and nothing here sets `POKEPORT_JIT`. It has only been validated on one
+device (TrimUI Brick, A133P). Enabling `POKEPORT_JIT=1` by default needs
+stability testing on H700, RK3566 and A133P devices first.
+
+The PortMaster catalogue package (`scripts/portmaster/`, see
+[portmaster-submission.md](portmaster-submission.md)) is different: it runs on
+the device's own PortMaster `love_11.5` runtime, so it still uses that
+runtime's LuaJIT 2.1.0-beta3. Keep the JIT off there.
+
+Existing installs keep their old LuaJIT until the zip is re-extracted: in-app
+updates replace only the game's code, not the runtime libraries.
+
+Building the port now needs an aarch64 host with docker or podman (non-aarch64
+hosts are refused), or a prebuilt library passed with
+`GEN1RECOMP_LUAJIT_LIB=/path/to/libluajit-5.1.so.2` (with its `COPYRIGHT` next
+to it, or `GEN1RECOMP_LUAJIT_COPYRIGHT`). The remaining PortMaster runtime
+files are pinned to a PortMaster-GUI commit and sha256-checked.
+
+For scripts that wrap `build-linux-arm-sbc.sh`: the library in
+`GEN1RECOMP_LUAJIT_LIB` must have a `COPYRIGHT` beside it (or set
+`GEN1RECOMP_LUAJIT_COPYRIGHT`) and must pass `scripts/luajit/verify_luajit.sh`
+(the pinned LuaJIT version, built with `PREFIX=/usr`). There is no longer any
+way to ship PortMaster's stock LuaJIT; a wrapper's "stock LuaJIT" mode should
+be removed, and the wrapper pointed at `scripts/luajit/build_luajit.sh` instead.
+
 ## Building
 
 Release workflows build this automatically. Standalone builds resolve the latest published Gen1Recomp release by default:

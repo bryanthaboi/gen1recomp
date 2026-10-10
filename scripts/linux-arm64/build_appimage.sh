@@ -27,6 +27,11 @@ VORBIS_VERSION="${VORBIS_VERSION:?}"
 VORBIS_TARBALL="${VORBIS_TARBALL:?}"
 MPG123_VERSION="${MPG123_VERSION:?}"
 MPG123_TARBALL="${MPG123_TARBALL:?}"
+LUAJIT_COMMIT="${LUAJIT_COMMIT:?}"
+LUAJIT_TARBALL="${LUAJIT_TARBALL:?}"
+LUAJIT_VERSION_STRING="${LUAJIT_VERSION_STRING:?}"
+LUAJIT_MAX_GLIBC="${LUAJIT_MAX_GLIBC:?}"
+BUILDER_HASH="${BUILDER_HASH:?}"
 APP_NAME="${APP_NAME:?}"
 VERSION="${VERSION:?}"
 JOBS="${JOBS:-$(nproc)}"
@@ -46,11 +51,39 @@ mkdir -p "$WORK"
 # the only slow part (~5 min cold on a Pi 5) and is identical for every game
 # version. The key includes every source version, so bumping any of them
 # invalidates the cache instead of silently reusing a stale mix.
-PREFIX="$CACHE/prefix-love$LOVE_VERSION-sdl$SDL2_VERSION-al$OPENAL_VERSION-theora$THEORA_VERSION-ogg$OGG_VERSION-vorbis$VORBIS_VERSION-mpg$MPG123_VERSION"
+# The key also carries a hash of the LuaJIT build recipe, so changing it
+# rebuilds LuaJIT instead of reusing a prefix built the old way. It also carries
+# the builder image's Dockerfile hash, so a toolchain/package change rebuilds
+# everything instead of reusing objects compiled by the old image.
+LUAJIT_RECIPE="$(sha256sum /luajit-scripts/compile_luajit.sh | cut -c1-12)"
+PREFIX="$CACHE/prefix-love$LOVE_VERSION-sdl$SDL2_VERSION-al$OPENAL_VERSION-theora$THEORA_VERSION-ogg$OGG_VERSION-vorbis$VORBIS_VERSION-mpg$MPG123_VERSION-luajit${LUAJIT_COMMIT:0:12}-${LUAJIT_RECIPE}-img${BUILDER_HASH}"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 # Our own libraries must win over the system ones during LÖVE's configure and
 # link, or the whole point of building them is lost.
 export LD_LIBRARY_PATH="$PREFIX/lib"
+
+# ----------------------------------------------------------- compile LuaJIT
+# Built from the pinned commit, not bullseye's 2.1.0-beta3 (which segfaulted
+# with the JIT on). The cache key above carries the commit, so a prefix built
+# against any other LuaJIT is never reused.
+# COPYRIGHT is installed last by compile_luajit.sh, so it marks a finished install.
+if [ -f "$PREFIX/lib/libluajit-5.1.so.2" ] && [ -f "$PREFIX/lib/pkgconfig/luajit.pc" ] \
+   && [ -s "$PREFIX/share/doc/luajit/COPYRIGHT" ]; then
+  say "reusing cached LuaJIT ${LUAJIT_COMMIT:0:12}"
+  bash /luajit-scripts/verify_luajit.sh "$PREFIX/lib/libluajit-5.1.so.2" \
+    || fail "the cached LuaJIT in $PREFIX failed verification; re-run with --clean-cache"
+else
+  say "compiling LuaJIT ${LUAJIT_COMMIT:0:12}"
+  bash /luajit-scripts/compile_luajit.sh "$CACHE/$LUAJIT_TARBALL" "$PREFIX"
+fi
+# Debian's copy must not be able to win: a stale builder image that still has
+# libluajit-5.1-dev would let pkg-config hand LOVE the 2017 beta3.
+if ls /usr/lib/aarch64-linux-gnu/libluajit-5.1.so* >/dev/null 2>&1; then
+  fail "the system libluajit-5.1 is installed in the builder image; rebuild it with --rebuild-image"
+fi
+luajit_prefix="$(pkg-config --variable=prefix luajit)"
+[ "$luajit_prefix" = "$PREFIX" ] \
+  || fail "pkg-config resolves luajit to '$luajit_prefix', not $PREFIX"
 
 # ------------------------------------------------------ compile audio codecs
 # Ordered by dependency: vorbis needs ogg, and theora needs ogg too. All three
@@ -250,6 +283,38 @@ for soname in libSDL2-2.0.so.0 libopenal.so.1 libfreetype.so.6 \
     || fail "liblove is not linked against $soname (a -dev package went missing)"
 done
 
+# liblove must really be linked against OUR LuaJIT. LD_LIBRARY_PATH points at
+# $PREFIX/lib for this whole script, so a plain ldd would resolve there no
+# matter how liblove was linked. Prove it without that crutch instead:
+#  (a) every RPATH/RUNPATH entry stays inside $PREFIX (luajit.pc adds none;
+#      libtool adds $PREFIX/lib because liblove links the .la libraries built
+#      there -- SDL2, ogg, vorbis, theora, mpg123 -- and (b) relies on that),
+#  (b) with LD_LIBRARY_PATH unset, the loader still finds libluajit-5.1.so.2,
+#      and only at $PREFIX/lib -- via the checked rpath or the system search
+#      path, so no other LuaJIT on the system could have satisfied the link, and
+#  (c) when compiled in this run, configure recorded our include dir.
+love_rpath="$(objdump -p "$love_lib" | awk '/RPATH|RUNPATH/ {print $2}')"
+if [ -n "$love_rpath" ]; then
+  IFS=: read -ra rpath_dirs <<<"$love_rpath"
+  for rpath_dir in "${rpath_dirs[@]}"; do
+    case "$rpath_dir" in
+      "$PREFIX"|"$PREFIX"/*) ;;
+      *) fail "liblove has an RPATH/RUNPATH entry outside $PREFIX: $rpath_dir" ;;
+    esac
+  done
+fi
+bare_ldd="$(env -u LD_LIBRARY_PATH ldd "$love_lib")"
+luajit_resolved="$(awk '$1 == "libluajit-5.1.so.2" {print $3}' <<<"$bare_ldd")"
+[ -n "$luajit_resolved" ] && [ "$luajit_resolved" != "not" ] \
+  && [ "$(readlink -f "$luajit_resolved")" = "$(readlink -f "$PREFIX/lib/libluajit-5.1.so.2")" ] \
+  || fail "without LD_LIBRARY_PATH liblove resolves libluajit-5.1.so.2 to '${luajit_resolved:-nothing}', not the pinned build in $PREFIX/lib"
+say "liblove -> libluajit-5.1.so.2 (no LD_LIBRARY_PATH): $luajit_resolved"
+if [ -f "$WORK/love-src/config.log" ]; then
+  grep -qF -- "-I$PREFIX/include/luajit-2.1" "$WORK/love-src/config.log" \
+    || fail "LÖVE's configure did not record -I$PREFIX/include/luajit-2.1"
+  say "config.log: $(grep -F -m1 -- "-I$PREFIX/include/luajit-2.1" "$WORK/love-src/config.log")"
+fi
+
 # --------------------------------------------------------------- AppDir
 # Layout mirrors LÖVE's own x86_64 AppImage exactly (bin/ lib/ share/ at the
 # AppDir root, not usr/-prefixed), so the AppRun contract below -- and the
@@ -324,6 +389,8 @@ chmod 0644 "$APPDIR/lib/liblove-$LOVE_VERSION.so"
 BUNDLED["liblove-$LOVE_VERSION.so"]=1
 bundle_needed "$APPDIR/bin/love"
 bundle_needed "$APPDIR/lib/liblove-$LOVE_VERSION.so"
+bash /luajit-scripts/verify_luajit.sh "$APPDIR/lib/libluajit-5.1.so.2" \
+  || fail "bundled libluajit-5.1.so.2 is not the pinned build"
 say "bundled $(ls "$APPDIR/lib" | wc -l) libraries: $(ls "$APPDIR/lib" | tr '\n' ' ')"
 
 # ------------------------------------------------- host dependency contract
@@ -363,8 +430,8 @@ say "host dependency contract holds (glibc, libstdc++ and the font stack only)"
 
 # LÖVE loads jit.* (jit.status, the profiler) through LUA_PATH; without these
 # the modules are simply absent, so ship them the way upstream's image does.
-jit_share="$(ls -d /usr/share/luajit-* 2>/dev/null | head -1)"
-[ -n "$jit_share" ] || fail "luajit jit/*.lua modules not found under /usr/share"
+jit_share="$(ls -d "$PREFIX"/share/luajit-* 2>/dev/null | head -1)"
+[ -n "$jit_share" ] || fail "luajit jit/*.lua modules not found under $PREFIX/share"
 LUAJIT_SHARE_DIR="$(basename "$jit_share")"
 mkdir -p "$APPDIR/share/$LUAJIT_SHARE_DIR" "$APPDIR/share/lua/5.1" "$APPDIR/lib/lua/5.1"
 cp -R "$jit_share/jit" "$APPDIR/share/$LUAJIT_SHARE_DIR/"
@@ -445,6 +512,8 @@ chmod +x "$APPDIR/AppRun"
 
 [ -f "$PREFIX/license.txt" ] || fail "LÖVE license.txt missing from the build prefix"
 cp "$PREFIX/license.txt" "$APPDIR/license.love2d.txt"
+[ -s "$PREFIX/share/doc/luajit/COPYRIGHT" ] || fail "LuaJIT COPYRIGHT missing from the build prefix"
+cp "$PREFIX/share/doc/luajit/COPYRIGHT" "$APPDIR/LuaJIT-COPYRIGHT"
 
 # --------------------------------------------------------------- fuse image
 # An AppImage is just <runtime ELF><squashfs>. gzip at 128K blocks matches what

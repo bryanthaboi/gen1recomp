@@ -201,6 +201,26 @@ Both pins live in `scripts/linux-arm64/common.sh`:
   source-built libraries. Bumping these is usually safe and occasionally
   necessary: `libmpg123` in particular must stay at least as new as what a
   target host's `libsndfile` expects, which is asserted for `mpg123_info2`.
+- `LUAJIT_*` in `scripts/luajit/pins.sh` (shared with the PortMaster builds) —
+  LuaJIT is compiled from a pinned `v2.1`-branch commit inside the builder
+  container instead of using bullseye's `libluajit-5.1-dev` (2.1.0-beta3, 2017,
+  which segfaulted with the JIT on). The commit and a hash of
+  `scripts/luajit/compile_luajit.sh` are part of the cached prefix
+  name, and the build fails if the bundled library lacks
+  `LUAJIT_VERSION_STRING` or if the system LuaJIT is present in the image.
+  LuaJIT bakes its compile-time `PREFIX` into the default module paths, so it
+  is compiled with `PREFIX=/usr` and only installed into the cached prefix;
+  the build fails unless the library's default path is
+  `/usr/share/luajit-2.1/?.lua` with no build prefix embedded. The install goes
+  to a staging root first and is copied into the prefix only after
+  `scripts/luajit/verify_luajit.sh` passes. `LUAJIT_BUILD_IMAGE` (digest-pinned)
+  and `LUAJIT_APT_SOURCES` in `pins.sh` must match the builder Dockerfile's
+  `FROM` and apt sources (see the re-pin notes in `pins.sh`). To
+  bump: change `LUAJIT_COMMIT` and `LUAJIT_SHA256` (of the GitHub archive
+  tarball) and set `LUAJIT_VERSION_STRING` to `LuaJIT 2.1.<contents of .relver
+  at that commit>`. The license ships as `LuaJIT-COPYRIGHT` in the AppImage.
+  The JIT stays off by default: LÖVE's `jitsetup` disables it on arm64, and
+  enabling it by default needs stability testing on several devices first.
 - `APPIMAGE_RUNTIME_TAG` / `APPIMAGE_RUNTIME_SHA256` — always a dated tag
   from [AppImage/type2-runtime](https://github.com/AppImage/type2-runtime/releases).
   The selftest fails the build if this ever points at `continuous`.

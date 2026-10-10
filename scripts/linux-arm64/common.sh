@@ -8,6 +8,19 @@ if [ -z "${ROOT:-}" ]; then
 fi
 export ROOT
 
+# Pinned LuaJIT (shared with the PortMaster builds). Built from source in the
+# builder container rather than taken from bullseye's libluajit-5.1-dev.
+# shellcheck source=../luajit/pins.sh
+. "$ROOT/scripts/luajit/pins.sh"
+
+say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
+fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# sha256_file, download_pinned, container_runtime (shared with scripts/luajit).
+# shellcheck source=../lib/fetch.sh
+. "$ROOT/scripts/lib/fetch.sh"
+
 # ---------------------------------------------------------------- pins
 # LÖVE ships no aarch64 binary of any kind -- the 11.5 release has win32/win64,
 # macOS, Android, iOS and an x86_64 AppImage, and that is the whole list. So
@@ -104,68 +117,14 @@ APPIMAGE_RUNTIME_SHA256="00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78
 # AppImage cover Raspberry Pi OS bullseye/bookworm/trixie, Ubuntu 20.04+ and
 # the aarch64 handheld distros. Building on a newer base would silently
 # restrict the artifact to that base and newer.
-BUILDER_BASE_IMAGE="debian:bullseye"
-BUILDER_IMAGE="${GEN1_LINUX_ARM64_IMAGE:-gen1recomp-linux-arm64-builder}"
+BUILDER_BASE_IMAGE="$LUAJIT_BUILD_IMAGE"
+# The tag is derived from the Dockerfile content, so any change to the image
+# (packages, apt sources, base digest) yields a new tag and a stale local image
+# (e.g. one still carrying libluajit-5.1-dev) is never reused.
+BUILDER_HASH="$(sha256_file "$ROOT/scripts/linux-arm64/Dockerfile" | cut -c1-12)"
+BUILDER_IMAGE="${GEN1_LINUX_ARM64_IMAGE:-gen1recomp-linux-arm64-builder:$BUILDER_HASH}"
 
 APP_NAME="gen1recomp"
-
-say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
-fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-
-# Print SHA-256 hex digest of PATH. Prefers sha256sum, falls back to shasum
-# (same order-agnostic pair scripts/switch/common.sh uses).
-sha256_file() {
-  local path="$1"
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$path" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$path" | awk '{print $1}'
-  else
-    fail "need sha256sum or shasum (install coreutils)"
-  fi
-}
-
-# download_pinned URL DEST EXPECTED_SHA256
-#
-# A cache hit is only trusted if it still hashes to the pin: a download
-# truncated by a network drop would otherwise be reused forever, which is the
-# same trap scripts/build.sh guards for the win64 zip and the x86_64 AppImage.
-download_pinned() {
-  local url="$1" dest="$2" want="$3" got=""
-  if [ -f "$dest" ]; then
-    got="$(sha256_file "$dest")"
-    if [ "$got" = "$want" ]; then
-      return 0
-    fi
-    warn "cached $(basename "$dest") has the wrong digest, re-downloading"
-    rm -f "$dest"
-  fi
-  say "downloading $(basename "$dest")"
-  # --retry-all-errors because plain --retry skips TLS handshake failures,
-  # which is how xiph.org drops these tarballs; the pin below still gates it.
-  curl -fL --retry 5 --retry-delay 2 --retry-all-errors --progress-bar \
-    "$url" -o "$dest.tmp" || fail "download failed: $url"
-  got="$(sha256_file "$dest.tmp")"
-  [ "$got" = "$want" ] || fail "$(printf '%s\n  expected %s\n  got      %s' \
-    "checksum mismatch for $(basename "$dest")" "$want" "$got")"
-  mv "$dest.tmp" "$dest"
-}
-
-# Echo the container runtime to use: docker, else podman.
-container_runtime() {
-  if [ -n "${GEN1_CONTAINER_RUNTIME:-}" ]; then
-    printf '%s' "$GEN1_CONTAINER_RUNTIME"
-    return 0
-  fi
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    printf 'docker'
-  elif command -v podman >/dev/null 2>&1; then
-    printf 'podman'
-  else
-    return 1
-  fi
-}
 
 fail_need_container() {
   fail "$(cat <<'EOF'

@@ -62,7 +62,9 @@ cache are included. The project owner has explicitly permitted PortMaster
 distribution of the launcher, recorded in the included license.
 
 I tested this catalogue candidate on my TrimUI Brick and confirmed it works.
-It uses PortMaster's LÖVE 11.5 runtime. I'm looking
+It uses PortMaster's LÖVE 11.5 runtime, including that runtime's LuaJIT
+2.1.0-beta3 (unlike the release zips, which bundle a pinned modern LuaJIT; see
+https://github.com/bryanthaboi/gen1recomp/blob/dev/docs/linux-arm-sbc.md#bundled-luajit), so the JIT must stay off. I'm looking
 for testing on the firmware and resolutions listed above, especially import,
 save/reload, controller exit and suspend/resume. Please include device,
 firmware, package checksum, result and `gen1recomp/log.txt` when reporting a

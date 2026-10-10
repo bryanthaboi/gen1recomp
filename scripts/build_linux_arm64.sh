@@ -125,6 +125,7 @@ download_pinned "$THEORA_URL" "$CACHE/$THEORA_TARBALL" "$THEORA_SHA256"
 download_pinned "$OGG_URL" "$CACHE/$OGG_TARBALL" "$OGG_SHA256"
 download_pinned "$VORBIS_URL" "$CACHE/$VORBIS_TARBALL" "$VORBIS_SHA256"
 download_pinned "$MPG123_URL" "$CACHE/$MPG123_TARBALL" "$MPG123_SHA256"
+download_pinned "$LUAJIT_URL" "$CACHE/$LUAJIT_TARBALL" "$LUAJIT_SHA256"
 download_pinned "$APPIMAGE_RUNTIME_URL" "$CACHE/$APPIMAGE_RUNTIME_NAME" \
   "$APPIMAGE_RUNTIME_SHA256"
 
@@ -162,12 +163,18 @@ say "compiling and packaging inside $BUILDER_BASE_IMAGE"
   -e VORBIS_TARBALL="$VORBIS_TARBALL" \
   -e MPG123_VERSION="$MPG123_VERSION" \
   -e MPG123_TARBALL="$MPG123_TARBALL" \
+  -e LUAJIT_COMMIT="$LUAJIT_COMMIT" \
+  -e LUAJIT_TARBALL="$LUAJIT_TARBALL" \
+  -e LUAJIT_VERSION_STRING="$LUAJIT_VERSION_STRING" \
+  -e LUAJIT_MAX_GLIBC="$LUAJIT_MAX_GLIBC" \
+  -e BUILDER_HASH="$BUILDER_HASH" \
   -e APP_NAME="$APP_NAME" \
   -e VERSION="$VERSION" \
   -v "$CACHE:/cache" \
   -v "$IN_DIR:/in:ro" \
   -v "$OUT_DIR:/out" \
   -v "$ROOT/scripts/linux-arm64:/scripts:ro" \
+  -v "$ROOT/scripts/luajit:/luajit-scripts:ro" \
   "$BUILDER_IMAGE" bash /scripts/build_appimage.sh
 
 # --------------------------------------------------------------- publish

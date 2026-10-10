@@ -283,7 +283,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_linux_arm64\.sh$|scripts/linux-arm64/|scripts/pack_love\.sh$|docs/linux-arm64-build\.md$|\.github/workflows/(ci|release)\.yml$)'; then
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(scripts/build_linux_arm64\.sh$|scripts/linux-arm64/|scripts/luajit/|scripts/lib/|scripts/pack_love\.sh$|docs/linux-arm64-build\.md$|\.github/workflows/(ci|release)\.yml$)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -302,6 +302,8 @@ jobs:
       # so the slow native job below only ever starts on a sane tree.
       - name: Linux arm64 offline selftest
         run: bash scripts/linux-arm64/selftest_build_linux_arm64.sh
+      - name: PortMaster LuaJIT helpers offline selftest
+        run: bash scripts/luajit/selftest_portmaster_runtime.sh
 
   linux-arm64-build:
     name: Linux arm64 AppImage build
@@ -486,12 +488,53 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  luajit-linux-arm64:
+    name: build pinned LuaJIT (linux arm64)
+    # Native arm64 runner: emulated aarch64 builds have miscompiled LuaJIT.
+    # Built once here and shared by both PortMaster zip jobs below.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      # The zip scripts depend on these helpers; fail fast before the build.
+      - name: PortMaster LuaJIT helpers offline selftest
+        run: bash scripts/luajit/selftest_portmaster_runtime.sh
+      - name: Cache pinned LuaJIT
+        uses: actions/cache@v6
+        with:
+          path: .bazinga/cache/luajit
+          key: luajit-linux-arm64-${{ hashFiles('scripts/luajit/**', 'scripts/lib/fetch.sh') }}
+      - name: Build pinned LuaJIT
+        run: |
+          set -euo pipefail
+          lib="$(scripts/luajit/build_luajit.sh)"
+          mkdir -p dist/luajit
+          cp "$lib" "$(dirname "$lib")/COPYRIGHT" dist/luajit/
+      - name: Verify LuaJIT
+        run: scripts/luajit/verify_luajit.sh dist/luajit/libluajit-5.1.so.2
+      - name: Upload LuaJIT
+        uses: actions/upload-artifact@v7
+        with:
+          name: luajit-linux-arm64
+          path: |
+            dist/luajit/libluajit-5.1.so.2
+            dist/luajit/COPYRIGHT
+          if-no-files-found: error
+          retention-days: 7
+
   rg34xxsp-build:
     name: RG34XXSP PortMaster build
+    needs: luajit-linux-arm64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Download pinned LuaJIT
+        uses: actions/download-artifact@v8
+        with:
+          name: luajit-linux-arm64
+          path: dist/native/luajit-linux-arm64
       - name: build RG34XXSP package
+        env:
+          GEN1RECOMP_LUAJIT_LIB: ${{ github.workspace }}/dist/native/luajit-linux-arm64/libluajit-5.1.so.2
         run: ./build-rg34xxsp.sh --version 0.0.0
       - name: upload RG34XXSP artifact
         uses: actions/upload-artifact@v7
@@ -503,12 +546,19 @@ jobs:
 
   linux-arm-sbc-build:
     name: Linux ARM SBC PortMaster build
+    needs: luajit-linux-arm64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Download pinned LuaJIT
+        uses: actions/download-artifact@v8
+        with:
+          name: luajit-linux-arm64
+          path: dist/native/luajit-linux-arm64
       - name: build Linux ARM SBC package
         env:
           GEN1RECOMP_SOURCE_DIR: ${{ github.workspace }}
+          GEN1RECOMP_LUAJIT_LIB: ${{ github.workspace }}/dist/native/luajit-linux-arm64/libluajit-5.1.so.2
         run: ./build-linux-arm-sbc.sh --version 0.0.0
       - name: upload Linux ARM SBC artifact
         uses: actions/upload-artifact@v7

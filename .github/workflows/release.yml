@@ -165,7 +165,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .bazinga/cache/linux-arm64
-          key: linux-arm64-deps-${{ hashFiles('scripts/linux-arm64/**', 'scripts/build_linux_arm64.sh') }}
+          key: linux-arm64-deps-${{ hashFiles('scripts/linux-arm64/**', 'scripts/luajit/**', 'scripts/build_linux_arm64.sh') }}
 
       - name: Build Linux arm64 AppImage
         env:
@@ -767,9 +767,39 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  luajit-linux-arm64:
+    name: build pinned LuaJIT (linux arm64)
+    needs: version
+    # Native arm64 runner: emulated aarch64 builds have miscompiled LuaJIT.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache pinned LuaJIT
+        uses: actions/cache@v6
+        with:
+          path: .bazinga/cache/luajit
+          key: luajit-linux-arm64-${{ hashFiles('scripts/luajit/**', 'scripts/lib/fetch.sh') }}
+      - name: Build pinned LuaJIT
+        run: |
+          set -euo pipefail
+          lib="$(scripts/luajit/build_luajit.sh)"
+          mkdir -p dist/luajit
+          cp "$lib" "$(dirname "$lib")/COPYRIGHT" dist/luajit/
+      - name: Verify LuaJIT
+        run: scripts/luajit/verify_luajit.sh dist/luajit/libluajit-5.1.so.2
+      - name: Upload LuaJIT
+        uses: actions/upload-artifact@v7
+        with:
+          name: luajit-linux-arm64
+          path: |
+            dist/luajit/libluajit-5.1.so.2
+            dist/luajit/COPYRIGHT
+          if-no-files-found: error
+          retention-days: 7
+
   rg34xxsp:
     name: build Anbernic RG34XXSP port
-    needs: [version, shaderfx-bridge]
+    needs: [version, shaderfx-bridge, luajit-linux-arm64]
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -787,9 +817,16 @@ jobs:
           name: shaderfx-bridge-linux-arm64
           path: dist/native/linux-arm64
 
+      - name: Download the pinned LuaJIT
+        uses: actions/download-artifact@v8
+        with:
+          name: luajit-linux-arm64
+          path: dist/native/luajit-linux-arm64
+
       - name: Build Anbernic RG34XXSP port
         env:
           SHADERFX_BRIDGE_REQUIRED: "1"
+          GEN1RECOMP_LUAJIT_LIB: ${{ github.workspace }}/dist/native/luajit-linux-arm64/libluajit-5.1.so.2
         run: |
           set -euo pipefail
           # Self-contained aarch64 PortMaster-style pack; pulls the LÖVE 11.5
@@ -807,7 +844,7 @@ jobs:
 
   linux-arm-sbc:
     name: build Linux ARM SBC PortMaster port
-    needs: [version, shaderfx-bridge]
+    needs: [version, shaderfx-bridge, luajit-linux-arm64]
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -825,6 +862,12 @@ jobs:
           name: shaderfx-bridge-linux-arm64
           path: dist/native/linux-arm64
 
+      - name: Download the pinned LuaJIT
+        uses: actions/download-artifact@v8
+        with:
+          name: luajit-linux-arm64
+          path: dist/native/luajit-linux-arm64
+
       - name: Build Linux ARM SBC PortMaster port
         env:
           # The release workflow must package the commit being released. The
@@ -833,6 +876,7 @@ jobs:
           GEN1RECOMP_SOURCE_DIR: ${{ github.workspace }}
           GEN1RECOMP_RELEASE_TAG: v${{ needs.version.outputs.version }}
           SHADERFX_BRIDGE_REQUIRED: "1"
+          GEN1RECOMP_LUAJIT_LIB: ${{ github.workspace }}/dist/native/luajit-linux-arm64/libluajit-5.1.so.2
         run: |
           set -euo pipefail
           # Same aarch64 PortMaster-style pack for Linux ARM SBC PortMaster. The build

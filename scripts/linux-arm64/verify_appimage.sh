@@ -8,6 +8,8 @@ image="${1:?usage: verify_appimage.sh <AppImage>}"
 [ -f "$image" ] || { echo "::error::no such AppImage: $image"; exit 1; }
 image="$(cd "$(dirname "$image")" && pwd)/$(basename "$image")"
 
+verify_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../luajit" && pwd)"
+
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 cd "$workdir"
@@ -19,6 +21,14 @@ for required in AppRun bin/love game.love lib/liblove-11.5.so; do
   [ -e "squashfs-root/$required" ] \
     || { echo "::error::AppImage is missing $required"; exit 1; }
 done
+
+# The pinned LuaJIT, not bullseye's 2.1.0-beta3 (segfaults with the JIT on).
+[ -f "squashfs-root/lib/libluajit-5.1.so.2" ] \
+  || { echo "::error::AppImage is missing lib/libluajit-5.1.so.2"; exit 1; }
+bash "$verify_dir/verify_luajit.sh" squashfs-root/lib/libluajit-5.1.so.2 \
+  || { echo "::error::bundled LuaJIT is not the pinned build"; exit 1; }
+[ -s "squashfs-root/LuaJIT-COPYRIGHT" ] \
+  || { echo "::error::AppImage is missing LuaJIT-COPYRIGHT"; exit 1; }
 
 bridge="squashfs-root/liblibrashader_bridge.so"
 if [ "${SHADERFX_BRIDGE_REQUIRED:-}" = "1" ] && [ ! -e "$bridge" ]; then

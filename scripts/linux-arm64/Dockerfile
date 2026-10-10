@@ -8,7 +8,8 @@
 #
 # This image is arch-native: build it on an aarch64 host (Raspberry Pi 5,
 # ubuntu-24.04-arm runner, Apple Silicon Docker) — no qemu emulation.
-FROM debian:bullseye
+# Must match LUAJIT_BUILD_IMAGE in scripts/luajit/pins.sh (checked by the selftest).
+FROM debian:bullseye@sha256:6f519a81440354a85eb592c5f32109ab80605f6b892455983a6f618bf87fabe9
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -18,7 +19,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Note what is deliberately ABSENT: libsdl2-dev, libtheora-dev and
 # libopenal-dev. All three are built from source instead (see common.sh for
 # why), and having Debian's copies installed would let pkg-config hand LÖVE's
-# configure the system ones and silently undo it.
+# configure the system ones and silently undo it. libluajit-5.1-dev is absent
+# for the same reason: LuaJIT is built from a pinned commit (scripts/luajit/),
+# because bullseye ships 2.1.0-beta3, which segfaulted with the JIT on.
 #
 # The remaining lib*-dev set is LÖVE's optional-module surface. A missing one
 # does not fail configure, it silently drops a module (love.sound decoders,
@@ -37,7 +40,7 @@ RUN printf 'deb http://archive.debian.org/debian bullseye main\ndeb http://archi
         build-essential pkg-config autoconf automake libtool cmake \
         ca-certificates curl file xz-utils bzip2 zip unzip squashfs-tools \
         libogg-dev libvorbis-dev \
-        libmodplug-dev libmpg123-dev libfreetype6-dev libluajit-5.1-dev \
+        libmodplug-dev libmpg123-dev libfreetype6-dev \
         zlib1g-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
         libasound2-dev libpulse-dev libudev-dev libdbus-1-dev \
         libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \

@@ -60,10 +60,45 @@ printf '%s' "$LOVE_SRC_URL" | grep -q "/$LOVE_VERSION/$LOVE_SRC_TARBALL\$" \
 say "checking the builder base image"
 # Building on anything newer than bullseye silently raises the glibc floor and
 # strands every user on an older distro, with no symptom until they run it.
-grep -q '^FROM debian:bullseye$' "$SCRIPT_DIR/Dockerfile" \
-  || fail "Dockerfile no longer builds on debian:bullseye (that raises the glibc floor)"
-[ "$BUILDER_BASE_IMAGE" = "debian:bullseye" ] \
+grep -qxF "FROM $LUAJIT_BUILD_IMAGE" "$SCRIPT_DIR/Dockerfile" \
+  || fail "Dockerfile FROM is not LUAJIT_BUILD_IMAGE ($LUAJIT_BUILD_IMAGE)"
+printf '%s' "$LUAJIT_BUILD_IMAGE" | grep -Eq '^debian:bullseye@sha256:[0-9a-f]{64}$' \
+  || fail "LUAJIT_BUILD_IMAGE is not a digest-pinned debian:bullseye (that raises the glibc floor)"
+[ "$BUILDER_BASE_IMAGE" = "$LUAJIT_BUILD_IMAGE" ] \
   || fail "BUILDER_BASE_IMAGE disagrees with the Dockerfile"
+
+while IFS= read -r apt_line; do
+  [ -n "$apt_line" ] || continue
+  grep -qF -- "$apt_line" "$SCRIPT_DIR/Dockerfile" \
+    || fail "build_luajit.sh and the builder image must use the same apt sources (Dockerfile lacks: $apt_line)"
+done <<<"$LUAJIT_APT_SOURCES"
+
+say "checking verify_luajit.sh rejection paths"
+# Synthetic files only: header = magic, 64-bit (02), little-endian (01), zeros,
+# e_machine at offset 18-19.
+lj_dir="$(mktemp -d "${TMPDIR:-/tmp}/gen1recomp-verify-luajit.XXXXXX")"
+temp_dir=""
+trap 'rm -rf "$lj_dir" ${temp_dir:+"$temp_dir"}' EXIT
+lj_hdr() { # $1 = e_machine as two hex bytes, e.g. b7 00
+  printf '\177ELF\002\001'; head -c 12 /dev/zero; printf "\\x$1\\x$2"
+}
+lj_make() { # $1 file, $2 e_machine lo, $3 hi, $4 version, $5 path, $6 glibc
+  { lj_hdr "$2" "$3"; printf '\0%s\0%s\0%s\0' "$4" "$5" "$6"; } > "$1"
+}
+lj_path='/usr/share/luajit-2.1/?.lua'
+lj_verify() { bash "$ROOT/scripts/luajit/verify_luajit.sh" "$1" >/dev/null 2>&1; }
+lj_make "$lj_dir/ok" b7 00 "$LUAJIT_VERSION_STRING" "$lj_path" GLIBC_2.17
+lj_verify "$lj_dir/ok" || fail "verify_luajit.sh rejects a valid synthetic aarch64 library"
+printf '%s %s GLIBC_2.17' "$LUAJIT_VERSION_STRING" "$lj_path" > "$lj_dir/text"
+lj_make "$lj_dir/x86" 3e 00 "$LUAJIT_VERSION_STRING" "$lj_path" GLIBC_2.17
+lj_make "$lj_dir/nopath" b7 00 "$LUAJIT_VERSION_STRING" "/opt/build/share/luajit-2.1/?.lua" GLIBC_2.17
+lj_make "$lj_dir/glibc" b7 00 "$LUAJIT_VERSION_STRING" "$lj_path" GLIBC_2.34
+lj_make "$lj_dir/beta" b7 00 "$LUAJIT_VERSION_STRING LuaJIT 2.1.0-beta3" "$lj_path" GLIBC_2.17
+for bad in text x86 nopath glibc beta; do
+  if lj_verify "$lj_dir/$bad"; then
+    fail "verify_luajit.sh accepted the bad '$bad' library"
+  fi
+done
 
 say "checking the dependency exclude list"
 # Extract the live regex from the build script and classify known sonames
@@ -121,11 +156,17 @@ say "checking the dlopen guarantees"
 # turns an optional runtime capability into a mandatory startup dependency.
 # If a future edit drops the source build and reaches for the -dev package
 # again, the AppImage silently stops starting on lean systems.
-for forbidden_pkg in libsdl2-dev libtheora-dev libopenal-dev; do
+for forbidden_pkg in libsdl2-dev libtheora-dev libopenal-dev libluajit-5.1-dev; do
   if grep -qE "^ +.*\b$forbidden_pkg\b" "$SCRIPT_DIR/Dockerfile"; then
     fail "Dockerfile installs $forbidden_pkg; that library is built from source on purpose"
   fi
 done
+grep -qF 'compile_luajit.sh' "$SCRIPT_DIR/build_appimage.sh" \
+  || fail "build_appimage.sh no longer builds the pinned LuaJIT"
+grep -qF 'luajit${LUAJIT_COMMIT:0:12}-${LUAJIT_RECIPE}-img${BUILDER_HASH}' "$SCRIPT_DIR/build_appimage.sh" \
+  || fail "the PREFIX cache key does not include the LuaJIT commit, recipe hash and builder image hash"
+printf '%s' "$LUAJIT_SHA256" | grep -Eq '^[0-9a-f]{64}$' \
+  || fail "LUAJIT_SHA256 is not a sha256 digest: $LUAJIT_SHA256"
 grep -qF -- '--enable-alsa-shared' "$SCRIPT_DIR/build_appimage.sh" \
   || fail "SDL2 is no longer configured to dlopen its audio backends"
 grep -qF -- '--enable-x11-shared' "$SCRIPT_DIR/build_appimage.sh" \
@@ -158,7 +199,6 @@ done
 
 say "checking the shared game.love payload"
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/gen1recomp-linux-arm64-selftest.XXXXXX")"
-trap 'rm -rf "$temp_dir"' EXIT
 "$ROOT/scripts/pack_love.sh" \
   --output "$temp_dir/game.love" \
   --listing "$temp_dir/love-listing.txt" \

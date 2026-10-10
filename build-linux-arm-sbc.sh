@@ -11,6 +11,11 @@
 #   GEN1RECOMP_SOURCE_DIR="$PWD" ./build-linux-arm-sbc.sh --version X.Y.Z
 #   ./build-linux-arm-sbc.sh --source /path/to/gen1recomp --version X.Y.Z
 #
+# LuaJIT: the zip ships a pinned LuaJIT, compiled during the build, so building
+# needs an aarch64 host with docker or podman. Alternatively set
+# GEN1RECOMP_LUAJIT_LIB=/path/libluajit-5.1.so.2 with its COPYRIGHT beside it
+# (or GEN1RECOMP_LUAJIT_COPYRIGHT=/path/to/COPYRIGHT).
+#
 # Output:
 #   dist/linux-arm-sbc/gen1recomp-sbc-portmaster.zip
 #
@@ -45,8 +50,6 @@ SOURCE_DIR_OVERRIDE="${GEN1RECOMP_SOURCE_DIR:-}"
 SOURCE_TAG_OVERRIDE="${GEN1RECOMP_RELEASE_TAG:-}"
 VERSION="${GEN1RECOMP_VERSION:-}"
 
-# Official PortMaster LÖVE 11.5 aarch64 runtime (small love stub + liblove).
-PM_RUNTIME_BASE="https://raw.githubusercontent.com/PortsMaster/PortMaster-GUI/main/PortMaster/runtimes/love_${LOVE_VERSION}"
 RELEASES_LATEST_URL="https://github.com/bryanthaboi/gen1recomp/releases/latest"
 RELEASE_TARBALL_BASE="https://github.com/bryanthaboi/gen1recomp/archive/refs/tags"
 
@@ -60,7 +63,7 @@ while [ $# -gt 0 ]; do
     --source) [ $# -ge 2 ] || fail "--source needs a directory"; SOURCE_DIR_OVERRIDE="$2"; shift ;;
     --release-tag) [ $# -ge 2 ] || fail "--release-tag needs a tag"; SOURCE_TAG_OVERRIDE="$2"; shift ;;
     -h|--help)
-      sed -n '2,24p' "$0"
+      sed -n '2,29p' "$0"
       exit 0
       ;;
     *) fail "unknown argument: $1" ;;
@@ -85,6 +88,10 @@ download() {
     || fail "download failed: $url"
   mv "$dest.tmp" "$dest"
 }
+
+# PortMaster pins + LuaJIT pin (LUAJIT_COMMIT, ...) + download/verify helpers.
+# shellcheck source=scripts/luajit/portmaster_runtime.sh
+. "$ROOT/scripts/luajit/portmaster_runtime.sh"
 
 # --------------------------------------------------------------- source + game tree
 # Release builds use the latest published source archive. A local checkout is
@@ -171,15 +178,12 @@ fi
 say "fetching LÖVE $LOVE_VERSION aarch64 runtime"
 LOVE_BIN="$CACHE/love.aarch64"
 LOVE_LIB="$CACHE/liblove-11.5.so"
-LUAJIT_LIB="$CACHE/libluajit-5.1.so.2"
 MODPLUG_LIB="$CACHE/libmodplug.so.1"
 OGG_LIB="$CACHE/libogg.so.0"
 
-download "$PM_RUNTIME_BASE/love.aarch64" "$LOVE_BIN"
-download "$PM_RUNTIME_BASE/libs.aarch64/liblove-11.5.so" "$LOVE_LIB"
-download "$PM_RUNTIME_BASE/libs.aarch64/libluajit-5.1.so.2" "$LUAJIT_LIB"
-download "$PM_RUNTIME_BASE/libs.aarch64/libmodplug.so.1" "$MODPLUG_LIB"
-download "$PM_RUNTIME_BASE/libs.aarch64/libogg.so.0" "$OGG_LIB"
+pm_fetch_runtime "$CACHE"
+
+pm_select_luajit
 
 # Sanity: love stub must be an aarch64 ELF.
 file "$LOVE_BIN" | grep -qi 'aarch64\|ARM aarch64' \
@@ -197,8 +201,9 @@ mkdir -p "$PORT_ROOT/$PORT_DIR_NAME/bin" \
 cp -R "$GAME_SRC" "$PORT_ROOT/$PORT_DIR_NAME/lovegame"
 cp "$LOVE_BIN" "$PORT_ROOT/$PORT_DIR_NAME/bin/love.aarch64"
 chmod +x "$PORT_ROOT/$PORT_DIR_NAME/bin/love.aarch64"
-cp "$LOVE_LIB" "$LUAJIT_LIB" "$MODPLUG_LIB" "$OGG_LIB" \
+cp "$LOVE_LIB" "$MODPLUG_LIB" "$OGG_LIB" \
   "$PORT_ROOT/$PORT_DIR_NAME/libs.aarch64/"
+pm_stage_luajit "$PORT_ROOT/$PORT_DIR_NAME/libs.aarch64" "$PORT_ROOT/$PORT_DIR_NAME/licenses"
 
 BRIDGE_LIB="liblibrashader_bridge.so"
 BRIDGE_SRC="${SHADERFX_BRIDGE_LINUX_ARM64:-}"
@@ -215,10 +220,14 @@ else
 fi
 
 # Drop a short license pointer for the bundled LÖVE bits.
-cat > "$PORT_ROOT/$PORT_DIR_NAME/licenses/LICENSE.love2d.txt" <<'EOF'
+cat > "$PORT_ROOT/$PORT_DIR_NAME/licenses/LICENSE.love2d.txt" <<EOF
 This port bundles the LÖVE 11.5 aarch64 runtime from PortMaster
-(https://github.com/PortsMaster/PortMaster-GUI). LÖVE is zlib-licensed;
-see https://love2d.org/ for full terms.
+(https://github.com/PortsMaster/PortMaster-GUI, commit $PM_RUNTIME_COMMIT),
+except for LuaJIT. LÖVE is zlib-licensed; see https://love2d.org/ for full terms.
+
+libs.aarch64/libluajit-5.1.so.2 is LuaJIT, built from source at LuaJIT commit
+$LUAJIT_COMMIT (https://github.com/LuaJIT/LuaJIT, MIT license; see
+LuaJIT-COPYRIGHT). It replaces PortMaster's LuaJIT 2.1.0-beta3.
 EOF
 
 # --------------------------------------------------------------- launcher
@@ -500,6 +509,10 @@ Put the `.gb` in `lovegame/`, then press **Choose ROM**. After import, the ROM-d
 
 LÖVE runtime binaries from [PortMaster](https://portmaster.games/). PortMaster device support and runtime integration are maintained by the PortMaster team.
 EOF
+cat >> "$PORT_ROOT/README.md" <<EOF
+
+LuaJIT (MIT license) is built from source at LuaJIT commit \`$LUAJIT_COMMIT\` instead of using PortMaster's older LuaJIT 2.1.0-beta3. The JIT stays off by default on this build.
+EOF
 sed -i.bak "s/__SOURCE_TAG__/$SOURCE_TAG/g" "$PORT_ROOT/README.md"
 rm -f "$PORT_ROOT/README.md.bak"
 
@@ -509,6 +522,8 @@ rm -f "$ZIP_OUT"
 say "packing $ZIP_OUT"
 (cd "$PORT_ROOT" && zip -q -9 -r "$ZIP_OUT" \
   "$LAUNCHER_NAME" "$PORT_DIR_NAME" port.json gameinfo.xml README.md)
+
+pm_verify_zip "$ZIP_OUT" "$PORT_DIR_NAME" "$WORK"
 
 say "done."
 say "artifact: $ZIP_OUT ($(du -h "$ZIP_OUT" | cut -f1))"
