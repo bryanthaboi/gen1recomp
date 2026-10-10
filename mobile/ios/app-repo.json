@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.72",
+          "date": "2026-10-10",
+          "size": 56258677,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.72/gen1recomp++-0.3.72-ios.ipa",
+          "localizedDescription": "sheeshing like a b word\n\n## Issues closed\n\n- #2817 Slow Oak\n- #2818 pikachu why are you not looking at me :(\n- #2819 Pikachu turns around instantly\n- #2820 no music fade out on title screen\n- #2821 Rival too slow\n- #2822 Pikachu doesn't twitch\n- #2823 \"piiiiikaaaaa...\" not audible\n- #2824 Mindless Pikachu\n- #2825 update 0.3.71 Pokémon emerald stuck for a few frames when collide while running (again)\n- #2826 wild encounter whole on the phone\n- #2827 Emerald - npc trainers don't trigger battle\n- #2831 Self-Destruct against your last Pokémon doesn't cause blackout if you win the battle\n- #2832 Trainer rematch calls via the phone tell you that they are in your current location, when they aren't\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.71",
           "date": "2026-10-09",
           "size": 56263935,
