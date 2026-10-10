@@ -2999,9 +2999,15 @@ public class GameActivity extends SDLActivity {
             android.view.Window w = getWindow();
             if (w != null) {
                 w.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                     WindowManager.LayoutParams.FLAG_FULLSCREEN
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+                // A Presentation has no Activity of its own. Giving it global
+                // focus can promote the launcher underneath it instead of the
+                // game, moving game threads out of Android's top-app group.
+                // Pointer input still reaches FrameView; keys stay with the game.
                 w.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT);
             }
