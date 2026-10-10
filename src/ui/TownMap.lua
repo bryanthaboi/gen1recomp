@@ -159,7 +159,7 @@ local function markerSheet(def, seed)
   end
   if not colors then
     if PaletteFX.usesSpriteObp() then
-      colors, group = PaletteFX.ogObjLit() -- engine/items/town_map.asm:325
+      colors, group = PaletteFX.ogObjNormal() -- home/palettes.asm:24
     else
       colors, group = PaletteFX.dmgObjLit()
     end

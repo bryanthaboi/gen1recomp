@@ -370,9 +370,7 @@ function Audio.applyEngineOptions(opts)
   if type(opts) ~= "table" then return end
   local mode = opts.audioMode or "both"
   Audio._audioMode = mode
-  if love and love.audio and love.audio.setMixWithSystem then
-    pcall(love.audio.setMixWithSystem, mode ~= "game_only")
-  end
+  require("src.audio.AudioMix").set(mode ~= "game_only")
   if mode == "external_only" then
     Audio._bgmVolume = 0
   else
@@ -467,7 +465,6 @@ function Audio.playSong(id, opts)
   }
   Audio._mapSong = Audio._mapSong or id
 
-  -- A new song owns the bus — cancel stale fades and fanfares (oak exit fade was killing lab BGM).
   Audio._fadeOut = nil
   Audio._fadeIn = nil
   Audio._fanfareActive = false
@@ -1743,7 +1740,6 @@ function Audio.onFocusGained()
   end
 end
 
---- Device reset: QueueableSource may be dead — rebuild then refill.
 function Audio.rebuildPlayback()
   Audio._suspended = false
   if not (love and love.audio and love.audio.newQueueableSource) then return false end

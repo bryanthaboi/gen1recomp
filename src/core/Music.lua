@@ -573,9 +573,7 @@ end
 
 function Music.setAudioMode(mode)
   currentAudioMode = mode or "both"
-  if love and love.audio and love.audio.setMixWithSystem then
-    pcall(love.audio.setMixWithSystem, currentAudioMode ~= "game_only")
-  end
+  require("src.audio.AudioMix").set(currentAudioMode ~= "game_only")
   Music.setVolumeLevel(storedVolumeLevel)
 end
 
@@ -634,7 +632,11 @@ function Music.onDeviceReset()
     local src = require("src.core.ChipAudio").currentSource()
     if not src then return end
     state.source = src
-    applyVolume(src)
+    if state.fade then
+      fadeSetLevel(state.fade, state.fade.level)
+    else
+      applyVolume(src)
+    end
     applyFilter(src)
     return
   end

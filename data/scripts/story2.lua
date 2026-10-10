@@ -309,11 +309,14 @@ M.PALLET_TOWN = {
 
     game.stack:push(TextBox.new(game,
       t._PalletTownOakHeyWaitDontGoOutText or "OAK: Hey! Wait!\nDon't go out!",
-      nil, { auto = { delay = 10, overlap = 10, onOverlap = function()
-        -- .HeyWaitDontGoOutText turns the player to face down (toward
-        -- the approaching Oak) before the exclamation bubble
+      function()
+        ow.emote = nil
+        oakAppearsAndWalks()
+      end, { auto = { delay = 10, overlap = 60, onOverlap = function()
+        -- scripts/PalletTown.asm:186
         ow.player.facing = "down"
-        ow.emote = { npc = ow.player, frames = 50, onDone = oakAppearsAndWalks }
+        -- scripts/PalletTown.asm:185
+        ow.emote = { npc = ow.player, frames = 60 }
       end } }))
     return true
   end,

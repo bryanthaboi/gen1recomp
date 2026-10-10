@@ -118,6 +118,7 @@ function ListMenu.new(game, title, items, opts)
   self.onChoose = opts.onChoose
   self.onCancel = opts.onCancel
   self.footer = opts.footer
+  self.listPrompt = opts.footer
   self.pageJump = opts.pageJump    -- Left/Right move a page at a time
   self.wrap = opts.wrap            -- Up on first / Down on last wraps
   self.keyRepeat = opts.keyRepeat  -- hold Up/Down (and pageJump L/R) to scroll
@@ -312,6 +313,10 @@ end
 -- PrintListMenuEntries, minus the price column StartMenu_Item never asks for
 -- (wPrintItemPrices = 0, engine/menus/start_sub_menus.asm)
 function ListMenu:drawItemBox()
+  local hasBox = self.messageBox or self.footer
+  -- engine/menus/players_pc.asm:151-162
+  local boxUnder = hasBox and self.footer == self.listPrompt
+  if boxUnder then drawMessageBox(self) end
   love.graphics.setColor(1, 1, 1, 1)
   Font.drawBox(ITEM_BOX.tx, ITEM_BOX.ty, ITEM_BOX.tw, ITEM_BOX.th)
   love.graphics.setColor(0, 0, 0, 1)
@@ -356,9 +361,8 @@ function ListMenu:drawItemBox()
      and (self.arrowBlink or 0) < ARROW_BLINK_ON then
     Font.drawCode(Theme.moreArrow, ITEM_MORE_X, ITEM_MORE_Y)
   end
-  -- players_pc.asm:97/151/205 PrintText the prompt before DisplayListMenuID,
-  -- so the bottom box sits under the list from the first frame
-  if self.messageBox or self.footer then drawMessageBox(self) end
+  -- engine/menus/players_pc.asm:173
+  if hasBox and not boxUnder then drawMessageBox(self) end
   love.graphics.setColor(1, 1, 1, 1)
 end
 

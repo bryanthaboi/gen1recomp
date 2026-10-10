@@ -214,9 +214,7 @@ local function applySavedAudioMode()
   end)
   if not ok or type(savedOptions) ~= "table" then savedOptions = {} end
   local mode = savedOptions.audioMode or "both"
-  if love and love.audio and love.audio.setMixWithSystem then
-    pcall(love.audio.setMixWithSystem, mode ~= "game_only")
-  end
+  require("src.audio.AudioMix").set(mode ~= "game_only")
 end
 
 local Game, EditorApp, Importer, TouchEditor, Studio, Prelaunch

@@ -41,7 +41,7 @@ return function(game)
     local red = sprites.SPRITE_RED
     local colors, group
     if PaletteFX.usesSpriteObp() then
-      colors, group = PaletteFX.ogObj()
+      colors, group = PaletteFX.ogObjNormal()
     else
       colors, group = PaletteFX.dmgObj()
     end

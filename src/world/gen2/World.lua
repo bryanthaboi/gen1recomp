@@ -7067,7 +7067,8 @@ function World:startBattle(opts, onDone)
         -- whatever stood there.
         if whiteout then
           self:healParty()
-          if not BugContest.isActive(game.save) then
+          local inContest = BugContest.isActive(game.save)
+          if not inContest then
             CallAsm.run(self, "HalveMoney")
             CallAsm.run(self, "GetWhiteoutSpawn")
           end
@@ -7077,6 +7078,12 @@ function World:startBattle(opts, onDone)
           if Runtime.wants("world.blacked_out") then
             Runtime.emit("world.blacked_out",
               { save = game.save, healTarget = self:healPoint() })
+          end
+          if inContest then
+            self:restoreMapMusic()
+            -- engine/events/whiteout.asm:24-25
+            self:bugContestResults()
+            return
           end
           -- engine/events/whiteout.asm:19-20
           self:runMapSetup(MAPSETUP.WARP, function()
@@ -11078,9 +11085,15 @@ end
 function World:whiteOut()
   self:showText(
     Strings("You have no more\nPOKéMON that can\011fight!"), function()
+    self:healParty()
+    -- engine/events/whiteout.asm:15-16
+    if BugContest.isActive(self.game and self.game.save) then
+      -- engine/events/whiteout.asm:24-25
+      self:bugContestResults()
+      return
+    end
     CallAsm.run(self, "HalveMoney")
     CallAsm.run(self, "GetWhiteoutSpawn")
-    self:healParty()
     -- Guarded because healPoint walks the spawn table to answer: with nobody
     -- listening the blackout must not pay for a lookup warpToSpawn is about to
     -- make again anyway.

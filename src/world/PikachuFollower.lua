@@ -204,7 +204,19 @@ local function makeFollower(game, ow, x, y, facing)
     if idle and idle.phase then return idle.phase % 2 end
     return NPC.walkPhase(self)
   end
+  npc.draw = function(self, camX, camY)
+    if PikachuFollower.underPlayer(ow, self) then return end
+    return NPC.draw(self, camX, camY)
+  end
   return npc
+end
+
+-- engine/pikachu/pikachu_follow.asm:1030
+function PikachuFollower.underPlayer(ow, npc)
+  local p = ow and ow.player
+  if not (p and npc) or npc.moving then return false end
+  return npc.cellX == (p.targetX or p.cellX)
+     and npc.cellY == (p.targetY or p.cellY)
 end
 
 local function findFollower(ow)

@@ -37,9 +37,14 @@ eq(Music.audioMode(), "both", "Music mode set to 'both'")
 eq(mixWithSystemCalls[#mixWithSystemCalls], true, "audioMode 'both' enables mixWithSystem")
 
 mixWithSystemCalls = {}
+Music.applyOptions({ audioMode = "both", musicVol = 7 })
+eq(#mixWithSystemCalls, 0, "re-applying unchanged options sends no setMixWithSystem (#2844)")
+
+mixWithSystemCalls = {}
 Music.applyOptions({ audioMode = "external_only", musicVol = 7 })
 eq(Music.audioMode(), "external_only", "Music mode set to 'external_only'")
-eq(mixWithSystemCalls[#mixWithSystemCalls], true, "audioMode 'external_only' enables mixWithSystem")
+eq(#mixWithSystemCalls, 0, "'both' -> 'external_only' keeps mixWithSystem on without a resend")
+eq(require("src.audio.AudioMix").current(), true, "audioMode 'external_only' enables mixWithSystem")
 
 mixWithSystemCalls = {}
 Music.applyOptions({ audioMode = "game_only", musicVol = 7 })
@@ -60,7 +65,7 @@ Game3Audio.applyEngineOptions({ audioMode = "external_only", musicVol = 7, sfxVo
 eq(Game3Audio._audioMode, "external_only", "Game3 audioMode set to 'external_only'")
 eq(Game3Audio._bgmVolume, 0, "Game3 'external_only' mutes in-game BGM")
 check(Game3Audio._sfxVolume > 0, "Game3 'external_only' keeps SFX active")
-eq(mixWithSystemCalls[#mixWithSystemCalls], true, "Game3 'external_only' enables mixWithSystem")
+eq(require("src.audio.AudioMix").current(), true, "Game3 'external_only' enables mixWithSystem")
 
 mixWithSystemCalls = {}
 Game3Audio.applyEngineOptions({ audioMode = "game_only", musicVol = 7, sfxVol = 7 })
