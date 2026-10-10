@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.74",
+          "date": "2026-10-10",
+          "size": 56260051,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.74/gen1recomp++-0.3.74-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #2840 Item window not overlapping correctly at PC\n- #2841 Sprite color on the Town Map\n- #2843 Oak's first dialogue closes too fast\n- #2844 Music skip\n- #2845 Fainting in bug catching contest doesn't end the contest\n- #2846 Small pikachu inaccuracy\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.73",
           "date": "2026-10-10",
           "size": 56259647,
