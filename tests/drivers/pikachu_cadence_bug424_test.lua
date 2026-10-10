@@ -144,7 +144,7 @@ return function(game)
   -- the first change lands a partial unit after the sampling started, so it
   -- only sets the baseline: every gap measured after it is a whole unit
   local minGap, maxGap, seen, resetAt, period = 99, 0, 0, nil, nil
-  for _ = 1, 300 do
+  for _ = 1, 900 do
     step(1)
     local now = glanceLeft()
     if now == nil then break end
@@ -286,10 +286,10 @@ return function(game)
   for _ = 1, 60 do
     if not ow.emote then break end
     local path = PikachuFollower.picFrame(ow.emote)
-    if path and path:find("gfx_e6646", 1, true) then
+    if path and path:find("pikapic_20_34", 1, true) then
       lifted = lifted + 1
       if not liftShot then
-        liftShot = SHOT_DIR .. "/bug424_pikapic_pose_e6646.png"
+        liftShot = SHOT_DIR .. "/bug424_pikapic_pose_20_34.png"
         if U.still(game, liftShot) then U.log("captured", liftShot)
         else liftShot = nil end
       end
@@ -318,7 +318,7 @@ return function(game)
 
   U.log("Hold Down: Pikachu should walk up to the ledge lip and WAIT there,")
   U.log("then clear both cells in one motion on your next step, at walking")
-  U.log("speed. Let go and count the first glance: about a second, not half.")
+  U.log("speed. Let go and count the first glance: about eight seconds.")
   U.log("Face it, press A: the framed pic swaps to the hearts pose and back for the whole")
   U.log("beat, and A or B cuts the beat off early.")
 

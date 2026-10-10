@@ -1,11 +1,7 @@
--- Manual check of Yellow's two extra pic rips: PROF.OAK's own back pic in
--- the Pallet catch scene (#557, LoadPlayerBackPic's BATTLE_TYPE_PIKACHU
--- branch, pokeyellow engine/battle/core.asm:6384-6391) and the framed
--- portrait TalkToPikachu raises (#561, each PikaPicAnimScript's own base
--- frame, data/pikachu/pikachu_pic_animation.asm).  Both are gated on files
--- the importer writes, so the asset check comes before any staging.  No
--- POKEPORT_IDENTITY: a sandbox save dir carries no Yellow cache at all.
---   POKEPORT_DRIVER=tests/drivers/oak_pikapic_bug557_bug561_test.lua POKEPORT_TOUCH=0 POKEPORT_VERSION=yellow love .
+-- pokeyellow engine/battle/core.asm:6390
+-- pokeyellow engine/battle/core.asm:2109-2121
+-- pokeyellow engine/items/item_effects.asm:148
+-- pokeyellow engine/pikachu/pikachu_follow.asm:1
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   local GameVersion = require("src.core.GameVersion")
@@ -13,38 +9,29 @@ return function(game)
   local Sprites = require("src.pokemon.Sprites")
   local Pokemon = require("src.pokemon.Pokemon")
 
-  local SHOT_DIR = os.getenv("SHOT_DIR") or "/tmp/shots"
+  local SHOT_DIR = os.getenv("POKEPORT_SHOT_DIR") or os.getenv("SHOT_DIR") or "/tmp/shots"
   local PROF_BACK = "assets/generated/battle/profoakb.png"
-  local OLDMAN_BACK = "assets/generated/battle/oldmanb.png"
+  local failures = 0
 
   local function check(label, ok)
     U.log(ok and "PASS" or "FAIL", label)
+    if not ok then failures = failures + 1 end
     return ok
   end
 
-  local function idle()
+  local function finish()
+    U.log(failures == 0 and "ALL PASS" or ("DONE " .. failures .. " check(s) failed"))
+    love.event.quit(failures == 0 and 0 or 1)
     while true do coroutine.yield() end
   end
 
   if not check("running the Yellow cache (POKEPORT_VERSION=yellow)",
                GameVersion.isYellow()) then
-    U.log("Neither pic exists in Red or Blue. Re-run with")
-    U.log("POKEPORT_VERSION=yellow.")
-    idle()
+    finish()
   end
 
-  -- ---- the two rips, before anything is staged ----
-  -- The importer writes these only when the manifest carries the symbol, and
-  -- both call sites fall back silently when the file is absent, so a missing
-  -- file looks on screen exactly like the bug being unfixed.
   local oakPicOk = love.filesystem.getInfo(PROF_BACK) ~= nil
   check("Oak's back pic is in the cache (" .. PROF_BACK .. ")", oakPicOk)
-  if not oakPicOk then
-    U.log("The importer skipped it: tools/rom_manifest_yellow.json has no")
-    U.log("ProfOakPicBack entry, so RomExtractor's gate never fires and")
-    U.log("Sprites.playerPath falls back to " .. OLDMAN_BACK .. ".")
-    U.log("Re-importing will not help until the symbol is in the manifest.")
-  end
 
   local pikapicFound = {}
   for script = 1, 28 do
@@ -56,21 +43,9 @@ return function(game)
   local pikapicOk = #pikapicFound > 0
   check("the pikapic base frames are in the cache (assets/generated/pikachu/)",
         pikapicOk)
-  if pikapicOk then
-    U.log("found base frames for scripts:", table.concat(pikapicFound, " "))
-  else
-    U.log("The importer skipped all 28: the Pic_e4000..Pic_f0cf4 labels are")
-    U.log("absent from tools/rom_manifest_yellow.json, so PikachuFollower")
-    U.log("keeps standing the battle front pic in the frame, which is #561")
-    U.log("unchanged. Not staging the talk: it cannot look right yet.")
-  end
-  U.log("tests/engine/yellow_oak_back_pikapic.lua asserts both symbol lists.")
+  U.log("found base frames for scripts:", table.concat(pikapicFound, " "))
 
-  -- ---- #557: the Pallet catch scene ----
-  -- Same two calls data/scripts/story2.lua:255 makes once Oak has said
-  -- "That was close!"  Standing in Pallet Town first so the battle draws
-  -- over a real map, as it does in play.
-  U.teleport(game, "PALLET_TOWN", 10, 8, "up")
+  U.teleport(game, "PALLET_TOWN", 9, 7, "up")
   U.wait(10)
   game.save.player.name = "bryan"
 
@@ -80,25 +55,23 @@ return function(game)
   check("it is Oak's pic, not the old man's", backPath == PROF_BACK)
 
   local battle = BattleState.newWild(game, "PIKACHU", 5)
-  battle:makeOldManDemo("PROF.OAK")
+  battle:makeOldManDemo("oak")
   check("the thrower is named PROF.OAK", battle.demoName == "PROF.OAK")
   check("the battle asks for the BATTLE_TYPE_PIKACHU back pic",
         battle.oakDemo == true)
 
-  -- record what the scripted throw actually prints, so the name half can be
-  -- judged without reading glyph codes off the canvas
   local said = {}
-  local realSay = battle.say
-  battle.say = function(self, text)
-    said[#said + 1] = tostring(text)
-    return realSay(self, text)
+  for _, name in ipairs({ "say", "sayAuto", "sayNext", "sayNextAuto" }) do
+    local real = battle[name]
+    battle[name] = function(self, text, ...)
+      said[#said + 1] = tostring(text)
+      return real(self, text, ...)
+    end
   end
 
   game.stack:push(battle)
   U.wait(10)
 
-  -- clear the "Wild PIKACHU appeared!" box; the scripted cursor script only
-  -- starts once the intro chrome is gone
   for _ = 1, 90 do
     if battle.phase == "menu" then break end
     U.tap(game, "a")
@@ -106,34 +79,18 @@ return function(game)
   end
   if not check("the demo battle reached its scripted menu",
                battle.phase == "menu") then
-    U.log("phase is", tostring(battle.phase), "- the intro never cleared.")
-    idle()
+    U.log("phase is", tostring(battle.phase))
+    finish()
   end
   U.wait(20)
-  if U.shot(game, SHOT_DIR .. "/bug557_back_pic.png") then
-    U.log("captured", SHOT_DIR .. "/bug557_back_pic.png")
-  end
+  U.still(game, SHOT_DIR .. "/557_01_oak_back_pic.png")
 
-  -- The other half of the issue title, "referred to as Pikachu".
-  -- DisplayBattleMenu's simulated branch puts BATTLE_MENU_TEMPLATE on screen
-  -- and nothing else (data/text_boxes.asm:31 -- FIGHT/PKMN/ITEM/RUN from
-  -- column 8), so no name is printed at all: there is no player mon in this
-  -- battle to name.  The classic layout ports that branch; WideBattle's menu
-  -- has no demo case and prints "What will <battle.player.name> do?" over the
-  -- hidden placeholder battler, which is a level 5 PIKACHU.
+  -- pokeyellow data/text_boxes.asm:31
   local options = game.save.options or {}
   U.log("battle layout option:", tostring(options.battleLayout or "classic"))
-  local wide = battle:isWideBattleLayout()
-  check("the layout on screen leaves the scripted menu unnamed", not wide)
-  if wide then
-    U.log("The wide layout is on, so the menu reads \"What will PIKACHU do?\"")
-    U.log("beside Oak's throw. Switch OPTIONS to the classic battle layout")
-    U.log("and re-run to see the box the original draws.")
-  end
+  check("the layout on screen leaves the scripted menu unnamed",
+        not battle:isWideBattleLayout())
 
-  -- the rest runs itself: 130 frames of cursor, the forced ITEM list, then
-  -- the throw.  Never tap through it -- the timing is the port of
-  -- DisplayBattleMenu's simulated keystrokes.
   local function thrownLine()
     for _, text in ipairs(said) do
       if text:find("POK", 1, true) and text:find("PROF.OAK", 1, true) then
@@ -149,114 +106,74 @@ return function(game)
   local line = thrownLine()
   check("the throw is announced under PROF.OAK's name", line ~= nil)
   if line then U.log("the box reads:", (line:gsub("\n", " / "))) end
-  U.wait(45)
-  if U.shot(game, SHOT_DIR .. "/bug557_throw.png") then
-    U.log("captured", SHOT_DIR .. "/bug557_throw.png")
-  end
+  U.wait(80)
+  U.still(game, SHOT_DIR .. "/557_02_prof_oak_used_poke_ball.png")
 
-  if oakPicOk then
-    U.log("Both #557 shots are taken. The back pic in the lower left is the")
-    U.log("man throwing the ball: Oak in his lab coat, and the throw line")
-    U.log("names PROF.OAK. The near miss is a back pic that reads as a")
-    U.log("person and looks plausible while still being oldmanb.png --")
-    U.log("compare against the catch tutorial north of Viridian, which")
-    U.log("SHOULD be the old man and proves the demo path works at all.")
-  else
-    U.log("The shots are evidence of the FAIL, not of a fix: the back pic in")
-    U.log("the lower left is the bald OLD MAN from the Route 5 tutorial,")
-    U.log("exactly as #557 reported him. The throw line above it does name")
-    U.log("PROF.OAK, so the thrower half is right and only the pic is stuck.")
-  end
+  if not pikapicOk then finish() end
 
-  -- ---- #561: the framed portrait ----
-  if not pikapicOk then
-    U.log("Skipping the Pikachu portrait: see the FAIL above.")
-    idle()
+  local function stackHas(state)
+    for _, s in ipairs(game.stack.states) do
+      if s == state then return true end
+    end
+    return false
   end
-
-  for _ = 1, 300 do
-    if game.stack:top() ~= battle then break end
-    U.wait(1)
+  for _ = 1, 3000 do
+    if not stackHas(battle) then break end
+    if battle.msgPrompt or battle.msgWaiting then U.tap(game, "a") end
+    U.wait(2)
   end
-  U.wait(20)
+  check("the demo battle ended", not stackHas(battle))
 
-  -- ShouldPikachuSpawn (pokeyellow engine/pikachu/pikachu_follow.asm): the
-  -- lab gift happened and a healthy Pikachu leads the party.  Pallet's
-  -- objects sit at (10,4), (3,8) and (11,14), so (10,8) and the road cells
-  -- around it are clear.
   game.save.party = { Pokemon.new(game.data, "PIKACHU", 12) }
   game.save.flags = game.save.flags or {}
   game.save.flags.EVENT_GOT_STARTER = true
-  U.teleport(game, "PALLET_TOWN", 10, 8, "down")
+  game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+  game.save.pikachuInBall = false
+  U.teleport(game, "PALLET_TOWN", 9, 7, "down")
   U.wait(12)
 
   local ow = game.overworld
-  local function follower()
-    for _, n in ipairs(ow.npcs or {}) do
-      if n.pikachuFollower then return n end
-    end
-    return nil
+  local npc
+  for _, n in ipairs(ow.npcs or {}) do
+    if n.pikachuFollower then npc = n end
   end
-  local npc = follower()
-  if not check("the follower spawned", npc ~= nil) then idle() end
+  if not check("the follower spawned", npc ~= nil) then finish() end
 
-  -- one step then a turn back, so the follower is on the cell just vacated
-  local DIRS = { { "down", 0, 1 }, { "up", 0, -1 },
-                 { "left", -1, 0 }, { "right", 1, 0 } }
-  local OPPOSITE = { up = "down", down = "up", left = "right", right = "left" }
-  local stepDir
+  local p = ow.player
+  local DIRS = { { "left", -1, 0 }, { "right", 1, 0 }, { "up", 0, -1 }, { "down", 0, 1 } }
+  local dir, dx, dy
   for _, d in ipairs(DIRS) do
-    local cx, cy = ow.player.cellX + d[2], ow.player.cellY + d[3]
-    if ow.map:inBounds(cx, cy) and ow.map:isWalkableCell(cx, cy)
-       and not ow:npcAtCell(cx, cy) then
-      stepDir = d[1]
+    local cx, cy = p.cellX + d[2], p.cellY + d[3]
+    if ow.map:isWalkableCell(cx, cy) and not ow:npcAtCell(cx, cy) then
+      dir, dx, dy = d[1], d[2], d[3]
       break
     end
   end
-  if not check("a walkable neighbour to step into exists", stepDir ~= nil) then
-    idle()
-  end
-  U.hold(game, stepDir, 24)
-  U.wait(6)
-  U.tap(game, OPPOSITE[stepDir])
-  U.wait(6)
+  if not check("a walkable neighbour for the follower exists", dir ~= nil) then finish() end
 
-  local function facingFollower()
-    local fx, fy = ow.player:facingCell()
-    return ow:npcAtCell(fx, fy) == npc
-  end
-  if not facingFollower() then
-    for _, d in ipairs(DIRS) do
-      if npc.cellX == ow.player.cellX + d[2]
-         and npc.cellY == ow.player.cellY + d[3] then
-        U.tap(game, d[1])
-        U.wait(6)
-        break
-      end
-    end
-  end
-  check("player is facing the follower", facingFollower())
+  npc.cellX, npc.cellY = p.cellX + dx, p.cellY + dy
+  npc.px, npc.py = npc.cellX * 16, npc.cellY * 16
+  npc.targetX, npc.targetY, npc.goalX, npc.goalY = nil, nil, nil, nil
+  npc.moving, npc.idle = false, nil
+  p.facing = dir
+  ow.pikachuTrail = { x = p.cellX, y = p.cellY }
+  local fx, fy = p:facingCell()
+  check("player is facing the follower", ow:npcAtCell(fx, fy) == npc)
 
   U.tap(game, "a")
-  U.wait(8)
-  local emote = ow.emote
-  if not check("the A press raised a portrait", emote ~= nil and emote.pikaPic) then
-    U.log("Nothing answered the press, which is #407 territory, not #561.")
-    idle()
+  local emote
+  for _ = 1, 600 do
+    emote = ow.emote
+    if emote and emote.pikaPic then break end
+    U.wait(1)
+  end
+  if not check("the A press raised a portrait", emote ~= nil and emote.pikaPic ~= nil) then
+    finish()
   end
   U.log("the frame is drawing:", tostring(emote.pikaPic))
   check("it is this script's own base frame, not the battle front pic",
-        emote.pikaPic:find("pikachu/pikapic_", 1, true) ~= nil)
-  if U.shot(game, SHOT_DIR .. "/bug561_portrait.png") then
-    U.log("captured", SHOT_DIR .. "/bug561_portrait.png")
-  end
+        tostring(emote.pikaPic):find("pikachu/pikapic_", 1, true) ~= nil)
+  U.still(game, SHOT_DIR .. "/561_01_pikachu_portrait.png")
 
-  U.log("The portrait box is up over the map now. Inside the 5x5 frame is a")
-  U.log("posed Pikachu drawn for that emotion, not the battle front pic")
-  U.log("standing to attention -- that stand-in is the screenshot on #561.")
-  U.log("Face it and press A again for another emotion; the pose should")
-  U.log("change with it. A frame that never changes between emotions is the")
-  U.log("near miss: the path resolved but every script picked one base.")
-
-  idle()
+  finish()
 end

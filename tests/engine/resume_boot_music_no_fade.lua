@@ -1,23 +1,4 @@
--- Regression test for the title-music-bleeds-into-the-map bug: Continue,
--- F2 quickload, and checkpoint-resume used to drop the player into the
--- overworld while the old song (the title screen's, or F2's previous
--- location) was still cross-fading in over Music.MAP_FADE's ~1.2s,
--- audibly wrong since the player already had control. See
--- OverworldState:setMap (src/world/OverworldController.lua) for the
--- opts.freshBoot mechanism this exercises, and Game.lua for where it's
--- set (onContinue, New Game, F2, restoreCheckpointSave) and where it's
--- deliberately not (dev tooling's reuse of opts.via == "boot").
---
--- (A)-(A4) and (C) call the real Game:restoreSave, Game:keypressed("f2"),
--- Game:restoreCheckpointSave and Console:exec("warp ...") -- SaveData.load
--- stubbed to skip the slot/persistence format -- so a dropped freshBoot at
--- any real call site fails this test, not just a hand-built opts table.
--- (D) simulates HotReload's { via = "boot" } shape instead of calling
--- through its local, unexported reloadMap.
---
--- ROM-free (fixture dataset -- FIX_TOWN/FIX_ROUTE, tests/fixture_data),
--- like tests/engine/warp_sprite_hidden_bug916.lua, so the CI headless
--- tier (no data/generated/) runs it.
+-- home/overworld.asm:2347, home/audio.asm:11, home/fade_audio.asm:12-45
 --   luajit tests/engine/resume_boot_music_no_fade.lua
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
@@ -100,7 +81,7 @@ local function playing()
 end
 
 local function finishFade()
-  for _ = 1, 7 * Music.MAP_FADE do Music.update(Data) end
+  for _ = 1, 8 * (Music.MAP_FADE + 1) do Music.update(Data) end
 end
 
 -- ===========================================================================
@@ -114,7 +95,20 @@ loaded.player.map = "FIX_TOWN"
 Game:restoreSave(loaded, false, { freshBoot = true })
 
 eq(playing(), "town.wav",
-  "Continue's real restoreSave(..., {freshBoot=true}) swaps at once")
+  "restoreSave(..., {freshBoot=true}) alone swaps at once")
+
+-- engine/menus/main_menu.asm:105-114, home/overworld.asm:2347
+Music.play(Data, "Music_TitleScreen")
+local continued = SaveData.newGame()
+continued.player.map = "FIX_TOWN"
+Game:restoreSave(continued, false, { freshBoot = true, continued = true })
+eq(playing(), "title.wav",
+  "CONTINUE keeps the title theme playing while the map comes up")
+for _ = 1, 8 * (Music.MAP_FADE + 1) - 1 do Music.update(Data) end
+eq(playing(), "title.wav", "...for 8 x (control + 1) - 1 frames")
+check(made["title.wav"].volume == 0, "...silent for the last period")
+Music.update(Data)
+eq(playing(), "town.wav", "...then the map song starts")
 
 -- ===========================================================================
 -- (A2) The same real Game:restoreSave with no opts at all -- its own

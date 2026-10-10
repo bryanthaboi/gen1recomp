@@ -20,7 +20,7 @@ return function(game)
   U.wait(30)
 
   local demo = BattleState.newWild(game, "CHARMANDER", 5)
-  demo:makeOldManDemo("PROF.OAK")
+  demo:makeOldManDemo("oak")
   demo.onFinish = function() end
   game.overworld:pushBattle(demo)
 

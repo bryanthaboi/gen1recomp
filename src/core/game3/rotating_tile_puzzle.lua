@@ -55,7 +55,12 @@ end
 
 -- pokeemerald/src/rotating_tile_puzzle.c:97
 function RotatingTilePuzzle.free()
+  local p = RotatingTilePuzzle._p
   RotatingTilePuzzle._p = nil
+  if not p then return end
+  local O = Objects()
+  -- pokeemerald/src/rotating_tile_puzzle.c:105
+  for _, o in ipairs(p.objects) do O.unfreeze(o.lid) end
 end
 
 local function tileStart(p)

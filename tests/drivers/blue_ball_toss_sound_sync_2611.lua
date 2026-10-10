@@ -53,7 +53,7 @@ return function(game)
         or BattleState.newWild(game, "DITTO", 10)
       b.onFinish = function() end
       b.catchAttempt = function() return false, 0 end
-      if kind == "oldman" then b:makeOldManDemo("OLD MAN", false) end
+      if kind == "oldman" then b:makeOldManDemo(nil, false) end
       if kind == "safari" then b:makeSafari({ balls = 30, steps = 500 }) end
       ow:pushBattle(b)
       assert(waitFor(function() return b.phase == "menu" end, 2500, true),

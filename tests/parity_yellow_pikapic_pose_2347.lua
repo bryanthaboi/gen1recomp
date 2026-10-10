@@ -3,10 +3,16 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local CacheContract = require("src.import.CacheContract")
 
 local LABELS = {
-  "e4841", "e4ce0", "e4e70", "e50af", "e52fe", "e5541", "e5794", "e59ed",
-  "e5c4d", "e5e90", "e6020", "e61b0", "e63f7", "e6646", "e682f", "e69bf",
-  "e6b4f", "e6cdf", "e6e6f", "e6fff", "e718f", "e731f", "e74af", "e763f",
-  "e7863", "e79f3", "e7b83", "e7d13", "f0b64", "f0d82",
+  { "e4841", "7_20" }, { "e4ce0", "10_23" }, { "e4e70", "10_24" },
+  { "e50af", "11_25" }, { "e52fe", "12_26" }, { "e5541", "13_27" },
+  { "e5794", "14_28" }, { "e59ed", "15_29" }, { "e5c4d", "16_30" },
+  { "e5e90", "17_31" }, { "e6020", "18" }, { "e61b0", "18_32" },
+  { "e63f7", "19_33" }, { "e6646", "20_34" }, { "e682f", "21_9" },
+  { "e69bf", "21_10" }, { "e6b4f", "21_11" }, { "e6cdf", "21_12" },
+  { "e6e6f", "22" }, { "e6fff", "22_36" }, { "e718f", "23" },
+  { "e731f", "23_37" }, { "e74af", "24" }, { "e763f", "24_38" },
+  { "e7863", "25_9" }, { "e79f3", "25_10" }, { "e7b83", "26_10" },
+  { "e7d13", "26_11" }, { "f0b64", "27_9" }, { "f0d82", "28_9" },
 }
 
 local function skipped(why)
@@ -26,8 +32,8 @@ for _, path in ipairs(CacheContract.VERSION_REQUIRED_FILES.yellow) do
   required[path] = true
 end
 local missingContract = {}
-for _, label in ipairs(LABELS) do
-  local path = "assets/generated/pikachu/gfx_" .. label .. ".png"
+for _, pair in ipairs(LABELS) do
+  local path = "assets/generated/pikachu/pikapic_" .. pair[2] .. ".png"
   if not required[path] then missingContract[#missingContract + 1] = path end
 end
 if #missingContract > 0 then
@@ -89,6 +95,7 @@ local function decodeShades(path)
   assert(data:sub(1, 8) == "\137PNG\r\n\26\n", path .. " is not a png")
   local pos, idat = 9, {}
   local width, height, depth, colorType, interlace
+  local plte, trns = nil, ""
   while pos <= #data do
     local len = be32(data, pos)
     local kind = data:sub(pos + 4, pos + 7)
@@ -98,12 +105,16 @@ local function decodeShades(path)
       depth, colorType, interlace = body:byte(9), body:byte(10), body:byte(13)
     elseif kind == "IDAT" then
       idat[#idat + 1] = body
+    elseif kind == "PLTE" then
+      plte = body
+    elseif kind == "tRNS" then
+      trns = body
     end
     pos = pos + 12 + len
   end
   assert(interlace == 0, path .. " is interlaced")
-  local channels = ({ [0] = 1, [2] = 3, [4] = 2, [6] = 4 })[colorType]
-  assert(channels and (colorType == 0 or depth == 8),
+  local channels = ({ [0] = 1, [2] = 3, [3] = 1, [4] = 2, [6] = 4 })[colorType]
+  assert(channels and (colorType == 0 or colorType == 3 or depth == 8),
     ("%s: unsupported png type %d depth %d"):format(path, colorType, depth))
   local bitsPerPixel = channels * depth
   local stride = math.ceil(width * bitsPerPixel / 8)
@@ -142,12 +153,18 @@ local function decodeShades(path)
     local row = rows[y]
     for x = 0, width - 1 do
       local gray, alpha
-      if colorType == 0 then
+      if colorType == 0 or colorType == 3 then
         local bit = x * depth
         local byte = row[math.floor(bit / 8) + 1]
         local shift = 8 - depth - bit % 8
-        gray = math.floor(byte / 2 ^ shift) % (maxGray + 1) / maxGray
-        alpha = 1
+        local v = math.floor(byte / 2 ^ shift) % (maxGray + 1)
+        if colorType == 3 then
+          gray = plte:byte(v * 3 + 1) / 255
+          alpha = (trns:byte(v + 1) or 255) / 255
+        else
+          gray = v / maxGray
+          alpha = 1
+        end
       else
         local i = x * channels + 1
         gray = row[i] / 255
@@ -160,17 +177,18 @@ local function decodeShades(path)
 end
 
 local failures = 0
-for _, label in ipairs(LABELS) do
-  local mine, w, h = decodeShades(root .. "/assets/generated/pikachu/gfx_" .. label .. ".png")
+for _, pair in ipairs(LABELS) do
+  local label = pair[1]
+  local mine, w, h = decodeShades(root .. "/assets/generated/pikachu/pikapic_" .. pair[2] .. ".png")
   local pret, pw, ph = decodeShades(PRET .. "/unknown_" .. label .. ".png")
-  local diff, translucent = 0, 0
+  local diff = 0
   for i = 1, #pret do
-    if mine[i][1] ~= pret[i][1] then diff = diff + 1 end
-    if mine[i][2] < 1 then translucent = translucent + 1 end
+    local shade = mine[i][2] == 0 and 0 or mine[i][1]
+    if shade ~= pret[i][1] then diff = diff + 1 end
   end
-  local ok = w == 40 and h == 40 and pw == 40 and ph == 40 and diff == 0 and translucent == 0
-  print(("%s gfx_%s: %d shade diffs, %d non-opaque pixels"):format(
-    ok and "PASS" or "FAIL", label, diff, translucent))
+  local ok = w == 40 and h == 40 and pw == 40 and ph == 40 and diff == 0
+  print(("%s pikapic_%s (GFX_%s): %d shade diffs"):format(
+    ok and "PASS" or "FAIL", pair[2], label, diff))
   if not ok then failures = failures + 1 end
 end
 

@@ -216,10 +216,10 @@ return function(game)
   check("2347_talk1_lit_tail_while_box_up", litTail == true)
   local boltPose, sawE7863, blank = first ~= nil, false, 0
   for i = 1, #poseSeq do
-    if poseSeq[i] == "gfx_e7863" then sawE7863 = true end
+    if poseSeq[i] == "pikapic_25_9" then sawE7863 = true end
     if first and i >= first then
       if poseSeq[i] == false then blank = blank + 1
-      elseif blank > 0 or poseSeq[i] ~= "gfx_e79f3" then boltPose = false end
+      elseif blank > 0 or poseSeq[i] ~= "pikapic_25_10" then boltPose = false end
     end
   end
   U.log("pose at strobe start", tostring(first and poseSeq[first]), "blank close frames", blank)
@@ -231,7 +231,7 @@ return function(game)
   end
   U.log("close frames", table.concat(closeSeq, ","))
   check("2347_talk1_empty_box_at_close",
-        table.concat(closeSeq, ",") == "gfx_e79f3,gfx_e79f3,gfx_e79f3,false,false,false")
+        table.concat(closeSeq, ",") == "pikapic_25_10,pikapic_25_10,pikapic_25_10,false,false,false")
   check("2347_talk1_thunderbolt_sound", moveSounds[1] == "Battle_2F")
   check("2347_talk1_music_muted", ducks == 1)
   U.wait(6)
@@ -256,20 +256,20 @@ return function(game)
     return tostring(ow.pikaPicDrawn):match("([^/]+)%.png$")
   end
   U.still(game, SHOT_DIR .. "/2347_04_strobe_white.png")
-  check("2347_talk2_c0_draws_e79f3", emote.bgp == 0xC0 and drawn() == "gfx_e79f3")
+  check("2347_talk2_c0_draws_e79f3", emote.bgp == 0xC0 and drawn() == "pikapic_25_10")
   for _ = 1, 200 do
     if emote.bgp == 0xE4 then break end
     U.wait(1)
   end
   U.still(game, SHOT_DIR .. "/2347_05_strobe_lit.png")
-  check("2347_talk2_e4_draws_e79f3", emote.bgp == 0xE4 and drawn() == "gfx_e79f3")
+  check("2347_talk2_e4_draws_e79f3", emote.bgp == 0xE4 and drawn() == "pikapic_25_10")
   for _ = 1, 400 do
     if (emote.boltT or 0) - emote.boltAt > 2 + 80 or ow.emote ~= emote then break end
     U.wait(1)
   end
   if ow.emote == emote and not emote.boltDone then
     U.still(game, SHOT_DIR .. "/2347_06_lit_tail.png")
-    check("2347_talk2_tail_draws_e79f3", drawn() == "gfx_e79f3")
+    check("2347_talk2_tail_draws_e79f3", drawn() == "pikapic_25_10")
   end
   for _ = 1, 1500 do
     if ow.emote ~= emote then break end
@@ -333,12 +333,12 @@ return function(game)
           local v = game.renderer and game.renderer.screenVeil
           if v then veilOnC0 = true end
           if not atlasFor(0xC0) then c0Atlas = false end
-          check("2347_baked_c0_draws_e79f3", drawn() == "gfx_e79f3")
+          check("2347_baked_c0_draws_e79f3", drawn() == "pikapic_25_10")
         elseif emote.bgp == 0xE4 and shotC0 and not shotE4 then
           shotE4 = true
           U.still(game, SHOT_DIR .. "/2347_10_baked_strobe_lit.png")
           if not atlasFor(0xE4) then litOnE4 = false end
-          check("2347_baked_e4_draws_e79f3", drawn() == "gfx_e79f3")
+          check("2347_baked_e4_draws_e79f3", drawn() == "pikapic_25_10")
         end
       end
       check("2347_baked_strobe_seen", shotC0 and shotE4)

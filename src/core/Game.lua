@@ -1531,14 +1531,21 @@ function Game:restoreSave(loaded, recovered, opts)
   end
   -- rebuild the state stack from the save
   while self.stack:top() do self.stack:pop() end
-  -- freshBoot threads through from the caller (onContinue and F2 both set
-  -- it); a future caller that doesn't ask for it keeps the ordinary
-  -- crossfade by default.
+  local continued = opts and opts.continued
   -- engine/menus/main_menu.asm:110 (CONTINUE forces PLAYER_DIR_DOWN)
-  local facing = (opts and opts.continued) and "down" or loaded.player.facing
+  local facing = continued and "down" or loaded.player.facing
+  local Music = require("src.core.Music")
+  local titleSong = continued and Music.current() or nil
   self.stack:push(self.overworld, loaded.player.map,
                   loaded.player.x, loaded.player.y, facing,
-                  { via = "boot", freshBoot = opts and opts.freshBoot })
+                  { via = "boot", freshBoot = opts and opts.freshBoot,
+                    keepMusic = titleSong ~= nil })
+  if titleSong and Music.current() == titleSong then
+    -- home/overworld.asm:2347, home/audio.asm:11
+    Music.playMap(self.data, loaded.player.map, self.save.onBike,
+                  self.overworld.player and self.overworld.player.surfing,
+                  Music.MAP_FADE)
+  end
   require("src.online.union.TradeTxn").resumePending(self)
   self.saveReport = report
   if not SaveData.emptyReport(report) then

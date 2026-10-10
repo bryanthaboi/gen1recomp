@@ -14,6 +14,16 @@ local Music = require("src.core.Music")
 local Assets = require("src.render.Assets")
 
 GameVersion.set("yellow")
+local field = require("tests.yellow_field_cache")()
+if not field then
+  print("[skip] pikachu_thunderbolt_flash_2347: no Yellow cache with field.pikachu")
+  GameVersion.set("red")
+  os.exit(0)
+end
+local boltBubble
+for i, b in ipairs(field.emotionBubbles.bubbles) do
+  if b.name == "BOLT_BUBBLE" then boltBubble = i end
+end
 
 local moveCalls, cryCalls, ducks = {}, {}, {}
 local busyFrames = 0
@@ -34,10 +44,7 @@ local tbAnim = { sound = "Battle_2F", pitch = 32, tempo = 128 }
 local game = {
   data = {
     moves = { THUNDERBOLT = { anim = tbAnim } },
-    field = { emotionBubbles = { bubbles = {
-      { name = "EXCLAMATION_BUBBLE" }, { name = "QUESTION_BUBBLE" },
-      { name = "SMILE_BUBBLE" }, { name = "BOLT_BUBBLE" },
-    } } },
+    field = field,
   },
   save = {
     player = { name = "YELLOW", id = 1234 },
@@ -94,7 +101,7 @@ end
 local ow = newOw()
 PikachuFollower.talk(game, ow, newNpc(), function() end)
 check(ow.emote ~= nil, "talking to Pikachu opens an emote")
-eq(ow.emote.bubble, 4, "modifier 5 opens with the BOLT bubble (PikachuEmotion25)")
+eq(ow.emote.bubble, boltBubble, "modifier 5 opens with the BOLT bubble (PikachuEmotion25)")
 eq(ow.emote.pikaPic, nil, "the bubble comes before the pikapic")
 
 local log = runPress(ow)
@@ -136,22 +143,22 @@ local function runOf(from, to, want)
   return true
 end
 check(runOf(1, 17, "pikapic_25"), "ticks 0-5: the base frown Pic_e77cf alone (pikaframedelay 6)")
-check(runOf(18, 35, "gfx_e7863"), "ticks 6-11: PikaAnimTilemap_9 draws GFX_e7863")
-check(runOf(36, pre, "gfx_e79f3"), "tick 12 on: PikaAnimTilemap_10 draws GFX_e79f3")
+check(runOf(18, 35, "pikapic_25_9"), "ticks 6-11: PikaAnimTilemap_9 draws GFX_e7863")
+check(runOf(36, pre, "pikapic_25_10"), "tick 12 on: PikaAnimTilemap_10 draws GFX_e79f3")
 local strobePose = true
 for i = pre + 1, pre + 80 do
-  if log.pics[i] ~= "gfx_e79f3" or log.lifts[i] ~= 0 then strobePose = false end
+  if log.pics[i] ~= "pikapic_25_10" or log.lifts[i] ~= 0 then strobePose = false end
 end
 check(strobePose, "the Thunderbolt pose GFX_e79f3 holds through every strobe frame, unlifted")
 local tailPose, blank = true, 0
 for i = pre + 81, #log.pics do
   if log.pics[i] == false then blank = blank + 1
-  elseif blank > 0 or log.pics[i] ~= "gfx_e79f3" then tailPose = false end
+  elseif blank > 0 or log.pics[i] ~= "pikapic_25_10" then tailPose = false end
 end
 check(tailPose, "and through the lit tail")
 check(blank >= 1, "the box is emptied before it closes (.RunPikapic PlacePikapicTextBoxBorder)")
 eq(table.concat(log.close, ",", 1, math.min(#log.close, 6)) .. "|" .. #log.close,
-   "gfx_e79f3,gfx_e79f3,gfx_e79f3,false,false,false|6",
+   "pikapic_25_10,pikapic_25_10,pikapic_25_10,false,false,false|6",
    "PlacePikapicTextBoxBorder: the pose stays up for the first Delay3, the empty box for the second")
 eq(log.skippableAt[45], true, "A/B can still cut the pic before the bolt")
 eq(log.skippableAt[46], false, "the bolt itself is not skippable")
@@ -161,7 +168,7 @@ eq(game.save.pikachuEmotionModifier, 5, "the talk keeps the modifier")
 moveCalls, ducks = {}, {}
 ow = newOw()
 PikachuFollower.talk(game, ow, newNpc(), function() end)
-eq(ow.emote and ow.emote.bubble, 4, "a second talk inside the window replays PikachuEmotion25")
+eq(ow.emote and ow.emote.bubble, boltBubble, "a second talk inside the window replays PikachuEmotion25")
 busyFrames = 30
 log = runPress(ow)
 eq(#moveCalls, 1, "the second talk bolts again")
@@ -192,59 +199,57 @@ end
 game.save.pikachuHappiness, game.save.pikachuMood = 255, 255
 ow = newOw()
 PikachuFollower.talk(game, ow, newNpc(), function() end)
+while ow.emote and not ow.emote.pikaPic do
+  local done = ow.emote.onDone
+  ow.emote = nil
+  if done then done() end
+end
 local e20 = ow.emote
 check(e20 and e20.pikaPoses ~= nil, "emotion 20 plays PikaPicAnimBGFrames_26 from ripped poses")
 if e20 and e20.pikaPoses then
   eq(poseAt(e20, 0), "pikapic_20", "script 20 opens on its base pic (pikaframedelay 8)")
-  eq(poseAt(e20, 8), "gfx_e6646", "tick 8: PikaAnimTilemap_34 draws GFX_e6646")
+  eq(poseAt(e20, 8), "pikapic_20_34", "tick 8: PikaAnimTilemap_34 draws GFX_e6646")
   eq(poseAt(e20, 20), "pikapic_20", "tick 20: back to the base")
-  eq(poseAt(e20, 28), "gfx_e6646", "tick 28: the pose again")
+  eq(poseAt(e20, 28), "pikapic_20_34", "tick 28: the pose again")
   eq(poseAt(e20, 40), "pikapic_20", "tick 40: the frameset restarts at pikaframeend")
   local _, lift = poseAt(e20, 8)
   eq(lift, 0, "a ripped pose is drawn in place, not lifted")
   eq(PikachuFollower.picLift(e20), 0, "picLift stays 0 for a pose script")
 end
 
-local P = PikachuFollower.PIKAPIC
+local P = field.pikachu.pics
 local function fakeEmote(script)
   local a = P[script]
-  local poses
-  if a.poses then
-    poses = {}
-    for i = 1, #a.seq do
-      poses[i] = a.poses[i] and ("assets/generated/pikachu/gfx_" .. a.poses[i] .. ".png") or false
-    end
-  end
-  return { pikaPic = "assets/generated/pikachu/pikapic_" .. script .. ".png",
-           pikaSeq = a.seq, pikaPoses = poses, pikaTotal = a.dur * 3, frames = a.dur * 3 }
+  local seq, poses = {}, {}
+  for i, f in ipairs(a.frames) do seq[i], poses[i] = f.dur, f.image or false end
+  return { pikaPic = a.image, pikaSeq = seq, pikaPoses = poses,
+           pikaTotal = a.dur * 3, frames = a.dur * 3 }
 end
 local e21 = fakeEmote(21)
-eq(poseAt(e21, 8), "gfx_e682f", "script 21 tick 8: PikaAnimTilemap_9 -> GFX_e682f")
-eq(poseAt(e21, 10), "gfx_e69bf", "script 21 tick 10: PikaAnimTilemap_10 -> GFX_e69bf")
-eq(poseAt(e21, 11), "gfx_e6b4f", "script 21 tick 11: PikaAnimTilemap_11 -> GFX_e6b4f")
-eq(poseAt(e21, 12), "gfx_e6cdf", "script 21 tick 12: PikaAnimTilemap_12 -> GFX_e6cdf")
+eq(poseAt(e21, 8), "pikapic_21_9", "script 21 tick 8: PikaAnimTilemap_9 -> GFX_e682f")
+eq(poseAt(e21, 10), "pikapic_21_10", "script 21 tick 10: PikaAnimTilemap_10 -> GFX_e69bf")
+eq(poseAt(e21, 11), "pikapic_21_11", "script 21 tick 11: PikaAnimTilemap_11 -> GFX_e6b4f")
+eq(poseAt(e21, 12), "pikapic_21_12", "script 21 tick 12: PikaAnimTilemap_12 -> GFX_e6cdf")
 local e26 = fakeEmote(26)
-eq(poseAt(e26, 56), "gfx_e7b83", "script 26 tick 56: GFX_e7b83")
-eq(poseAt(e26, 64), "gfx_e7d13", "script 26 tick 64: GFX_e7d13 holds")
+eq(poseAt(e26, 56), "pikapic_26_10", "script 26 tick 56: GFX_e7b83")
+eq(poseAt(e26, 64), "pikapic_26_11", "script 26 tick 64: GFX_e7d13 holds")
 local e7 = fakeEmote(7)
-eq(poseAt(e7, 0), "gfx_e4841", "script 7 opens on PikaAnimTilemap_20 (GFX_e4841)")
+eq(poseAt(e7, 0), "pikapic_7_20", "script 7 opens on PikaAnimTilemap_20 (GFX_e4841)")
 eq(poseAt(e7, 8), "pikapic_7", "script 7 tick 8: base")
 local e4 = fakeEmote(4)
 local p4, l4 = poseAt(e4, 8)
-check(p4 == "pikapic_4" and l4 > 0, "script 4 (20-tile GFX_e444b overlay) keeps the picLift stand-in")
+check(p4 == "pikapic_4_17" and l4 == 0, "script 4 tick 8 paints PikaAnimTilemap_17 in place")
 
 local CacheContract = require("src.import.CacheContract")
 local required = {}
 for _, path in ipairs(CacheContract.VERSION_REQUIRED_FILES.yellow or {}) do required[path] = true end
 local listed, missing = 0, {}
 for script, a in pairs(P) do
-  for _, id in ipairs(a.poses or {}) do
-    if id then
-      local path = "assets/generated/pikachu/gfx_" .. id .. ".png"
-      if required[path] then listed = listed + 1 else missing[#missing + 1] = script .. ":" .. id end
+  for _, f in ipairs(a.frames) do
+    if f.image then
+      if required[f.image] then listed = listed + 1 else missing[#missing + 1] = script .. ":" .. f.image end
     end
   end
-  if a.poses then eq(#a.poses, #a.seq, "script " .. script .. " has one pose slot per run") end
 end
 check(listed > 0, "the frameset table names ripped poses")
 check(#missing == 0, "every pose the frameset table draws is a required yellow cache file "

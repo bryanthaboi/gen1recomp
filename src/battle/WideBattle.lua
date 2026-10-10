@@ -232,8 +232,7 @@ local function drawCommandMenu(battle)
     Font.drawCode(0xE1, 240, 112); Font.drawCode(0xE2, 248, 112)
     Font.draw(Strings("ITEM"), 176, 128)
     Font.draw(Strings("RUN"), 240, 128)
-    -- next to FIGHT for the first 80 frames, then ITEM
-    Font.drawCode(0xED, 168, (battle.demoTimer or 0) <= 80 and 112 or 128)
+    Font.drawCode(0xED, 168, (battle.demoTimer or 0) <= battle:demoDelays() and 112 or 128)
     return
   end
   Font.draw(Strings("What will"), 8, 112)

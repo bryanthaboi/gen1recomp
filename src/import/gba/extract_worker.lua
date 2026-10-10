@@ -21,6 +21,8 @@ table.insert(package.searchers or package.loaders, 1, function(modname)
   end
 end)
 
+require("src.import.ImportGc").tune()
+
 local task_name, prefix, romData, sha1, ch_name = ...
 
 local ch = love and love.thread and love.thread.getChannel and love.thread.getChannel(ch_name)

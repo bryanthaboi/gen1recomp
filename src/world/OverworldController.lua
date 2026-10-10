@@ -648,14 +648,6 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   if not keepMusic then
     -- ..(home/overworld.asm ln 2346)
     local Music = require("src.core.Music")
-    -- opts.freshBoot: switch instantly instead of cross-fading, like every
-    -- other map's PlayDefaultMusic on real hardware -- set only by
-    -- Game.lua's hard state teleports (onContinue, New Game, F2,
-    -- restoreCheckpointSave). Deliberately separate from opts.via ==
-    -- "boot" itself: dev tooling (src/dev/Console.lua's warp verb,
-    -- src/dev/HotReload.lua's reloadMap) reuses that same default for the
-    -- surf-restore/fresh-npc-pool branches above and must keep the
-    -- ordinary crossfade.
     local fade = Music.MAP_FADE
     if opts and opts.freshBoot then fade = nil end
     Music.playMap(Game.data, mapId, Game.save.onBike, self.player.surfing,

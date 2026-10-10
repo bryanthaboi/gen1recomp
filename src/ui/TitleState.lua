@@ -483,6 +483,8 @@ local function sameItems(_, items) return items end
 -- CONTINUE.  A confirms and loads the game, B returns to the main menu.
 local ContinueInfo = {}
 ContinueInfo.__index = ContinueInfo
+-- pokeyellow engine/menus/main_menu.asm:106-112, :171; pokered engine/menus/main_menu.asm:105-111, :336
+ContinueInfo.HOLD_FRAMES = 3 + 10 + 20
 
 function ContinueInfo.new(title, save)
   -- box at (4,7), 16x10 tiles -- see ContinueInfo:draw / DisplayContinueGameInfo
@@ -496,7 +498,11 @@ function ContinueInfo:update(dt)
   local input = self.game.input
   if input:wasPressed("a") then
     self.game.stack:pop()
-    if self.title.onContinue then self.title.onContinue() end
+    local title = self.title
+    self.game.stack:push(require("src.render.Transition").whiteFlash(
+      self.game, ContinueInfo.HOLD_FRAMES, function()
+        if title.onContinue then title.onContinue() end
+      end))
   elseif input:wasPressed("b") then
     -- the CONTINUE / NEW GAME menu is still open underneath (main_menu.asm:91-92)
     self.game.stack:pop()

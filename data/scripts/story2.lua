@@ -285,7 +285,7 @@ M.PALLET_TOWN = {
           if oak then oak.facing = x == 10 and "right" or "left" end
           hold(2, nil, function()
             local battle = BattleState.newWild(game, "PIKACHU", 5)
-            battle:makeOldManDemo("PROF.OAK")
+            battle:makeOldManDemo("oak")
             battle.onFinish = function()
               afterPikaBattle()
             end

@@ -108,6 +108,19 @@ local RTP = require("src.core.game3.rotating_tile_puzzle")
 eq(RTP.rotation(1, 0), "ccw", "arrow tiles rotate objects counterclockwise")
 eq(RTP.rotation(0, 3), "ccw", "wrap from right arrow to up arrow is counterclockwise")
 eq(RTP.rotation(1, 1), nil, "no rotation on the same tile")
+do
+  local Objects = require("src.core.game3.objects")
+  local saved = Objects._byId
+  local shifted, other = { localId = 2, frozen = true }, { localId = 9, frozen = true }
+  Objects._byId = { [2] = shifted, [9] = other }
+  RTP.init(false)
+  RTP._p.objects[1] = { lid = 2, prev = 1 }
+  RTP.free()
+  check(not shifted.frozen, "freerotatingtilepuzzle unfreezes the shifted objects")
+  check(other.frozen, "freerotatingtilepuzzle leaves objects it never moved alone")
+  check(RTP._p == nil, "freerotatingtilepuzzle clears the puzzle state")
+  Objects._byId = saved
+end
 
 local BerryTrees = require("src.core.game3.rse.berry_trees")
 BerryTrees.berries = function()

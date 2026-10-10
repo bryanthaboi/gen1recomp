@@ -22,7 +22,8 @@ local WALK_IN_PLACE_SLOW_FRAMES = 32
 -- pokefirered/src/event_object_movement.c:9029 UpdateRunSlowAnim
 local RUN_SLOW_FRAMES = 11
 local BIKE_FRAMES = 4
-local TURN_FRAMES = 4
+-- pokeemerald/src/event_object_movement.c:5780 MovementAction_WalkInPlaceFastDown_Step0
+local TURN_FRAMES = 8
 -- pokefirered/include/constants/metatile_behaviors.h:128
 local MB_CYCLING_ROAD_PULL_DOWN = 0xD0
 local MB_CYCLING_ROAD_PULL_DOWN_GRASS = 0xD1
@@ -605,16 +606,19 @@ function Player.tryMove(dir, game, run)
   if Player.moving or Player.boulderPush then return nil end
   if not DELTA[dir] then return nil end
 
+  -- pokeemerald/src/field_player_avatar.c:353 TryInterruptObjectEventSpecialAnim
+  if Player.turnTimer > 0 then return nil end
   local wasFacing = Player.facing
   if Player.facing ~= dir then
     Player.facing = dir
+    -- pokeemerald/src/field_player_avatar.c:593
     if Player.turnArmed then
-      Player.turnArmed = false
       Player.turnTimer = TURN_FRAMES
       return "turned"
     end
   end
-  if Player.turnTimer > 0 then return nil end
+  -- pokeemerald/src/field_player_avatar.c:595
+  Player.turnArmed = false
 
   local trig = stairTrigger(game, dir)
   if trig then return trig end
@@ -1118,28 +1122,29 @@ local function finishStep(game)
   local Field = package.loaded["src.core.game3.field"]
     or lazyReq("src.core.game3.field")
 
-  if not onForcedTile then
-    -- Evaluate Overworld Step Events (Happiness, VS Seeker, Poison, Egg/Daycare, Repel)
-    local StepEvents = package.loaded["src.core.game3.step_events"]
-      or lazyReq("src.core.game3.step_events")
-    if StepEvents and StepEvents.onStepTaken then
-      StepEvents.onStepTaken(session, game)
-    end
-
-    -- Land-on-warp via owned warp table (mapDef.warps).
-    Collision.tryWarpAt(game, Player.cellX, Player.cellY, Player.facing)
-
-    -- Coord events (Oak leave-block, triggers) after landing on the cell.
-    if Field.tryCoordEvents then
-      Field.tryCoordEvents(game, Player.cellX, Player.cellY)
-    end
-  end
-
-  -- pokefirered/src/field_control_avatar.c:209
+  local stepConsumed = false
+  -- pokeemerald/src/field_control_avatar.c:147
   if not Field.locked then
     local okTs, TrainerSight = pcall(lazyReq, "src.core.game3.trainer_sight")
     if okTs and TrainerSight and TrainerSight.check then
-      TrainerSight.check(game)
+      stepConsumed = TrainerSight.check(game) == true
+    end
+  end
+
+  if not onForcedTile and not stepConsumed then
+    -- pokeemerald/src/field_control_avatar.c:485
+    if Field.tryCoordEvents then
+      stepConsumed = Field.tryCoordEvents(game, Player.cellX, Player.cellY) == true
+    end
+    -- pokeemerald/src/field_control_avatar.c:487
+    if not stepConsumed then
+      stepConsumed = Collision.tryWarpAt(game, Player.cellX, Player.cellY, Player.facing) == true
+    end
+    -- pokeemerald/src/field_control_avatar.c:491
+    local StepEvents = package.loaded["src.core.game3.step_events"]
+      or lazyReq("src.core.game3.step_events")
+    if not stepConsumed and StepEvents and StepEvents.onStepTaken then
+      stepConsumed = StepEvents.onStepTaken(session, game) == true
     end
   end
 
@@ -1152,7 +1157,8 @@ local function finishStep(game)
   local onGrass = Collision.isGrass and Collision.isGrass(Player.cellX, Player.cellY)
   local onWater = Player.surfing and (Collision.isWater and Collision.isWater(Player.cellX, Player.cellY))
   local okE, Encounters = pcall(lazyReq, "src.core.game3.encounters")
-  if okE and Encounters and Encounters.onStep and not onForcedTile then
+  -- pokeemerald/src/field_control_avatar.c:160
+  if okE and Encounters and Encounters.onStep and not onForcedTile and not stepConsumed then
     local Battle = package.loaded["src.core.game3.battle"]
     local busy = (Battle and Battle.isActive and Battle.isActive()) or Field.locked
     local Space = package.loaded["src.core.game3.scripting.space"]

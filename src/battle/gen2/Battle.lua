@@ -3614,28 +3614,75 @@ function Battle:tickStatus(mon)
 end
 
 -- Faint bookkeeping and experience.  Returns true when the battle ended.
-function Battle:resolveFaints()
+function Battle:announceEnemyFaint()
+  self.enemyFaintAnnounced = self.enemy
+  local template = self.wild
+    and Strings.source("Wild %s fainted!")
+    or Strings.source("%s fainted!")
+  self:emit({ kind = "faint", side = "enemy",
+    text = Strings(template, self:monName(self.enemy)) })
+  Runtime.emit("battle.fainted", { battle = self, battler = self.enemy,
+    side = self:sideRecord(self.enemy) })
+end
+
+function Battle:announcePlayerFaint()
+  if self.faintAnnounced == self.player then return end
+  self.faintAnnounced = self.player
+  self:emit({ kind = "faint", side = "player",
+    text = Strings("%s fainted!", self:monName(self.player)) })
+  Runtime.emit("battle.fainted", { battle = self, battler = self.player,
+    side = self:sideRecord(self.player) })
+  self:faintHappiness(self.player)
+end
+
+-- engine/battle/core.asm:2915-3008
+function Battle:lostBattle()
+  self:emit({ kind = "message",
+    text = Strings("You have no more POKéMON!") })
+  -- engine/battle/core.asm:2972-2982
+  if self.linkBattle and not Battle.firstHealthy(self.enemyParty) then
+    self:endBattle("draw")
+    return true
+  end
+  -- engine/battle/core.asm:2923-2925
+  if self.battleType == Battle.BATTLETYPE_CANLOSE then
+    self:printWinLossText("lose")
+  end
+  self:endBattle("lose")
+  return true
+end
+
+function Battle:resolveFaints(playerFirst)
   -- engine/battle/core.asm:2551-2556, :7116-7130, :3033-3037
   if (self.player.hp or 0) <= 0 and self.participantsCleared ~= self.player then
     self.participantsCleared = self.player
     if self.playerIndex then self.participants[self.playerIndex] = nil end
   end
 
-  if (self.enemy.hp or 0) <= 0 then
-    if self.linkBattle and self.enemyFaintAnnounced == self.enemy then
+  local playerDown = (self.player.hp or 0) <= 0
+  local enemyDown = (self.enemy.hp or 0) <= 0
+  local enemyPending = self.enemyFaintAnnounced ~= self.enemy
+
+  -- engine/battle/core.asm:2607-2619, :2007-2019
+  if playerDown and enemyDown and not Battle.firstHealthy(self.party) then
+    if playerFirst then self:announcePlayerFaint() end
+    if enemyPending then self:announceEnemyFaint() end
+    self:announcePlayerFaint()
+    return self:lostBattle()
+  end
+
+  -- engine/battle/core.asm:884-887, :2607-2612
+  if playerDown and enemyDown and playerFirst then self:announcePlayerFaint() end
+
+  if enemyDown and not enemyPending then
+    if self.linkBattle then
       self.faintInterrupt = true
       return false
     end
-    self.enemyFaintAnnounced = self.enemy
-    local template = self.wild
-      and Strings.source("Wild %s fainted!")
-      or Strings.source("%s fainted!")
-    self:emit({ kind = "faint", side = "enemy",
-      text = Strings(template, self:monName(self.enemy)) })
-    -- battle.fainted, the payload BattleState:onFaint emits on Gen 1.
-    -- `battler` is the mon itself here: Gen 2's engine has no battler wrapper.
-    Runtime.emit("battle.fainted", { battle = self, battler = self.enemy,
-      side = self:sideRecord(self.enemy) })
+  elseif enemyDown then
+    self:announceEnemyFaint()
+    -- engine/battle/core.asm:2008-2012
+    if playerDown then self:announcePlayerFaint() end
     self:awardExperience(self.enemy)
     local nextIndex = Battle.firstHealthy(self.enemyParty)
     if not nextIndex then
@@ -3661,88 +3708,29 @@ function Battle:resolveFaints()
       self.faintInterrupt = true
       return false
     end
-    local previous = self.enemy
-    self:clearVolatile(self.enemy)
-    self.enemyIndex = nextIndex
-    self.enemy = self.enemyParty[nextIndex]
-    -- ResetEnemyBattleVars (engine/battle/core.asm:3016) and NewEnemyMonStatus
-    -- clear the move selection and the substatus bytes for the mon coming IN,
-    -- so a replacement never inherits anything from its last stint.
-    self:clearVolatile(self.enemy)
-    self.stages.enemy = Battle.newStages()
-    -- `replacement` marks HandleEnemySwitch's send, the only one EnemySwitch
-    -- can offer a shift on (engine/battle/core.asm:2241-2278).
-    self:emit({ kind = "send", side = "enemy", mon = self.enemy,
-      replacement = true,
-      hp = self.enemy.hp or 0, status = self.enemy.status or false,
-      level = self.enemy.level, experience = self.enemy.experience,
-      text = Battle.sentOutText(self.trainer and self.trainer.name or "Foe",
-        self:monName(self.enemy)) })
-    Runtime.emit("battle.battler_switched", {
-      battle = self, side = self:sideRecord(self.enemy), battler = self.enemy,
-      previous = previous,
-    })
-    self:breakTrapsOnSend(self.enemy)
-    -- core.asm runs SpikesDamage on every send-out; the faint replacement
-    -- is not exempt.
-    self:spikesDamage(self.enemy)
-    -- Battle_PlayerFirst reaches HandleEnemyMonFaint with `jp`, not `call`
-    -- (engine/battle/core.asm:872), so the round's attack phase is over: the
-    -- mon that just walked in never answers, and the move that was queued for
-    -- the one it replaced is never spent.  Battle:takeTurn reads this.
-    self.faintInterrupt = true
-    return false
+    -- engine/battle/core.asm:2048-2064, :2643-2654
+    if playerDown then
+      self.pendingEnemySwitch = true
+      self.pendingEnemyIndex = nextIndex
+    else
+      -- engine/battle/core.asm:2066-2071
+      self:forcedReplacement("enemy", nextIndex)
+      -- engine/battle/core.asm:887, :903
+      self.faintInterrupt = true
+      return false
+    end
   end
 
-  if (self.player.hp or 0) <= 0 then
-    -- Announce a faint ONCE.
-    --
-    -- This branch is the only one that returns without changing whose turn it
-    -- is: it emits `choose-switch` and waits for the caller to pick, so the
-    -- caller calls back in with the same mon still at 0 HP and the whole branch
-    -- ran again.  The visible symptom was "TYPHLOSION fainted!" three times in
-    -- a row, but the real damage is one line lower -- `faintHappiness` was
-    -- charged once per re-entry, so a single faint cost two or three times the
-    -- happiness the cart takes (engine/battle/core.asm, HandlePlayerMonFaint
-    -- runs its happiness arm once).
-    --
-    -- Keyed on the mon itself, so the next one in announces normally.
-    if self.faintAnnounced ~= self.player then
-      self.faintAnnounced = self.player
-      self:emit({ kind = "faint", side = "player",
-        text = Strings("%s fainted!", self:monName(self.player)) })
-      Runtime.emit("battle.fainted", { battle = self, battler = self.player,
-        side = self:sideRecord(self.player) })
-      self:faintHappiness(self.player)
-    end
+  if playerDown then
+    self:announcePlayerFaint()
     local nextIndex = Battle.firstHealthy(self.party)
-    if not nextIndex then
-      self:emit({ kind = "message",
-        text = Strings("You have no more POKéMON!") })
-      -- LostBattle (engine/battle/core.asm:2763-2782): only BATTLETYPE_CANLOSE
-      -- reaches PrintWinLossText on a loss; every other loss whites out.
-      if self.battleType == Battle.BATTLETYPE_CANLOSE then
-        self:printWinLossText("lose")
-      end
-      self:endBattle("lose")
-      return true
-    end
-    -- The player picks the replacement; the caller drives that with :switch.
-    --
-    -- Asked for ONCE, keyed the same way the faint line above is: takeTurn
-    -- reaches resolveFaints up to three times in a round, and every one of
-    -- them still sees a 0 HP mon because nothing switches until the player
-    -- answers.  HandlePlayerMonFaint runs ForcePlayerMonChoice a single time
-    -- (engine/battle/core.asm:2543) and the turn loop does not come back for
-    -- another; three prompts in the queue meant the party menu reopened on top
-    -- of the pick that had already been made, so the switch looked like it
-    -- took two or three attempts.  Battle:switch releases the guard.
+    if not nextIndex then return self:lostBattle() end
+    -- ForcePlayerMonChoice (engine/battle/core.asm:2644)
     if not self.pendingSwitch then
       self.pendingSwitch = true
       self:emit({ kind = "choose-switch" })
     end
-    -- Same `jp`, not `call`, as the enemy arm above (core.asm:874): whatever
-    -- is left of the attack phase is abandoned.
+    -- engine/battle/core.asm:885, :901
     self.faintInterrupt = true
     return false
   end
@@ -4164,6 +4152,12 @@ function Battle:switch(index)
   self:breakTrapsOnSend(mon)
   self:checkAmuletCoin(mon)
   self:spikesDamage(mon)
+  -- DoubleSwitch (engine/battle/core.asm:2075-2097)
+  if self.pendingEnemySwitch and self.pendingEnemyIndex and not self.linkBattle then
+    local enemyIndex = self.pendingEnemyIndex
+    self.pendingEnemyIndex = nil
+    self:forcedReplacement("enemy", enemyIndex, true)
+  end
   return true
 end
 
@@ -5066,7 +5060,7 @@ local function runTurn(self, action, enemyAction)
     -- engine/battle/core.asm:1005
     self:tickStatus(mon)
     self:tickSeedAndCurse(mon)
-    if self:resolveFaints() then return true end
+    if self:resolveFaints(mon == self.player) then return true end
     return self.faintInterrupt and true or false
   end
 
@@ -5090,7 +5084,7 @@ local function runTurn(self, action, enemyAction)
         and (self.player.hp or 0) > 0 then
       enemyAttack()
       if self.over then return self:takeEvents() end
-      if self:resolveFaints() then return self:takeEvents() end
+      if self:resolveFaints(true) then return self:takeEvents() end
       residualHalf(self.enemy)
     end
   else
@@ -5099,7 +5093,7 @@ local function runTurn(self, action, enemyAction)
     -- WildFled_EnemyFled_LinkBattleCanceled and never reaches the player's
     -- half of the turn or the residual damage.
     if self.over then return self:takeEvents() end
-    if self:resolveFaints() then return self:takeEvents() end
+    if self:resolveFaints(true) then return self:takeEvents() end
     -- Same `jp` (core.asm:834-837): a mon that fainted to the enemy's move
     -- takes the rest of the attack phase with it.
     if not residualHalf(self.enemy) and not self.over
@@ -5111,7 +5105,7 @@ local function runTurn(self, action, enemyAction)
     end
   end
   if self.over then return self:takeEvents() end
-  if self:resolveFaints() then return self:takeEvents() end
+  if self:resolveFaints(not self.mirrored) then return self:takeEvents() end
   self.faintInterrupt = nil
 
   -- A successful Roar or Whirlwind ends the ROUND: the turn loop's `.quit`
@@ -5136,7 +5130,7 @@ local function runTurn(self, action, enemyAction)
   self:tickScreens()
   self:tickCounters(firstMon)
   self:tickCounters(secondMon)
-  self:resolveFaints()
+  self:resolveFaints(not self.mirrored)
   return self:takeEvents()
 end
 
@@ -5447,7 +5441,7 @@ function Battle:tickHeldItem(mon)
   end
 end
 
-function Battle:forcedReplacement(side, index)
+function Battle:forcedReplacement(side, index, noOffer)
   index = tonumber(index)
   if side == "enemy" then
     local party = self.enemyParty or {}
@@ -5458,13 +5452,16 @@ function Battle:forcedReplacement(side, index)
     end
     if not mon then return false end
     self.pendingEnemySwitch = nil
+    self.pendingEnemyIndex = nil
     local previous = self.enemy
     self:clearVolatile(previous)
     self.enemyIndex = index
     self.enemy = mon
     self:clearVolatile(mon)
     self.stages.enemy = Battle.newStages()
-    self:emit({ kind = "send", side = "enemy", mon = mon, replacement = true,
+    -- CheckWhetherToAskSwitch (engine/battle/core.asm:3463-3486)
+    self:emit({ kind = "send", side = "enemy", mon = mon,
+      replacement = not noOffer,
       hp = mon.hp or 0, status = mon.status or false,
       level = mon.level, experience = mon.experience,
       text = Battle.sentOutText((self.trainer and self.trainer.name) or "Foe",

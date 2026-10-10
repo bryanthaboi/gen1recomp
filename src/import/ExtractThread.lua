@@ -27,6 +27,8 @@ table.insert(package.searchers or package.loaders, 1, function(modname)
   end
 end)
 
+require("src.import.ImportGc").tune()
+
 local version, prefix, romData, progressName, resultName, romSha1 = ...
 
 local progressChannel = love.thread and love.thread.getChannel and love.thread.getChannel(progressName)

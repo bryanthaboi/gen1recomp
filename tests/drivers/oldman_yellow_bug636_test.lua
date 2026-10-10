@@ -61,7 +61,7 @@ return function(game)
   local probe = BattleState.newWild(game, (om and om.species) or "RATTATA",
                                     (om and om.level) or 5)
   probe:makeOldManDemo(nil, true)
-  check("makeOldManDemo(name, true) sets demoFails", probe.demoFails == true)
+  check("makeOldManDemo(nil, true) sets demoFails", probe.demoFails == true)
   probe:makeOldManDemo(nil, false)
   check("and without it the demo still catches, for Red and the reruns",
         probe.demoFails == false)

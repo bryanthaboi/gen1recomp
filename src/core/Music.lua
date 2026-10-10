@@ -65,6 +65,7 @@ state = {
   fanfare = nil,      -- fanfare SFX source; the song pauses while it plays
   fanfareResume = false, -- start/resume state.source when the fanfare ends
   fade = nil,         -- active volume-ramp fade-out (see Music.fadeOut)
+  fadeCount = 0,      -- wMusicFadeCount (pokecrystal ram/wram.asm:71)
   tempo = nil,        -- alternate-tempo override in force for `current`
   start = nil,
   data = nil,
@@ -254,12 +255,14 @@ function Music.play(data, song, loop, ctx)
   local def = songDef(data, song)
   if not def or state.failed[song] then return end
 
-  if ctx.fade and state.source then
+  local gen2 = data and data.audio and data.audio.generation == 2
+  -- pokecrystal home/audio.asm:308-322
+  if ctx.fade and (state.source or gen2) then
     local queued = {}
     for key, value in pairs(ctx) do queued[key] = value end
     queued.fade, queued.selected = nil, true
     local pending = { data = data, song = song, loop = loop, ctx = queued }
-    if state.fade then
+    if state.fade and not state.fade.gen2 then
       state.fade.pending = pending
     else
       Music.fadeOut(ctx.fade, pending)
@@ -339,6 +342,7 @@ function Music.stop()
   stopSource(state.loopSource)
   require("src.core.ChipAudio").stopMusic()
   state.current, state.source, state.loopSource, state.fade = nil, nil, nil, nil
+  state.fadeCount = 0
   state.tempo, state.start = nil, nil
   state.data, state.loop = nil, nil
   state.chip = false
@@ -357,21 +361,58 @@ function Music.reload()
 end
 
 function Music.fadeOut(control, pending)
-  if not state.source then
+  local data = state.data or (pending and pending.data)
+  local gen2 = data and data.audio and data.audio.generation == 2
+  if not state.source and not gen2 then
     Music.stop()
     if pending then
       Music.play(pending.data, pending.song, pending.loop, pending.ctx)
     end
     return
   end
+  if gen2 then
+    -- pokecrystal audio/engine.asm:603-631
+    local running = state.fade
+    state.fade = {
+      control = (control or 10) % 64,
+      level = running and running.level or 7,
+      from = running and running.from or VOLUME * volumeScale,
+      pending = pending,
+      gen2 = true,
+    }
+    return
+  end
   control = math.max(1, control or 10)
   state.fade = {
     control = control,
-    counter = control,       -- frames until the next volume step
-    level = 7,               -- current master-volume level (rAUDVOL nibble)
-    from = VOLUME * volumeScale, -- level-7 (full) source volume
+    counter = control,
+    level = 7,
+    from = VOLUME * volumeScale,
     pending = pending,
   }
+end
+
+local function fadeSetLevel(f, level)
+  f.level = level
+  local vol = f.from * level / 7
+  if state.source then pcall(state.source.setVolume, state.source, vol) end
+  if state.loopSource then
+    pcall(state.loopSource.setVolume, state.loopSource, vol)
+  end
+end
+
+-- pokecrystal audio/engine.asm:693-705, home/audio.asm:294
+function Music.fadeIn(control, level)
+  if not state.source then return end
+  local running = state.fade
+  state.fade = {
+    control = (control or 4) % 64,
+    level = level or (running and running.level) or 7,
+    from = running and running.from or VOLUME * volumeScale,
+    fadeIn = true,
+    gen2 = true,
+  }
+  if level then fadeSetLevel(state.fade, level) end
 end
 
 Music.MAP_FADE = 10
@@ -488,6 +529,17 @@ end
 -- battle's restore will replay.  setMapSong below is the write half.
 function Music.mapSong()
   return state.mapSong
+end
+
+function Music.fadeLevel()
+  local f = state.fade
+  if not f then return nil end
+  local vol
+  if state.source then
+    local ok, v = pcall(state.source.getVolume, state.source)
+    if ok then vol = v end
+  end
+  return f.level, f.pending and f.pending.song, vol
 end
 
 function Music.restoreMap(data, reason)
@@ -610,31 +662,61 @@ function Music.update(data)
     applyVolume(state.source)
     applyVolume(state.loopSource)
   end
-  -- volume ramp (Music.fadeOut): hold the current level for `control`
-  -- frames, then drop one level (FadeOutAudio decrements both rAUDVOL
-  -- nibbles when its counter reaches 0); at level 0 the music stops.
   if state.fade then
     local f = state.fade
-    f.counter = f.counter - 1
-    if f.counter <= 0 then
-      f.counter = f.control
-      f.level = f.level - 1
-      if f.level <= 0 then
-        -- ..(home/fade_audio.asm ln 36)
-        state.fade = nil
-        local pending = f.pending
-        Music.stop()
-        if pending then
-          Music.play(pending.data, pending.song, pending.loop, pending.ctx)
-        end
-        return
-      end
-      local vol = f.from * f.level / 7
-      if state.source then pcall(state.source.setVolume, state.source, vol) end
-      if state.loopSource then
-        pcall(state.loopSource.setVolume, state.loopSource, vol)
+    local function finish()
+      -- home/fade_audio.asm:36-45
+      state.fade = nil
+      local pending = f.pending
+      Music.stop()
+      if pending then
+        Music.play(pending.data, pending.song, pending.loop, pending.ctx)
       end
     end
+    local function setLevel(level) fadeSetLevel(f, level) end
+    if f.gen2 then
+      -- pokecrystal audio/engine.asm:614-631
+      if state.fadeCount > 0 then
+        state.fadeCount = state.fadeCount - 1
+        return
+      end
+      state.fadeCount = f.control
+      if f.fadeIn then
+        -- pokecrystal audio/engine.asm:693-705
+        if f.level >= 7 then
+          state.fade = nil
+          return
+        end
+        setLevel(f.level + 1)
+        return
+      end
+      if f.level > 0 then
+        setLevel(f.level - 1)
+        return
+      end
+      -- pokecrystal audio/engine.asm:644-691
+      local pending = f.pending
+      local bike = pending and state.mapSong ~= nil
+        and state.mapSong == Music.special(pending.data, "bike")
+      finish()
+      if bike and state.source then
+        state.fade = { control = 0, level = 0, from = VOLUME * volumeScale,
+                       fadeIn = true, gen2 = true }
+        fadeSetLevel(state.fade, 0)
+      end
+      return
+    end
+    -- home/fade_audio.asm:12-35
+    if f.counter > 0 then
+      f.counter = f.counter - 1
+      return
+    end
+    f.counter = f.control
+    if f.level <= 0 then
+      finish()
+      return
+    end
+    setLevel(f.level - 1)
     return
   end
   -- while a fanfare plays the song stays paused (a paused source reads

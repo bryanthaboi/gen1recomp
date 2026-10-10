@@ -1038,8 +1038,7 @@ end
 -- scripted cursor hovers FIGHT, hops to ITEM and forces the item menu
 -- (one POKé BALL x50).  Nothing is kept.
 -- Yellow's Pallet intro (BATTLE_TYPE_PIKACHU) is the same simulated
--- script under "PROF.OAK" (pokeyellow core.asm .profOakName), so the
--- displayed thrower name is a parameter.
+-- script under .profOakName (pokeyellow core.asm:2117).
 -- The throw catches everywhere except Yellow's FIRST Viridian training.
 -- ItemUseBall's .oldManBattle branch checks EVENT_INITIAL_CATCH_TRAINING
 -- and, when it is set, stores anim data $63 in place of the $43 capture
@@ -1049,16 +1048,13 @@ end
 -- closely!" demo resets the event before its battle
 -- (ViridianCityOldManStartCatchTrainingScript), so only the initial
 -- tutorial passes failThrow -- it stands in for that event (#636).
-function BattleState:makeOldManDemo(name, failThrow)
+function BattleState:makeOldManDemo(kind, failThrow)
   self.demo = true
-  self.demoName = name or Strings("OLD MAN")
+  -- pokeyellow engine/battle/core.asm:2109-2121
+  self.oakDemo = kind == "oak"
+  self.demoName = self.data.text[self.oakDemo and "DisplayBattleMenu.profOakName"
+    or "DisplayBattleMenu.oldManName"]
   self.demoFails = failThrow and true or false
-  -- LoadPlayerBackPic and DisplayBattleMenu split on the same wBattleType:
-  -- BATTLE_TYPE_OLD_MAN gets .oldManName + OldManPicBack, BATTLE_TYPE_PIKACHU
-  -- gets .profOakName + ProfOakPicBack (pokeyellow core.asm).  The thrower
-  -- name the caller passes IS that distinction here, so it picks the pic too
-  -- -- data/scripts/story2.lua is the only site that names PROF.OAK (#557).
-  self.oakDemo = name == "PROF.OAK"
   -- Yellow's Pallet intro runs this before the player owns any mon
   -- (BATTLE_TYPE_PIKACHU precedes the lab gift), so newWild flagged the
   -- battle dead for lack of a party.  The demo never sends out, draws, or
@@ -2033,12 +2029,13 @@ function BattleState:enter()
   -- the unveil rides on that same box, before _InitBattleCommon clears the
   -- intro chrome below (#492)
   if self.scopeReveal then self:queueScopeReveal() end
-  -- _InitBattleCommon (core.asm:6755-6762): the instant the intro text is
-  -- dismissed both HUD blocks are cleared and ClearSprites drops the
-  -- pokeball OAM, so the intro chrome never returns for the rest of the
-  -- battle -- not on a switch, and not when the beaten trainer's pic
-  -- scrolls back in (#317, #282)
-  self:act(function() self.introBalls = nil end)
+  -- engine/battle/core.asm:6753-6759
+  self:act(function()
+    self.introBalls = nil
+    -- engine/battle/core.asm:6741-6742
+    self.msgHold = nil
+    self.shown = nil
+  end)
   if self.kind == "trainer" or self.kind == "link" then
     local foeName = self.trainer and self.trainer.name
                     or self.opponentName or Strings("FOE")
@@ -2471,16 +2468,10 @@ function BattleState:update(dt)
   end
 
   if self.phase == "menu" and self.demo then
-    -- DisplayBattleMenu's old-man branch (core.asm:2018-2050): input is
-    -- never read.  The player name is swapped to OLD MAN, then the
-    -- keystrokes are simulated on screen -- the '▶' cursor sits next to
-    -- FIGHT (9,14) for 80 frames, hops down to ITEM (9,16) for 50, goes
-    -- hollow ('▷') and the ITEM menu is forced (a = $2 ->
-    -- .upperLeftMenuItemWasNotSelected).  The old man never attacks;
-    -- backing out of the ball menu re-enters DisplayBattleMenu, which
-    -- replays the whole script.
+    -- engine/battle/core.asm:2038-2049
+    local fight, item = self:demoDelays()
     self.demoTimer = (self.demoTimer or 0) + 1
-    if self.demoTimer > 130 then
+    if self.demoTimer > fight + item then
       self.demoTimer = nil
       self:openOldManBag()
     end
@@ -2729,15 +2720,19 @@ function BattleState:restoreMimicked(battler)
   self.mimicRestores = #keep > 0 and keep or nil
 end
 
--- BagWasSelected's old-man fork (core.asm:2193-2210): the list menu is
--- fed OldManItemList -- one POKé BALL x50 -- instead of the player's
--- bag.  The list is as scripted as the battle menu (DisplayListMenuID's
--- old-man branch, home/list_menu.asm:65-80): no input is ever read --
--- backing out is impossible -- the '▶' sits in front of POKé BALL for
--- 80 frames, then A is auto-pressed and .buttonAPressed's
--- PlaceUnfilledArrowMenuCursor leaves the hollow '▷' on the row for the
--- handful of frames UseBagItem takes to reach ItemUseBall's screen
--- restore (item_effects.asm:145) and the throw text.
+-- engine/battle/core.asm:2041
+-- engine/battle/core.asm:2046
+-- home/list_menu.asm:71
+function BattleState:demoDelays()
+  if require("src.core.GameVersion").isYellow() then
+    -- pokeyellow engine/battle/core.asm:2125
+    -- pokeyellow engine/battle/core.asm:2130
+    return 20, 20, 20
+  end
+  return 80, 50, 80
+end
+
+-- home/list_menu.asm:65-80
 function BattleState:openOldManBag()
   local ListMenu = require("src.ui.ListMenu")
   local game = self.game
@@ -2754,15 +2749,17 @@ function BattleState:openOldManBag()
     -- screen (engine/battle/core.asm:2210)
     list = ListMenu.new(game, "ITEMS", {
       { value = "POKE_BALL", label = Strings("POKé BALL"), count = qty },
+      -- home/list_menu.asm:523-524
+      { cancel = true, label = Strings("CANCEL") },
     }, {
       itemBox = true,
       script = function(l)
+        local _, _, bag = self:demoDelays()
         l.scriptTimer = (l.scriptTimer or 0) + 1
-        if l.scriptTimer == 81 then
-          -- the auto A-press: the cursor goes hollow on the chosen row
+        if l.scriptTimer == bag + 1 then
+          -- home/list_menu.asm:91
           l.hollowIndex = l.index
-        elseif l.scriptTimer > 88 then
-          -- ItemUseBall takes over: list down, OLD MAN throws
+        elseif l.scriptTimer > bag + 8 then
           l:close()
           self:oldManThrow()
         end
@@ -2787,7 +2784,9 @@ function BattleState:oldManThrow()
   self.phase = "messages"
   self.afterQueue = "finish"
   self.result = "run" -- nothing is kept; wBattleResult only ends the demo
-  self:sayAuto(Strings("%s used\nPOKé BALL!", self.demoName or Strings("OLD MAN")))
+  -- engine/items/item_effects.asm:148
+  self:sayAuto(self:romText("_ItemUseText001", "%s used\n%s!",
+    self.demoName, self.data.items.POKE_BALL.name))
   self:act(function()
     -- ItemUseBall's beat before the toss chain (like throwBall)
     self.nextInsert = (self.nextInsert or 0) + 1
@@ -7050,14 +7049,12 @@ function BattleState:drawTextArea()
       drawGlyph(0xEE, (0 + 20 - 2) * 8, (12 + 6 - 1) * 8 - 4)
     end
   elseif self.phase == "menu" and self.demo then
-    -- the old-man script (DisplayBattleMenu, core.asm:2038-2049): the
-    -- standard menu, with the '▶' hand drawn by the scripted keystrokes
-    -- -- next to FIGHT (9,14) for the first 80 frames, then ITEM (9,16)
+    -- engine/battle/core.asm:2038-2049
     box(8, 12, 12, 6)
     text(Strings("FIGHT", "battle"), 80, 112)
     drawGlyph(0xE1, 128, 112); drawGlyph(0xE2, 136, 112)
     text(Strings("ITEM", "battle"), 80, 128); text(Strings("RUN", "battle"), 128, 128)
-    drawGlyph(0xED, 72, (self.demoTimer or 0) <= 80 and 112 or 128)
+    drawGlyph(0xED, 72, (self.demoTimer or 0) <= self:demoDelays() and 112 or 128)
   elseif self.phase == "menu" then
     local col = (self.menuIndex - 1) % 2
     local row = math.floor((self.menuIndex - 1) / 2)

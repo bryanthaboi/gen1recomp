@@ -146,7 +146,7 @@ end
 
 --- Evaluate step counters upon completing a grid step (Walk, Run, Bike, Surf).
 function StepEvents.onStepTaken(session, game)
-  if not session then return end
+  if not session then return false end
   session.vars = session.vars or {}
   local party = session.party or {}
   StepEvents._totalSteps = StepEvents._totalSteps + 1
@@ -227,8 +227,8 @@ function StepEvents.onStepTaken(session, game)
     end
   end
   if vsChargeDone then
-    StepEvents.onRepelStep(session, game)
-    return
+    -- pokefirered/src/field_control_avatar.c:663
+    return true
   end
 
   -- pokeemerald/src/field_control_avatar.c:641
@@ -307,9 +307,11 @@ function StepEvents.onStepTaken(session, game)
   end
   session.vars[psnVar] = psnSteps
   session.poisonSteps = psnSteps
+  -- pokeemerald/src/field_control_avatar.c:552
+  if poisonFainted then return true end
 
   -- pokefirered/src/field_control_avatar.c:670 ShouldEggHatch
-  if not forced and not poisonFainted then
+  if not forced then
     local Daycare = package.loaded["src.core.game3.daycare"]
       or require("src.core.game3.daycare")
     local _, hatchSlot = Daycare.step(session)
@@ -345,35 +347,32 @@ function StepEvents.onStepTaken(session, game)
       local hatched = math.floor(tonumber(session.gameStats[13]) or 0)
       session.gameStats[13] = math.min(0xFFFFFF, hatched + 1)
       -- pokefirered/src/field_control_avatar.c:674 return TRUE
-      StepEvents.onRepelStep(session, game)
-      return
+      return true
     end
     if isRse and require("src.core.game3.braille_field").shouldDoRegicePuzzle(session) then
       -- pokeemerald/src/field_control_avatar.c:570
       local Space = require("src.core.game3.scripting.space")
       local key = Space.scriptKey("IslandCave_EventScript_OpenRegiEntrance")
       if key and Space.startScript(key) then
-        StepEvents.onRepelStep(session, game)
-        return
+        return true
       end
     end
     if mcOn and require("src.core.game3.rse.match_call").tryStepCountScripts(session, game) then
       -- pokeemerald/src/field_control_avatar.c:575
-      StepEvents.onRepelStep(session, game)
-      return
+      return true
     end
   end
 
   -- pokefirered/src/safari_zone.c:60 CB2_EndSafariBattle
   local Field = package.loaded["src.core.game3.field"]
   if Field and Field.pollSafariBalls and Field.pollSafariBalls(game) then
-    return
+    return true
   end
 
   -- pokefirered/src/field_control_avatar.c:677
   local okSafari, Safari = pcall(require, "src.core.game3.safari")
   if okSafari and Safari and Safari.takeStep and Safari.takeStep(session, game) then
-    return
+    return true
   end
 
   if isRse and require("src.core.game3.special_scene_rse").countSSTidalStep(1) then
@@ -384,18 +383,17 @@ function StepEvents.onStepTaken(session, game)
       or "SSTidalCorridor_EventScript_ReachedStepCount"
     local key = Space.scriptKey(name)
     if key and Space.startScript(key) then
-      StepEvents.onRepelStep(session, game)
-      return
+      return true
     end
   end
 
   if mcOn and require("src.core.game3.rse.match_call").tryStartMatchCall(session, game) then
     -- pokeemerald/src/field_control_avatar.c:605
-    StepEvents.onRepelStep(session, game)
-    return
+    return true
   end
 
-  StepEvents.onRepelStep(session, game)
+  -- pokeemerald/src/field_control_avatar.c:494
+  return StepEvents.onRepelStep(session, game)
 end
 
 function StepEvents.onRepelStep(session, game)
@@ -403,7 +401,7 @@ function StepEvents.onRepelStep(session, game)
   local Pike = package.loaded["src.core.game3.rse.frontier.pike"]
   local Py = package.loaded["src.core.game3.rse.frontier.pyramid"]
   -- pokeemerald/src/wild_encounter.c:854
-  if (Pike and Pike.inBattlePike(session)) or (Py and Py.inPyramid(session)) then return end
+  if (Pike and Pike.inBattlePike(session)) or (Py and Py.inPyramid(session)) then return false end
   local repelSteps = tonumber(Sem.getVar(session, "repelSteps")) or 0
   if repelSteps > 0 then
     repelSteps = repelSteps - 1
@@ -421,8 +419,10 @@ function StepEvents.onRepelStep(session, game)
           })
         end,
       })
+      return true
     end
   end
+  return false
 end
 
 --- Pump the sequential lockstep queue.

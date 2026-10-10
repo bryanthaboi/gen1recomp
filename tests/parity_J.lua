@@ -419,7 +419,8 @@ do
   check(stack:top() ~= demo, "the ITEM menu is forced without input")
   eq(frames, 131, "FIGHT hover (80) + ITEM hover (50) frames before the bag")
   local bag = stack:top()
-  eq(bag.items and #bag.items, 1, "the old man's bag lists exactly one item")
+  eq(bag.items and #bag.items, 2, "the old man's bag lists one item plus CANCEL")
+  check(bag.items[2] and bag.items[2].cancel, "the list terminator prints CANCEL (home/list_menu.asm:523)")
   eq(bag.items[1].label, "POKé BALL", "the item is a POKé BALL")
   eq(bag.items[1].count, 50, "with quantity x50 (OldManItemList)")
   -- the list script (home/list_menu.asm:65-80): input is never read --
@@ -498,7 +499,7 @@ do
     }
     fg.save.party = { Pokemon.new(Data, "BULBASAUR", 20) }
     local demo = BattleState.newWild(fg, "PIKACHU", 5)
-    demo:makeOldManDemo("PROF.OAK")
+    demo:makeOldManDemo("oak")
     stack:push(demo)
     demo:enter()
     for _ = 1, 300 do
@@ -508,13 +509,26 @@ do
     end
     pressed.a = false
     eq(demo.phase, "menu", "Yellow: the demo reaches the battle menu")
+    local frames = 0
     for _ = 1, 200 do
       if stack:top() ~= demo then break end
+      if demo.phase == "menu" then frames = frames + 1 end
       demo:update(1 / 60)
     end
+    -- pokeyellow engine/battle/core.asm:2125, 2130
+    eq(frames, 41, "Yellow: FIGHT hover (20) + ITEM hover (20) frames before the bag")
     local bag = stack:top()
     eq(bag.items and bag.items[1] and bag.items[1].count, 1,
        "Yellow's old-man-style bag lists x1 (SimulatedInputBattleItemList)")
+    local hover = 0
+    for _ = 1, 80 do
+      if stack:top() ~= bag or bag.hollowIndex then break end
+      hover = hover + 1
+      bag:update(1 / 60)
+    end
+    -- pokeyellow home/list_menu.asm:71
+    eq(hover, 21, "Yellow: the '▶' hovers POKé BALL for 20 frames before the auto-A")
+    eq(bag.hollowIndex, 1, "Yellow: the auto-A leaves the hollow '▷'")
   end)
   GameVersion.set(oldVersion)
   if not ok then error(err, 0) end

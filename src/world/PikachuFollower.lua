@@ -375,19 +375,12 @@ function PikachuFollower.onMapEntered(game, ow, opts, viaMapLoad)
   ow.pikachuTrail = { x = ow.player.cellX, y = ow.player.cellY }
 end
 
--- ---------------------------------------------------------------------
--- Idle behavior (pikachu_follow.asm Func_fc803 and the Func_fc842 roll it
--- hands off to).  Standing still, the follower burns down a frame
--- counter; at zero it either looks in a random direction (Random & $c,
--- another $20 frames later) or, when the buffered follow command puts it
--- two or more cells off the player (ComputePikachuFollowCommand's 5-8
--- band), rolls one of four in-place animations: a bounce, the walk cycle
--- on the spot, a two frame shuffle, or a clockwise spin.  Func_fc82e
--- drops whichever is running the moment the player takes a step.  Nothing
--- here plays a bubble or a cry -- those are TalkToPikachu's alone (#411).
--- ---------------------------------------------------------------------
+-- engine/pikachu/pikachu_follow.asm:539-551
 
 local IDLE_LOOK = 0x20  -- Func_fc803's pause between random glances
+-- engine/pikachu/pikachu_follow.asm:841
+-- engine/pikachu/pikachu_follow.asm:544
+local IDLE_FIRST = 0x100
 local IDLE_REST = 0x10  -- Func_fc835's pause after an animation ends
 local IDLE_FRAME = 8    -- frames per sprite frame in Func_fc8f8/92b/95d
 
@@ -435,6 +428,18 @@ local function strandedFacing(ow, npc)
   return dx > 0 and "right" or "left"
 end
 
+-- engine/pikachu/pikachu_follow.asm:1389
+local function facingTowardPlayer(ow, npc)
+  local p = ow.player
+  if npc.cellY ~= p.cellY then
+    return npc.cellY < p.cellY and "down" or "up"
+  end
+  if npc.cellX ~= p.cellX then
+    return npc.cellX < p.cellX and "right" or "left"
+  end
+  return p.facing
+end
+
 -- Func_fc842: an even roll over the four PointerTable_fc85a entries
 local function startIdleAnim(npc, facing)
   local roll = randomInt(0, 3)
@@ -458,13 +463,12 @@ local function idleTick(ow, npc)
   -- standing OverworldLoop spends two DelayFrames on each pass (home/
   -- overworld.asm: OverworldLoop delays, falls into OverworldLoopLessDelay
   -- which delays again, then .noDirectionButtonsPressed loops back), so the
-  -- whole Func_fc803 family runs at half this port's 60Hz fixed step: the
-  -- first glance is $20 CALLS, 64 frames, not 32 (#424).
+  -- whole Func_fc803 family runs at half this port's 60Hz fixed step.
   npc.idleClock = ((npc.idleClock or 0) + 1) % 2
   if npc.idleClock ~= 0 then return end
   local idle = npc.idle
   if not idle then
-    idle = { kind = "wait", frames = IDLE_LOOK }
+    idle = { kind = "wait", frames = IDLE_FIRST }
     npc.idle = idle
   end
   if idle.kind == "wait" then
@@ -673,6 +677,8 @@ function PikachuFollower.update(game, ow)
   local gx, gy = npc.goalX, npc.goalY
   if npc.cellX == gx and npc.cellY == gy then
     npc.goalX, npc.goalY = nil, nil
+    -- engine/pikachu/pikachu_follow.asm:844
+    npc.facing = facingTowardPlayer(ow, npc)
     idleTick(ow, npc)
     return
   end
@@ -731,165 +737,30 @@ function PikachuFollower.update(game, ow)
   npc:update(ow.map, ow.entities)
 end
 
--- ---------------------------------------------------------------------
--- TalkToPikachu (engine/pikachu/pikachu_emotions.asm + data/pikachu/
--- pikachu_emotions.asm): pick a scripted emotion, then play its bubble
--- and voiced PCM clip, and raise the framed Pikachu picture the original
--- puts over the map (pikaemotion_pikapic -> pikachu_pic_animation.asm
--- PlacePikapicTextBoxBorder), drawn by OverworldController:drawUI.  Each
--- script's BASE 5x5 frame is ripped as pikachu/pikapic_N.png (#561).
--- ---------------------------------------------------------------------
+-- engine/pikachu/pikachu_emotions.asm:264
+local function pikachuData(game)
+  local field = game.data and game.data.field
+  local data = field and field.pikachu
+  if not data then error("field.pikachu is missing from the Yellow cache") end
+  return data
+end
+PikachuFollower.pikachuData = pikachuData
 
--- PikachuEmotionTable, reduced to each entry's bubble + pikaemotion_pcm
--- clip (bubble names are the *_BUBBLE constants; nil cry = silent).
-local EMOTIONS = {
-  [1] = {},
-  [2] = { bubble = "SMILE_BUBBLE", cry = 35 },
-  [3] = { cry = 40 },
-  [4] = { cry = 29 },
-  [5] = { cry = 31 },
-  [6] = { bubble = "SKULL_BUBBLE" },
-  [7] = { cry = 1 },
-  [8] = { cry = 39 },
-  [9] = { bubble = "SKULL_BUBBLE", cry = 6, cryFirst = true },
-  [10] = { bubble = "HEART_BUBBLE", cry = 5 },
-  [11] = { bubble = "ZZZ_BUBBLE", cry = 37 },
-  [12] = {},
-  [13] = {},
-  [14] = { bubble = "BOLT_BUBBLE", cry = 10 },
-  [15] = { cry = 34 },
-  [16] = { cry = 33 },
-  [17] = { cry = 13 },
-  [18] = {},
-  [19] = { bubble = "HEART_BUBBLE", cry = 33 },
-  [20] = { bubble = "HEART_BUBBLE", cry = 5 },
-  [21] = { bubble = "FISH_BUBBLE" },
-  [22] = { cry = 4 },
-  [23] = { cry = 19 },
-  [24] = { bubble = "EXCLAMATION_BUBBLE" },
-  [25] = { bubble = "BOLT_BUBBLE", cry = 35 },
-  [26] = { bubble = "ZZZ_BUBBLE", cry = 37 },
-  [27] = { cry = 9 },
-  [28] = { cry = 15 },
-  [29] = { cry = 5 },
-  [30] = { bubble = "HEART_BUBBLE", cry = 5, turnAway = true },
-  [31] = { cry = 19 },
-  [32] = { cry = 26 },
-}
-
--- GetPikaPicAnimationScriptIndex (engine/pikachu/pikachu_pic_animation
--- .asm): mood picks the column (PikachuMoodLookupTable), happiness the
--- row (PikaPicAnimationScriptPointerLookupTable); the cell is the
--- emotion index.
-local MOOD_THRESHOLDS = { 40, 127, 128, 210, 255 }
-local MOOD_MATRIX = {
-  { limit = 50,  14, 14, 6,  13, 13 },
-  { limit = 100, 9,  9,  5,  12, 12 },
-  { limit = 130, 3,  3,  1,  8,  8 },
-  { limit = 160, 3,  3,  4,  15, 15 },
-  { limit = 200, 17, 17, 7,  2,  2 },
-  { limit = 250, 17, 17, 16, 10, 10 },
-  { limit = 255, 17, 17, 19, 20, 20 },
-}
-
--- wPikachuEmotionModifier values 1-5 (MapSpecificPikachuExpression
--- .Emotions): scripted one-shots -- 21 is the fishing-rod reaction
-local MODIFIER_EMOTIONS = { 18, 21, 23, 24, 25 }
-
--- ExecutePikaPicAnimScript spends a Delay3 on every pass of its loop
--- (pikachu_pic_animation.asm PikaPicAnimTimerAndJoypad), so one script tick
--- is three 60Hz frames: the flat 50 frame hold this port used was under a
--- third of even the shortest script (#424).
+-- engine/pikachu/pikachu_pic_animation.asm:219
 local PIKAPIC_TICK = 3
-local PIKAPIC_LIFT = 4 -- px the stand-in pic rises on an overlay run
-local PIKAPIC_DIR = "assets/generated/pikachu/"
-
--- pikaemotion_pikapic's script id per emotion: emotion N takes
--- PikaPicAnimScript N, except the four listed here (data/pikachu/
--- pikachu_emotions.asm).
-local PIKAPIC_SCRIPT = { [29] = 10, [30] = 20, [31] = 23, [32] = 23 }
-
--- data/pikachu/pikachu_pic_animation.asm:1
-local THUNDERBOLT_PALS = {}
-for i = 1, 20 do THUNDERBOLT_PALS[i] = (i % 2 == 1) and 0xC0 or 0xE4 end
-local THUNDERBOLT_ROW = 4
 local THUNDERBOLT_SOUND_CAP = 600
-PikachuFollower.THUNDERBOLT_PALS = THUNDERBOLT_PALS
-PikachuFollower.THUNDERBOLT_ROW = THUNDERBOLT_ROW
 
--- Per script: pikapic_setduration's tick count, and for the scripts whose
--- overlay is a whole second pose, that frameset's run lengths in ticks
--- (data/pikachu/pikachu_pic_objects.asm PikaPicAnimBGFrames_*, which script
--- N reaches as frameset N+5, or N+6 from script 10 up).  The frameset
--- restarts until pikapic_looptofinish runs the duration out.
--- Scripts 1, 2, 3, 5, 6, 8 and 9 are left without a list on purpose:
--- their overlays (PikaAnimTilemap_14 to _22) only paint a few tiles over a
--- pic that otherwise stands still, so with no tiles to paint the port has
--- nothing to show for them and must not bob the whole picture instead.
-local PIKAPIC = {
-  [1]  = { dur = 40 },
-  [2]  = { dur = 44 },
-  [3]  = { dur = 80 },
-  [4]  = { dur = 70,  seq = { 8, 8, 20, 8 } },
-  [5]  = { dur = 32 },
-  [6]  = { dur = 50 },
-  [7]  = { dur = 58,  seq = { 8, 2, 8, 2, 8 },
-           poses = { "e4841", false, "e4841", false, "e4841" } },
-  [8]  = { dur = 44 },
-  [9]  = { dur = 56 },
-  [10] = { dur = 56,  seq = { 8, 3, 5, 3, 5 },
-           poses = { false, "e4ce0", "e4e70", "e4ce0", false } },
-  [11] = { dur = 100, seq = { 20, 8, 20, 8 },
-           poses = { false, "e50af", false, "e50af" } },
-  [12] = { dur = 50,  seq = { 13, 12, 100, 8 },
-           poses = { false, "e52fe", false, "e52fe" } },
-  [13] = { dur = 50,  seq = { 5, 5, 5, 5, 100 },
-           poses = { false, "e5541", false, "e5541", false } },
-  [14] = { dur = 40,  seq = { 2, 2, 2, 2 },
-           poses = { false, "e5794", false, "e5794" } },
-  [15] = { dur = 50,  seq = { 5, 5, 5, 5 },
-           poses = { false, "e59ed", false, "e59ed" } },
-  [16] = { dur = 32,  seq = { 8, 100 },
-           poses = { "e5c4d", false } },
-  [17] = { dur = 100, seq = { 10, 3, 3, 3, 100 },
-           poses = { false, "e5e90", false, "e5e90", false } },
-  [18] = { dur = 32,  seq = { 3, 100, 8, 8 },
-           poses = { false, "e61b0", false, "e61b0" } },
-  [19] = { dur = 44,  seq = { 6, 6, 6, 6 },
-           poses = { "e63f7", false, "e63f7", false } },
-  [20] = { dur = 50,  seq = { 8, 12, 8, 12 },
-           poses = { false, "e6646", false, "e6646" } },
-  [21] = { dur = 40,  seq = { 8, 2, 1, 1, 100 },
-           poses = { false, "e682f", "e69bf", "e6b4f", "e6cdf" } },
-  [22] = { dur = 40,  seq = { 8, 100 },
-           poses = { false, "e6fff" } },
-  [23] = { dur = 70,  seq = { 16, 16, 16, 16 },
-           poses = { false, "e731f", false, "e731f" } },
-  [24] = { dur = 60,  seq = { 6, 6, 6, 6, 100 },
-           poses = { false, "e763f", false, "e763f", false } },
-  [25] = { dur = 50,  seq = { 6, 6, 100 },
-           poses = { false, "e7863", "e79f3" }, bolt = 13 },
-  [26] = { dur = 100, seq = { 20, 8, 20, 8, 8, 100 },
-           poses = { false, "e50af", false, "e50af", "e7b83", "e7d13" } },
-  [27] = { dur = 30,  seq = { 4, 100 },
-           poses = { false, "f0b64" } },
-  [28] = { dur = 64,  seq = { 12, 12, 12, 100 },
-           poses = { false, "f0d82", false, "f0d82" } },
-}
-PikachuFollower.PIKAPIC = PIKAPIC
-
-local function moodEmotion(save)
+-- engine/pikachu/pikachu_pic_animation.asm:1
+local function moodEmotion(save, data)
   local mood = save.pikachuMood or 128
-  local column = 5
-  for i, threshold in ipairs(MOOD_THRESHOLDS) do
-    if mood <= threshold then column = i break end
+  local column
+  for _, m in ipairs(data.moodColumns) do
+    if mood <= m.limit then column = m.column break end
   end
   local h = happiness(save)
-  local row = MOOD_MATRIX[#MOOD_MATRIX]
-  for _, r in ipairs(MOOD_MATRIX) do
-    if h <= r.limit then row = r break end
+  for _, r in ipairs(data.moodRows) do
+    if h <= r.limit then return r[column] end
   end
-  return row[column]
 end
 PikachuFollower.moodEmotion = moodEmotion
 
@@ -918,11 +789,13 @@ local function selectEmotion(game, ow, save)
     if starter.status then return 28 end
   end
   if mapId:find("POKEMON_TOWER_", 1, true) == 1 then return 22 end
+  local data = pikachuData(game)
+  -- engine/pikachu/pikachu_emotions.asm:346
   local modifier = save.pikachuEmotionModifier
-  if modifier and MODIFIER_EMOTIONS[modifier] then
-    return MODIFIER_EMOTIONS[modifier]
+  if modifier and data.modifierEmotions[modifier] then
+    return data.modifierEmotions[modifier]
   end
-  return moodEmotion(save)
+  return moodEmotion(save, data)
 end
 
 local function bubbleIndex(game, name)
@@ -950,6 +823,10 @@ function PikachuFollower.talk(game, ow, npc, done)
     npc.hopStep = nil
   end
   idleReset(npc) -- the bubble anchor reads px/py, and the hold freezes it
+  -- engine/pikachu/pikachu_follow.asm:436
+  if not PikachuFollower.isFollowingDisabled(ow) then
+    npc.facing = OPPOSITE[ow.player.facing] or npc.facing
+  end
   -- engine/pikachu/pikachu_emotions.asm:196
   local save = game.save
   local emotion = selectEmotion(game, ow, save)
@@ -963,88 +840,192 @@ function PikachuFollower.talk(game, ow, npc, done)
   return playEmotion(game, ow, npc, emotion, { skippable = true, onDone = done })
 end
 
--- engine/pikachu/pikachu_emotions.asm:14
+local COUNTERCLOCKWISE = {}
+for from, to in pairs(CLOCKWISE) do COUNTERCLOCKWISE[to] = from end
+
+-- engine/pikachu/pikachu_movement.asm:1007
+local function sineE(data, angle, amp)
+  local a = angle % 0x40
+  local h = math.floor(data.sine[a % 0x20 + 1] * amp % 0x10000 / 0x100)
+  if a >= 0x20 then return 0 - h end
+  return h
+end
+
+-- engine/pikachu/pikachu_movement.asm:801
+local function hopLift(data, sub, param2)
+  return 0 - sineE(data, sub + 0x20, param2 % 0x10 + 1)
+end
+PikachuFollower.hopLift = hopLift
+
+-- engine/pikachu/pikachu_emotions.asm:26
 function playEmotion(game, ow, npc, emotion, opts)
   opts = opts or {}
   local done = opts.onDone
-  local e = EMOTIONS[emotion] or EMOTIONS[1]
+  local data = pikachuData(game)
+  local script = data.emotions[emotion] or data.emotions[1]
+  local turnedFrom
 
-  -- data/pikachu/pikachu_emotions.asm
-  local function pikapic()
-    local script = PIKAPIC_SCRIPT[emotion] or emotion
-    local pic = PIKAPIC_DIR .. "pikapic_" .. script .. ".png"
-    local anim = PIKAPIC[script] or PIKAPIC[1]
-    local hold = anim.dur * PIKAPIC_TICK
-    local poses
-    if anim.poses then
-      poses = {}
-      for i = 1, #anim.seq do
-        local id = anim.poses[i]
-        poses[i] = id and (PIKAPIC_DIR .. "gfx_" .. id .. ".png") or false
+  local function hold(frames, after, extra)
+    ow.emote = { npc = npc, frames = frames, bubble = false, onDone = after }
+    if extra then
+      for k, v in pairs(extra) do ow.emote[k] = v end
+    end
+    return ow.emote
+  end
+
+  local function playCry(id)
+    local Sound = require("src.core.Sound")
+    local src = Sound.playPikaCry(game.data, id)
+    local kind = type(src)
+    if kind ~= "userdata" and kind ~= "table" then return nil end
+    return 3 + Sound.waitFrames(src)
+  end
+
+  -- engine/pikachu/pikachu_pic_animation.asm:90
+  local function pikapic(id, after)
+    -- engine/pikachu/pikachu_pic_animation.asm:143
+    if turnedFrom then npc.facing = turnedFrom turnedFrom = nil end
+    -- engine/pikachu/pikachu_pic_animation.asm:151
+    local anim = data.pics[id] or data.pics[0]
+    local function show()
+      local frames = anim.dur * PIKAPIC_TICK
+      local seq, poses = {}, {}
+      for i, f in ipairs(anim.frames) do
+        seq[i] = f.dur
+        poses[i] = f.image or false
+      end
+      ow.emote = {
+        npc = npc, frames = frames, bubble = false, pikaPic = anim.image,
+        pikaSeq = seq, pikaPoses = poses, pikaTotal = frames,
+        skippable = opts.skippable, onDone = after,
+      }
+      if anim.boltDelay then
+        -- engine/pikachu/pikachu_pic_animation.asm:571
+        ow.emote.boltAt = (anim.boltDelay + anim.passes) * PIKAPIC_TICK
+        ow.emote.boltT = 0
+        ow.emote.boltPals = data.thunderboltPals
+      end
+      return ow.emote
+    end
+    -- engine/pikachu/pikachu_pic_animation.asm:782
+    local wait = anim.cry and playCry(anim.cry)
+    if wait then return hold(wait, show, { pikaPic = anim.image }) end
+    return show()
+  end
+
+  -- engine/pikachu/pikachu_movement.asm:1
+  local function move(movement, after)
+    local baseY = npc.cellY * 16
+    local segs, lifted = {}, false
+    local function pass(fn)
+      local last = segs[#segs]
+      if not fn and last and not last[2] then
+        last[1] = last[1] + 2
+      else
+        segs[#segs + 1] = { 2, fn }
       end
     end
-    ow.emote = {
-      npc = npc, frames = hold, bubble = false, pikaPic = pic,
-      pikaSeq = anim.seq, pikaPoses = poses, pikaTotal = hold,
-      skippable = opts.skippable, onDone = done,
-    }
-    if anim.bolt then
-      -- engine/pikachu/pikachu_pic_animation.asm:520
-      ow.emote.boltAt = (anim.bolt + 2) * PIKAPIC_TICK
-      ow.emote.boltT = 0
+    for _, c in ipairs(movement) do
+      -- engine/pikachu/pikachu_movement.asm:770
+      local passes = c.func1 == 2 and c.param1 % 0x20 + 1 or 1
+      local sub = 0
+      for _ = 1, passes do
+        local f2 = c.func2
+        if f2 == 4 or f2 == 5 then
+          -- engine/pikachu/pikachu_movement.asm:671
+          sub = sub + 1
+          if sub == c.param2 % 0x10 + 1 then
+            sub = 0
+            local turn = f2 == 4 and CLOCKWISE or COUNTERCLOCKWISE
+            pass(function()
+              turnedFrom = turnedFrom or npc.facing
+              npc.facing = turn[npc.facing] or npc.facing
+            end)
+          else
+            pass()
+          end
+        elseif f2 == 7 or f2 == 8 or f2 == 9 then
+          -- engine/pikachu/pikachu_movement.asm:640
+          sub = (sub + 2 ^ (math.floor(c.param2 / 0x10) % 8)) % 0x100
+          local lift = hopLift(data, sub, c.param2)
+          local shadow = f2 ~= 9 and lift ~= 0
+          lifted = true
+          pass(function()
+            npc.py = baseY - lift
+            npc.hopShadowY = shadow and baseY or nil
+          end)
+        else
+          pass()
+        end
+      end
     end
-    return ow.emote
+    -- engine/pikachu/pikachu_movement.asm:17
+    segs[#segs + 1] = { 1, lifted and function()
+      npc.py = baseY
+      npc.hopShadowY = nil
+    end or nil }
+    local function seg(i)
+      local sg = segs[i]
+      if not sg then return after() end
+      if sg[2] then sg[2]() end
+      return hold(sg[1], function() return seg(i + 1) end)
+    end
+    return seg(1)
   end
 
-  -- audio/pikachu_pcm.asm:15
-  local function pcm(after)
-    if not e.cry then return after() end
-    local Sound = require("src.core.Sound")
-    local src = Sound.playPikaCry(game.data, e.cry)
-    local kind = type(src)
-    if kind ~= "userdata" and kind ~= "table" then return after() end
-    ow.emote = {
-      npc = npc, frames = 3 + Sound.waitFrames(src), bubble = false,
-      onDone = after,
-    }
-    return ow.emote
+  local run
+  run = function(i)
+    local step = script[i]
+    if not step then
+      if done then done() end
+      return nil
+    end
+    local op = step.op
+    local function nextStep() return run(i + 1) end
+    if op == "pikapic" then return pikapic(step.script, nextStep) end
+    if op == "turnaway" then
+      -- engine/pikachu/pikachu_emotions.asm:203
+      npc.facing = OPPOSITE[ow.player.facing] or npc.facing
+      return nextStep()
+    end
+    if op == "bubble" then
+      local bi = assert(bubbleIndex(game, step.bubble), step.bubble)
+      -- engine/overworld/emotion_bubbles.asm:60
+      ow.emote = { npc = npc, frames = 60, bubble = bi, onDone = nextStep }
+      return ow.emote
+    end
+    if op == "pcm" then
+      -- audio/pikachu_pcm.asm:15
+      local wait = step.cry and playCry(step.cry)
+      if not wait then return nextStep() end
+      return hold(wait, nextStep)
+    end
+    if op == "move" then return move(step.movement, nextStep) end
+    if op == "delay" then
+      -- engine/pikachu/pikachu_emotions.asm:132
+      return hold(step.frames, nextStep)
+    end
+    return nextStep()
   end
-
-  local function cry()
-    return pcm(pikapic)
-  end
-
-  if e.turnAway then
-    -- data/pikachu/pikachu_emotions.asm:203
-    -- engine/pikachu/pikachu_emotions.asm:203
-    npc.facing = OPPOSITE[ow.player.facing] or npc.facing
-  end
-
-  -- caches built before the Yellow bubble sheet only carry the three
-  -- shared bubbles; a missing crop degrades to a silent hold
-  local bi = e.bubble and bubbleIndex(game, e.bubble)
-  -- engine/overworld/emotion_bubbles.asm:60
-  -- data/pikachu/pikachu_emotions.asm:69
-  local function bubbleHold(after)
-    ow.emote = { npc = npc, frames = 60, bubble = bi, onDone = after }
-    return ow.emote
-  end
-  if e.cryFirst then
-    if not bi then return cry() end
-    return pcm(function() return bubbleHold(pikapic) end)
-  end
-  if bi then return bubbleHold(cry) end
-  return cry()
+  return run(1)
 end
 
 local function frameRun(emote)
   local seq = emote and emote.pikaSeq
   if not seq then return nil end
-  local loop = 0
-  for _, run in ipairs(seq) do loop = loop + run end
-  if loop <= 0 then return nil end
   local elapsed = math.max(0, (emote.pikaTotal or 0) - (emote.frames or 0))
-  local tick = math.floor(elapsed / PIKAPIC_TICK) % loop
+  local tick = math.floor(elapsed / PIKAPIC_TICK)
+  local loop = 0
+  for i, run in ipairs(seq) do
+    -- engine/pikachu/pikachu_pic_animation.asm:396
+    if run == 0 then
+      if tick < loop then break end
+      return i
+    end
+    loop = loop + run
+  end
+  if loop <= 0 then return nil end
+  tick = tick % loop
   for i, run in ipairs(seq) do
     if tick < run then return i end
     tick = tick - run
@@ -1052,10 +1033,8 @@ local function frameRun(emote)
   return nil
 end
 
-function PikachuFollower.picLift(emote)
-  if emote and emote.pikaPoses then return 0 end
-  local i = frameRun(emote)
-  return (i and i % 2 == 0) and PIKAPIC_LIFT or 0
+function PikachuFollower.picLift()
+  return 0
 end
 
 -- engine/pikachu/pikachu_pic_animation.asm:359
@@ -1065,10 +1044,20 @@ function PikachuFollower.picFrame(emote)
     return nil, 0
   end
   local poses = emote.pikaPoses
-  if not poses then return emote.pikaPic, PikachuFollower.picLift(emote) end
+  if not poses then return emote.pikaPic, 0 end
   local i = frameRun(emote)
   return (i and poses[i]) or emote.pikaPic, 0
 end
+
+-- engine/pikachu/pikachu_pic_animation.asm:831
+local function boltBgp(pals, k)
+  for _, p in ipairs(pals) do
+    if k < p.frames then return p.bgp end
+    k = k - p.frames
+  end
+  return nil
+end
+PikachuFollower.boltBgp = boltBgp
 
 -- engine/pikachu/pikachu_pic_animation.asm:790
 function PikachuFollower.tickBolt(game, ow, emote)
@@ -1092,11 +1081,13 @@ function PikachuFollower.tickBolt(game, ow, emote)
     local def = moves and moves.THUNDERBOLT
     if def and def.anim then Sound.playMove(game.data, def.anim) end
   end
-  local strobe = #THUNDERBOLT_PALS * THUNDERBOLT_ROW
-  if k < strobe then
-    emote.bgp = THUNDERBOLT_PALS[math.floor(k / THUNDERBOLT_ROW) + 1]
+  local bgp = boltBgp(emote.boltPals, k)
+  if bgp then
+    emote.bgp = bgp
     return
   end
+  local strobe = 0
+  for _, p in ipairs(emote.boltPals) do strobe = strobe + p.frames end
   -- engine/pikachu/pikachu_pic_animation.asm:802
   if Sound.moveSfxBusy() and k < strobe + THUNDERBOLT_SOUND_CAP then return end
   emote.boltDone = true

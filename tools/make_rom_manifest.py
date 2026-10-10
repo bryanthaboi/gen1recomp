@@ -537,6 +537,7 @@ DIRECT_SYMBOLS = {
     "BugIconFrame2",
     "CircleTile",
     "CryData",
+    "DisplayBattleMenu.oldManName",
     "DoorTileIDPointers",
     "ED_Tile",
     "EvosMovesPointerTable",

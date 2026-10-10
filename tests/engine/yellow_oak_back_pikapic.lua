@@ -4,7 +4,7 @@
 -- loads OldManPicBack for BATTLE_TYPE_OLD_MAN but ProfOakPicBack for
 -- BATTLE_TYPE_PIKACHU, the Pallet Town catch scene, and DisplayBattleMenu
 -- splits the displayed thrower name on the same wBattleType.  The port
--- carries that split as makeOldManDemo's name argument.
+-- carries that split as makeOldManDemo's kind argument.
 --
 -- #561: TalkToPikachu's framed portrait draws the chosen PikaPicAnimScript's
 -- own base frame (data/pikachu/pikachu_pic_animation.asm), not the battle
@@ -59,12 +59,16 @@ T.eq(Sprites.playerPath(nil, "back", { demo = true, oakDemo = true }),
 
 -- makeOldManDemo only fills fields when a player battler already exists, so
 -- a stub with one stays clear of Pokemon.new and the fixture dataset.
-local oak = { player = true }
-BattleState.makeOldManDemo(oak, "PROF.OAK")
+local names = { text = {
+  ["DisplayBattleMenu.oldManName"] = "OLD MAN",
+  ["DisplayBattleMenu.profOakName"] = "PROF.OAK",
+} }
+local oak = { player = true, data = names }
+BattleState.makeOldManDemo(oak, "oak")
 T.eq(oak.demoName, "PROF.OAK", "the Yellow demo names PROF.OAK as the thrower")
 T.eq(oak.oakDemo, true, "and asks for his back pic")
 
-local oldMan = { player = true }
+local oldMan = { player = true, data = names }
 BattleState.makeOldManDemo(oldMan)
 T.eq(oldMan.demoName, "OLD MAN", "the unnamed demo is still the old man")
 T.eq(oldMan.oakDemo, false, "and does not reach for Oak's pic")
@@ -114,21 +118,13 @@ end
 T.check(extractor:find('self.symbols["ProfOakPicBack"]', 1, true) ~= nil,
   "the extractor gates Oak's back pic on the ProfOakPicBack symbol")
 requireSymbols({ "ProfOakPicBack" }, "#557")
+requireSymbols({ "DisplayBattleMenu.profOakName" }, "#557 thrower name")
+T.check(yellowManifest:find('"DisplayBattleMenu.oldManName"', 1, true) ~= nil,
+  "rom_manifest_yellow.json carries DisplayBattleMenu.oldManName")
 
--- Read the label list out of the extractor itself rather than repeating it:
--- the contract under test is that the manifest answers whatever
--- extractField asks for, so a later edit to PIKAPIC_BASE stays covered.
-local pikapicBlock = extractor:match("local PIKAPIC_BASE = {(.-)\n  }")
-T.check(pikapicBlock ~= nil, "RomExtractor's PIKAPIC_BASE table is readable")
-local pikapic, seen = {}, {}
-for label in (pikapicBlock or ""):gmatch('"([%w_]+)"') do
-  if not seen[label] then
-    seen[label] = true
-    pikapic[#pikapic + 1] = label
-  end
-end
--- 28 PikaPicAnimScripts, script 26 sharing script 11's base pic
-T.eq(#pikapic, 27, "PIKAPIC_BASE names 27 distinct base pics")
+local PikachuPicExtractor = require("src.import.PikachuPicExtractor")
+local pikapic = PikachuPicExtractor.symbolNames()
+T.eq(#pikapic, 12, "PikachuPicExtractor reads twelve pikachu tables")
 requireSymbols(pikapic, "#561")
 
 -- Red and Blue have neither pic, so neither manifest may grow one: a stray

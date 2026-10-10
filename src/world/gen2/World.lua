@@ -220,6 +220,12 @@ local MAPSETUP_MUSIC_BIKE = {
   [MAPSETUP.WARP] = true, [MAPSETUP.TELEPORT] = true,
   [MAPSETUP.CONTINUE] = true, [MAPSETUP.LINKRETURN] = true,
 }
+-- data/maps/setup_scripts.asm:27-51
+local MAPSETUP_MUSIC_FADE_IN = {
+  [MAPSETUP.WARP] = true, [MAPSETUP.TELEPORT] = true,
+}
+-- home/audio.asm:319
+World.MAP_MUSIC_FADE = 8
 
 -- MapSetupCommands $26 UpdateRoamMons and $27 JumpRoamMons, read off the same
 -- eleven scripts with the same fallthroughs honoured.  This is the ONLY thing
@@ -655,9 +661,6 @@ function World.new(game)
     dontRestartMusic = false,
     -- FadeOutToWhite / FadeOutToBlack's sheet, until a FadeInFrom* lifts it.
     fade = nil,
-    -- A `musicfadeout` whose ramp still has frames left, plus the label queued
-    -- underneath it.
-    pendingMusic = nil,
     showDebugHud = os.getenv("POKEPORT_DEV") == "1",
   }, World)
   -- ow.runner under the Gen 1 name (src/world/OverworldController.lua:216).
@@ -1420,7 +1423,7 @@ function World:load()
     -- would find them; the command arm cannot see that sub-table.
     givePokeMail = function(mail) return self:givePokeMail(mail) end,
     checkPokeMail = function(mail, onDone) self:checkPokeMail(mail, onDone) end,
-    getLandmarkName = function() return self:landmarkName() end,
+    getLandmarkName = function(id) return self:landmarkName(id) end,
 
     -- ---- field events ------------------------------------------------------
     fruitTreeItem = function(tree) return self:fruitTreeItem(tree) end,
@@ -2728,11 +2731,14 @@ function World:setMapMusic(mapId, seamless, method)
   local bike = bikeRow
     and FieldMoves.isBiking(self.playerState)
     and self:playBikeMusic()
-  if bike then return end
-  Music.playMap(data, mapId, nil,
-                FieldMoves.isSurfing(self.playerState),
-                (not bikeRow) and Music.MAP_FADE or nil,
-                self:mapMusicSong(mapId))
+  if not bike then
+    Music.playMap(data, mapId, nil,
+                  FieldMoves.isSurfing(self.playerState),
+                  (not bikeRow) and World.MAP_MUSIC_FADE or nil,
+                  self:mapMusicSong(mapId))
+  end
+  -- data/maps/setup_scripts.asm:51, home/audio.asm:294
+  if bikeRow and MAPSETUP_MUSIC_FADE_IN[method] then Music.fadeIn(4) end
 end
 
 -- home/audio.asm:379
@@ -2761,45 +2767,24 @@ function World:forceMapMusic()
     Music.stop()
     return
   end
+  Music.stop() -- data/maps/setup_scripts.asm:131
   self:restoreMapMusic()
+  -- engine/overworld/map_setup.asm:191-197
+  if FieldMoves.isBiking(self.playerState) then Music.fadeIn(8, 0) end
 end
 
--- Script_musicfadeout: the ramp, and then the song underneath it.  The VM has
--- already masked MUSIC_FADE_IN_F off the control byte, so `fade` is the number
--- of frames the ramp holds each volume step; a musicId of 0 (MUSIC_NONE) is a
--- fade to silence and queues nothing.
---
--- Music.fadeOut steps rAUDVOL's level 7 -> 0 one notch every `control` frames
--- and stops the song at the bottom, so the queued label starts control * 7
--- frames later.  Counted here rather than polled, because Music keeps its ramp
--- state module-local.
+-- engine/overworld/scripting.asm:757-765
 function World:fadeOutMusic(musicId, fadeControl)
-  local control = math.max(1, fadeControl or 10)
-  Music.fadeOut(control)
   local data = self.game and self.game.data
   local audio = data and data.audio
   local order = audio and audio.musicOrder
   local name = order and order[(musicId or 0) + 1]
+  local pending = nil
   if name and name ~= "Music_Nothing" and audio.songs and audio.songs[name] then
-    self.pendingMusic = { name = name, left = control * 7 }
-  else
-    self.pendingMusic = nil
+    pending = { data = data, song = name, loop = true,
+                ctx = { reason = "script_fadeout" } }
   end
-end
-
--- The fade's tail, ticked from World:step: the queued song starts the frame the
--- ramp reaches the bottom, which is what makes a `musicfadeout` read as one
--- cross-fade rather than as a cut.
-function World:updateMusicFade()
-  local pending = self.pendingMusic
-  if not pending then return end
-  pending.left = pending.left - 1
-  if pending.left > 0 then return end
-  self.pendingMusic = nil
-  local data = self.game and self.game.data
-  if data then
-    Music.play(data, pending.name, true, { reason = "script_fadeout" })
-  end
+  Music.fadeOut((fadeControl or 0) % 128, pending)
 end
 
 -- `checkitem` and `takeitem`, over the same Bag the PACK reads.
@@ -2906,10 +2891,18 @@ function World:giveEgg(speciesIndex, level)
   return true
 end
 
--- `landmarktotext`: the town-map name of the map the player is on, newline and
--- all (landmarks.lua keeps the cart's own two-line names).
-function World:landmarkName()
-  local id = self:currentLandmarkId()
+-- ../pokecrystal/engine/overworld/scripting.asm:1608
+-- ../pokecrystal/engine/overworld/scripting.asm:1621
+function World:landmarkName(landmark)
+  local id
+  if landmark == nil then
+    id = self:currentLandmarkId()
+  elseif type(landmark) == "string" then
+    id = landmark
+  else
+    local order = self.landmarks and self.landmarks.order
+    id = order and order[landmark + 1]
+  end
   local entry = id and self.landmarks and self.landmarks.landmarks
     and self.landmarks.landmarks[id]
   return (entry and entry.name) or nil
@@ -11322,7 +11315,6 @@ function World:stepBody()
   end
   -- ../pokecrystal/engine/overworld/events.asm:212
   MapNameSign.tick(self)
-  if self.pendingMusic then self:updateMusicFade() end
   if self.moveState then self:updateMovement() end
   -- Above the VM tick: a `waitbutton` under a `pokepic` is parked on this
   -- poll, and its resume has to run inside the same frame the press lands on.

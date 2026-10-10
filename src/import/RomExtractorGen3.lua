@@ -543,8 +543,7 @@ end
 local function maxWorkers(taskCount)
   local override = tonumber(os.getenv("POKEPORT_EXTRACT_WORKERS") or "")
   if override and override >= 1 then return math.min(taskCount, math.floor(override)) end
-  if os.getenv("HANDHELD") == "1" or os.getenv("POKEPORT_HANDHELD") == "1"
-    or os.getenv("PORTMASTER") == "1" then
+  if require("src.import.ImportGc").lowMemoryHost() then
     return math.min(taskCount, 1)
   end
   local osName = love.system and love.system.getOS and love.system.getOS() or ""
