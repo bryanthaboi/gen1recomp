@@ -127,7 +127,7 @@ return {
       { "show_text", "_OaksLabOak1ParcelThanksText" },
       { "take_item", "OAKS_PARCEL", 1 },
       { "stop_music" },
-      { "play_music", "Music_MeetRival" },
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- scripts/OaksLab.asm:517
       { "show_text", "_OaksLabRivalGrampsText" },
       { "show_object", "OAKS_LAB", "OAKSLAB_RIVAL" },
       -- OaksLabCalcRivalMovementScript: sprite map (8,11) → cell (4,7)
@@ -158,7 +158,7 @@ return {
       { "hide_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN_SLEEPY" },
       { "show_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN" },
       { "stop_music" },
-      { "play_music", "Music_MeetRival" },
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- scripts/OaksLab.asm:618
       { "move_npc_to", 1, 4, 7 },
       { "hide_object", "OAKS_LAB", "OAKSLAB_RIVAL" },
       { "play_music", "Music_OaksLab" },
@@ -347,10 +347,7 @@ return {
       table.insert(rows, { "set_flag", "EVENT_BATTLED_RIVAL_IN_OAKS_LAB" })
       table.insert(rows, { "jump_if_false", base + 6 })
       table.insert(rows, { "show_text", "_OaksLabRivalSmellYouLaterText" })
-      -- OaksLabRivalStartsExitScript: parting shot, rival exit fanfare, then
-      -- walk out past the player.  The fanfare was dropped here (#683) -- the
-      -- parcel scene above already plays Music_MeetRival on both arrival and
-      -- departure (lines 144-146), and this exit should match (#596).
+      -- scripts/OaksLab.asm:445
       table.insert(rows, { "stop_music" })
       table.insert(rows, { "play_music", "Music_MeetRival", { start = "rival" } })
       -- scripts/OaksLab.asm:448-472 sidestep out of the player's column then

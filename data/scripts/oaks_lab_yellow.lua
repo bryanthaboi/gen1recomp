@@ -68,7 +68,7 @@ return {
       { "show_text", "_OaksLabOak1ParcelThanksText" },
       { "take_item", "OAKS_PARCEL", 1 },
       { "stop_music" },
-      { "play_music", "Music_MeetRival" },
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- pokeyellow scripts/OaksLab.asm:502
       { "show_text", "_OaksLabRivalGrampsText" },
       -- callfar OaksLabPikachuMovementScript, before ShowObject (#1021)
       { "pikachu_make_way" },
@@ -105,7 +105,7 @@ return {
       { "hide_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN_SLEEPY" },
       { "show_object", "VIRIDIAN_CITY", "VIRIDIANCITY_OLD_MAN2" },
       { "stop_music" },
-      { "play_music", "Music_MeetRival" },
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- pokeyellow scripts/OaksLab.asm:605
       { "move_npc_to", RIVAL, 4, 7 },
       { "hide_object", "OAKS_LAB", "OAKSLAB_RIVAL" },
       { "play_music", "Music_OaksLab" },

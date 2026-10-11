@@ -1668,13 +1668,7 @@ end
 
 function OverworldState:handleInput()
   local input = Game.input
-
-  -- the wall-bonk SFX cooldown ticks with any held direction, step or not
-  -- (it is a port invention, not part of JoypadOverworld, so the
-  -- wWalkCounter gate below must not freeze it mid-step)
-  if self:dirHeld() then
-    self.bumpCooldown = math.max(0, (self.bumpCooldown or 0) - 1)
-  end
+  self.bumpCooldown = math.max(0, (self.bumpCooldown or 0) - 1)
 
   -- OverworldLoop (home/overworld.asm) gates ALL of JoypadOverworld on
   -- wWalkCounter == 0 ("if the player sprite has not yet completed the

@@ -86,12 +86,12 @@ function StatusBoard:draw()
   for i, label in ipairs(BOARD_LABELS) do
     local col = i <= BOARD_ROWS and 1 or 2
     local row = i - (col - 1) * BOARD_ROWS
-    Font.draw(label, BOARD_COL_X[col] * 8, (BOARD_ROW_Y + row - 1) * 8)
+    Font.draw(label, BOARD_COL_X[col] * 8, (BOARD_ROW_Y + (row - 1) * 2) * 8)
   end
   -- wTopMenuItemX equals the column PlaceString started at, so the cursor
   -- covers the blank each label leads with
   Font.drawCode(Theme.cursor, BOARD_COL_X[self.col] * 8,
-                (BOARD_ROW_Y + self.row - 1) * 8)
+                (BOARD_ROW_Y + (self.row - 1) * 2) * 8)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -116,22 +116,19 @@ local function blackboard(game)
     game.stack:pop() -- the held "Which heading" box under it
   end
   local function pick(i)
-    closeBoard()
-    game.stack:push(TextBox.new(game,
-      text[STATUS_LABELS[i][2]] or STATUS_LABELS[i][1], openBoard))
+    game.stack:push(TextBox.new(game, text[STATUS_LABELS[i][2]], function()
+      closeBoard()
+      openBoard()
+    end))
   end
   function openBoard()
-    game.stack:push(TextBox.new(game,
-      text._ViridianSchoolBlackboardText2 or "Which heading do\nyou want to read?",
+    game.stack:push(TextBox.new(game, text._ViridianSchoolBlackboardText2,
       nil, { stay = { onShown = function()
         board = board or StatusBoard.new(game, pick, closeBoard)
         game.stack:push(board)
       end } }))
   end
-  game.stack:push(TextBox.new(game,
-    text._ViridianSchoolBlackboardText1
-      or "The blackboard\ndescribes POKéMON\vSTATUS changes\vduring battles.",
-    openBoard))
+  game.stack:push(TextBox.new(game, text._ViridianSchoolBlackboardText1, openBoard))
 end
 
 -- ViridianSchoolNotebook (engine/events/hidden_events/school_notebooks.asm):

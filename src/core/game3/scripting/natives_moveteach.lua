@@ -34,6 +34,7 @@ local PARTY_SIZE = 6 -- pokefirered/include/constants/global.h:78
 local MAX_MON_MOVES = 4 -- pokefirered/include/constants/global.h:77
 -- pokefirered/include/constants/party_menu.h:62
 local PARTY_MENU_TYPE_MOVE_RELEARNER = 7
+local PARTY_NOTHING_CHOSEN = 0xFF -- pokeemerald/include/constants/party_menu.h:4
 
 MoveTeach.SPECIAL = {
   ChooseMonForMoveRelearner = SPECIAL_CHOOSE_MON_FOR_MOVE_RELEARNER,
@@ -121,8 +122,16 @@ MoveTeach.BY_NAME = {
     local function apply()
       if applied then return end
       applied = true
+      local mon, session = chosenMon(ctx)
+      if not mon then
+        -- pokeemerald/src/party_menu.c:6299
+        if require("src.core.game3.profile").family(session) == "rse" then
+          varSet(ctx, VAR_0x8004, PARTY_NOTHING_CHOSEN)
+        end
+        return
+      end
       -- pokefirered/src/party_menu.c:1201
-      varSet(ctx, VAR_0x8005, MoveLearn.countRelearnableMoves((chosenMon(ctx))))
+      varSet(ctx, VAR_0x8005, MoveLearn.countRelearnableMoves(mon))
     end
     local yielded = Natives.choosePartyMon(ctx, adapters, PARTY_MENU_TYPE_MOVE_RELEARNER)
     if not yielded then

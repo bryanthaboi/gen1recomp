@@ -499,6 +499,16 @@ local function stepTriggers(game, dir, wasFacing, tx, ty)
   end
 
   local escWarp = Collision.isEscalatorWarp and Collision.isEscalatorWarp(game, tx, ty, dir)
+  -- pokefirered/src/field_player_avatar.c:555
+  if escWarp and not Collision.canEnter(game, tx, ty, {
+    fromX = Player.cellX,
+    fromY = Player.cellY,
+    dir = dir,
+    surfing = Player.surfing or Player.underwater,
+    elevation = Player.currentElevation,
+  }) then
+    escWarp = nil
+  end
   if escWarp then
     local Warp = lazyReq("src.core.game3.warp")
     if not Warp.isBusy() then

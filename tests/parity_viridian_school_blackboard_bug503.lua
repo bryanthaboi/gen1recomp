@@ -112,9 +112,10 @@ local STATUS_KEYS = {
   "_ViridianBlackboardFrozenText",
 }
 for i, key in ipairs(STATUS_KEYS) do
-  stack = { prompt, board } -- picking pops the list AND the box under it
+  stack = { prompt, board }
   board.onPick(i)
-  eq(#stack, 1, labels[i] .. " clears the list and the prompt it sat on")
+  eq(#stack, 3, labels[i] .. " prints over the list, which stays on screen")
+  eq(stack[2], board, labels[i] .. " keeps the headings list under the blurb")
   local blurb = stack[#stack]
   check(getmetatable(blurb) == TextBox, labels[i] .. " prints a text box")
   local want = Data.text[key]:match("^[^\n\011\012]+")
@@ -122,6 +123,7 @@ for i, key in ipairs(STATUS_KEYS) do
         labels[i] .. " prints " .. key)
   check(type(blurb.onDone) == "function",
         labels[i] .. " returns to the prompt instead of dropping out (loops)")
+  table.remove(stack)
   blurb.onDone()
   local back = stack[#stack]
   check(getmetatable(back) == TextBox and back.stay ~= nil,
@@ -138,11 +140,25 @@ stack = { prompt, board }
 board.col, board.row = 2, 2
 eq(board:selection(), 5, "right column, middle row is FRZ")
 board.onPick(5)
-stack[#stack].onDone()
+table.remove(stack).onDone()
 stack[#stack].stay.onShown()
 eq(stack[#stack], board, "the same headings list comes back, not a fresh one")
 eq(board.col, 2, "the column survives the blurb (wMenuItemOffset is not recleared)")
 eq(board.row, 2, "the row survives the blurb (wCurrentMenuItem is not recleared)")
+
+-- engine/events/hidden_events/school_blackboard.asm:182
+do
+  local ys, realDraw, realBox, realCode = {}, Font.draw, Font.drawBox, Font.drawCode
+  Font.draw = function(label, _, y) ys[label:gsub("^%s+", "")] = y end
+  Font.drawBox, Font.drawCode = function() end, function() end
+  board.col, board.row = 1, 1
+  board:draw()
+  Font.draw, Font.drawBox, Font.drawCode = realDraw, realBox, realCode
+  eq(ys.SLP, 16, "SLP sits on tile row 2")
+  eq(ys.PSN, 32, "PSN is two tile rows below SLP")
+  eq(ys.PAR, 48, "PAR is two tile rows below PSN")
+  eq(ys.QUIT, 48, "QUIT shares PAR's row")
+end
 
 -- QUIT and B share .exitBlackboard: both close the list and the prompt
 stack = { prompt, board }
