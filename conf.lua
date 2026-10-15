@@ -61,7 +61,12 @@ function love.conf(t)
     t.window.minwidth = 480
     t.window.minheight = 360
   end
-  t.version = love._os == "iOS" and "12.0" or "11.5"
+  local macMetal = love._os == "OS X" and love.getVersion() >= 12
+  t.version = (love._os == "iOS" or macMetal) and "12.0" or "11.5"
+  if macMetal then
+    -- Sequoia 15.8.2 can leave the OpenGL window black while frames still render.
+    t.graphics.renderers = { "metal" }
+  end
   -- Driver vsync stays on everywhere (including KMSDRM handhelds) so
   -- PresentSync can probe cadence and pace via the panel.  Turning it off
   -- here bypassed that stack and forced the FrameCap 1 ms polling loop.
