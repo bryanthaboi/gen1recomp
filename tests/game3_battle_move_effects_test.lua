@@ -428,6 +428,37 @@ do
   check(#o10._anim.hits == 1 and st10.player.semiInvulnerable == nil, "Fly turn 2 strikes and lands")
 end
 
+print("=== paralysis cancels a semi-invulnerable strike turn ===")
+do
+  -- turn 1 charges; then the user is paralyzed on the strike turn (roll 0,3 -> 0)
+  local function paralyzedStrike(moveId, kind)
+    local st, ad = battle({ moves = { moveId } }, { hp = 999, maxHp = 999, moves = { 33 } })
+    use(st, ad, st.player, moveId)
+    check(st.player.semiInvulnerable == kind and st.player.twoTurnMove ~= nil,
+      kind .. " charge turn sets semi state and two-turn lock")
+    st.player.status = "PAR"
+    st.rng = mkRng({ ["0,3"] = 0 })
+    local txt = use(st, ad, st.player, moveId)
+    return st, ad, txt
+  end
+
+  local st, ad, txt = paralyzedStrike(91, "UNDERGROUND")
+  check(has(txt, "is paralyzed"), "Dig strike turn is blocked by paralysis")
+  check(st.player.semiInvulnerable == nil and not st.player.underground, "paralysis clears Dig semi-invulnerability")
+  check(st.player.twoTurnMove == nil, "paralysis clears Dig two-turn lock")
+  local _, hitOut = use(st, ad, st.enemy, 33)
+  check(#hitOut._anim.hits == 1 and not has(table.concat(hitOut, " || "), "missed"),
+    "enemy hit lands on a paralyzed Dig user")
+
+  local st2, ad2, txt2 = paralyzedStrike(19, "ON_AIR")
+  check(has(txt2, "is paralyzed"), "Fly strike turn is blocked by paralysis")
+  check(st2.player.semiInvulnerable == nil and not st2.player.onAir, "paralysis clears Fly semi-invulnerability")
+  check(st2.player.twoTurnMove == nil, "paralysis clears Fly two-turn lock")
+  local _, hitOut2 = use(st2, ad2, st2.enemy, 33)
+  check(#hitOut2._anim.hits == 1 and not has(table.concat(hitOut2, " || "), "missed"),
+    "enemy hit lands on a paralyzed Fly user")
+end
+
 print("=== MINIMIZE / STOMP ===")
 do
   local st, ad = battle({ moves = { 23 } }, { moves = { 107 }, hp = 999, maxHp = 999 }, { rng = { ["0,99"] = 99 } })
