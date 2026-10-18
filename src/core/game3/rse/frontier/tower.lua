@@ -547,6 +547,33 @@ local function textPlain(ir)
   return TextIR.toPlain(ir, {})
 end
 
+local function logLine(adapters, msg)
+  if adapters and adapters.log then adapters.log(msg) else print(msg) end
+end
+
+-- Frontier battles are recorded for the Frontier Pass (pokeemerald/src/recorded_battle.c).
+-- Returns nil when the recorder cannot start, and the battle then runs unrecorded.
+local function beginFacilityRecording(adapters, sess, kind, facility, battleOpts, foe)
+  local okRB, RB = pcall(require, "src.core.game3.rse.recorded_battle")
+  if not (okRB and RB and RB.beginRecording) then
+    logLine(adapters, "[game3] frontier battle not recorded (" .. tostring(RB) .. ")")
+    return nil
+  end
+  local PartyView = require("src.core.game3.battle.party_view")
+  local party = PartyView.fromSession(sess.party, sess.move_overlay)
+  local okR, rec = pcall(RB.beginRecording, sess, {
+    kind = kind,
+    facility = facility,
+    lvlMode = Util.frontier(sess).lvlMode,
+    party = party,
+    foe = foe,
+    startOpts = battleOpts,
+  })
+  if okR then return rec end
+  logLine(adapters, "[game3] frontier battle not recorded (" .. tostring(rec) .. ")")
+  return nil
+end
+
 -- pokeemerald/src/battle_tower.c:2007
 function Tower.startBattle(ctx, adapters, sess, kind, opts)
   local N = require("src.core.game3.scripting.natives")
@@ -587,6 +614,11 @@ function Tower.startBattle(ctx, adapters, sess, kind, opts)
   end
   battleOpts[kind] = true
   sess.battleOutcome = 0
+  local rec = beginFacilityRecording(adapters, sess, kind, facility, battleOpts, foe)
+  if rec then
+    battleOpts.rng = rec.rng.fn
+    battleOpts.recorder = rec
+  end
   return N.yieldHost(ctx, adapters, function(done)
     battleOpts.done = function(result)
       local code = N.outcome_to_code(result or "win")
@@ -602,6 +634,10 @@ function Tower.startBattle(ctx, adapters, sess, kind, opts)
         playerNickname = st and st.player and st.player.mon and (st.player.mon.nickname or st.player.mon.name),
       }
       Util.onSpecialBattleEnd(sess, "frontier")
+      if rec then
+        local okF, errF = pcall(rec.finish, rec, sess, result)
+        if not okF then logLine(adapters, "[game3] frontier recording not saved (" .. tostring(errF) .. ")") end
+      end
       done()
       local Space = package.loaded["src.core.game3.scripting.space"]
       if Space and Space.vm then Space.vm:tick() end

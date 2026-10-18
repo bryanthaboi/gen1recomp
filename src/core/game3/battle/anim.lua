@@ -498,7 +498,8 @@ end
 --- Tween helper that raises Anim.busy via _introTweening (in-flight only).
 function Anim.tweenStage(frames, onStep, onComplete)
   if Anim._headless then
-    if onStep then onStep(1) end
+    -- the final step, with the same {frames} shape a live tween task passes (task.lua Task.tween)
+    if onStep then onStep(1, { frames = math.max(1, math.ceil(tonumber(frames) or 1)) }) end
     if onComplete then onComplete() end
     return nil
   end

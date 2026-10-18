@@ -394,6 +394,8 @@ end
 
 --- Start owned game3 battle (async). opts.done(result) when finished.
 -- opts.earlyRival / opts.rivalFlags / opts.noWhiteout: Oaks Lab tutorial loss.
+-- opts.recordedParty: Frontier Pass playback party; no writeback, rewards, TV or streak state.
+-- opts.recorder / opts.replay: rse/recorded_battle hooks; replay also keeps the field in place.
 function BattleBridge.start(mod, game, foe, opts)
   opts = opts or {}
   local Runtime = require("src.core.game3.runtime")
@@ -410,9 +412,14 @@ function BattleBridge.start(mod, game, foe, opts)
   end
 
   local linkParty = opts.link and type(opts.linkParty) == "table" and opts.linkParty or nil
+  -- Recorded (Frontier Pass) battles run on the stored party copy, never on the live session.
+  local recordedParty = (not opts.link) and type(opts.recordedParty) == "table"
+    and require("src.core.game3.rse.recorded_battle").plain(opts.recordedParty) or nil
   local battleParty, remap
   if linkParty then
     battleParty, remap = PartyView.fromSession(linkParty, nil)
+  elseif recordedParty then
+    battleParty, remap = PartyView.fromSession(recordedParty, nil)
   else
     battleParty, remap = PartyView.fromSession(session.party, session.move_overlay)
   end
@@ -424,10 +431,10 @@ function BattleBridge.start(mod, game, foe, opts)
     foe, foeHalf = BattleBridge.twoOpponentFoe(foe, opts.trainerIdB)
   end
   local isDouble = (not opts.wild) and (opts.double or foeHalf or (foe and foe.doubleBattle)) and true or false
-  if isDouble and Party.monsStateToDoubles(linkParty or session.party) ~= Party.PLAYER_HAS_TWO_USABLE_MONS then
+  if isDouble and Party.monsStateToDoubles(linkParty or recordedParty or session.party) ~= Party.PLAYER_HAS_TWO_USABLE_MONS then
     return nil, "need two mons"
   end
-  if not opts.link and require("src.core.game3.capabilities").gate(session, "match_call") then
+  if not opts.link and not recordedParty and require("src.core.game3.capabilities").gate(session, "match_call") then
     local Rematch = require("src.core.game3.rse.rematch")
     -- pokeemerald/src/battle_setup.c:402
     if opts.wild then Rematch.onWildBattleStart(session) else Rematch.onTrainerBattleStart(session) end
@@ -437,26 +444,31 @@ function BattleBridge.start(mod, game, foe, opts)
   BattleBridge._battleParty = battleParty
 
   local nativeTrainerPolicy = require("src.core.game3.battle.profile").get(session).trainerParty
-  if not nativeTrainerPolicy then BattleBridge.applyLeagueFriendship(session, battleParty, foe, opts) end
+  -- pokefirered/src/battle_main.c:713 writes session.party, so playback skips it
+  if not nativeTrainerPolicy and not recordedParty then
+    BattleBridge.applyLeagueFriendship(session, battleParty, foe, opts)
+  end
 
   local save = game and game.save
   local done = opts.done
 
-  if not opts.wild and ModRuntime.wantsHook("trainer.party") then
+  if not opts.wild and not recordedParty and ModRuntime.wantsHook("trainer.party") then
     foe = hooked_trainer_party(foe, opts.trainerId or (foe and foe.trainerId))
   end
+  -- playback skips the mod hook, so the recording keeps the foe after it ran
+  if opts.recorder and opts.recorder.setFoe then opts.recorder:setFoe(foe) end
 
   local function finish(result)
     -- pokefirered/src/battle_main.c:196
     local okN, Natives = pcall(require, "src.core.game3.scripting.natives")
-    if okN and Natives and Natives.outcome_to_code then
+    if okN and Natives and Natives.outcome_to_code and not recordedParty then
       session.battleOutcome = Natives.outcome_to_code(result or "win")
     end
-    if not linkParty then writeback(session, battleParty, remap, result, save, opts) end
-    if require("src.core.game3.profile").family(session) == "rse" then
+    if not linkParty and not recordedParty then writeback(session, battleParty, remap, result, save, opts) end
+    if require("src.core.game3.profile").family(session) == "rse" and not recordedParty then
       BattleBridge.tvBattleEnd(session, result)
     end
-    if opts.roamer or (foe and foe.roamer) then
+    if (opts.roamer or (foe and foe.roamer)) and not recordedParty then
       local okR, Roamer = pcall(require, "src.core.game3.roamer")
       if okR and Roamer and Roamer.onBattleEnd then
         local st = package.loaded["src.core.game3.battle"] and package.loaded["src.core.game3.battle"].getState and package.loaded["src.core.game3.battle"].getState()
@@ -467,7 +479,7 @@ function BattleBridge.start(mod, game, foe, opts)
     -- pokeemerald/src/overworld.c:2149
     require("src.core.game3.ambient_cry").resetTask()
     -- pokefirered/src/battle_main.c:3861
-    if ModRuntime.wants("battle.ended") then
+    if not recordedParty and ModRuntime.wants("battle.ended") then
       local B = package.loaded["src.core.game3.battle"]
       ModRuntime.emit("battle.ended", {
         battle = B and B.getState and B.getState() or nil, result = result or "win",
@@ -493,8 +505,9 @@ function BattleBridge.start(mod, game, foe, opts)
     local FieldFx = package.loaded["src.core.game3.field_effects"]
     if FieldFx and FieldFx.resetSurfBob then FieldFx.resetSurfBob() end
     -- pokefirered/src/battle_setup.c:432
+    -- Playback runs from the Frontier Pass, which reshows itself through done; the field stays put.
     local okS, Space = pcall(require, "src.core.game3.scripting.space")
-    if okS and Space and Space.returnToField then
+    if okS and Space and Space.returnToField and not opts.replay then
       pcall(Space.returnToField)
     end
     if done then done(result or "win") end
@@ -567,6 +580,9 @@ function BattleBridge.start(mod, game, foe, opts)
     headless = opts.headless,
     fade = opts.fade,
     rng = opts.rng,
+    -- pokeemerald/src/recorded_battle.c: record each turn and replay it from the stored copy
+    recorder = opts.recorder,
+    replay = opts.replay,
     mapKind = mapKind,
     mapType = mapType,
     mapBehavior = mapBehavior,
@@ -593,15 +609,15 @@ function BattleBridge.start(mod, game, foe, opts)
     onDone = function(result)
       finish(result)
     end,
-    onResultsReady = function(result, st)
+    onResultsReady = not recordedParty and function(result, st)
       BattleBridge.tvBattleEnd(session, result, st)
-    end,
-    onPartyCreated = nativeTrainerPolicy and function()
+    end or nil,
+    onPartyCreated = (nativeTrainerPolicy and not recordedParty) and function()
       BattleBridge.applyLeagueFriendship(session, battleParty, foe, opts)
     end or nil,
     onStarted = function()
       local profile = require("src.core.game3.profile").forSession(session)
-      if profile.id == "ruby" or profile.id == "sapphire" then
+      if (profile.id == "ruby" or profile.id == "sapphire") and not recordedParty then
         local RsStats = require("src.core.game3.rse.battle_stats_rs")
         if RsStats.firstBattle(startOpts) then
           require("src.core.game3.encounters").resetRateModifiers()
@@ -611,7 +627,7 @@ function BattleBridge.start(mod, game, foe, opts)
         end
       end
       -- pokefirered/src/battle_main.c:612
-      if ModRuntime.wants("battle.started") then
+      if not recordedParty and ModRuntime.wants("battle.started") then
         ModRuntime.emit("battle.started", battle_payload(Battle, opts, foe, isDouble))
       end
     end,
@@ -687,7 +703,7 @@ function BattleBridge.start(mod, game, foe, opts)
   end
 
   local profile = require("src.core.game3.profile").forSession(session)
-  if profile.id == "ruby" or profile.id == "sapphire" then
+  if (profile.id == "ruby" or profile.id == "sapphire") and not recordedParty then
     require("src.core.game3.rse.battle_stats_rs").onAccepted(session, startOpts)
   end
   if opts.headless or opts.fade == false then

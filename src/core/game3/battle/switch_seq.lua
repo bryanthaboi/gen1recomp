@@ -722,7 +722,7 @@ local function run_step(step)
     s.ball.y = sy
     wait_busy()
     Anim.tweenStage(25, function(u, t)
-      local f = t.frames or (u * 25)
+      local f = u * 25
       local tx, ty = pcx, pcy + 24
       s.ball.x = sx + (tx - sx) * u
       s.ball.y = sy + (ty - sy) * u + (-30 * 4 * u * (1 - u))

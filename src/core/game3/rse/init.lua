@@ -82,6 +82,7 @@ Rse.MODULES = {
   eventIslands = "src.core.game3.rse.event_islands",
   tv = "src.core.game3.rse.tv",
   bag = "src.ui.game3.rse.bag_menu",
+  recordedBattle = "src.core.game3.rse.recorded_battle",
 }
 
 function Rse.system(name, what, logger)

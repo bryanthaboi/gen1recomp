@@ -232,7 +232,15 @@ function Special.batonPass(ctx)
   if #candidates == 0 then return H.sayFail(ctx) end
   H.attackAnim(ctx)
   local pick
-  if type(st.batonPassChooser) == "function" then
+  if st.replay and user.side == "player" then
+    -- recorded battles answer the player's pick from the same FIFO as faint replacements
+    pick = st.replay:nextReplace(user.id)
+    if not pick then
+      -- the recording has no pick here, so the playback has diverged; it ends rather than guessing
+      require("src.core.game3.battle").replayMiss()
+      return
+    end
+  elseif type(st.batonPassChooser) == "function" then
     local ok, v = pcall(st.batonPassChooser, user.side, candidates)
     if ok then pick = tonumber(v) end
   elseif st.link and st.interactiveChoices and coroutine.running() then
@@ -249,6 +257,7 @@ function Special.batonPass(ctx)
   for _, c in ipairs(candidates) do
     if c == pick then slot = pick end
   end
+  if st.recorder and user.side == "player" then st.recorder:onReplace(user.id, slot) end
   local nb = engine().performSwitch(st, ad, st.double and user.id or user.side, slot, { batonPass = true, reason = "baton_pass" })
   if nb then
     local M = H.move(ctx)

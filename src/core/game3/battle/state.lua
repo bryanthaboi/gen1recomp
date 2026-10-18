@@ -352,6 +352,8 @@ function State.new(opts)
     result = nil,
     rng = opts.rng or require("src.core.game3.battle.link_guard").source("state.rng",
       require("src.core.game3.rng").compat),
+    recorder = opts.recorder,
+    replay = opts.replay,
     fleeAttempts = 0,
     log = {},
   }

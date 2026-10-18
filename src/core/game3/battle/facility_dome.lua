@@ -9,7 +9,8 @@ end
 
 function Fac:start(st)
   self.lastMove = {}
-  local sess = st.session
+  -- playback leaves the live Dome record alone
+  local sess = (not st.replay) and st.session or nil
   if sess then sess.frontierDomeLastMoves = { player = 0, opponent = 0 } end
 end
 
@@ -25,7 +26,7 @@ function Fac:resolveMove(st, ad, act, out, userRef, targetRef)
   local Engine = require("src.core.game3.battle.engine")
   local id = tonumber(act.battler) or ((act.user == "enemy" or (type(act.user) == "table" and act.user.side == "enemy")) and 1 or 0)
   local user = State.battler(st, id)
-  local sess = st.session
+  local sess = (not st.replay) and st.session or nil
   if sess and user and user.mon and (tonumber(user.mon.hp) or 0) ~= 0 then
     local mv = num(user.expLockedMove or act.move)
     sess.frontierDomeLastMoves = sess.frontierDomeLastMoves or {}
@@ -44,7 +45,7 @@ end
 -- pokeemerald/data/battle_scripts_1.s:2958
 function Fac:finalResult(st, result)
   if result == "lose" and allFainted(st.foeParty) and allFainted(st.playerParty) then result = "draw" end
-  local sess = st.session
+  local sess = (not st.replay) and st.session or nil
   if sess then
     sess.frontierDomeLastMoves = sess.frontierDomeLastMoves or {}
     sess.frontierDomeLastMoves.outcome = result
