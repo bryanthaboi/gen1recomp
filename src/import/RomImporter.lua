@@ -359,13 +359,15 @@ local function streamRequiredImport(manifest, importId, source)
       return
     end
 
-    local MD5 = require("src.mods.StreamMD5")
-    local md5 = MD5.new()
+    -- A mod-verified import is never compared against a digest, so skip the
+    -- pure-Lua MD5 (minutes over a multi-GiB image).
+    local md5 = not RequiredImports.modVerified(spec)
+      and require("src.mods.StreamMD5").new() or nil
     local total, chunkBytes = 0, 4 * 1024 * 1024
     while true do
       local chunk = input:read(chunkBytes)
       if not chunk or #chunk == 0 then break end
-      md5:update(chunk)
+      if md5 then md5:update(chunk) end
       local wrote, writeErr = output:write(chunk)
       if wrote == false or wrote == nil then
         resultDetail = "could not copy import: "
@@ -385,7 +387,7 @@ local function streamRequiredImport(manifest, importId, source)
     end
     local storedSizeErr = RequiredImports.sizeError(spec, total, true)
     if storedSizeErr then resultDetail = storedSizeErr; return end
-    local digest = md5:final()
+    local digest = md5 and md5:final() or nil
 
     -- acceptStoredDigest uses the normal engine path/receipt rules, so
     -- restore the caller's prefix before handing control to it.
@@ -1604,7 +1606,18 @@ end
 -- Generic user-supplied dependency picker. Keep the native prompt entirely
 -- engine-owned: manifest labels are untrusted and must never enter shell
 -- command templates. The LÖVE modal already shows the specific import name.
-local function chooseRequiredFile()
+-- Declared extensions are validated by Manifest as "." plus alphanumerics, so
+-- they are safe inside the dialog filter.
+local function windowsFilter(spec)
+  local exts = spec and spec.extensions
+  if not exts then return "All files (*.*)|*.*" end
+  local globs = {}
+  for i, ext in ipairs(exts) do globs[i] = "*" .. ext end
+  local list = table.concat(globs, ";")
+  return list .. "|" .. list .. "|All files (*.*)|*.*"
+end
+
+local function chooseRequiredFile(spec)
   local prompt = shellSafe(Strings("Choose required mod file"))
   local platform = love.system.getOS()
   if platform == "OS X" then
@@ -1615,7 +1628,7 @@ local function chooseRequiredFile()
     local script = table.concat({
       HostPicker.WIN_OPEN_DIALOG,
       "$d.Title='" .. prompt .. "';",
-      "$d.Filter='All files (*.*)|*.*';",
+      "$d.Filter='" .. windowsFilter(spec) .. "';",
       -- Required imports can be multi-gigabyte optical-disc images. Do NOT
       -- stage them through %TEMP%: that doubles free-space requirements and a
       -- failed Copy-Item can leave a plausible-looking truncated temp file.
@@ -3357,7 +3370,8 @@ function RomImporter:chooseRequiredImport(modId, importId)
         local info = fs.getInfo(path, "file")
         local RequiredImports = require("src.mods.RequiredImports")
         local sizeErr = info
-          and RequiredImports.sizeError(spec, info.size, false)
+          and (RequiredImports.extensionError(spec, name)
+            or RequiredImports.sizeError(spec, info.size, false))
         if info and not sizeErr
             and info.size > RequiredImports.LARGE_WARN_BYTES then
           return self:_importRequiredSource(modId, importId, path)
@@ -3422,8 +3436,15 @@ function RomImporter:chooseRequiredImport(modId, importId)
     return
   end
 
-  local path = chooseRequiredFile()
-  if path then self:_importRequiredSource(modId, importId, path) end
+  local path = chooseRequiredFile(spec)
+  if not path then return end
+  local extErr = require("src.mods.RequiredImports").extensionError(spec, path)
+  if extErr then
+    requiredImportNotice(self, modId, importId, extErr)
+    self.modNotice = nil
+    return
+  end
+  self:_importRequiredSource(modId, importId, path)
 end
 
 -- Which game a dropped .sav imports into: a .sav has no version signature of

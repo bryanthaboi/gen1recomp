@@ -163,10 +163,18 @@ local function parseImports(value, field, required)
     assert(not files[file], "duplicate " .. field .. " file: " .. file)
     files[file] = true
 
+    -- verify = "mod": the mod checks the content itself (for example by the
+    -- container's own index), so any dump of the right form is accepted and
+    -- the engine never hashes it. md5 then becomes optional; when present it
+    -- is still accepted as a known-good identity.
+    local verify = entry.verify
+    assert(verify == nil or verify == "mod",
+      field .. " verify must be \"mod\" when set")
     local hashes = entry.md5
     if type(hashes) == "string" then hashes = { hashes } end
-    assert(type(hashes) == "table" and #hashes > 0,
-      field .. " md5 must be a hash or non-empty array")
+    if hashes == nil and verify == "mod" then hashes = {} end
+    assert(type(hashes) == "table" and (#hashes > 0 or verify == "mod"),
+      field .. " md5 must be a hash or non-empty array (or set verify to \"mod\")")
     local accepted, seen = {}, {}
     for _, digest in ipairs(hashes) do
       assert(type(digest) == "string" and digest:match("^[%x]+$")
@@ -202,12 +210,25 @@ local function parseImports(value, field, required)
     validateSize(maxSize, "max_size")
     assert(not (size and maxSize) or size <= maxSize,
       field .. " size must not exceed max_size")
+    local extensions
+    if entry.extensions ~= nil then
+      assert(type(entry.extensions) == "table" and #entry.extensions > 0,
+        field .. " extensions must be a non-empty array")
+      extensions = {}
+      for _, ext in ipairs(entry.extensions) do
+        assert(type(ext) == "string" and ext:match("^%.[%w]+$"),
+          field .. " extensions must look like \".bin\"")
+        extensions[#extensions + 1] = ext:lower()
+      end
+    end
     out[#out + 1] = {
       id = id,
       name = scrubUtf8(name),
       description = scrubUtf8(description),
       file = file,
       md5 = accepted,
+      verify = verify,
+      extensions = extensions,
       format = format,
       size = size,
       max_size = maxSize,

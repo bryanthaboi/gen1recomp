@@ -174,6 +174,26 @@ T.eq(failedSeek, nil, "failed native rewind rejects import source")
 T.eq(fakeCloses >= 2, true,
   "failed native rewind closes probed source handles")
 
+-- A mod-verified import streams its copy without the engine's MD5.
+manifest.optional_imports = {
+  { id = "any", name = "Any dump", file = "any.cci", format = "raw",
+    verify = "mod", md5 = {} },
+}
+local StreamMD5 = require("src.mods.StreamMD5")
+local realNew = StreamMD5.new
+local md5Made = 0
+StreamMD5.new = function(...) md5Made = md5Made + 1 return realNew(...) end
+importer.requiredImportNotice = nil
+RequiredImports.LARGE_WARN_BYTES = 2
+local anyOk = importer:_importRequiredSource("stream_probe", "any", source, true)
+RequiredImports.LARGE_WARN_BYTES = oldWarn
+StreamMD5.new = realNew
+T.eq(anyOk, true, "a mod-verified import streams in without a digest")
+T.eq(md5Made, 0, "a mod-verified copy is never hashed")
+T.eq(love.filesystem.read("mods/stream_probe/baseroms/any.cci"), "abc",
+  "a mod-verified copy keeps the exact bytes")
+
+love.filesystem.remove("mods/stream_probe/baseroms/any.cci")
 love.filesystem.remove("mods/stream_probe/baseroms/source.bin")
 love.filesystem.remove("mods/stream_probe/baseroms/source.iso")
 os.remove(source)

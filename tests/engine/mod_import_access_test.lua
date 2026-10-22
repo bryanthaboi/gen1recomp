@@ -25,6 +25,12 @@ local files = {
       "md5": ["11111111111111111111111111111111"],
       "size": 4,
       "required": false
+    }, {
+      "id": "any",
+      "name": "Any dump",
+      "file": "any.cci",
+      "verify": "mod",
+      "extensions": [".cci"]
     }]
   }]],
   ["mods/import_api_probe/main.lua"] = [[
@@ -34,6 +40,8 @@ local files = {
     local oob, oobErr = mod.imports:read("disc", 15, 2)
     local missing, missingErr = mod.imports:info("optional")
     local undeclared, undeclaredErr = mod.imports:read("not_declared", 0, 1)
+    local anyInfo, anyInfoErr = mod.imports:info("any")
+    local anySlice, anySliceErr = mod.imports:read("any", 2, 3)
 
     local wrote, writeErr = mod.cache:write("extract/v1/probe.bin", "abc")
     local cached, readErr = mod.cache:read("extract/v1/probe.bin")
@@ -46,6 +54,8 @@ local files = {
       oob = oob, oobErr = oobErr,
       missing = missing, missingErr = missingErr,
       undeclared = undeclared, undeclaredErr = undeclaredErr,
+      anyInfo = anyInfo, anyInfoErr = anyInfoErr,
+      anySlice = anySlice, anySliceErr = anySliceErr,
       wrote = wrote, writeErr = writeErr,
       cached = cached, readErr = readErr,
       cacheInfo = cacheInfo,
@@ -55,6 +65,7 @@ local files = {
   ["mods/import_api_probe/baseroms/source.iso"] = "0123456789abcdef",
   ["mods/import_api_probe/baseroms/.required-import-disc.validated"] =
     "v1\n" .. digest .. "\n16\n1\n",
+  ["mods/import_api_probe/baseroms/any.cci"] = "NCSDbytes",
 }
 
 local baseFs = T.sdk.memfs(files)
@@ -92,6 +103,12 @@ T.eq(out.undeclared, nil, "undeclared import id is refused")
 T.check(type(out.undeclaredErr) == "string"
     and out.undeclaredErr:find("undeclared", 1, true),
   "undeclared import refusal is explicit")
+
+T.check(type(out.anyInfo) == "table", "a mod-verified import has info without a receipt")
+T.eq(out.anyInfo and out.anyInfo.verified, "mod", "info says the mod verifies it")
+T.eq(out.anyInfo and out.anyInfo.md5, nil, "a mod-verified import reports no md5")
+T.eq(out.info.verified, "md5", "an md5 import says the engine verified it")
+T.eq(out.anySlice, "SDb", "a mod-verified import reads like any other")
 
 T.check(out.wrote == true, "installation cache write succeeds")
 T.eq(out.cached, "abc", "installation cache read returns exact bytes")

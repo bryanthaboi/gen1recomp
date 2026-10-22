@@ -253,4 +253,78 @@ check(optionalLoader:load({}), "missing optional import does not block the mod")
 check(optionalLoader.exports.optional_rom.ran,
   "mod entry executes without its optional import")
 
+-- verify = "mod": the mod checks the content, so md5 is optional and any
+-- digest is accepted; the engine never hashes the stored file.
+local modVerified = Manifest.validate({
+  id = "any_dump", name = "Any Dump", version = "1.0.0", entry = "main.lua",
+  optional_imports = {
+    { id = "image", name = "Card image", file = "image.cci", verify = "mod",
+      extensions = { ".CCI", ".3ds" }, max_size = 64 },
+  },
+}, "mods/any_dump")
+local mvSpec = modVerified.optional_imports[1]
+eq(mvSpec.verify, "mod", "verify = mod parses")
+eq(#mvSpec.md5, 0, "a mod-verified import needs no md5")
+eq(mvSpec.extensions[1], ".cci", "extensions are lowercased")
+check(not pcall(Manifest.validate, {
+  id = "bad", name = "Bad", version = "1", entry = "main.lua",
+  optional_imports = { { id = "rom", file = "rom.bin" } },
+}), "md5 is still required without verify = mod")
+check(not pcall(Manifest.validate, {
+  id = "bad", name = "Bad", version = "1", entry = "main.lua",
+  optional_imports = { { id = "rom", file = "rom.bin", verify = "engine" } },
+}), "an unknown verify value is refused")
+check(not pcall(Manifest.validate, {
+  id = "bad", name = "Bad", version = "1", entry = "main.lua",
+  optional_imports = { { id = "rom", file = "rom.bin", md5 = DIGEST,
+    extensions = { "cci" } } },
+}), "an extension without its dot is refused")
+check(not pcall(Manifest.validate, {
+  id = "bad", name = "Bad", version = "1", entry = "main.lua",
+  optional_imports = { { id = "rom", file = "rom.bin", md5 = DIGEST,
+    extensions = { ".c'i" } } },
+}), "an extension with punctuation is refused")
+
+eq(RequiredImports.extensionError(mvSpec, "C:/dumps/Alpha Sapphire.CCI"), nil,
+  "a declared extension is accepted, case-insensitively")
+eq(RequiredImports.extensionError(mvSpec, "/home/p/as.3ds"), nil,
+  "every declared extension is accepted")
+check(RequiredImports.extensionError(mvSpec, "as.zip"):find(".zip", 1, true) ~= nil,
+  "another extension is refused and named")
+check(RequiredImports.extensionError(mvSpec, "noext") ~= nil,
+  "a name without an extension is refused")
+eq(RequiredImports.extensionError(manifest.required_imports[1], "x.zip"), nil,
+  "an import without extensions takes any name")
+
+local mvFiles = { ["mods/any_dump/baseroms/image.cci"] = "ANYBYTES" }
+local mvFs = {
+  getInfo = function(path)
+    local data = mvFiles[path]
+    if data then return { type = "file", size = #data, modtime = 1 } end
+  end,
+  read = function(path) return mvFiles[path] end,
+  write = function(path, data) mvFiles[path] = data return true end,
+  remove = function(path) mvFiles[path] = nil return true end,
+}
+local mvRows = RequiredImports.inspect(modVerified, mvFs, function()
+  error("a mod-verified import is never hashed")
+end)
+check(mvRows[1].present, "a mod-verified import is present without a digest")
+local accepted = RequiredImports.acceptStoredDigest(modVerified, "image", nil, mvFs)
+check(accepted, "a streamed mod-verified copy is accepted without a digest")
+eq(mvFiles[RequiredImports.receiptPath(modVerified, mvSpec)], nil,
+  "no md5 receipt is written for a mod-verified import")
+mvFiles["mods/any_dump/baseroms/image.cci"] = string.rep("x", 65)
+mvRows = RequiredImports.inspect(modVerified, mvFs)
+check(not mvRows[1].present, "max_size still applies to a mod-verified import")
+
+local listed = Manifest.validate({
+  id = "listed", name = "Listed", version = "1.0.0", entry = "main.lua",
+  optional_imports = {
+    { id = "image", file = "image.cci", verify = "mod", md5 = DIGEST },
+  },
+}, "mods/listed")
+check(RequiredImports.importData(listed, "image", "OTHERBYTES",
+  { hash = fakeHash }), "a listed md5 does not narrow a mod-verified import")
+
 S.finish()

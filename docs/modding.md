@@ -121,7 +121,7 @@ When a mod supports multiple games (`"games": ["gen1", "gen2"]`), a dependency c
 out of mod archives while giving every platform the same installation flow.
 Each object requires a stable `id`, a display `name`, a destination `file`
 (a filename, never a path), and one MD5 digest or an array of accepted MD5
-digests. `format` is either `"raw"` (the default) or `"n64"`. An optional
+digests (optional with `"verify": "mod"`, below). `format` is either `"raw"` (the default) or `"n64"`. An optional
 `description` gives players dump or region guidance in the import panel.
 `size` declares the exact canonical byte length; `max_size` declares a smaller
 per-import ceiling when an exact size is not appropriate. The engine hard limit
@@ -157,6 +157,37 @@ rechecks the stored import before exposing it, seeks into the engine-owned
 copy, and never gives the mod a host path or file handle. This is intended for
 large source formats whose table/index can be parsed with small reads before
 selectively reading the payloads a transform actually needs.
+
+#### Imports the mod verifies
+
+Some sources come in many valid forms: trimmed and untrimmed card images,
+revisions, other containers holding the same files. A whole-file MD5 accepts
+only one of them. Set `"verify": "mod"` on an import to make `md5` optional
+and hand the content check to the mod:
+
+```json
+{
+  "id": "card_image",
+  "name": "Game card image (decrypted)",
+  "file": "card.cci",
+  "verify": "mod",
+  "extensions": [".cci", ".3ds"],
+  "max_size": 2147483648
+}
+```
+
+The launcher still copies the file into `baseroms/` and enforces `size` /
+`max_size` and the 2 GiB limit, but never hashes it, so a multi-GiB import is
+just a copy. Any listed `md5` is ignored for such an entry. `mod.imports:info`
+reports `verified = "mod"` (otherwise `"md5"`) and no `md5`. The mod must then
+check what it reads itself, typically by parsing the container's own index and
+comparing the pieces it uses against known hashes, and fall back cleanly when
+they differ.
+
+`extensions` (any import) lists the accepted file extensions, each a dot
+plus letters or digits. The desktop picker filters by them, and a pick whose
+own name has another extension is refused. Mobile pickers that stage a copy
+without its name skip that check.
 
 MD5 here identifies a known dump because ROM databases commonly publish it;
 it is not a security or authenticity guarantee. Do not paste the SHA-1 used by

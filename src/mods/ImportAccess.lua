@@ -137,6 +137,7 @@ function ImportAccess.new(manifest, fs)
       file = spec.file,
       size = info.size,
       md5 = digestOrErr,
+      verified = RequiredImports.modVerified(spec) and "mod" or "md5",
       required = spec.required ~= false,
     }
   end

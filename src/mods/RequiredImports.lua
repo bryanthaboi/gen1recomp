@@ -113,11 +113,31 @@ local function hexDigest(data, hashFn)
   return love.data.encode("string", "hex", digest):lower()
 end
 
+local function modVerified(spec)
+  return spec ~= nil and spec.verify == "mod"
+end
+RequiredImports.modVerified = modVerified
+
 local function accepts(spec, digest)
+  if modVerified(spec) then return true end
   for _, wanted in ipairs((spec and spec.md5) or {}) do
     if wanted == digest then return true end
   end
   return false
+end
+
+-- A picked file's own name, when the platform still knows it, must end in one
+-- of the declared extensions. Staged mobile copies have lost the name, so the
+-- callers check only names the player chose.
+function RequiredImports.extensionError(spec, name)
+  if not (spec and spec.extensions and type(name) == "string") then return nil end
+  local base = name:match("([^/\\]+)$") or name
+  local ext = (base:match("(%.[^%.]+)$") or ""):lower()
+  for _, wanted in ipairs(spec.extensions) do
+    if wanted == ext then return nil end
+  end
+  return ("wrong file type (expected %s, got %s)")
+    :format(table.concat(spec.extensions, ", "), ext ~= "" and ext or "no extension")
 end
 
 local function specById(manifest, importId)
@@ -217,6 +237,22 @@ function RequiredImports.acceptStoredDigest(manifest, importId, digest, fs)
   fs = fs or (love and love.filesystem)
   local spec = specById(manifest, importId)
   if not spec then return nil, "unknown required import: " .. tostring(importId) end
+  if modVerified(spec) then
+    local path = RequiredImports.path(manifest, spec)
+    local info = fs and fs.getInfo and fs.getInfo(path, "file") or nil
+    if not info then return nil, "copied import is missing" end
+    local sizeErr = RequiredImports.sizeError(spec, info.size, true)
+    if sizeErr then return nil, sizeErr end
+    local savedPrefix = CacheFs.prefix
+    if love and fs == love.filesystem then
+      CacheFs.prefix = ""
+      CacheFs.remove(removedMarker(manifest, spec))
+      CacheFs.prefix = savedPrefix
+    elseif fs and fs.remove then
+      fs.remove(removedMarker(manifest, spec))
+    end
+    return true, nil
+  end
   digest = tostring(digest or ""):lower()
   if not accepts(spec, digest) then
     return nil, ("MD5 mismatch (got %s)"):format(digest ~= "" and digest or "unavailable")
@@ -285,6 +321,8 @@ function RequiredImports.validateStored(manifest, spec, fs, hashFn)
     removeReceipt(manifest, spec, fs)
     return nil, sizeErr
   end
+  -- The mod checks a mod-verified import's content; the engine only owns it.
+  if modVerified(spec) then return true, nil, true end
   local cached = cachedDigest(manifest, spec, fs, info)
   if cached then return true, cached, true end
   removeReceipt(manifest, spec, fs)
