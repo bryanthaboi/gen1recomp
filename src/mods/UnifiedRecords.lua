@@ -138,7 +138,7 @@ end
 local function writeId(id, kind, generation, data, original, native)
   if type(id) ~= "string" or id == "" then error(kind .. " must be a string ID", 0) end
   local reserved = generation == 2 and ({
-    species = { growthRates = true, tmhmMoves = true },
+    species = { growthRates = true, tmhmMoves = true, tutorMoves = true },
     move = { generation = true, source = true },
     item = { generation = true, source = true, pockets = true },
   })[kind]

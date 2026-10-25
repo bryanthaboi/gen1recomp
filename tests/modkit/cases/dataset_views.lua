@@ -67,6 +67,7 @@ end
 out.steel = gold.content.type_chart:has("STEEL")
 out.metadataHidden = not gold.content.pokemon:has("growthRates")
   and not gold.content.pokemon:has("tmhmMoves")
+  and not gold.content.pokemon:has("tutorMoves")
   and not gold.content.moves:has("generation")
   and not gold.content.moves:has("source")
   and not gold.content.items:has("generation")

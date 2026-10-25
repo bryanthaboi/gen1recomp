@@ -287,7 +287,7 @@ for name, id in pairs({ pokemon = "MEW", moves = "POUND", items = "POTION",
   end
   local found = false
   for key, value in content[name]:each() do
-    assert(key ~= "growthRates" and key ~= "tmhmMoves" and key ~= "generation" and key ~= "source")
+    assert(key ~= "growthRates" and key ~= "tmhmMoves" and key ~= "tutorMoves" and key ~= "generation" and key ~= "source")
     if key == id then
       found = true; value.portableWrite = true
       if name == "pokemon" then value.baseStats.attack = 2 end

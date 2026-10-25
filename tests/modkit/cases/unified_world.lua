@@ -649,9 +649,9 @@ for generation = 1, 3 do
 end
 
 local native = { species = "MEW", hp = 20, level = 5, stats = { hp = 30 }, moves = {} }
-for _, id in ipairs({ "growthRates", "tmhmMoves" }) do
+for _, id in ipairs({ "growthRates", "tmhmMoves", "tutorMoves" }) do
   local ok, err = Records.applyMon(native, { species = id, hp = 1 }, 2,
-    { pokemon = { MEW = {}, growthRates = {}, tmhmMoves = {} } }, "gold")
+    { pokemon = { MEW = {}, growthRates = {}, tmhmMoves = {}, tutorMoves = {} } }, "gold")
   rejected(ok, err, nil, "reserved Pokemon metadata " .. id)
   T.eq(native.species, "MEW", "reserved species rejection preserves the native ID")
   T.eq(native.hp, 20, "reserved species rejection is atomic")

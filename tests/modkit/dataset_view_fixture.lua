@@ -62,6 +62,8 @@ local function defaults(version)
   if generation == 2 then
     pokemon.growthRates = {}
     pokemon.tmhmMoves = {}
+    -- Crystal's extractor also writes the move tutor list beside species rows.
+    pokemon.tutorMoves = { "FLAMETHROWER", "THUNDERBOLT", "ICE_BEAM" }
     moves.generation, moves.source = 2, "fixture moves"
     items.generation, items.source, items.pockets = 2, "fixture items", {}
     for index, id in ipairs(CONTINUATIONS) do

@@ -845,7 +845,7 @@ local function recordMapExcept(...)
 end
 
 local pokemonGen2BaseAt, pokemonGen2BaseIds, pokemonGen2ReservedIds =
-  recordMapExcept("growthRates", "tmhmMoves")
+  recordMapExcept("growthRates", "tmhmMoves", "tutorMoves")
 local movesGen2BaseAt, movesGen2BaseIds, movesGen2ReservedIds =
   recordMapExcept("generation", "source")
 local itemsGen2BaseAt, itemsGen2BaseIds, itemsGen2ReservedIds =
