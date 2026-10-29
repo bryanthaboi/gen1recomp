@@ -80,6 +80,13 @@ end
 
 -- src/heal_location.c:30
 local function healIdFor(w)
+  local HealLocations = require("src.core.game3.heal_locations")
+  if HealLocations.model() == "heal_row" then
+    for id, loc in pairs(HealLocations._baked or {}) do
+      if loc.map == w.map and loc.x == tonumber(w.x) and loc.y == tonumber(w.y) then return id end
+    end
+    return false
+  end
   local Field = require("src.core.game3.field")
   if not Field.flyDestinationsMounted() then return nil end
   for _, dest in pairs(Field._flyBaked or {}) do

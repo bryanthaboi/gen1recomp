@@ -515,11 +515,42 @@ local ROWS = {
   { label = Strings.source("BACK"), cancel = true },
 }
 
--- The cart's screen is one full-height textbox with every row on it.  This one
--- carries four more, so it shows a window of rows and scrolls: labels start at
--- (2,2) and step two rows, exactly as _Option lays them, and the window moves
--- only when the cursor would leave it.
-local VISIBLE_ROWS = 7
+-- engine/menus/options_menu.asm:24
+local FIRST_LINE, LAST_LINE, ARROW_LINE = 2, 15, 16
+
+local function hasValue(row)
+  return (row.frame or row.text or row.values
+    or type(row.value) == "function") and true or false
+end
+
+local function spacedView(rows)
+  for _, row in ipairs(rows) do
+    if not row.cancel and not hasValue(row) then return true end
+  end
+  return false
+end
+
+local function pitch(row, spaced)
+  if spaced and hasValue(row) then return 3 end
+  return 2
+end
+
+local function lastShown(rows, spaced, scroll)
+  local y, last = FIRST_LINE, scroll
+  for i = scroll + 1, #rows do
+    local row = rows[i]
+    if y + (hasValue(row) and 1 or 0) > LAST_LINE then break end
+    last = i
+    y = y + pitch(row, spaced)
+  end
+  return last
+end
+
+local function fit(text, col, hot, key)
+  local room = 19 - col
+  if hot then return Marquee.scroll(text, room, key) end
+  return Marquee.clip(text, room)
+end
 
 -- The same grouping the Gen 1 screen uses (src/ui/OptionsMenu.lua GROUPS),
 -- with Gold's own rows in it: FRAME is a graphics setting here and SOUND is
@@ -543,7 +574,7 @@ local GROUPS = {
 }
 
 local ORDER = {
-  "group.speed", "group.video", "group.graphics", "group.audio",
+  "group.speed", "controls", "group.video", "group.graphics", "group.audio",
   "performance", "group.battle", "group.extras",
 }
 
@@ -707,15 +738,36 @@ function OptionsMenu:visible()
   return self.view or self.rows
 end
 
+function OptionsMenu:layout(scroll)
+  local rows = self:visible()
+  local spaced = spacedView(rows)
+  scroll = scroll or self.scroll
+  local last = lastShown(rows, spaced, scroll)
+  local out, y = {}, FIRST_LINE
+  for i = scroll + 1, last do
+    local row = rows[i]
+    out[#out + 1] = { index = i, row = row, labelY = y,
+                      valueY = hasValue(row) and y + 1 or nil }
+    y = y + pitch(row, spaced)
+  end
+  return out, last < #rows
+end
+
 function OptionsMenu:ensureVisible()
   local rows = self:visible()
+  local spaced = spacedView(rows)
+  local floor = #rows > 0 and #rows - 1 or 0
+  while floor > 0 and lastShown(rows, spaced, floor - 1) >= #rows do
+    floor = floor - 1
+  end
   if self.index <= self.scroll then
     self.scroll = self.index - 1
-  elseif self.index > self.scroll + VISIBLE_ROWS then
-    self.scroll = self.index - VISIBLE_ROWS
   end
-  self.scroll = math.max(0,
-    math.min(self.scroll, math.max(0, #rows - VISIBLE_ROWS)))
+  while self.scroll < self.index - 1
+      and lastShown(rows, spaced, self.scroll) < self.index do
+    self.scroll = self.scroll + 1
+  end
+  self.scroll = math.max(0, math.min(self.scroll, floor))
 end
 
 function OptionsMenu:row()
@@ -853,45 +905,43 @@ function OptionsMenu:drawPanel()
   -- 18 prints over the border: 17 characters from the label's column 2,
   -- 8 from the value's column 11.  Anything longer scrolls under the cursor.
   local rows = self:visible()
-  for slot = 1, math.min(VISIBLE_ROWS, #rows) do
-    local i = slot + self.scroll
+  local spaced = spacedView(rows)
+  local last = lastShown(rows, spaced, self.scroll)
+  local more = last < #rows
+  local cursorY
+  local labelY = FIRST_LINE
+  for i = self.scroll + 1, last do
     local row = rows[i]
-    if row then
-      local labelY = 2 + (slot - 1) * 2
-      local hot = i == self.index
-      local key = tostring(row.id or row.label)
-      local function fit(text, col)
-        local room = 19 - col
-        if hot then return Marquee.scroll(text, room, key) end
-        return Marquee.clip(text, room)
-      end
-      Chrome.print(fit(Strings(row.label), 2), 2, labelY)
-      if row.frame then
-        Chrome.print(Strings(":TYPE"), 10, labelY + 1)
-        Chrome.print(tostring(self.options.frame or 1), 16, labelY + 1)
-      elseif row.text then
-        Chrome.print(":", 10, labelY + 1)
-        Chrome.print(fit(row.text(self.options), 11), 11, labelY + 1)
-      elseif row.values then
-        Chrome.print(":", 10, labelY + 1)
-        local value = self.options[row.key]
-        local text = row.display and Strings(row.display[value]) or tostring(value)
-        Chrome.print(fit(text, 11), 11, labelY + 1)
-      elseif type(row.value) == "function" then
-        -- the Gen 1 row's value reader (src/ui/OptionRows.lua:4), so a mod row
-        -- shows its setting here instead of drawing a bare label
-        local ok, text = pcall(row.value, self.game)
-        Chrome.print(":", 10, labelY + 1)
-        Chrome.print(fit(ok and tostring(text) or "?", 11), 11, labelY + 1)
-      end
+    local hot = i == self.index
+    if hot then cursorY = labelY end
+    local key = tostring(row.id or row.label)
+    Chrome.print(fit(Strings(row.label), 2, hot, key), 2, labelY)
+    if row.frame then
+      Chrome.print(Strings(":TYPE"), 10, labelY + 1)
+      Chrome.print(tostring(self.options.frame or 1), 16, labelY + 1)
+    elseif row.text then
+      Chrome.print(":", 10, labelY + 1)
+      Chrome.print(fit(row.text(self.options), 11, hot, key), 11, labelY + 1)
+    elseif row.values then
+      Chrome.print(":", 10, labelY + 1)
+      local value = self.options[row.key]
+      local text = row.display and Strings(row.display[value]) or tostring(value)
+      Chrome.print(fit(text, 11, hot, key), 11, labelY + 1)
+    elseif type(row.value) == "function" then
+      -- the Gen 1 row's value reader (src/ui/OptionRows.lua:4), so a mod row
+      -- shows its setting here instead of drawing a bare label
+      local ok, text = pcall(row.value, self.game)
+      Chrome.print(":", 10, labelY + 1)
+      Chrome.print(fit(ok and tostring(text) or "?", 11, hot, key), 11, labelY + 1)
     end
+    labelY = labelY + pitch(row, spaced)
   end
-  Chrome.cursor(1, 2 + (self.index - self.scroll - 1) * 2)
+  if cursorY then Chrome.cursor(1, cursorY) end
   -- The ▼ hint every scrolling Gen 2 list shows when there is more below.
-  if self.scroll + VISIBLE_ROWS < #rows then
+  if more then
     local Font = require("src.render.Font")
     love.graphics.setColor(0, 0, 0, 1)
-    Font.drawCode(Chrome.DOWN_ARROW, 1 * 8, (2 + VISIBLE_ROWS * 2 - 1) * 8)
+    Font.drawCode(Chrome.DOWN_ARROW, 1 * 8, ARROW_LINE * 8)
   end
 end
 

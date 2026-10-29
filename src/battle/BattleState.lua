@@ -819,9 +819,13 @@ end
 -- leads' move sounds, the hit sounds, the rest of both parties' cries and the
 -- generic battle SFX.
 local BATTLE_SFX = {
-  "Level_Up", "Faint_Fall", "Faint_Thud", "Ball_Toss", "Ball_Poof", "Run",
-  "Caught_Mon",
+  "Faint_Fall", "Faint_Thud", "Ball_Toss", "Ball_Poof", "Run",
+  "Level_Up", "Caught_Mon",
 }
+
+local function prewarmLeadCries(Sound, data, leads)
+  for _, mon in ipairs(leads) do pcall(Sound.prewarmCry, data, mon.species) end
+end
 
 local function prewarmCries(self)
   local Sound = package.loaded["src.core.Sound"]
@@ -830,10 +834,13 @@ local function prewarmCries(self)
   local leads = {}
   for _, battler in ipairs({ self.enemy, self.player }) do
     local mon = battler and battler.mon
-    if mon and mon.species then
-      leads[#leads + 1] = mon
-      pcall(Sound.prewarmCry, data, mon.species)
-    end
+    if mon and mon.species then leads[#leads + 1] = mon end
+  end
+  local ChipAudio = package.loaded["src.core.ChipAudio"]
+  if ChipAudio and ChipAudio.prewarmFront then
+    pcall(ChipAudio.prewarmFront, prewarmLeadCries, Sound, data, leads)
+  else
+    prewarmLeadCries(Sound, data, leads)
   end
   local moves = data and data.moves
   for _, mon in ipairs(leads) do
@@ -3373,9 +3380,9 @@ local BGP_DARKEN_SGB  = { [0] = 0, 1, 3, 3 }           -- $f4
 local BGP_DARKEN_MONO = { [0] = 1, 2, 3, 3 }           -- $f9
 
 -- engine/battle/animations.asm:1090
+-- pokeyellow/engine/gfx/palettes.asm:543
 local function onSgb()
-  local m = require("src.render.PaletteFX").mode
-  return m == "gbc" or m == "gbc_inv"
+  return not require("src.render.PaletteFX").runsNotSGB()
 end
 
 -- FlashScreenLongSGB (animations.asm:1010): 12 BGP values per cycle,
@@ -3388,7 +3395,7 @@ local FLASH_LONG_SGB = {
   { [0] = 0, 0, 0, 1 }, { [0] = 0, 0, 1, 2 }, { [0] = 0, 1, 2, 3 },
 }
 
--- engine/battle/animations.asm:992
+-- engine/battle/animations.asm:994
 local FLASH_LONG_MONO = {
   { [0] = 1, 2, 3, 3 }, { [0] = 2, 3, 3, 3 }, { [0] = 3, 3, 3, 3 },
   { [0] = 2, 3, 3, 3 }, { [0] = 1, 2, 3, 3 }, { [0] = 0, 1, 2, 3 },

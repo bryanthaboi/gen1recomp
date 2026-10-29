@@ -376,12 +376,48 @@ Save.OPTIONS_KEY = "gold"
 
 local SHARED_KEYS = {
   audioMode = true,
-  touchControls = true, haptics = true, screenPos = true,
+  haptics = true, hotbar = true, screenPos = true,
   videoMode = true, faithfulRes = true, orientation = true,
   mods = true, modsByVersion = true, modsGen2 = true,
   modOptions = true, modProfiles = true, modProfilesSeeded = true,
   activeProfile = true,
 }
+
+local function hasTouchLayout(tc)
+  return type(tc) == "table"
+    and (type(tc.layouts) == "table" or type(tc.positions) == "table")
+end
+
+local function hasPositions(p)
+  return type(p) == "table" and next(p) ~= nil
+end
+
+local function ownsTouchLayout(gold)
+  if not hasTouchLayout(gold) then return false end
+  if gold.enabled == nil then return true end
+  if hasPositions(gold.positions) then return true end
+  for _, bucket in pairs(type(gold.layouts) == "table" and gold.layouts or {}) do
+    if type(bucket) == "table" and hasPositions(bucket.positions) then return true end
+  end
+  return false
+end
+
+function Save.touchControls(loaded)
+  if type(loaded) ~= "table" then return nil end
+  local flat = type(loaded.touchControls) == "table" and loaded.touchControls or nil
+  local stored = loaded[Save.OPTIONS_KEY]
+  local gold = type(stored) == "table" and type(stored.touchControls) == "table"
+    and stored.touchControls or nil
+  local switch = flat or gold or {}
+  local layout = ownsTouchLayout(gold) and gold or flat or {}
+  return {
+    enabled = switch.enabled,
+    skin = switch.skin,
+    layouts = layout.layouts,
+    positions = layout.positions,
+    scale = layout.scale,
+  }
+end
 
 function Save.loadOptions(fs)
   local options = Save.defaultOptions()
@@ -389,9 +425,16 @@ function Save.loadOptions(fs)
   if not ok then return options end
   local loaded = SaveData.loadOptions(fs)
   local stored = loaded and loaded[Save.OPTIONS_KEY]
+  if type(stored) == "table" and stored.hotbar ~= nil then
+    if stored.hotbar == false then loaded.hotbar = false end
+    stored.hotbar = nil
+    SaveData.saveOptions(loaded, fs)
+  end
   if type(stored) == "table" then
     for key, value in pairs(stored) do
-      if not SHARED_KEYS[key] then options[key] = value end
+      if not SHARED_KEYS[key] and key ~= "touchControls" then
+        options[key] = value
+      end
     end
   end
   if type(loaded) == "table" then
@@ -402,6 +445,7 @@ function Save.loadOptions(fs)
         options[key] = stored[key]
       end
     end
+    options.touchControls = Save.touchControls(loaded)
   end
   options.orientation = require("src.core.Orientation").normalize(options.orientation)
   return options
@@ -416,7 +460,18 @@ function Save.saveOptions(options, fs)
   local file = SaveData.loadOptions(fs) or {}
   local block = {}
   for key, value in pairs(options) do
-    if SHARED_KEYS[key] then
+    if key == "touchControls" then
+      if type(value) == "table" then
+        local flat = type(file.touchControls) == "table" and file.touchControls or {}
+        flat.enabled, flat.skin = value.enabled, value.skin
+        file.touchControls = flat
+        if hasTouchLayout(value) then
+          block.touchControls = {
+            layouts = value.layouts, positions = value.positions, scale = value.scale,
+          }
+        end
+      end
+    elseif SHARED_KEYS[key] then
       file[key] = key == "orientation"
         and require("src.core.Orientation").normalize(value) or value
     else

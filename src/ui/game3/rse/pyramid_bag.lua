@@ -304,6 +304,15 @@ local function moveCursor(delta)
   return true
 end
 
+-- pokeemerald/src/battle_pyramid_bag.c:1361 PerformItemSwap, :1386 CancelItemSwap
+local function endSwap(commit)
+  local from, to = st.swapFrom, pos()
+  if commit and from ~= to and from ~= to - 1 then moveSlot(from, to) end
+  if from < to then Py().bagCursor.cursor = math.max(0, Py().bagCursor.cursor - 1) end
+  st.swapFrom = nil
+  st.mode = "list"
+end
+
 local function step(inp)
   st.frame = st.frame + 1
   if st.shake then
@@ -396,19 +405,23 @@ local function step(inp)
       st.mode = "list"
     end
   elseif m == "swap" then
-    if inp.rep.up then moveCursor(-1)
-    elseif inp.rep.down then moveCursor(1) end
-    if inp.new.a or inp.new.select then
+    -- pokeemerald/src/battle_pyramid_bag.c:1324
+    if inp.new.select then
       se("SE_SELECT")
-      local to = pos()
-      if st.swapFrom ~= to and st.swapFrom ~= to - 1 then
-        moveSlot(st.swapFrom, to)
-        if st.swapFrom < to then Py().bagCursor.cursor = math.max(0, Py().bagCursor.cursor - 1) end
-      end
-      st.mode = "list"
+      endSwap(true)
+      return
+    end
+    if inp.new.a then
+      se("SE_SELECT")
+      endSwap(true)
     elseif inp.new.b then
       se("SE_SELECT")
-      st.mode = "list"
+      endSwap(false)
+    -- pokeemerald/src/battle_pyramid_bag.c:634
+    elseif inp.rep.up then
+      if moveCursor(-1) then se("SE_SELECT") startShake() end
+    elseif inp.rep.down then
+      if moveCursor(1) then se("SE_SELECT") startShake() end
     end
   elseif m == "message" then
     if inp.new.a or inp.new.b then
@@ -476,6 +489,48 @@ local function description()
 end
 PBag.description = description
 
+-- pokeemerald/src/menu_helpers.c:399 CreateSwapLineSprites
+local SWAP_LINE = {}
+for i = 0, 7 do
+  -- pokeemerald/src/menu_helpers.c:434 UpdateSwapLineSpritesPos
+  SWAP_LINE[i + 1] = { frame = i == 0 and 0 or 4, x = i * 16 + 120 - (i == 7 and 8 or 0), y = 0 }
+end
+local swapLineImg = {}
+
+-- pokeemerald/src/battle_pyramid_bag.c:1605 UpdateSwapLinePos
+function PBag.swapLine()
+  if st.mode ~= "swap" or not st.swapFrom then return nil end
+  local y = 1 + (Py().bagCursor.cursor + 1) * 16
+  for i = 1, #SWAP_LINE do SWAP_LINE[i].y = y end
+  return SWAP_LINE
+end
+
+-- pokeemerald/src/battle_pyramid_bag.c:641
+function PBag.iconItem()
+  if st.mode == "swap" and st.swapFrom then
+    local items = lists()
+    return items[st.swapFrom + 1]
+  end
+  return (selectedItem())
+end
+
+local function drawSwapLine()
+  local sprites = PBag.swapLine()
+  if not sprites then return end
+  local g = Gfx.of("rse/pokeblock")
+  if swapLineImg.gfx ~= g then
+    local pal = g:manifest().palettes.swap_line
+    swapLineImg.gfx = g
+    swapLineImg[0] = g:sprite("swap_line", 0, 16, 16, pal)
+    swapLineImg[4] = g:sprite("swap_line", 4, 16, 16, pal)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  for i = 1, #sprites do
+    local s = sprites[i]
+    love.graphics.draw(swapLineImg[s.frame], s.x - 8, s.y - 8)
+  end
+end
+
 function PBag.draw()
   if not PBag.open then return end
   love.graphics.setColor(1, 1, 1, 1)
@@ -490,7 +545,12 @@ function PBag.draw()
   for i = 0, st.maxShown - 1 do
     local idx = c.scroll + i
     local y = 1 + i * 16
-    if idx == pos() and st.mode ~= "swap" then
+    if st.mode == "swap" then
+      -- pokeemerald/src/battle_pyramid_bag.c:653
+      if idx == st.swapFrom then
+        FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, W[1] * 8, W[2] * 8 + y, { colors = LIGHT_GRAY })
+      end
+    elseif idx == pos() then
       FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, W[1] * 8, W[2] * 8 + y,
         { colors = (st.mode == "list") and FrlgFont.COLOR.NORMAL or LIGHT_GRAY })
     end
@@ -502,13 +562,8 @@ function PBag.draw()
       printAt(q, W, 119 - FrlgFont.measure(q, { font = "narrow" }), y)
     end
   end
-  if st.mode == "swap" then
-    local yLine = W[2] * 8 + (c.cursor) * 16
-    love.graphics.setColor(0.4, 0.4, 0.4, 1)
-    love.graphics.rectangle("fill", 120, yLine, 112, 1)
-    love.graphics.setColor(1, 1, 1, 1)
-  end
-  local item = selectedItem()
+  drawSwapLine()
+  local item = PBag.iconItem()
   local okBC, BagChrome = pcall(require, "src.ui.game3.rse.bag_chrome")
   if okBC and BagChrome and BagChrome.drawItemIcon then
     BagChrome.drawItemIcon(item and ItemsData.toNumericId(item) or BagChrome.returnIconIndex(), 24 - 16, 88 - 16)

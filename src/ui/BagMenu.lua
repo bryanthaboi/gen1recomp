@@ -817,9 +817,8 @@ function BagMenu.new(game, opts)
     if self.optionBox then self.optionBox:draw() end
   end
   list.closeStartMenu = opts.onClose
-  -- the item box overlaps the kept-open START menu box, so neither docks to
-  -- a screen edge on its own (start_sub_menus.asm:302-329) #1745
-  list.holdsUIAnchors = true
+  -- data/text_boxes.asm:13, engine/menus/draw_start_menu.asm:5
+  list.uiShiftRight = true
   list.isMenu = true
   return list
 end

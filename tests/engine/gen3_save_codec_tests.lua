@@ -351,6 +351,7 @@ local function stubOpts(extra)
     speciesName = function(sp) return ({ [4] = "CHARMANDER", [16] = "PIDGEY", [172] = "PICHU" })[sp] end,
     mapLayoutId = function(g, n) return STUB_LAYOUT[g .. ":" .. n] end,
     healWarp = function() return { group = 3, num = 0, warpId = -1, x = 6, y = 8 } end,
+    abilities = { [4] = { 66, 0 }, [6] = { 66, 0 }, [16] = { 51, 0 }, [172] = { 9, 0 }, [277] = { 65, 0 } },
   }
   for k, v in pairs(extra or {}) do o[k] = v end
   return o

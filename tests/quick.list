@@ -69,9 +69,11 @@ tests/engine/champion_victory_music_bug2835.lua
 tests/engine/chip_analog_path.lua
 tests/engine/chip_audio_preroll_test.lua
 tests/engine/chip_mono_fastpath_test.lua
+tests/engine/chip_music_start_vs_prewarm_3065.lua
 tests/engine/chip_sample_rate_test.lua
 tests/engine/confusion_selfhit_anim_bug1578.lua
 tests/engine/continue_info_layout_2684.lua
+tests/engine/controls_first_page_3078.lua
 tests/engine/copyright_splash_backdrop.lua
 tests/engine/crystal_buena_cache_2639.lua
 tests/engine/crystal_credits_bug1967.lua
@@ -125,6 +127,7 @@ tests/engine/game3_battle_action_cursor_2766.lua
 tests/engine/game3_buried_trainer_2876.lua
 tests/engine/game3_catch_gotcha_gate_2896.lua
 tests/engine/game3_catch_gotcha_se_cap_2896.lua
+tests/engine/game3_caught_ot_gender_3066.lua
 tests/engine/game3_cutscene_push_2764.lua
 tests/engine/game3_disguise_order_2763.lua
 tests/engine/game3_door_exit_wipe_2895.lua
@@ -409,6 +412,7 @@ tests/engine/gen2_world_overdraw_perf_test.lua
 tests/engine/gen2_world_scissor_bug2191.lua
 tests/engine/gen2_yesno_typing_bug2085.lua
 tests/engine/gen3_dex_summary_keys_2461.lua
+tests/engine/gen3_heal_row_export_3080.lua
 tests/engine/gen3_jp_names_2706.lua
 tests/engine/gen3_pokemon_icon_hook_bug2693.lua
 tests/engine/gen3_pokemon_sprite_kind_bug2772.lua
@@ -486,6 +490,7 @@ tests/engine/launcher_gold_touch_rows.lua
 tests/engine/launcher_mod_downloads.lua
 tests/engine/launcher_mod_scope_dropdown.lua
 tests/engine/launcher_modal_focus_input_test.lua
+tests/engine/launcher_mods_scan_bug3077.lua
 tests/engine/launcher_mods_update_baseroms_bug3057.lua
 tests/engine/launcher_navigation_perf.lua
 tests/engine/launcher_nx_pad_cursor_test.lua
@@ -716,6 +721,7 @@ tests/engine/slot_machine_boxes_bug1811.lua
 tests/engine/slot_machine_lined_up_romtext.lua
 tests/engine/soft_reset_bug563.lua
 tests/engine/special_warp_white_fade_bug1644.lua
+tests/engine/speed_hotkey_no_wrap_3075.lua
 tests/engine/spinner_step_bug2585.lua
 tests/engine/sprite_multicell.lua
 tests/engine/sprite_sheet_length_bug2123.lua
@@ -781,6 +787,7 @@ tests/engine/transform_crit_species_bug2899.lua
 tests/engine/transition_identity_pop_bug1663.lua
 tests/engine/ttf_font_mode.lua
 tests/engine/turn_in_place_bug415.lua
+tests/engine/ui_kit_ellipsize_cost.lua
 tests/engine/ui_kit_pagination.lua
 tests/engine/ui_layout_option.lua
 tests/engine/ui_letterbox_test.lua
@@ -808,11 +815,13 @@ tests/engine/world_map_overview_test.lua
 tests/engine/world_pipeline_fx_mirror.lua
 tests/engine/yellow_advanced_palette_bug1639.lua
 tests/engine/yellow_gifts_gotmon_2159.lua
+tests/engine/yellow_jessie_james_obp_bug3071.lua
 tests/engine/yellow_oak_back_pikapic.lua
 tests/engine/yellow_viridian_old_man_bug2122.lua
 tests/engine/zero_damage_miss_ruleset_bug2153.lua
 tests/fixture_data/text.lua
 tests/game3_back_pic_anims_2702_test.lua
+tests/game3_bag_move_item_3069_test.lua
 tests/game3_battle_action_cursor_2766_test.lua
 tests/game3_battle_anim_pack_test.lua
 tests/game3_battle_anims_phase1_test.lua
@@ -854,6 +863,7 @@ tests/game3_held_items_test.lua
 tests/game3_import_cache_version_test.lua
 tests/game3_import_hardening_test.lua
 tests/game3_item_pc_give_test.lua
+tests/game3_item_use_party_test.lua
 tests/game3_latin_glyphs_test.lua
 tests/game3_link_client_relay_test.lua
 tests/game3_link_continue_warp_test.lua
@@ -866,6 +876,7 @@ tests/game3_message_speed_test.lua
 tests/game3_mods_menu_test.lua
 tests/game3_mon_pic_center_test.lua
 tests/game3_multichoice_window_test.lua
+tests/game3_mystery_gift_harbor_seed_test.lua
 tests/game3_native_batch_reuse_test.lua
 tests/game3_object_interactions_test.lua
 tests/game3_object_subpriority_draworder_test.lua
@@ -930,6 +941,8 @@ tests/modkit/cases/link_desync.lua
 tests/modkit/cases/mod_map_outdoor_encounters.lua
 tests/modkit/cases/unified_effects.lua
 tests/modkit/cases/unified_gen2_battle_scale.lua
+tests/modkit/dataset_view_fixture.lua
+tests/modkit_tests.lua
 tests/online_convert.lua
 tests/parity_D.lua
 tests/parity_F.lua
@@ -940,6 +953,7 @@ tests/parity_battle_intro_chrome.lua
 tests/parity_bike_gate_shove_bug518.lua
 tests/parity_bills_pc.lua
 tests/parity_box_mon_stats.lua
+tests/parity_darken_mon_palette_3073.lua
 tests/parity_e4_after.lua
 tests/parity_flavor.lua
 tests/parity_flavor_talk_branches.lua
@@ -985,3 +999,10 @@ tests/engine/gen2_crystal_rules_extract_test.lua
 tests/engine/gen2_crystal_status_test.lua
 tests/engine/gen2_crystal_battle_text_test.lua
 tests/modkit/cases/deferred_options_3046.lua
+tests/engine/game3_touch_carryover_F10b.lua
+tests/engine/gen2_options_value_spacing.lua
+tests/engine/gen2_touch_layout_home_F10.lua
+tests/engine/gen3_launcher_export_ability_f9.lua
+tests/engine/options_controls_caption_f3.lua
+tests/engine/shaderfx_docked_ui_grid_phase.lua
+tests/game3_swap_line_f7_test.lua

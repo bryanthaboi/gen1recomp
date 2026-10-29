@@ -508,6 +508,39 @@ local function validate(dir, extra)
     :format(python, dir, extra or ""))
 end
 
+local viewAssets = ruleMod("viewassets", nil, [[
+return function(mod)
+  local crystal = mod.datasets:open("crystal")
+  if not crystal then return end
+  mod.exports.pic = crystal.assets:path("assets/generated/battle/trainers/youngster.png")
+  mod.exports.info = crystal.assets:info('assets/generated/sprites/red.png')
+end
+]])
+out, code = run(("%s tools/modkit.py lint %q"):format(python, viewAssets))
+check(code == 0 and out:find("MK301", 1, true) == nil,
+  "dataset view assets:path / info literals pass MK301: " .. out)
+
+local ownAssets = ruleMod("ownassets", nil, [[
+return function(mod)
+  mod.exports.pic = mod.assets:path("assets/generated/battle/trainers/youngster.png")
+end
+]])
+out, code = run(("%s tools/modkit.py lint %q"):format(python, ownAssets))
+check(code ~= 0 and out:find("MK301", 1, true) ~= nil,
+  "mod.assets:path into the cache still reports MK301: " .. out)
+
+local mixedAssets = ruleMod("mixedassets", nil, [[
+return function(mod)
+  local gold = mod.datasets:open("gold")
+  local ok = gold.assets:path("assets/generated/sprites/red.png")
+  local img = love.graphics.newImage("assets/generated/sprites/red.png")
+  mod.exports.ok, mod.exports.img = ok, img
+end
+]])
+out, code = run(("%s tools/modkit.py lint %q"):format(python, mixedAssets))
+check(code ~= 0 and out:find("MK301", 1, true) ~= nil,
+  "a cache path outside a dataset view call still reports MK301: " .. out)
+
 -- MK103: a patch whose target nothing defines is a no-op, almost always a typo
 local orphan = ruleMod("orphanpatch", nil, [[
 return function(mod)

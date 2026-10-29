@@ -17,9 +17,7 @@
 -- first refusal, #807), noteGamepad on any controller input, joystickremoved
 -- when the last pad goes away, reset on focus/visibility loss, and draw as the
 -- last thing in the frame -- after the post passes, so the controls are never
--- inside the CRT/GBC grid the picture is being shown through.  One
--- options.touchControls block serves both games, so a layout edited in the
--- launcher's editor is the layout Gold draws.
+-- inside the CRT/GBC grid the picture is being shown through.
 --
 -- Player preferences (options.touchControls) can permanently disable the
 -- overlay and/or override per-control positions as normalized window

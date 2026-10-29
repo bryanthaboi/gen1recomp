@@ -126,8 +126,6 @@ do
   T.eq(drawnAt(VALUE_X, 3 * 8), "MOY ",
     "and its cart-original display value")
 
-  -- CONTROLS is the first port-added row; scroll to it so it lands in the
-  -- VISIBLE_ROWS=7 window drawPanel actually draws.
   local index = rowIndex(menu.view, "controls")
   T.check(index ~= nil, "CONTROLS is one of the rows")
   menu.index = index
@@ -147,8 +145,11 @@ do
   cancelMenu:ensureVisible()
   drawn = {}
   cancelMenu:drawPanel()
-  local cancelSlot = cancelIndex - cancelMenu.scroll
-  T.eq(drawnAt(LABEL_X, (2 + (cancelSlot - 1) * 2) * 8), "RETOUR",
+  local cancelY = -1
+  for _, entry in ipairs(cancelMenu:layout()) do
+    if entry.index == cancelIndex then cancelY = entry.labelY end
+  end
+  T.eq(drawnAt(LABEL_X, cancelY * 8), "RETOUR",
     "CANCEL, the way out of the menu, is translated too")
 
   -- Port-added finite values used to be returned by helper modules after the

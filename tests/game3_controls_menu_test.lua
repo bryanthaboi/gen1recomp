@@ -66,7 +66,7 @@ local function ctxFor(game)
   }
 end
 
-print("[test] 1. CONTROLS row exists and sits after BUTTON MODE")
+print("[test] 1. CONTROLS row exists and sits on the first page")
 try("rows", function()
   local game = newGame()
   local flat = Rows.build(ctxFor(game))
@@ -75,12 +75,13 @@ try("rows", function()
   check(row ~= nil, "Rows.build has a controls row")
   check(row and row.activate ~= nil and row.step == nil, "controls row is activate-only")
   local view = Rows.group(flat, function() end)
-  local bi, ci
+  local si, ci
   for i, r in ipairs(view) do
-    if r.id == "buttonMode" then bi = i end
+    if r.id == "group.speed" then si = i end
     if r.id == "controls" then ci = i end
   end
-  check(bi and ci and ci == bi + 1, "grouped view puts controls right after buttonMode")
+  check(ci ~= nil and ci <= 7, "grouped view puts controls on the first 7-row page")
+  check(si and ci and ci == si + 1, "grouped view puts controls right after SPEED")
   check(require("src.ui.game3.screens").DEFAULT.controls == "src.ui.game3.controls_menu",
     "controls registered in Screens.DEFAULT")
 end)

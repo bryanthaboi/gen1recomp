@@ -308,6 +308,8 @@ function Catching.storeCaught(session, foeBattler, ballId, opts)
   local trainerId = session.trainerId or session.id or session.playerId or 12345
   mon.ot = otName
   mon.otName = otName
+  -- pokefirered/src/pokemon.c:3691
+  mon.otGender = require("src.core.game3.party").otGender(session)
   -- pokefirered/src/pokemon.c:3692
   mon.otId = trainerId
   mon.otSecretId = Catching.playerSecretId(session)

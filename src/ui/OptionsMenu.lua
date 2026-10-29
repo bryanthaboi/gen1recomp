@@ -595,6 +595,9 @@ local function buildRows(game)
     -- rebinding UI (gap C2, 12-ui-extensibility 4.4); captured inputs
     -- live in options.bindings, so the row costs a vanilla install nothing
     { id = "controls", label = Strings("CONTROLS"),
+      value = function()
+        return Strings("%d OPTIONS", #require("src.ui.BindingsMenu").BUTTONS)
+      end,
       activate = function(g)
         require("src.ui.Screens").push(g, "BindingsMenu")
       end },
@@ -760,7 +763,7 @@ local GROUPS = {
 -- The top level's order, groups and singles alike.  Anything not named here
 -- (a mod's row, the touch rows) keeps its flat position after these.
 local ORDER = {
-  "group.speed", "group.video", "group.graphics", "group.audio",
+  "group.speed", "controls", "group.video", "group.graphics", "group.audio",
   "performance", "ruleset", "group.battle", "group.extras", "mods",
 }
 

@@ -364,6 +364,7 @@ function BagMenu.show(sessionBag, opts)
   local st = bag_state()
   BagMenu.pocketIdx = opts.pocketIdx or st.pocket or 1
   BagMenu.mode = "list"
+  BagMenu.moveFrom = nil
   BagMenu.messageText = nil
   BagMenu._msgPages = nil
   BagMenu._msgPage = 1
@@ -465,6 +466,41 @@ local function refresh_actions()
   if BagMenu.actionCursor > #BagMenu.ACTIONS then
     BagMenu.actionCursor = 1
   end
+end
+
+-- src/item_menu.c:1059
+-- pokeemerald/src/item_menu.c:1416 CanSwapItems
+local function can_move_items()
+  if BagMenu._location ~= nil or BagMenu._onChoose or not (BagMenu._bag and BagMenu._bag.pockets) then
+    return false
+  end
+  local pocket = BagMenu.currentPocket()
+  local m = ItemsData.BAG_MODEL
+  if m.sortHmsFirst[pocket] or m.sortById[pocket] then return false end
+  if BagMenu._battle then
+    return require("src.core.game3.profile").family(BagMenu._session) == "rse"
+  end
+  return true
+end
+
+-- src/item_menu.c:967 MoveItemSlotInList
+local function move_slot(slots, from, to)
+  if from == to then return end
+  local slot = table.remove(slots, from)
+  table.insert(slots, to > from and to - 1 or to, slot)
+end
+
+-- src/item_menu.c:1274 ExecuteMoveItemInPocket, :1295 AbortMovingItemInPocket
+local function end_move(commit)
+  local from, to = BagMenu.moveFrom, BagMenu.cursor
+  BagMenu.moveFrom = nil
+  BagMenu.mode = "list"
+  if commit and from ~= to and from ~= to - 1 then
+    BagMenu.list()
+    move_slot(BagMenu._bag.pockets[BagMenu.currentPocket()], from, to)
+  end
+  if from < to then BagMenu.cursor = BagMenu.cursor - 1 end
+  clamp_cursor()
 end
 
 local function pocket_switch_dir(input, pocketIdx)
@@ -1087,26 +1123,38 @@ local function handle_menu_input(input)
     return
   end
 
+  -- src/item_menu.c:1237 Task_MoveItemInPocket_HandleInput
+  -- pokeemerald/src/item_menu.c:1447 Task_HandleSwappingItemsInput
+  if BagMenu.mode == "move" then
+    if input:wasPressed("select") or input:wasPressed("a") then
+      se(SE.SE_SELECT)
+      end_move(true)
+    elseif input:wasPressed("b") then
+      se(SE.SE_SELECT)
+      end_move(false)
+    elseif held_repeat(input, "up") then
+      if move_cursor(false) then cursor_moved() end
+    elseif held_repeat(input, "down") then
+      if move_cursor(true) then cursor_moved() end
+    end
+    return
+  end
+
   -- src/item_menu.c:1050
   local dir = pocket_switch_dir(input, BagMenu.pocketIdx)
   if dir ~= 0 then
     start_switch(dir)
     return
   end
-  if input:wasPressed("select") and not BagMenu._battle then
+  -- src/item_menu.c:1059
+  -- pokeemerald/src/item_menu.c:1228
+  if input:wasPressed("select") then
     local rows = clamp_cursor()
-    local row = rows[BagMenu.cursor]
-    if row and BagMenu.currentPocket() == "KEY_ITEMS" then
-      local info = row.info or ItemsData.info(row.id)
-      local registrable = info and (tonumber(info.registrability) or 0) > 0
-      if registrable and BagMenu._session then
-        if BagMenu._session.registeredItem == row.id then
-          BagMenu._session.registeredItem = nil
-        else
-          BagMenu._session.registeredItem = row.id
-        end
-        se(SE.SE_SELECT)
-      end
+    if can_move_items() and BagMenu.cursor <= #rows then
+      se(SE.SE_SELECT)
+      -- src/item_menu.c:1217 BeginMovingItemInPocket
+      BagMenu.moveFrom = BagMenu.cursor
+      BagMenu.mode = "move"
     end
     return
   end
@@ -1185,7 +1233,7 @@ local function run_transitions(input)
 end
 
 local function arrows_live()
-  return BagMenu.mode == "list" and not BagMenu._switch
+  return (BagMenu.mode == "list" or BagMenu.mode == "move") and not BagMenu._switch
 end
 
 -- src/sprite.c:304
@@ -1374,7 +1422,8 @@ function BagMenu.draw()
   local rows = clamp_cursor()
   local total = #rows + 1
   local switching = BagMenu._switch ~= nil
-  local selected = BagMenu.mode ~= "list"
+  local moving = BagMenu.mode == "move"
+  local selected = BagMenu.mode ~= "list" and not moving
 
   local female = false
   local session = BagMenu._session
@@ -1429,7 +1478,12 @@ function BagMenu.draw()
       local idx = BagMenu.scroll + i
       if idx > total then break end
       local y = 10 + (i - 1) * 16
-      if idx == BagMenu.cursor then
+      if moving then
+        if idx == BagMenu.moveFrom then
+          -- src/item_menu.c:703 BagListMenuItemPrintFunc
+          FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, 89, y, { colors = CURSOR_SELECTED })
+        end
+      elseif idx == BagMenu.cursor then
         if selected then
           FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, 89, y, { colors = CURSOR_SELECTED })
         else
@@ -1459,12 +1513,17 @@ function BagMenu.draw()
         end
       end
     end
+    if moving and chrome then
+      -- src/item_menu.c:1230, src/item_menu_icons.c:282 UpdateSwapLinePos
+      BagChrome.drawSwapLine(96, (BagMenu.cursor - BagMenu.scroll - 1) * 16 + 2 + 7)
+    end
   end
 
   if chrome and BagMenu._arrowK and BagMenu._arrowK >= 1 then
     -- src/item_menu.c:287, 759
     local k = BagMenu._arrowK
-    local switchArrows = BagMenu._location ~= "itempc"
+    -- src/item_menu.c:1232 BagDestroyPocketSwitchArrowPair
+    local switchArrows = BagMenu._location ~= "itempc" and not moving
     if switchArrows and BagMenu.pocketIdx > 1 then
       BagChrome.drawArrow("left", 0 + bob(k, 8), 64)
     end
@@ -1480,7 +1539,8 @@ function BagMenu.draw()
     end
   end
 
-  local sel = rows[BagMenu.cursor]
+  -- src/item_menu.c:684 BagListMenuMoveCursorFunc
+  local sel = rows[moving and BagMenu.moveFrom or BagMenu.cursor]
   if chrome and not switching then
     if sel then
       BagChrome.drawItemIcon(sel.id, 8, 124)
@@ -1497,6 +1557,10 @@ function BagMenu.draw()
     local desc = sel and sel.description
     -- src/item_menu.c:754
     if not sel then desc = RomText.plain("gText_CloseBag") end
+    if moving and sel then
+      -- src/item_menu.c:1227
+      desc = RomText.plain("gOtherText_WhereShouldTheStrVar1BePlaced", { stringVars = { sel.name } })
+    end
     if desc then
       -- src/item_menu.c:756 (window 1 at (5, 14), x=0, y=3, maxWidth=200, linePitch=14)
       FrlgFont.draw(desc, 40, 115, { colors = WIN_WHITE, maxWidth = 200, linePitch = 14 })

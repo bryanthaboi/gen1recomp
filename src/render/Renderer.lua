@@ -367,6 +367,7 @@ function Renderer:beginFrame(transparent)
   self.screenVeil = nil
   -- edge-anchored UI regions, re-declared by their elements each frame
   self.uiAnchors = nil
+  self.uiShiftRight = false
   -- last frame's trueColor rects and sprite redraws go before anything
   -- draws this one
   PaletteFX.clearTrueColor()
@@ -846,6 +847,10 @@ end
 -- centred letterbox.  Declared during the element's own draw, in UI-canvas
 -- pixels, and consumed by endFrame this frame only.
 --   anchor: "bottom" | "topright" | "topleft" | "bottomright"
+local function gridInset(far, near, U)
+  return (math.floor(far + 0.5) - math.floor(near + 0.5)) % U
+end
+
 local function addUIAnchor(renderer, x, y, w, h, anchor, windowClamped,
                            canvas, extract)
   renderer.uiAnchors = renderer.uiAnchors or {}
@@ -870,6 +875,7 @@ function Renderer:setUIAnchor(x, y, w, h, anchor)
   -- battle -- keeps every element inside it, so the box blits where it was
   -- drawn in the canvas instead of being pulled to the window edge.
   if self.uiAnchorHold then return end
+  if self.uiShiftRight then return end
   addUIAnchor(self, x, y, w, h, anchor, false, self.canvas, true)
 end
 
@@ -926,9 +932,49 @@ function Renderer:frameRects()
   end
   r.Up, r.Ux, r.Uy = Up, Up / dpiX, Up / dpiY
   r.uvpw, r.uvph = uiw * r.Ux, uih * r.Uy
-  r.uox = (vx + math.floor((pw - uiw * Up) / 2)) / dpiX
-  r.uoy = (vy + math.max(0, math.floor((ph - uih * Up) / 2) - r.lift)) / dpiY
+  local uoxPx = vx + math.floor((pw - uiw * Up) / 2)
+  local uoyPx = vy + math.max(0, math.floor((ph - uih * Up) / 2) - r.lift)
+  r.insetTop, r.insetBottom, r.insetRight = 0, 0, 0
+  local fx = package.loaded["src.render.ShaderFX"]
+  if fx and fx.active() and Up >= 1 and Up == math.floor(Up) then
+    r.gridX, r.gridY, r.gridUp = uoxPx, uoyPx, Up
+    r.insetTop = gridInset(uoyPx, vy, Up)
+    r.insetBottom = gridInset(vy + ph, uoyPx, Up)
+    r.insetRight = gridInset(vx + pw, uoxPx, Up)
+  end
+  r.uox = uoxPx / dpiX
+  if self.uiShiftRight and not self.uiCentered then
+    r.uox = (vx + math.floor(pw - uiw * Up) - r.insetRight) / dpiX
+  end
+  r.uoy = uoyPx / dpiY
   return r
+end
+
+function Renderer.placeUIAnchor(R, a)
+  local Ux, Uy = R.Ux, R.Uy
+  local dw, dh = a.w * Ux, a.h * Uy
+  local gapR = (R.uiw - (a.x + a.w)) * Ux
+  local gapB = (R.uih - (a.y + a.h)) * Uy
+  local vux, vuy, vuw, vuh = R.vux, R.vuy, R.vuw, R.vuh
+  local top = (R.insetTop or 0) / R.dpiY
+  local dx, dy
+  if a.anchor == "bottom" then
+    dx = R.uox + a.x * Ux
+    dy = vuy + vuh - gapB - dh - (R.insetBottom or 0) / R.dpiY
+  elseif a.anchor == "top" then
+    dx = R.uox + a.x * Ux
+    dy = vuy + a.y * Uy + top
+  elseif a.anchor == "topright" then
+    dx = vux + vuw - gapR - dw - (R.insetRight or 0) / R.dpiX
+    dy = vuy + a.y * Uy + top
+  else
+    dx, dy = R.uox + a.x * Ux, R.uoy + a.y * Uy
+  end
+  if a.windowClamped then
+    dx = math.max(vux, math.min(math.max(vux, vux + vuw - dw), dx))
+    dy = math.max(vuy, math.min(math.max(vuy, vuy + vuh - dh), dy))
+  end
+  return dx, dy, dw, dh
 end
 
 function Renderer.clipToView(r, x, y, w, h)
@@ -1312,31 +1358,7 @@ function Renderer:endFrame(zones, worldZones, frameOpts)
     local rest = { { clipToView(uox, uoy, uvpw, uvph) } }
     local placed = {}
     for _, a in ipairs(anchors) do
-      local dw, dh = a.w * Ux, a.h * Uy
-      -- Anchors are edge-RELATIVE: an element keeps its distance from the
-      -- canvas edge, measured against the screen edge instead.  That is what
-      -- keeps a stack together -- the yes/no box sits 48px above the canvas
-      -- bottom, so bottom-anchoring lands it 48px above the screen bottom,
-      -- still directly over the dialogue box, rather than on top of it.
-      local gapR = (uiw - (a.x + a.w)) * Ux
-      local gapB = (uih - (a.y + a.h)) * Uy
-      local dx, dy
-      if a.anchor == "bottom" then
-        dx = uox + a.x * Ux -- horizontally it stays with the letterbox
-        dy = vuy + vuh - gapB - dh
-      elseif a.anchor == "top" then
-        dx = uox + a.x * Ux -- horizontally it stays with the letterbox
-        dy = vuy + a.y * Uy
-      elseif a.anchor == "topright" then
-        dx = vux + vuw - gapR - dw
-        dy = vuy + a.y * Uy
-      else -- unknown anchor: leave it where it is
-        dx, dy = uox + a.x * Ux, uoy + a.y * Uy
-      end
-      if a.windowClamped then
-        dx = math.max(vux, math.min(math.max(vux, vux + vuw - dw), dx))
-        dy = math.max(vuy, math.min(math.max(vuy, vuy + vuh - dh), dy))
-      end
+      local dx, dy, dw, dh = Renderer.placeUIAnchor(R, a)
       placed[#placed + 1] = { a = a, dx = dx, dy = dy, dw = dw, dh = dh }
       if a.extract then
         rest = subtractRect(rest, uox + a.x * Ux, uoy + a.y * Uy, dw, dh)

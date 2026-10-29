@@ -399,17 +399,6 @@ end
 -- raises "UTF-8 decoding error" on a string cut through a multi-byte sequence,
 -- and a launcher listing mods with non-ASCII names (the JP index) hits that on
 -- the first frame.  A continuation byte is 10xxxxxx (0x80..0xBF).
-local function prevCharStart(s, i)
-  -- largest j < i where s:byte(j) starts a codepoint
-  local j = i - 1
-  while j > 1 do
-    local b = s:byte(j)
-    if b < 0x80 or b >= 0xC0 then break end
-    j = j - 1
-  end
-  return j
-end
-
 local function nextCharStart(s, i)
   local j = i + 1
   while j <= #s do
@@ -427,10 +416,16 @@ local function safeWidth(font, s)
 end
 Theme.safeWidth = safeWidth
 
--- Clip text to a pixel width with a trailing ellipsis.  Results are memoised
--- per (font, text, width) in Kit's measurement cache -- this function is the
--- single hottest string operation in a list-heavy frame, and it is O(n) in
--- glyphs with a getWidth call per step.
+local function charStarts(s)
+  local starts, n = { 1 }, #s
+  local i = nextCharStart(s, 1)
+  while i <= n do
+    starts[#starts + 1] = i
+    i = nextCharStart(s, i)
+  end
+  return starts
+end
+
 function Theme.ellipsize(font, text, maxW)
   text = tostring(text or "")
   if not font then return text end
@@ -439,13 +434,18 @@ function Theme.ellipsize(font, text, maxW)
   if safeWidth(font, text) <= maxW then return text end
   local ell = "..."
   local ew = safeWidth(font, ell)
-  local last = #text + 1              -- one past the end of the kept prefix
-  while last > 1 do
-    last = prevCharStart(text, last)
-    local head = text:sub(1, last - 1)
-    if safeWidth(font, head) + ew <= maxW then return head .. ell end
+  local starts = charStarts(text)
+  local lo, hi = 0, #starts
+  while lo < hi do
+    local mid = math.floor((lo + hi + 1) / 2)
+    if safeWidth(font, text:sub(1, starts[mid] - 1)) + ew <= maxW then
+      lo = mid
+    else
+      hi = mid - 1
+    end
   end
-  return ell
+  if lo == 0 then return ell end
+  return text:sub(1, starts[lo] - 1) .. ell
 end
 
 -- Save paths truncate from the LEFT so the filename survives.
@@ -456,13 +456,19 @@ function Theme.ellipsizeLeft(font, text, maxW)
   if safeWidth(font, text) <= maxW then return text end
   local ell = "..."
   local ew = safeWidth(font, ell)
-  local i = 1
-  while i <= #text do
-    i = nextCharStart(text, i)
-    local tail = text:sub(i)
-    if safeWidth(font, tail) + ew <= maxW then return ell .. tail end
+  local starts = charStarts(text)
+  starts[#starts + 1] = #text + 1
+  local lo, hi = 2, #starts + 1
+  while lo < hi do
+    local mid = math.floor((lo + hi) / 2)
+    if safeWidth(font, text:sub(starts[mid])) + ew <= maxW then
+      hi = mid
+    else
+      lo = mid + 1
+    end
   end
-  return ell
+  if lo > #starts then return ell end
+  return ell .. text:sub(starts[lo])
 end
 
 -- The background: one flat clear to the faintly red-cast field colour.  One

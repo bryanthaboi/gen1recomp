@@ -597,7 +597,24 @@ local function gen3ExportOpts(gameVersion, cartImage)
   end
   local whiteout = heal and (heal.whiteout or heal.heal_locations)
   local dests = fly and fly.fly_destinations
-  if type(whiteout) == "table" and type(dests) == "table" then
+  if heal and heal.model == "heal_row" and type(whiteout) == "table" then
+    opts.healWarp = function(respawnMap, x, y)
+      x, y = tonumber(x), tonumber(y)
+      local row, hits = nil, 0
+      for i = 1, table.maxn(whiteout) do
+        local loc = whiteout[i]
+        if type(loc) == "table" and loc.map == respawnMap then
+          if loc.x == x and loc.y == y then row, hits = loc, 1 break end
+          row, hits = row or loc, hits + 1
+        end
+      end
+      if hits > 1 and x == nil then return nil end
+      row = row or whiteout[L3.HEAL_LOCATION_PALLET_TOWN]
+      if type(row) ~= "table" then return nil end
+      -- src/overworld.c:670
+      return Gen3Save.forVersion(gameVersion).cartWarp({ map = row.map, warpId = -1, x = row.x, y = row.y })
+    end
+  elseif type(whiteout) == "table" and type(dests) == "table" then
     opts.healWarp = function(respawnMap)
       local id = L3.HEAL_LOCATION_PALLET_TOWN
       for i, loc in pairs(whiteout) do

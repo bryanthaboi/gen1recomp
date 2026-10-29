@@ -1046,6 +1046,18 @@ class CacheIndex:
                         pass
 
 
+DATASET_ASSET_CALL = re.compile(
+    r"([A-Za-z_][\w]*(?:\s*\.\s*[A-Za-z_][\w]*)*)\s*\.\s*assets\s*:\s*"
+    r"(?:path|info)\s*\(\s*(\"|')assets/generated/[^\"'\\\n]*\2\s*\)")
+
+
+def strip_dataset_asset_calls(body):
+    def blank(match):
+        receiver = re.split(r"\s*\.\s*", match.group(1))[-1]
+        return match.group(0) if receiver == "mod" else ""
+    return DATASET_ASSET_CALL.sub(blank, body)
+
+
 def lint_dir(repo, mod_dir, manifest):
     """MK3xx: the no-ROM-content gate (22-distribution-and-packaging.md)."""
     findings = []
@@ -1077,6 +1089,8 @@ def lint_dir(repo, mod_dir, manifest):
             continue
         if ext in (".lua", ".json") and rel != transforms_rel:
             body = open(path, encoding="utf-8", errors="replace").read()
+            if ext == ".lua":
+                body = strip_dataset_asset_calls(body)
             if "assets/generated/" in body or "data/generated/" in body:
                 findings.append(Finding(
                     "MK301", "error",

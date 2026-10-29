@@ -557,12 +557,12 @@ do
   PartyMenu.close()
 end
 
-print("=== [TEST 12] Bag Menu List-Mode SELECT Shortcut Quick-Register & Overwrite ===")
+print("=== [TEST 12] Bag Menu SELECT Moves Key Items, SET Registers ===")
 do
   local BagMenu = require("src.ui.game3.bag_menu")
   local bag = Bag.new()
-  Bag.add(bag, 361, 1) -- Town Map (Key Item 361, registrability = 1)
-  Bag.add(bag, 360, 1) -- Bicycle (Key Item 360, registrability = 1)
+  Bag.add(bag, 361, 1)
+  Bag.add(bag, 360, 1)
   local session = { bag = bag, registeredItem = nil }
 
   BagMenu.show(session, {
@@ -582,25 +582,51 @@ do
     BagMenu.handleInput(inp)
   end
 
-  -- Cursor starts on item 1 (Bicycle or Town Map depending on alphabetical sort)
   local rows = BagMenu.list()
   check(#rows >= 2, "at least 2 key items in bag")
   local item1 = rows[1].id
   local item2 = rows[2].id
 
-  -- 1. Press SELECT on item 1 -> registers item 1
   press("select")
-  check(session.registeredItem == item1, "item 1 registered via SELECT (" .. tostring(item1) .. ")")
+  check(BagMenu.mode == "move", "SELECT on a key item starts moving it (item_menu.c:1065)")
+  check(session.registeredItem == nil, "SELECT does not register")
 
-  -- 2. Move cursor down to item 2 and press SELECT -> OVERWRITES to item 2
   press("down")
-  check(BagMenu.cursor == 2, "cursor moved to item 2")
+  check(BagMenu.cursor == 2, "cursor moved to item 2 while moving")
   press("select")
-  check(session.registeredItem == item2, "item 2 overwrote registered item (" .. tostring(item2) .. ")")
+  check(BagMenu.mode == "list", "SELECT drops the item")
+  check(BagMenu.list()[1].id == item1, "dropping just below the origin keeps the order (item_menu.c:1277)")
+  check(BagMenu.cursor == 1, "cursor returns to item 1")
 
-  -- 3. Press SELECT on item 2 again -> UNREGISTERS to nil
   press("select")
-  check(session.registeredItem == nil, "pressing SELECT on already registered item unregisters to nil")
+  press("down")
+  press("down")
+  press("select")
+  rows = BagMenu.list()
+  check(rows[1].id == item2 and rows[2].id == item1, "item 1 moved below item 2")
+  check(BagMenu.cursor == 2, "cursor follows item 1")
+
+  local function set_action()
+    press("a")
+    check(BagMenu.mode == "action", "A opens the context menu")
+    local idx
+    for i, act in ipairs(BagMenu.ACTIONS) do
+      if act == "SET" then idx = i end
+    end
+    check(idx ~= nil, "context menu offers SET")
+    BagMenu.actionCursor = idx or 1
+    press("a")
+    check(BagMenu.mode == "list", "SET returns to the list")
+  end
+
+  set_action()
+  check(session.registeredItem == item1, "SET registers the item under the cursor (" .. tostring(item1) .. ")")
+  press("up")
+  check(BagMenu.cursor == 1, "cursor moved to item 2")
+  set_action()
+  check(session.registeredItem == item2, "SET on another item overwrites (" .. tostring(item2) .. ")")
+  set_action()
+  check(session.registeredItem == nil, "SET on the registered item unregisters")
 
   BagMenu.close()
 end

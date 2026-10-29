@@ -1942,9 +1942,15 @@ local function romModel(imp, version, info, ready, locked)
   local baseRom = imp.baseRoms and imp.baseRoms[version]
   local scanning = imp.baseRomDiscovery and imp.baseRomScan
     and imp.baseRomScan.state ~= "done"
+  local busyText = imp.inboxJobText and imp:inboxJobText()
   if importing and (imp.workState == "working" or imp.workState == "complete") then
     return { state = imp.status or Strings("Importing"),
       detail = imp.detail or "", progress = imp.progress or 0 }
+  elseif busyText then
+    local own = notice and notice.scanning
+    return { state = own and notice.status or Strings("Another import is running"),
+      detail = own and (notice.detail or "") or busyText,
+      label = ready and Strings("Re-import ROM") or importLabel, enabled = false }
   elseif erroring then
     -- An import that FAILED is reported even on a ready game (a re-import
     -- that could not read the new file): the failure is the only reason the
@@ -1979,6 +1985,8 @@ local function romModel(imp, version, info, ready, locked)
       .. dropHint,
     label = importLabel, enabled = true }
 end
+
+LauncherView._romModel = romModel
 
 -- The import action behind whichever button carries it.
 local function romAction(imp, version, mdl)
@@ -2136,7 +2144,8 @@ local function buildSlotCard(imp, x, y, w, availH, m, version, ready)
   local hx = headerInline and x + w - pad - importW - gap - browseW or px
   local firstW = headerInline and importW or (headerCols == 2 and importW or iw)
   btn(imp, hx, hy, firstW, bh, "sav-import-" .. scope, importLabel, {
-    font = "small", icon = "download", enabled = ready and scope == version,
+    font = "small", icon = "download",
+    enabled = ready and scope == version and not (imp.inboxBusy and imp:inboxBusy()),
     action = function() imp:chooseSaveImport(version) end,
   })
   local bx = headerCols == 2 and hx + firstW + gap or px
@@ -2633,6 +2642,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   -- bulk actions (Enable all / Disable all) into More... on compact viewports.
   local bh = m.btnH
   local importLabel = imp:_modsImportButtonLabel()
+  local importOk = not (imp.inboxBusy and imp:inboxBusy())
   local importW = Kit.textWidth("small", importLabel) + math.floor(24 * m.s)
 
   if #mods > 0 then
@@ -2653,7 +2663,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     if fullReq <= w then
       -- Tier 1 (Desktop / Wide): Show all 5 full-text buttons
       btn(imp, place(importW), cy, importW, bh, "mods-import", importLabel, {
-        kind = "accent", font = "small",
+        kind = "accent", font = "small", enabled = importOk,
         action = function() imp:chooseMod() end })
       btn(imp, place(disableW), cy, disableW, bh, "mods-disable-all", Strings("Disable all"), {
         kind = "warn", font = "small",
@@ -2677,7 +2687,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
     elseif medReq <= w then
       -- Tier 2 (Medium / Compact): Surface Import, Updates, and Sort directly
       btn(imp, place(importW), cy, importW, bh, "mods-import", importLabel, {
-        kind = "accent", font = "small",
+        kind = "accent", font = "small", enabled = importOk,
         action = function() imp:chooseMod() end })
       btn(imp, place(checkShortW), cy, checkShortW, bh, "mods-check-updates", Strings("Updates"), {
         font = "small",
@@ -2696,7 +2706,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
       local useImportW = (miniReq <= w) and importShortW or importW
 
       btn(imp, place(useImportW), cy, useImportW, bh, "mods-import", (miniReq <= w) and importShortLabel or importLabel, {
-        kind = "accent", font = "small",
+        kind = "accent", font = "small", enabled = importOk,
         action = function() imp:chooseMod() end })
       btn(imp, place(sortW), cy, sortW, bh, "mods-sort", Strings("Sort"), {
         font = "small",
@@ -2708,7 +2718,7 @@ local function buildModsPanel(imp, x, y, w, availH, m)
   else
     local place = Layout.rightCluster(x, w, math.floor(6 * m.s))
     btn(imp, place(importW), cy, importW, bh, "mods-import", importLabel, {
-      kind = "accent", font = "small",
+      kind = "accent", font = "small", enabled = importOk,
       action = function() imp:chooseMod() end })
     if #cartsWithUpdates(imp) > 0 then
       local updateAllW = Kit.textWidth("small", Strings("Update all"))
@@ -4935,7 +4945,9 @@ local function buildCartModal(imp, m)
   Kit.scrollEnd(x, cy, inner, viewH, state.scroll, maxAt, PAL.surface)
   local firstW = footerStacked and inner or math.max(importW, (inner - gap) / 2)
   btn(imp, x, fy, firstW, m.btnH, "cartpop-more", importLabel, {
-      kind = "accent", font = "small", icon = "download", action = function() imp:importCartFile(version) end,
+      kind = "accent", font = "small", icon = "download",
+      enabled = not (imp.inboxBusy and imp:inboxBusy()),
+      action = function() imp:importCartFile(version) end,
     })
   btn(imp, footerStacked and x or x + firstW + gap, footerStacked and fy + m.btnH + gap or fy,
     footerStacked and inner or inner - firstW - gap, m.btnH, "cartpop-close", Strings("Close"), {

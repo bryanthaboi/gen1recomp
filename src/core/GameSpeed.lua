@@ -78,6 +78,15 @@ function GameSpeed.cycle(v, dir)
   return levels[nextIdx]
 end
 
+function GameSpeed.step(v, dir)
+  dir = dir or 1
+  if dir < 0 then
+    local levels = GameSpeed.allowed()
+    if GameSpeed.clamp(v) == levels[1] then return levels[1] end
+  end
+  return GameSpeed.cycle(v, dir)
+end
+
 -- Per-category speed (RFC 0007): overworld walking, battle turns and menu
 -- navigation each cycle their own multiplier instead of one global "speed"
 -- value. This list is the single source of truth for which categories

@@ -260,6 +260,16 @@ local function androidRun()
   eq(ri.modNotice, shown, "the notice is shown once")
 
   love.filesystem.write("imports/mods/fix.zip", "PK\0inbox")
+  local realMods = package.loaded["src.mods.LauncherMods"]
+  local inboxRi = ri
+  package.loaded["src.mods.LauncherMods"] = {
+    STEP_BUDGET = 0.008,
+    beginInstallZip = function(source)
+      inboxRi.installs[#inboxRi.installs + 1] = source
+      return { source = source }
+    end,
+    stepInstall = function() return "done", true, "fix" end,
+  }
   pickCalls = {}
   local before = #ri.installs
   ri:chooseMod()
@@ -273,6 +283,7 @@ local function androidRun()
   eq(#ri.installs, before, "still waiting on the frame the tap landed")
   ri:_pumpModInboxInstall()
   eq(ri.installs[#ri.installs], "imports/mods/fix.zip", "and installs the inbox copy")
+  package.loaded["src.mods.LauncherMods"] = realMods
   pickCalls = {}
   ri:chooseMod()
   eq(#pickCalls, 1, "the tap after that opens the picker again")

@@ -386,6 +386,7 @@ local BATTLE_SFX = {
   "Sfx_Faint", "Sfx_Kinesis", "Sfx_CaughtMon", "Sfx_Run",
   "Sfx_SwitchPokemon", "Sfx_Potion",
 }
+local PREWARM_LAST = { Sfx_DexFanfare5079 = true, Sfx_CaughtMon = true }
 
 local function animSounds(anims, order, key, out, seen)
   if not key or seen[key] then return end
@@ -698,13 +699,28 @@ function BattleState.new(game, opts)
   -- queue both entrance cries on the chip audio worker during the intro so
   -- playCry doesn't render them on the frame they play (no-op without one)
   local data = game and game.data
-  for _, mon in ipairs({ enemy or false, player or false }) do
-    if mon and mon.species then pcall(Sound.prewarmCry, data, mon.species) end
+  local function leadCries()
+    for _, mon in ipairs({ enemy or false, player or false }) do
+      if mon and mon.species then pcall(Sound.prewarmCry, data, mon.species) end
+    end
   end
+  local ChipAudio = package.loaded["src.core.ChipAudio"]
+  if ChipAudio and ChipAudio.prewarmFront then
+    pcall(ChipAudio.prewarmFront, leadCries)
+  else
+    leadCries()
+  end
+  local late = {}
   local okNames, names = pcall(BattleState.battleSfxNames, data, self.anims,
     self.battle)
   if okNames then
-    for _, name in ipairs(names) do pcall(Sound.prewarmSfx, data, name) end
+    for _, name in ipairs(names) do
+      if PREWARM_LAST[name] then
+        late[#late + 1] = name
+      else
+        pcall(Sound.prewarmSfx, data, name)
+      end
+    end
   end
   local battle = self.battle
   for _, party in ipairs({ battle and battle.enemyParty or {},
@@ -715,6 +731,7 @@ function BattleState.new(game, opts)
       end
     end
   end
+  for _, name in ipairs(late) do pcall(Sound.prewarmSfx, data, name) end
   return self
 end
 

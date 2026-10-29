@@ -288,6 +288,23 @@ function LauncherMods.checkDependencies(manifest, options, version, installedMan
   }
 end
 
+local ROW_DESCRIPTION_MAX = 300
+
+local function rowDescription(text)
+  local line = tostring(text or ""):match("[^\r\n]*%S[^\r\n]*") or ""
+  line = line:gsub("^%s+", "")
+  if #line > ROW_DESCRIPTION_MAX then
+    local cut = ROW_DESCRIPTION_MAX + 1
+    while cut > 1 do
+      local b = line:byte(cut)
+      if b < 0x80 or b >= 0xC0 then break end
+      cut = cut - 1
+    end
+    line = line:sub(1, cut - 1)
+  end
+  return (line:gsub("%s+$", ""))
+end
+
 -- deriveList(manifests, options [, version]) -> the panel row list, pure.
 -- manifests is an array of validated manifests (Manifest.validate output);
 -- options is the options table (options.mods, options.modsByVersion and
@@ -342,7 +359,7 @@ function LauncherMods.deriveList(manifests, options, version)
       name = m.name or m.id,
       version = m.version,
       badge = badge,
-      description = m.description or "",
+      description = rowDescription(m.description),
       enabled = enabled,
       enabledByVersion = (function()
         local answers = {}
@@ -795,6 +812,68 @@ local function readArchive(source)
 end
 LauncherMods._readArchive = readArchive
 
+local READ_CHUNK = 1024 * 1024
+
+local function readArchiveStepped(source, pause, st)
+  local fs = love and love.filesystem
+  if type(source) ~= "string" or isHostAbsolutePath(source)
+      or not (fs and fs.newFile and fs.getInfo and fs.getInfo(source, "file")) then
+    return readArchive(source)
+  end
+  local file = fs.newFile(source)
+  if not (file and file:open("r")) then return readArchive(source) end
+  st.file = file
+  local parts = {}
+  while true do
+    local chunk = file:read(READ_CHUNK)
+    if type(chunk) ~= "string" or #chunk == 0 then break end
+    parts[#parts + 1] = chunk
+    if #chunk < READ_CHUNK then break end
+    pause()
+  end
+  st.file = nil
+  file:close()
+  if #parts == 0 then return readArchive(source) end
+  return table.concat(parts)
+end
+LauncherMods.readStepped = readArchiveStepped
+
+LauncherMods.NX_MAX_ZIP_BYTES = 64 * 1024 * 1024
+
+local function archiveSize(source)
+  local t = type(source)
+  if (t == "userdata" or t == "table") and type(source.getSize) == "function" then
+    local ok, size = pcall(source.getSize, source)
+    return ok and tonumber(size) or nil
+  end
+  local fs = love and love.filesystem
+  if t == "string" and not isHostAbsolutePath(source) and fs and fs.getInfo then
+    local info = fs.getInfo(source, "file")
+    return info and tonumber(info.size) or nil
+  end
+  return nil
+end
+
+local function nxTooLargeText(label, size)
+  if not require("src.core.Platform").isNX() then return nil end
+  local cap = LauncherMods.NX_MAX_ZIP_BYTES
+  if not (size and size > cap) then return nil end
+  return ("%s is %.1f MiB. On Switch a mod .zip must be %d MiB or smaller, "
+    .. "because it is held in memory while it installs."):format(label,
+    size / (1024 * 1024), math.floor(cap / (1024 * 1024)))
+end
+
+local function nxZipTooLarge(source, label)
+  label = label or (type(source) == "string" and (source:match("[^/\\]+$") or source))
+    or "the .zip"
+  return nxTooLargeText(label, archiveSize(source))
+end
+
+function LauncherMods.nxReleaseTooLarge(label, release)
+  local zip = type(release) == "table" and release.zip
+  return nxTooLargeText(tostring(label), type(zip) == "table" and tonumber(zip.size) or nil)
+end
+
 -- Local PK\3\4 / empty-file check before mount (corrupt MTP / AppleDouble).
 local function zipLooksValid(data)
   if type(data) ~= "string" or #data < 4 then return false end
@@ -825,16 +904,20 @@ local function isBaseromPath(rel)
   return rel == "baseroms" or rel:sub(1, 9) == "baseroms/"
 end
 
-local function listPackage(path, files, dirs, rel)
+local function noPause() end
+
+local function listPackage(path, files, dirs, rel, pause)
   local fs = love.filesystem
   files, dirs = files or {}, dirs or {}
+  pause = pause or noPause
   for _, name in ipairs(fs.getDirectoryItems(path) or {}) do
     local r = rel and (rel .. "/" .. name) or name
     if not isBaseromPath(r) then
+      pause()
       local info = fs.getInfo(path .. "/" .. name)
       if info and info.type == "directory" then
         dirs[#dirs + 1] = r
-        listPackage(path .. "/" .. name, files, dirs, r)
+        listPackage(path .. "/" .. name, files, dirs, r, pause)
       elseif info then
         files[#files + 1] = r
       end
@@ -848,9 +931,11 @@ local function removeBoth(path)
   love.filesystem.remove(path)
 end
 
-local function pruneEmptyDirs(dest, dirs)
+local function pruneEmptyDirs(dest, dirs, pause)
   local fs = love.filesystem
+  pause = pause or noPause
   for i = #dirs, 1, -1 do
+    pause()
     local path = dest .. "/" .. dirs[i]
     if #(fs.getDirectoryItems(path) or {}) == 0 then
       CacheFs.removeDir(path)
@@ -890,13 +975,15 @@ local function streamCopy(src, dst)
   return true
 end
 
-local function drainBaseroms(src, dst)
+local function drainBaseroms(src, dst, pause)
   local fs = love.filesystem
+  pause = pause or noPause
+  pause()
   local info = fs.getInfo(src)
   if not info then return true end
   if info.type == "directory" then
     for _, name in ipairs(fs.getDirectoryItems(src) or {}) do
-      local ok, err = drainBaseroms(src .. "/" .. name, dst .. "/" .. name)
+      local ok, err = drainBaseroms(src .. "/" .. name, dst .. "/" .. name, pause)
       if not ok then return nil, err end
     end
     return true
@@ -905,15 +992,18 @@ local function drainBaseroms(src, dst)
   return streamCopy(src, dst)
 end
 
-local function installPackage(src, dest, manifestRaw)
+local function installPackage(src, dest, manifestRaw, pause)
   local fs = love.filesystem
   if type(manifestRaw) ~= "string" then return nil, "could not read manifest.json" end
+  pause = pause or noPause
   local hadManifest = fs.getInfo(dest .. "/manifest.json", "file") ~= nil
   -- a portable install can carry a legacy save-dir twin, which physfs reads before the game folder
   local portable = CacheFs.root() ~= nil
   local keep, written, failure = {}, {}, nil
-  for _, rel in ipairs((listPackage(src))) do
+  local files = listPackage(src, nil, nil, nil, pause)
+  for i, rel in ipairs(files) do
     keep[rel] = true
+    pause(i, #files)
     if rel ~= "manifest.json" then
       local data = fs.read(src .. "/" .. rel)
       if data == nil then failure = "could not read " .. rel; break end
@@ -927,11 +1017,14 @@ local function installPackage(src, dest, manifestRaw)
     end
   end
   if not failure then
-    local oldFiles, oldDirs = listPackage(dest)
+    local oldFiles, oldDirs = listPackage(dest, nil, nil, nil, pause)
     for _, rel in ipairs(oldFiles) do
-      if not keep[rel] and rel ~= "manifest.json" then removeBoth(dest .. "/" .. rel) end
+      if not keep[rel] and rel ~= "manifest.json" then
+        pause()
+        removeBoth(dest .. "/" .. rel)
+      end
     end
-    pruneEmptyDirs(dest, oldDirs)
+    pruneEmptyDirs(dest, oldDirs, pause)
     local ok, err = CacheFs.write(dest .. "/manifest.json", manifestRaw)
     if ok then
       if portable then fs.remove(dest .. "/manifest.json") end
@@ -940,9 +1033,12 @@ local function installPackage(src, dest, manifestRaw)
     failure = "could not write manifest.json: " .. tostring(err)
   end
   if not hadManifest then
-    for _, rel in ipairs(written) do removeBoth(dest .. "/" .. rel) end
-    local _, leftDirs = listPackage(dest)
-    pruneEmptyDirs(dest, leftDirs)
+    for _, rel in ipairs(written) do
+      pause()
+      removeBoth(dest .. "/" .. rel)
+    end
+    local _, leftDirs = listPackage(dest, nil, nil, nil, pause)
+    pruneEmptyDirs(dest, leftDirs, pause)
     if #(fs.getDirectoryItems(dest) or {}) == 0 then
       CacheFs.removeDir(dest)
       fs.remove(dest)
@@ -956,13 +1052,14 @@ end
 -- CacheFs so a portable install's real files actually go away instead of
 -- love.filesystem no-opping outside the save directory (#330).  Directories
 -- are removed after their children, since rmdir refuses a non-empty one.
-local function removeTree(path)
+local function removeTree(path, pause)
   local fs = love.filesystem
+  if pause then pause() end
   local info = fs.getInfo(path)
   if not info then return end
   if info.type == "directory" then
     for _, child in ipairs(fs.getDirectoryItems(path)) do
-      removeTree(path .. "/" .. child)
+      removeTree(path .. "/" .. child, pause)
     end
     CacheFs.removeDir(path)
   else
@@ -986,10 +1083,12 @@ end
 -- success while the old copy kept winning that race (#801); and a
 -- manifest-less mods/<id> left by an interrupted copy blocked every re-import
 -- as "already installed" while showing nowhere the player could see (#834).
-local function sameIdTrees(fs, id)
+local function sameIdTrees(fs, id, pause)
   local out, installed = {}, false
   if not fs.getInfo("mods") then return out, installed end
+  pause = pause or noPause
   for _, name in ipairs(fs.getDirectoryItems("mods")) do
+    pause()
     local path = "mods/" .. name
     local raw = fs.read(path .. "/manifest.json")
     local manifest = raw and decodeManifest(raw, path)
@@ -1121,18 +1220,62 @@ function LauncherMods.adoptStrays() return scanStrays(true) end
 -- (updates / rollbacks).  opts.expectId, when set, refuses a zip whose
 -- manifest id differs.
 function LauncherMods.installZip(source, opts)
-  local ok, result, res2, res3 = pcall(LauncherMods._installZipInner, source, opts)
-  if not ok then return nil, "import failed: " .. tostring(result) end
+  local st = {}
+  local ok, result, res2, res3 = pcall(LauncherMods._installZipInner, source, opts, nil, st)
+  if not ok then
+    LauncherMods._releaseInstall(st)
+    return nil, "import failed: " .. tostring(result)
+  end
   return result, res2, res3
 end
 
-function LauncherMods._installZipInner(source, opts)
+local function releaseInstall(st)
+  if st.swapped and not st.suspended then CacheFs.prefix = st.outerPrefix end
+  st.swapped = false
+  if st.mountKey ~= nil then
+    pcall(love.filesystem.unmount, st.mountKey)
+    st.mountKey = nil
+  end
+  if st.tmp then
+    love.filesystem.remove(st.tmp)
+    st.tmp = nil
+  end
+  if st.file then
+    pcall(st.file.close, st.file)
+    st.file = nil
+  end
+end
+LauncherMods._releaseInstall = releaseInstall
+
+function LauncherMods._installZipInner(source, opts, yieldFn, jobState)
   opts = opts or {}
   if not (love and love.filesystem) then
     return nil, "mod install needs LOVE"
   end
   local fs = love.filesystem
-  local data, readErr = readArchive(source)
+  local st = jobState or {}
+  st.swapped = false
+  local pause = nil
+  if yieldFn then
+    pause = function(done, total)
+      if st.swapped then CacheFs.prefix = st.outerPrefix end
+      st.suspended = true
+      yieldFn(done, total)
+      st.suspended = false
+      if st.swapped then
+        st.outerPrefix = CacheFs.prefix
+        CacheFs.prefix = ""
+      end
+    end
+  end
+  local tooLarge = nxZipTooLarge(source, opts.label)
+  if tooLarge then return nil, tooLarge end
+  local data, readErr
+  if pause then
+    data, readErr = readArchiveStepped(source, pause, st)
+  else
+    data, readErr = readArchive(source)
+  end
   if not data then return nil, readErr end
   if not zipLooksValid(data) then
     local label = type(source) == "string" and (source:match("[^/\\]+$") or source)
@@ -1140,12 +1283,11 @@ function LauncherMods._installZipInner(source, opts)
     return nil, "not a zip file: " .. tostring(label)
       .. " (need a real .zip; skip Mac ._ files from MTP)"
   end
+  if pause then pause() end
 
   -- Prefer in-memory mount (PHYSFS_mountMemory via FileData). Avoids Horizon's
   -- "file already open" failure when write-then-mount reopens a save-dir zip.
-  local mount = "mod_import_mount"
-  local tmp = nil
-  local mountKey = nil
+  local mount = st.mount or "mod_import_mount"
   local mounted = false
   if fs.newFileData then
     local archiveName = ("mod_import_%d_%d.zip"):format(
@@ -1153,12 +1295,12 @@ function LauncherMods._installZipInner(source, opts)
     local okFd, fd = pcall(fs.newFileData, data, archiveName)
     if okFd and fd and fs.mount(fd, mount) then
       mounted = true
-      mountKey = fd
+      st.mountKey = fd
     end
   end
   if not mounted then
     -- Fallback: stage into a save-dir temp so path-mount can reach it.
-    tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
+    local tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
     local ok, writeErr = fs.write(tmp, data)
     if not ok then
       return nil, "could not stage the .zip: " .. tostring(writeErr)
@@ -1167,12 +1309,11 @@ function LauncherMods._installZipInner(source, opts)
       fs.remove(tmp)
       return nil, "that .zip could not be opened"
     end
-    mountKey = tmp
+    st.tmp, st.mountKey = tmp, tmp
   end
-  local function cleanup()
-    pcall(fs.unmount, mountKey)
-    if tmp then fs.remove(tmp) end
-  end
+  data = nil
+  local function cleanup() releaseInstall(st) end
+  if pause then pause() end
 
   local prefix, rootErr = LauncherMods.locateRoot(topLevelPaths(mount))
   if not prefix then
@@ -1205,14 +1346,16 @@ function LauncherMods._installZipInner(source, opts)
 
   local dest = "mods/" .. manifest.id
   local baseromRecovery = "imports/baseroms-recovery/" .. manifest.id
-  local existing, installedSomewhere = sameIdTrees(fs, manifest.id)
+  local existing, installedSomewhere = sameIdTrees(fs, manifest.id, pause)
   if installedSomewhere and not opts.replace then
     cleanup()
-    return nil, "a mod named '" .. manifest.id .. "' is already installed"
+    return nil, "a mod named '" .. manifest.id .. "' is already installed",
+      { alreadyInstalled = manifest.id }
   end
-  local savedPrefix = CacheFs.prefix
+  st.outerPrefix = CacheFs.prefix
   CacheFs.prefix = ""
-  local copied, copyErr = installPackage(root, dest, raw)
+  st.swapped = true
+  local copied, copyErr = installPackage(root, dest, raw, pause)
   local exactDest = false
   for _, name in ipairs(fs.getDirectoryItems("mods") or {}) do
     if name == manifest.id then exactDest = true end
@@ -1220,21 +1363,80 @@ function LauncherMods._installZipInner(source, opts)
   for _, path in ipairs(existing) do
     local sameDir = path == dest or (not exactDest and path:lower() == dest:lower())
     if copied and not sameDir then
-      copied, copyErr = drainBaseroms(path .. "/baseroms", dest .. "/baseroms")
-      if copied then removeTree(path) end
+      copied, copyErr = drainBaseroms(path .. "/baseroms", dest .. "/baseroms", pause)
+      if copied then removeTree(path, pause) end
     end
   end
   if copied then
-    copied, copyErr = drainBaseroms(baseromRecovery, dest .. "/baseroms")
-    if copied then removeTree(baseromRecovery) end
+    copied, copyErr = drainBaseroms(baseromRecovery, dest .. "/baseroms", pause)
+    if copied then removeTree(baseromRecovery, pause) end
   end
-  CacheFs.prefix = savedPrefix
+  CacheFs.prefix = st.outerPrefix
+  st.swapped = false
   if not copied then
     cleanup()
     return nil, copyErr or "could not copy the mod files"
   end
   cleanup()
   return true, manifest.id, manifest
+end
+
+LauncherMods.STEP_BUDGET = 0.008
+
+local function stepClock()
+  if love and love.timer and love.timer.getTime then return love.timer.getTime() end
+  return os.clock()
+end
+
+local liveInstalls = {}
+local installSerial = 0
+
+function LauncherMods.cancelInstall(job)
+  if not job or job.result then return end
+  releaseInstall(job.state)
+  liveInstalls[job] = nil
+  job.result = { nil, "install cancelled" }
+end
+
+function LauncherMods.releaseStaleInstalls()
+  for job in pairs(liveInstalls) do LauncherMods.cancelInstall(job) end
+end
+
+function LauncherMods.beginInstallZip(source, opts)
+  LauncherMods.releaseStaleInstalls()
+  installSerial = installSerial + 1
+  local job = { source = source, progress = { done = 0, total = 0 },
+    state = { mount = ("mod_scan_mount_%d_%d"):format(os.time(), installSerial) } }
+  job.co = coroutine.create(function()
+    return LauncherMods._installZipInner(source, opts, function(done, total)
+      coroutine.yield(done, total)
+    end, job.state)
+  end)
+  liveInstalls[job] = true
+  return job
+end
+
+function LauncherMods.stepInstall(job, budget, clock)
+  if job.result then return "done", job.result[1], job.result[2], job.result[3] end
+  clock = clock or stepClock
+  local deadline = clock() + (budget or LauncherMods.STEP_BUDGET)
+  repeat
+    local ok, a, b, c = coroutine.resume(job.co)
+    if not ok then
+      job.state.suspended = false
+      releaseInstall(job.state)
+      liveInstalls[job] = nil
+      job.result = { nil, "import failed: " .. tostring(a) }
+      return "done", nil, job.result[2]
+    end
+    if coroutine.status(job.co) == "dead" then
+      liveInstalls[job] = nil
+      job.result = { a, b, c }
+      return "done", a, b, c
+    end
+    if a then job.progress.done, job.progress.total = a, b or job.progress.total end
+  until clock() >= deadline
+  return "running", job.progress
 end
 
 -- Install (or replace) a mod from a GitHub release zip URL.
@@ -1248,13 +1450,15 @@ function LauncherMods.installFromRelease(modId, release)
     if type(release) ~= "table" or not release.zip or not release.zip.url then
       return nil, "release has no downloadable .zip"
     end
+    local tooLarge = LauncherMods.nxReleaseTooLarge(modId, release)
+    if tooLarge then return nil, tooLarge end
     local ModUpdate = require("src.mods.ModUpdate")
     local tmpName = ("mod_update_%s_%s.zip"):format(
       tostring(modId), tostring(release.version or os.time()))
     local localPath, dlErr = ModUpdate.downloadZip(release.zip.url, tmpName)
     if not localPath then return nil, dlErr end
     local installed, res = LauncherMods.installZip(localPath, {
-      replace = true, expectId = modId,
+      replace = true, expectId = modId, label = modId,
     })
     pcall(love.filesystem.remove, localPath)
     if not installed then return nil, res end
@@ -1278,7 +1482,7 @@ function LauncherMods.installDownloadedZip(modId, localPath, version)
       return nil, "missing downloaded archive"
     end
     local installed, res = LauncherMods.installZip(localPath, {
-      replace = true, expectId = modId,
+      replace = true, expectId = modId, label = modId,
     })
     pcall(love.filesystem.remove, localPath)
     if not installed then return nil, res end

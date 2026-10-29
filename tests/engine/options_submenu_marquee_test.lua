@@ -66,8 +66,8 @@ T.eq(select(1, find(menu.view, "group.battle")).value(game), "6 OPTIONS",
 
 -- The top level is explicitly ordered, groups and singles interleaved.
 T.eq(ids(menu.view):gsub("group%.", ""),
-  "speed,video,graphics,audio,performance,ruleset,battle,extras,mods," ..
-  "controls,dateFormat,timeFormat",
+  "speed,controls,video,graphics,audio,performance,ruleset,battle,extras," ..
+  "mods,dateFormat,timeFormat",
   "the top level reads in the order ORDER names")
 T.check(not find(menu.view, "textSpeed"), "TEXT SPEED moved onto the SPEED page")
 T.check(#menu.view < #menu.rows, "the view is shorter than the flat list")

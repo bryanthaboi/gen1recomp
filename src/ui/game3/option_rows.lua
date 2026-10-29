@@ -165,6 +165,9 @@ local function buildRows(ctx, skip)
     } end)
   add({
     id = "controls", label = Strings("CONTROLS"),
+    value = function()
+      return Strings("%d OPTIONS", #require("src.ui.BindingsMenu").GEN3_BUTTONS)
+    end,
     activate = function(c)
       require("src.ui.game3.screens").get("controls", c.session)
         .show({ game = c.game, session = c.session, options = c.options })
@@ -398,12 +401,11 @@ local function buildRows(ctx, skip)
       return Strings(on and "ON" or "OFF")
     end,
     step = function(c)
-      local TouchControls = require("src.core.TouchControls")
       local t = c.options.touchControls
       if type(t) ~= "table" then t = { enabled = true } end
       t.enabled = not (t.enabled ~= false)
       c.options.touchControls = t
-      TouchControls:applyOptions(c.options)
+      if c.game and c.game.applyTouchOptions then c.game:applyTouchOptions(c.options) end
       return true
     end,
   })
@@ -416,7 +418,7 @@ local function buildRows(ctx, skip)
     step = function(c, dir)
       local TouchControls = require("src.core.TouchControls")
       c.options.haptics = TouchControls.cycleHaptics(c.options.haptics, dir)
-      TouchControls:applyOptions(c.options)
+      if c.game and c.game.applyTouchOptions then c.game:applyTouchOptions(c.options) end
       TouchControls.buzz(c.options.haptics)
       return true
     end,
@@ -439,9 +441,8 @@ local function buildRows(ctx, skip)
     id = "hotbar", label = Strings("KEY BAR"),
     value = function(c) return Strings(c.options.hotbar == false and "OFF" or "ON") end,
     step = function(c)
-      local TouchControls = require("src.core.TouchControls")
       c.options.hotbar = (c.options.hotbar == false)
-      TouchControls:applyOptions(c.options)
+      if c.game and c.game.applyTouchOptions then c.game:applyTouchOptions(c.options) end
       return true
     end,
   })
@@ -615,8 +616,8 @@ Rows.GROUPS = {
 }
 
 Rows.ORDER = {
-  "group.speed", "group.video", "group.graphics", "group.audio",
-  "performance", "group.battle", "group.extras", "buttonMode", "controls", "mods",
+  "group.speed", "controls", "group.video", "group.graphics", "group.audio",
+  "performance", "group.battle", "group.extras", "buttonMode", "mods",
 }
 
 function Rows.group(rows, openPage)

@@ -6033,7 +6033,7 @@ function OverworldState:warpFadeUniforms(byte)
   end
   addMap(self.map)
   if not bg[1] then return nil end
-  for group = 0, 7 do
+  for group = 0, 8 do
     local colors = (pack.spritePalettes or {})[group]
     if colors then bg[#bg + 1] = PaletteFX.darkObp(colors, group) end
   end

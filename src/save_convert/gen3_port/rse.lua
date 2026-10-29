@@ -792,10 +792,12 @@ function Rse.install(codec, sections)
     if not c then return nil, blocks end
     local orig = blocks and codec.decode(blocks.image)
     if orig and opts.healWarp and not same(c.lastHealLocation, orig.lastHealLocation) then
-      local was = codec.mapFor(orig.lastHealLocation.group, orig.lastHealLocation.num)
-      local a = was and opts.healWarp(was)
-      local b = type(save.healMap) == "string" and opts.healWarp(save.healMap)
-      if a and b and same(a, b) then c.lastHealLocation = orig.lastHealLocation end
+      local o = orig.lastHealLocation
+      local was = codec.mapFor(o.group, o.num)
+      local a = was and opts.healWarp(was, o.x, o.y)
+      local b = type(save.healMap) == "string" and opts.healWarp(save.healMap, tonumber(save.healX), tonumber(save.healY))
+      -- src/overworld.c:670
+      if a and b and same(a, o) and same(a, b) then c.lastHealLocation = o end
     end
     c.roamer = Rse.cartRoamer(save.roamer, c.roamer)
     if save.savedWeather ~= nil then c.weather = num(save.savedWeather) % 256 end

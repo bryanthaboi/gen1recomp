@@ -101,6 +101,8 @@ local fxPinned = {}
 local fxPinnedCount = 0
 local FX_PINNED_MAX = 24
 local pinRequests = false
+local frontRequests = false
+local pushHeld = false
 local fxQueue = {}
 local fxInFlight = {}
 local fxInFlightCount = 0
@@ -443,6 +445,7 @@ end
 
 function ChipAudio.update()
   if suspended then return end
+  pushHeld = false
   if fxCh then pumpEffects() end
   local m = currentMusic
   if not m then return end
@@ -799,28 +802,47 @@ function dropEffects()
   fxReady, fxPending, fxReadyCount = {}, {}, 0
   fxReadyOrder, fxQueue, fxInFlight, fxInFlightCount = {}, {}, {}, 0
   fxOrderCount, fxPinned, fxPinnedCount = 0, {}, 0
+  pushHeld = false
   if fxCh then fxCh:clear() end
 end
 
 local function musicHasHeadroom()
   local m = currentMusic
-  if not (m and m.threaded and m.started) or m.finished or musicHeld then
-    return true
-  end
+  if not (m and m.threaded) or m.finished or musicHeld then return true end
+  if not m.started then return false end
   local depth = queuedBuffers(m.source)
   if not depth then return true end
   if outCh then depth = depth + outCh:getCount() end
-  return depth >= MUSIC_PREROLL * 2
+  return depth >= MUSIC_PREROLL * 4 * (fxInFlightCount + 1)
+end
+
+local function frontSlot()
+  local slot = 1
+  while fxQueue[slot] and fxQueue[slot].front do slot = slot + 1 end
+  return slot
+end
+
+local function promoteEffect(key)
+  for i, entry in ipairs(fxQueue) do
+    if entry.key == key then
+      if entry.front then return end
+      table.remove(fxQueue, i)
+      entry.front = true
+      table.insert(fxQueue, frontSlot(), entry)
+      return
+    end
+  end
 end
 
 function pumpEffects()
   drainEffects()
-  while #fxQueue > 0 and fxInFlightCount < FX_IN_FLIGHT_MAX do
+  while not pushHeld and #fxQueue > 0
+      and fxInFlightCount < FX_IN_FLIGHT_MAX do
     if not workerAlive() then
       fxQueue = {}
       return
     end
-    if fxInFlightCount > 0 and not musicHasHeadroom() then return end
+    if not fxQueue[1].front and not musicHasHeadroom() then return end
     local entry = table.remove(fxQueue, 1)
     if fxPending[entry.key] then
       local pushed = pcall(cmdCh.push, cmdCh, entry.request)
@@ -841,9 +863,17 @@ local function requestEffect(data, header, options)
   fxCh = fxCh or love.thread.getChannel("chipaudio_fx")
   drainEffects()
   if pinRequests then pinEffect(key) end
-  if fxReady[key] ~= nil or fxPending[key] then return true end
+  if fxReady[key] ~= nil then return true end
+  if fxPending[key] then
+    if frontRequests and not fxInFlight[key] then
+      promoteEffect(key)
+      pumpEffects()
+    end
+    return true
+  end
   fxPending[key] = true
-  fxQueue[#fxQueue + 1] = { key = key, request = {
+  local slot = frontRequests and frontSlot() or #fxQueue + 1
+  table.insert(fxQueue, slot, { key = key, front = frontRequests, request = {
     cmd = "effect", key = key, epoch = fxEpoch, header = header,
     options = {
       frequencyOffset = options.frequencyOffset,
@@ -857,7 +887,7 @@ local function requestEffect(data, header, options)
     channelPitches = ChipSynth.getChannelPitches(),
     stereo = ChipSynth.getStereo(),
     sampleRate = sampleRate(),
-  } }
+  } })
   pumpEffects()
   return true
 end
@@ -966,8 +996,9 @@ function ChipAudio.prewarmCry(data, species, resolved)
 end
 
 function ChipAudio.pumpEffects()
-  if suspended or not fxCh then return end
-  pumpEffects()
+  if suspended then return end
+  pushHeld = false
+  if fxCh then pumpEffects() end
 end
 
 function ChipAudio.prewarmPinned(fn, ...)
@@ -975,6 +1006,15 @@ function ChipAudio.prewarmPinned(fn, ...)
   pinRequests = true
   local ok, err = pcall(fn, ...)
   pinRequests = was
+  if not ok then error(err, 0) end
+end
+
+function ChipAudio.prewarmFront(fn, ...)
+  local was = frontRequests
+  frontRequests = true
+  pushHeld = true
+  local ok, err = pcall(fn, ...)
+  frontRequests = was
   if not ok then error(err, 0) end
 end
 

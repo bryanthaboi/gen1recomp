@@ -226,9 +226,12 @@ do
   eq(g.save.options.speedMenu, 2, "speed down syncs menu")
   g:_cycleSpeed(-1)
   g:_cycleSpeed(-1)
-  eq(g.save.options.speedOverworld, GameSpeed.LEVELS[#GameSpeed.LEVELS],
-    "wrapping down from NORMAL lands on the top level for every category")
-  eq(g.save.options.speedMenu, GameSpeed.LEVELS[#GameSpeed.LEVELS], "including menu")
+  eq(g.save.options.speedOverworld, 1,
+    "speed down at NORMAL stays at NORMAL for every category")
+  eq(g.save.options.speedMenu, 1, "including menu")
+  g.save.options.speedOverworld = GameSpeed.LEVELS[#GameSpeed.LEVELS]
+  g:_cycleSpeed(1)
+  eq(g.save.options.speedOverworld, 1, "speed up at the top level wraps to NORMAL")
 end
 
 -- A cart may narrow the ladder (CartManifest's `speeds`), and returning to

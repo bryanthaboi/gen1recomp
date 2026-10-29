@@ -60,13 +60,6 @@ end
 
 local function load_sidecar(mod, game)
   Space.store = Flags.newStore()
-  -- Standalone FR: do not keep the Sevii harbor seed unless a save restores it.
-  local harborVar = (Flags.VAR_IDS and (Flags.VAR_IDS.MAP_SCENE_ONE_ISLAND_HARBOR or Flags.VAR_IDS.VAR_MAP_SCENE_ONE_ISLAND_HARBOR))
-    or (Flags.IDS and (Flags.IDS.MAP_SCENE_ONE_ISLAND_HARBOR or Flags.IDS.VAR_MAP_SCENE_ONE_ISLAND_HARBOR))
-    or 0x4075
-  if harborVar then
-    Space.store.vars[harborVar] = nil
-  end
   local session = resolve_session(mod, game)
   if session then
     Flags.loadInto(Space.store, {

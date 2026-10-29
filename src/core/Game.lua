@@ -604,6 +604,14 @@ function Game.uiAnchorsHeldInStack(stack)
   return false
 end
 
+function Game.uiShiftRightInStack(stack, from)
+  for i = #(stack and stack.states or {}), from or 1, -1 do
+    local state = stack.states[i]
+    if state and state.uiShiftRight then return true end
+  end
+  return false
+end
+
 -- Where Game:draw starts drawing this frame.  Normally the topmost opaque
 -- state (StateStack:visibleBase) -- but an opaque menu pushed over a WIDE
 -- battle must not prevent that battle from drawing.  Native WIDE battles own
@@ -719,8 +727,18 @@ function Game:draw()
   -- menu to its top right, and the whole UI steps down with the zoom.
   Renderer.uiCentered = not Game.dynamicUI(self.save)
   Renderer.uiAnchorHold = Game.uiAnchorsHeldInStack(self.stack)
+  local shiftRight = false
+  if not Renderer.uiCentered and not Renderer.uiAnchorHold
+     and Game.uiShiftRightInStack(self.stack, drawFrom) then
+    if ModRuntime.wantsHook("render.compose") then
+      Renderer.uiAnchorHold = true
+    else
+      shiftRight = true
+    end
+  end
   Renderer:beginFrame(Game.uiCanvasTransparent(
     worldBelow, worldDrawn, wideBattle))
+  Renderer.uiShiftRight = shiftRight
   for i = drawFrom, #self.stack.states do
     local state = self.stack.states[i]
     local wideState = state and state.isWideBattleLayout
@@ -829,7 +847,7 @@ function Game:_cycleSpeed(dir)
   if busy then return end
   local GameSpeed = require("src.core.GameSpeed")
   local key = GameSpeed.optionKey(Game.speedCategoryInStack(self.stack))
-  local nextSpeed = GameSpeed.cycle(self.save.options[key], dir)
+  local nextSpeed = GameSpeed.step(self.save.options[key], dir)
   for _, c in ipairs(GameSpeed.CATEGORIES) do
     self.save.options[GameSpeed.optionKey(c)] = nextSpeed
   end

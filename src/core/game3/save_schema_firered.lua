@@ -90,6 +90,8 @@ local function repair_own_mon(session, mon)
     local otId = tonumber(mon.otId)
     mon.otSecretId = otId and otId >= 0x10000 and math.floor(otId / 0x10000) % 0x10000 or secret
   end
+  -- pokefirered/src/pokemon.c:3691
+  if mon.otGender == nil then mon.otGender = require("src.core.game3.party").otGender(session) end
 end
 
 local function each_held_mon(session, fn)

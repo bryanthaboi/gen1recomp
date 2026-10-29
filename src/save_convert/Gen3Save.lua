@@ -1559,11 +1559,18 @@ local function build(L)
     return names[k] or names[prefix .. k]
   end
 
-  local function secondAbility(species)
-    local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
-    if not (ok and type(Pokemon) == "table") then return nil end
-    if Pokemon._abilities == nil and Pokemon.install then pcall(Pokemon.install, Pokemon._cache) end
-    local row = Pokemon._abilities and Pokemon._abilities[species]
+  local function secondAbility(species, ctx)
+    local abilities
+    if ctx.abilities then
+      abilities = ctx.abilities()
+      if abilities == nil then ctx.abilitiesMissing = true end
+    else
+      local ok, Pokemon = pcall(require, "src.core.game3.pokemon")
+      if not (ok and type(Pokemon) == "table") then return nil end
+      if Pokemon._abilities == nil and Pokemon.install then pcall(Pokemon.install, Pokemon._cache) end
+      abilities = Pokemon._abilities
+    end
+    local row = type(abilities) == "table" and abilities[species]
     if type(row) ~= "table" then return nil end
     return (tonumber(row[2]) or 0) ~= 0
   end
@@ -1691,7 +1698,7 @@ local function build(L)
       otGender = num(mon.otGender, ctx.gender or 0),
       ivs = statTable(mon.ivs, L.IV_KEYS, 31),
       -- src/pokemon.c:1857
-      abilityNum = mon.abilityNum ~= nil and num(mon.abilityNum) or (secondAbility(species) == false and 0 or personality % 2),
+      abilityNum = mon.abilityNum ~= nil and num(mon.abilityNum) or (secondAbility(species, ctx) == false and 0 or personality % 2),
       ribbons = ribbonWord(mon, x),
     }
     if mon.ribbons == nil and x.ribbons == nil then
@@ -1876,6 +1883,18 @@ local function build(L)
       speciesName = opts.speciesName,
       speciesFromNational = opts.speciesFromNational,
     }
+    if type(opts.abilities) == "table" then
+      ctx.abilities = function() return opts.abilities end
+    elseif opts.version then
+      local abilityTable
+      ctx.abilities = function()
+        if abilityTable == nil then
+          local okS, SaveConvert = pcall(require, "src.save_convert.SaveConvert")
+          abilityTable = okS and SaveConvert.gen3CacheTable and SaveConvert.gen3CacheTable(opts.version, "pokemon/abilities.lua") or false
+        end
+        return abilityTable or nil
+      end
+    end
 
     c.name = trunc(save.name, L.PLAYER_NAME_LENGTH)
     c.rivalName = trunc(save.rivalName, L.PLAYER_NAME_LENGTH)
@@ -1924,7 +1943,7 @@ local function build(L)
     c.dynamicWarp = Gen3Save.cartWarp(save.dynamicWarp) or L.EMPTY_WARP
     c.escapeWarp = Gen3Save.cartWarp(save.escapeWarp) or L.EMPTY_WARP
     local ci = type(save.modData) == "table" and type(save.modData.cartImport) == "table" and save.modData.cartImport or {}
-    local heal = Gen3Save.cartWarp(ci.lastHealLocation) or (opts.healWarp and opts.healWarp(save.healMap))
+    local heal = Gen3Save.cartWarp(ci.lastHealLocation) or (opts.healWarp and opts.healWarp(save.healMap, tonumber(save.healX), tonumber(save.healY)))
     if heal then
       c.lastHealLocation = heal
     elseif not blocks then
@@ -2206,6 +2225,7 @@ local function build(L)
     c.encryptionKey = key
     local boxFlags = Gen3Save.boxFlagsOf(save)
     if boxFlags ~= nil then c.boxFlags = boxFlags end
+    if ctx.abilitiesMissing then return nil, Gen3Save.MSG.noData end
     return c, blocks
   end
 

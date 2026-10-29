@@ -287,7 +287,10 @@ fails that operation closed; a later `open` against the same source returns
 and are never executed. No raw ROM bytes or generated source are exposed.
 `view.assets:path(relative)` and
 `view.assets:info(relative)` accept only `assets/generated/...` paths and
-keep them under the selected version cache prefix. The API never changes
+keep them under the selected version cache prefix. `modkit lint` accepts a
+quoted `assets/generated/...` literal passed straight to a view's
+`assets:path` or `assets:info`; any other cache path in a mod file, including
+`mod.assets:path("assets/generated/...")`, still fails MK301. The API never changes
 `mod.game`, the active `Data` table, `GameVersion`, or cache mount state.
 
 ## Editing maps in Tiled

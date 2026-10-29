@@ -135,7 +135,8 @@ check(not sawZip, "ROM scan never lists .zip even beside .gb")
 -- Stub LauncherMods.installZip for rescan tests (NXMOD-02..04)
 local installCalls = {}
 local installBehavior = {} -- path -> {ok=bool, id=string|err}
-package.loaded["src.mods.LauncherMods"] = {
+local stubMods = {
+  STEP_BUDGET = 0.008,
   installZip = function(source)
     installCalls[#installCalls + 1] = source
     local b = installBehavior[source]
@@ -144,6 +145,9 @@ package.loaded["src.mods.LauncherMods"] = {
     return false, b.err or "bad zip"
   end,
 }
+stubMods.beginInstallZip = function(source) return { source = source } end
+stubMods.stepInstall = function(job) return "done", stubMods.installZip(job.source) end
+package.loaded["src.mods.LauncherMods"] = stubMods
 
 -- Empty inbox rescan → MTP notice, no install
 ri = freshImporter()

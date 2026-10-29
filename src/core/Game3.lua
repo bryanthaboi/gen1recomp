@@ -433,19 +433,38 @@ function Game3:applyOptions(opts)
       try("src.core.FrameCap", "clampToPerformance", caps.fpsMax)
     end
   end
-  if self.touchControls then
-    local g3 = type(opts.game3) == "table" and opts.game3 or nil
-    self.touchControls:applyOptions({
-      touchControls = (g3 and g3.touchControls) or opts.touchControls,
-      haptics = (g3 and g3.haptics) or opts.haptics,
-      hotbar = (g3 and g3.hotbar ~= nil) and g3.hotbar or opts.hotbar,
-      generation = 3,
-    })
-  end
+  self:applyTouchOptions(opts)
   if self.input and opts.bindings then
     self.input:applyBindings(opts.bindings)
   end
   if shaderfxCleared then self:writeOptions() end
+end
+
+function Game3:applyTouchOptions(opts)
+  if not self.touchControls then return end
+  opts = opts or self.options or {}
+  local g3 = type(opts.game3) == "table" and opts.game3 or nil
+  local flat = type(opts.touchControls) == "table" and opts.touchControls or {}
+  local layout = (g3 and type(g3.touchControls) == "table") and g3.touchControls or flat
+  if g3 then g3.haptics, g3.hotbar = nil, nil end
+  local moved = false
+  if layout ~= flat and (layout.enabled ~= nil or layout.skin ~= nil) then
+    if layout.enabled == false and flat.enabled ~= false then flat.enabled = false end
+    if flat.skin == nil then flat.skin = layout.skin end
+    layout.enabled, layout.skin = nil, nil
+    opts.touchControls = flat
+    moved = true
+  end
+  self.touchControls:applyOptions({
+    touchControls = {
+      enabled = flat.enabled, skin = flat.skin,
+      layouts = layout.layouts, positions = layout.positions, scale = layout.scale,
+    },
+    haptics = opts.haptics,
+    hotbar = opts.hotbar,
+    generation = 3,
+  })
+  if moved and self.options == opts then self:writeOptions() end
 end
 
 -- pokefirered/src/main.c:325
@@ -727,7 +746,7 @@ function Game3:_cycleSpeed(dir)
   if self:speedLocked() then return end
   local GameSpeed = lazyReq("src.core.GameSpeed")
   local key = GameSpeed.optionKey(self:speedCategory())
-  local nextSpeed = GameSpeed.cycle(self.options[key], dir)
+  local nextSpeed = GameSpeed.step(self.options[key], dir)
   for _, c in ipairs(GameSpeed.CATEGORIES) do
     self.options[GameSpeed.optionKey(c)] = nextSpeed
   end

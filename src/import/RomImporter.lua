@@ -646,6 +646,13 @@ local function cartsProse(imp)
   return table.concat(names, ", ") .. ", or " .. last
 end
 
+local function unsupportedRomText(imp, hash)
+  return ("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon "
+    .. "%s dump; patched, trimmed or "
+    .. "\"fixed\" dumps "
+    .. "(tagged [b] or [BF]) never verify."):format(hash, cartsProse(imp))
+end
+
 local function savesInboxDir(version)
   return SAVES_INBOX_DIR .. "/" .. tostring(version)
 end
@@ -994,10 +1001,150 @@ local function retireImportedSav(path)
   return true
 end
 
--- Rescan imports/mods/: install each .zip via _installMod / installZip.
--- Never deletes inbox zips (success or failure). Empty inbox → MTP notice.
+local MODS_RECEIPTS = MODS_INBOX_DIR .. "/.installed"
+local CARTS_RECEIPTS = CARTS_INBOX_DIR .. "/.installed"
+local ROM_SCAN_RECEIPTS = IMPORTS_DIR .. "/.scanned"
+
+local function inboxStamp(path, fullPath)
+  local dir = path:match("^(.*)/[^/]+$") or ""
+  local info = listFs(dir).getInfo(path, "file")
+  if not info then return nil end
+  return table.concat({ fullPath and path or (path:match("[^/]+$") or path),
+    tostring(info.size), tostring(info.modtime) }, "\t")
+end
+
+local function loadReceipts(file)
+  local receipts = {}
+  local raw = pfs().read(file)
+  if type(raw) ~= "string" then return receipts end
+  for line in raw:gmatch("[^\r\n]+") do
+    local stamp, id = line:match("^(.*)\t([^\t]+)$")
+    if stamp then receipts[stamp] = id end
+  end
+  return receipts
+end
+
+local function saveReceipt(file, receipts, stamp, id)
+  if not (stamp and type(id) == "string" and id ~= "") then return end
+  local name = stamp:match("^([^\t]*)\t")
+  for old in pairs(receipts) do
+    if old:match("^([^\t]*)\t") == name then receipts[old] = nil end
+  end
+  receipts[stamp] = id
+  local lines = {}
+  for s, modId in pairs(receipts) do lines[#lines + 1] = s .. "\t" .. modId end
+  table.sort(lines)
+  pfs().write(file, table.concat(lines, "\n") .. "\n")
+end
+
+local function modTreeInstalled(id)
+  return love.filesystem.getInfo("mods/" .. id .. "/manifest.json", "file") ~= nil
+end
+
+local function inboxClock()
+  return (love.timer and love.timer.getTime) or os.clock
+end
+
+function RomImporter:inboxBusy()
+  return self._inboxJob ~= nil
+end
+
+function RomImporter:inboxJobText()
+  local job = self._inboxJob
+  if not job then return nil end
+  return job.text or Strings("Scanning the inbox ...")
+end
+
+function RomImporter:modScanBusy()
+  return self._inboxJob ~= nil and self._inboxJob.kind == "mods"
+end
+
+function RomImporter:_inboxTimeLeft(job)
+  return math.max(0, (job.deadline or 0) - job.clock())
+end
+
+function RomImporter:_startInboxJob(job, run)
+  job.index = job.index or 0
+  job.clock = inboxClock()
+  job.co = coroutine.create(function() return run(self, job) end)
+  self._inboxJob = job
+  self:_pumpInboxJob()
+  return job
+end
+
+function RomImporter:_cancelInboxJob()
+  local job = self._inboxJob
+  if not job then return end
+  self._inboxJob = nil
+  if job.release then job.release(self, job) end
+end
+
+function RomImporter:_pumpInboxJob(budget, clock)
+  local job = self._inboxJob
+  if not job then return end
+  job.clock = clock or inboxClock()
+  job.deadline = job.clock() + (budget or require("src.mods.LauncherMods").STEP_BUDGET)
+  repeat
+    local ok, err = coroutine.resume(job.co)
+    if self._inboxJob ~= job then return end
+    if not ok then
+      self._inboxJob = nil
+      if job.release then job.release(self, job) end
+      job.finish(self, job, tostring(err))
+      return
+    end
+    if coroutine.status(job.co) == "dead" then
+      self._inboxJob = nil
+      job.finish(self, job)
+      return
+    end
+  until job.clock() >= job.deadline
+  if job.progress then job.progress(self, job) end
+end
+
+local function runModScan(self, job)
+  local LauncherMods = require("src.mods.LauncherMods")
+  for i, item in ipairs(job.items) do
+    job.index = i
+    job.install = LauncherMods.beginInstallZip(item.path)
+    while true do
+      local state, installed, res, extra = LauncherMods.stepInstall(job.install,
+        self:_inboxTimeLeft(job), job.clock)
+      if state == "done" then
+        job.install = nil
+        self:_modScanResult(job, item, installed, res, extra)
+        break
+      end
+      coroutine.yield()
+    end
+    coroutine.yield()
+  end
+end
+
+local function releaseModScan(_, job)
+  if job.install then require("src.mods.LauncherMods").cancelInstall(job.install) end
+  job.install = nil
+end
+
+local function modScanProgress(self, job)
+  local item = job.items[job.index]
+  if not item then return end
+  local progress = job.install and job.install.progress
+  local text
+  if progress and (progress.total or 0) > 0 then
+    text = Strings("Installing %s (%d of %d): %d/%d files", item.name, job.index,
+      #job.items, progress.done, progress.total)
+  else
+    text = Strings("Installing %s (%d of %d) ...", item.name, job.index, #job.items)
+  end
+  job.text = text
+  if not (self.modNotice and self.modNotice.text == text) then
+    self.modNotice = { ok = true, text = text }
+  end
+end
+
 function RomImporter:rescanModsAction()
-  if self.workState == "working" then return end
+  if self.workState == "working" or self._inboxJob then return end
   self.tab = "mods"
   self:ensureModsInboxDir()
   local candidates = self:scanModsInbox()
@@ -1005,80 +1152,121 @@ function RomImporter:rescanModsAction()
     self:_setNxModsInboxNotice()
     return
   end
-  local anyOk = false
-  local lastOk = nil
-  local lastFail = nil
-  local failCount = 0
+  local receipts = loadReceipts(MODS_RECEIPTS)
+  local items = {}
+  local conflicts, lastConflict = 0, nil
   for _, path in ipairs(candidates) do
-    -- Reuse _installMod carefully: it must not remove the inbox source.
-    self:_installMod(path)
-    if self.modNotice and self.modNotice.ok then
-      anyOk = true
-      lastOk = self.modNotice
-    else
-      failCount = failCount + 1
-      lastFail = self.modNotice
+    local stamp = inboxStamp(path)
+    local id = stamp and receipts[stamp]
+    local conflict = id and id:sub(1, 1) == "!"
+    if conflict then id = id:sub(2) end
+    if not (id and modTreeInstalled(id)) then
+      items[#items + 1] = { path = path, stamp = stamp,
+        name = path:match("[^/]+$") or path }
+    elseif conflict then
+      conflicts = conflicts + 1
+      lastConflict = { ok = false, text = "a mod named '" .. id .. "' is already installed" }
     end
   end
-  -- Success wins overall ok=true so a leftover MTP junk sibling cannot hide
-  -- a good install; still append the last failure so a real broken zip is
-  -- visible beside the success line.
-  if anyOk and lastFail then
-    local okText = (lastOk and lastOk.text) or "Installed"
-    local failText = (lastFail and lastFail.text) or "unknown error"
-    self.modNotice = {
-      ok = true,
-      text = Strings("%s\n(%d failed: %s)", okText, failCount, failText),
-    }
-  elseif anyOk then
-    self.modNotice = lastOk
-  elseif lastFail then
-    self.modNotice = lastFail
+  if #items == 0 then
+    self.modNotice = lastConflict or { ok = true,
+      text = Strings("Every .zip in %s/ is already installed.", MODS_INBOX_DIR) }
+    return
+  end
+  self:_startInboxJob({ kind = "mods", tab = "mods", items = items, receipts = receipts,
+    anyOk = false, failCount = conflicts, lastFail = lastConflict,
+    release = releaseModScan, progress = modScanProgress,
+    finish = RomImporter._finishModScanJob }, runModScan)
+end
+
+function RomImporter:_modScanResult(job, item, installed, res, extra)
+  if installed then
+    job.anyOk = true
+    job.lastOk = { ok = true, text = "Installed " .. tostring(res) }
+    saveReceipt(MODS_RECEIPTS, job.receipts, item.stamp, res)
+    local LauncherMods = require("src.mods.LauncherMods")
+    local checkTarget = type(extra) == "table" and extra.id and extra
+      or (type(res) == "string" and { id = res }) or nil
+    if checkTarget and LauncherMods.checkDependencies then
+      local depCheck = LauncherMods.checkDependencies(checkTarget)
+      if depCheck and depCheck.hasIssues then self._modDepResolver = depCheck end
+    end
+  else
+    if type(extra) == "table" and extra.alreadyInstalled then
+      saveReceipt(MODS_RECEIPTS, job.receipts, item.stamp, "!" .. extra.alreadyInstalled)
+    end
+    job.failCount = job.failCount + 1
+    job.lastFail = { ok = false, text = tostring(res) }
   end
 end
 
--- Rescan imports/saves/<version>/: import each new .sav via _importSave.
--- Failure retains the original .sav. Success records a per-game content hash
--- and retires the file to `*.sav.imported` so a second Import save cannot clone
--- slots (bytes stay in the inbox for MTP recovery). Already-hashed content
--- is skipped even under a new filename. Empty / AppleDouble-only → MTP notice.
-function RomImporter:rescanSavesAction(version)
-  if self.workState == "working" then return end
-  version = self:_resolveSaveVersion(version)
-  self:ensureSavesInboxDir(version)
-  local candidates = self:scanSavesInbox(version)
-  if #candidates == 0 then
-    self:_setNxSavesInboxNotice(version)
-    return
+function RomImporter:_finishModScanJob(job, err)
+  if err then
+    job.failCount = job.failCount + 1
+    job.lastFail = { ok = false, text = "Import failed: " .. err }
   end
-  local seenHashes = loadImportedSavHashes(version)
-  local okCount, failCount, skipCount = 0, 0, 0
-  local lastOk, lastFail = nil, nil
-  local gameLabel = GameVersion.info(version).displayName
-  for _, path in ipairs(candidates) do
+  if job.anyOk then pcall(self._refreshMods, self) end
+  if job.anyOk and job.lastFail then
+    self.modNotice = {
+      ok = true,
+      text = Strings("%s\n(%d failed: %s)", job.lastOk.text, job.failCount,
+        job.lastFail.text),
+    }
+  else
+    self.modNotice = job.lastOk or job.lastFail or self.modNotice
+  end
+end
+
+local function runSaveScan(self, job)
+  local version = job.version
+  for i, path in ipairs(job.items) do
+    job.index = i
     local data = readListed(path)
     local hash = (type(data) == "string" and data ~= "") and sha1(data) or nil
-    if hash and seenHashes[hash] then
-      skipCount = skipCount + 1
-      -- Leftover live .sav after a prior success: retire without re-importing.
+    data = nil
+    if hash and job.seenHashes[hash] then
+      job.skipCount = job.skipCount + 1
       retireImportedSav(path)
     else
+      self.saveNotice[version] = nil
       self:_importSave(version, path)
       local notice = self.saveNotice and self.saveNotice[version]
       if notice and notice.ok then
-        okCount = okCount + 1
-        lastOk = notice
+        job.okCount = job.okCount + 1
+        job.lastOk = notice
         if hash then
-          seenHashes[hash] = true
+          job.seenHashes[hash] = true
           appendImportedSavHash(version, hash)
         end
         retireImportedSav(path)
-      else
-        failCount = failCount + 1
-        lastFail = notice
+      elseif notice then
+        job.failCount = job.failCount + 1
+        job.lastFail = notice
       end
     end
+    coroutine.yield()
   end
+end
+
+local function saveScanProgress(self, job)
+  local path = job.items[job.index + 1] or job.items[job.index]
+  if not path then return end
+  job.notice = { ok = true, kind = "info",
+    text = Strings("Importing %s (%d of %d) ...", path:match("[^/]+$") or path,
+      math.min(job.index + 1, #job.items), #job.items) }
+  job.text = job.notice.text
+  self.saveNotice[job.version] = job.notice
+end
+
+local function finishSaveScan(self, job, err)
+  local version = job.version
+  if err then
+    job.failCount = job.failCount + 1
+    job.lastFail = { ok = false, text = "Import failed: " .. err }
+  end
+  local okCount, failCount, skipCount = job.okCount, job.failCount, job.skipCount
+  local lastOk, lastFail = job.lastOk, job.lastFail
+  local gameLabel = GameVersion.info(version).displayName
   if okCount > 0 then
     local okText
     if okCount == 1 and lastOk then
@@ -1104,50 +1292,116 @@ function RomImporter:rescanSavesAction(version)
       text = Strings("Already imported: %d file(s) skipped. Check SAVE SLOT.",
         skipCount),
     }
+  elseif job.notice and self.saveNotice[version] == job.notice then
+    self.saveNotice[version] = nil
   end
 end
 
--- NX "Scan again" on a game tab: import only the dump whose SHA-1 matches
--- that tab. A shared imports/ inbox often holds Red+Blue+Yellow at once;
--- picking the first pending file would jump Yellow → Red (and switch the
--- launcher tab via startData). Other known dumps stay for their own tabs.
--- Junk (wrong size / unknown hash) still surfaces when nothing matches the
--- tab and no other known dump is present -- same feedback as before for a
--- lone bad file.
-function RomImporter:rescanAction(version)
-  if self.workState == "working" then return end
-  version = version or self.tab or "red"
-  self.chooseVersion = version
-  self:ensureImportsDir()
-  local ready = self.ready
-  local candidates = self:scanInbox()
-  local targetReady = false
-  local sawOtherVersion = false
-  local junkData, junkName = nil, nil
-  for _, path in ipairs(candidates) do
-    local data = readListed(path)
+function RomImporter:rescanSavesAction(version)
+  if self.workState == "working" or self._inboxJob then return end
+  version = self:_resolveSaveVersion(version)
+  self:ensureSavesInboxDir(version)
+  local candidates = self:scanSavesInbox(version)
+  if #candidates == 0 then
+    self:_setNxSavesInboxNotice(version)
+    return
+  end
+  self.saveNotice = self.saveNotice or {}
+  self:_startInboxJob({ kind = "saves", tab = version, version = version,
+    items = candidates, seenHashes = loadImportedSavHashes(version),
+    okCount = 0, failCount = 0, skipCount = 0,
+    progress = saveScanProgress, finish = finishSaveScan }, runSaveScan)
+end
+
+local function readRomStepped(path, job)
+  local dir = path:match("^(.*)/[^/]+$") or ""
+  if listFs(dir) ~= love.filesystem or not love.filesystem.newFile then
+    return readListed(path)
+  end
+  job.read = {}
+  local data = require("src.mods.LauncherMods").readStepped(path, function()
+    coroutine.yield()
+  end, job.read)
+  job.read = nil
+  return type(data) == "string" and data or nil
+end
+
+local function runRomScan(self, job)
+  local version = job.version
+  for i, path in ipairs(job.items) do
+    job.index = i
     local displayName = path:match("[^/\\]+$") or path
-    if type(data) ~= "string" then
-      self:setError("The file could not be read: " .. displayName, version)
-      return
-    end
-    if not isAcceptedRomSize(#data) then
-      if not junkData then junkData, junkName = data, displayName end
-    else
-      local romVersion = self:_versionForSha1(sha1(data))
-      if not romVersion then
-        if not junkData then junkData, junkName = data, displayName end
-      elseif romVersion ~= version then
-        sawOtherVersion = true
-      elseif ready[romVersion] then
-        targetReady = true
-      else
-        self:startData(data, displayName)
+    local stamp = inboxStamp(path, true)
+    local hash = stamp and job.receipts[stamp]
+    local romVersion = hash and self:_versionForSha1(hash)
+    local data
+    if not hash or (romVersion == version and not self.ready[version]) then
+      data = readRomStepped(path, job)
+      if type(data) ~= "string" then
+        job.unreadable = displayName
         return
       end
+      hash, romVersion = nil, nil
+      if isAcceptedRomSize(#data) then
+        hash = sha1(data)
+        romVersion = self:_versionForSha1(hash)
+        if romVersion or not require("src.import.RomArchive").kind(data) then
+          saveReceipt(ROM_SCAN_RECEIPTS, job.receipts, stamp, hash)
+        end
+      end
     end
+    if not romVersion then
+      if not (job.junkData or job.junkHash) then
+        job.junkData, job.junkHash, job.junkName = data, data == nil and hash or nil, displayName
+      end
+    elseif romVersion ~= version then
+      job.sawOtherVersion = true
+    elseif self.ready[romVersion] then
+      job.targetReady = true
+    else
+      job.matchData, job.matchName = data, displayName
+      return
+    end
+    data = nil
+    coroutine.yield()
   end
-  if targetReady then
+end
+
+local function releaseRomScan(_, job)
+  local read = job.read
+  job.read = nil
+  if read and read.file then pcall(read.file.close, read.file) end
+end
+
+local function romScanProgress(self, job)
+  local path = job.items[job.index]
+  if not path then return end
+  local notice = { version = job.version,
+    status = Strings("Checking imports/ (%d of %d) ...", job.index, #job.items),
+    detail = path:match("[^/\\]+$") or path, scanning = true }
+  job.text = notice.status .. " " .. notice.detail
+  if not (self.notice and self.notice.scanning and self.notice.status == notice.status
+      and self.notice.detail == notice.detail) then
+    self.notice = notice
+  end
+end
+
+local function finishRomScan(self, job, err)
+  local version = job.version
+  if self.notice and self.notice.scanning then self.notice = nil end
+  if err then
+    self:setError("The imports/ scan failed: " .. err, version)
+    return
+  end
+  if job.unreadable then
+    self:setError("The file could not be read: " .. job.unreadable, version)
+    return
+  end
+  if job.matchData then
+    self:startData(job.matchData, job.matchName)
+    return
+  end
+  if job.targetReady then
     self.notice = {
       version = version,
       status = Strings("No new ROM found."),
@@ -1156,22 +1410,38 @@ function RomImporter:rescanAction(version)
     }
     return
   end
-  if junkData and not sawOtherVersion then
-    self:startData(junkData, junkName)
+  if job.junkData and not job.sawOtherVersion then
+    self:startData(job.junkData, job.junkName)
     return
   end
-  if #candidates > 0 then
-    local label = GameVersion.info(version).displayName
-    self.notice = {
-      version = version,
-      status = Strings("No matching ROM found."),
-      detail = Strings(
-        "%s is matched by SHA-1 on this tab. Other dumps in imports/ stay "
-          .. "for their own tabs; open that game and Scan again.", label),
-    }
+  if job.junkHash and not job.sawOtherVersion then
+    self:setError(unsupportedRomText(self, job.junkHash), version)
     return
   end
-  self:_setNxInboxNotice(version)
+  local label = GameVersion.info(version).displayName
+  self.notice = {
+    version = version,
+    status = Strings("No matching ROM found."),
+    detail = Strings(
+      "%s is matched by SHA-1 on this tab. Other dumps in imports/ stay "
+        .. "for their own tabs; open that game and Scan again.", label),
+  }
+end
+
+function RomImporter:rescanAction(version)
+  if self.workState == "working" or self._inboxJob then return end
+  version = version or self.tab or "red"
+  self.chooseVersion = version
+  self:ensureImportsDir()
+  local candidates = self:scanInbox()
+  if #candidates == 0 then
+    self:_setNxInboxNotice(version)
+    return
+  end
+  self:_startInboxJob({ kind = "roms", tab = version, version = version,
+    items = candidates, receipts = loadReceipts(ROM_SCAN_RECEIPTS),
+    release = releaseRomScan, progress = romScanProgress, finish = finishRomScan },
+    runRomScan)
 end
 
 function RomImporter:_romAction(version)
@@ -2325,10 +2595,7 @@ function RomImporter:startData(data, displayName, sourcePath)
   local actualHash = sha1(data)
   local version = self:_versionForSha1(actualHash)
   if not version then
-    self:setError(("Unsupported ROM (SHA-1 %s). This needs a clean US Pokemon "
-      .. "%s dump; patched, trimmed or "
-      .. "\"fixed\" dumps "
-      .. "(tagged [b] or [BF]) never verify."):format(actualHash, cartsProse(self)))
+    self:setError(unsupportedRomText(self, actualHash))
     return
   end
   self.romSha1 = actualHash
@@ -2906,7 +3173,7 @@ end
 -- source is whatever LauncherMods.installZip accepts: an absolute path string
 -- or a love DroppedFile.
 function RomImporter:_installMod(source)
-  if self.workState == "working" then return end
+  if self.workState == "working" or self._inboxJob then return end
   self.tab = "mods"
   local ok, installed, res, manifest = pcall(function()
     local LauncherMods = require("src.mods.LauncherMods")
@@ -2963,7 +3230,7 @@ end
 function RomImporter:chooseMod()
   if self:_importerPickPending() then return end
   if self.workState == "working" then return end
-  if self._hostPick or self._modInboxInstall then return end
+  if self._hostPick or self._modInboxInstall or self._inboxJob then return end
   if self:_inboxImport() then
     self:ensureModsInboxDir()
     self:rescanModsAction()
@@ -3474,6 +3741,12 @@ function RomImporter:_importSave(version, source, force)
   end
   local ok, res, info = require("src.import.SaveFileIO").importToSlot(source, version, force)
   if ok then
+    if force and type(source) == "string"
+        and source:sub(1, #savesInboxDir(version) + 1) == savesInboxDir(version) .. "/" then
+      local data = readListed(source)
+      if type(data) == "string" and data ~= "" then appendImportedSavHash(version, sha1(data)) end
+      retireImportedSav(source)
+    end
     self:_refreshSlots(version)
     self.activeSlot[version] = res
     self.slotScroll[version] = math.huge   -- pin the new row on screen (clamped in draw)
@@ -3940,6 +4213,7 @@ function RomImporter:update(dt)
   self:_pumpReimport()
   self:_pumpHostPick()
   self:_pumpModPickOpen(dt)
+  self:_pumpInboxJob()
   self:_pumpModInboxInstall()
   -- Dev harness: POKEPORT_LAUNCHER_SHOT=/path.png resizes the window from
   -- POKEPORT_WIN=WxH, lets the view settle, then captures one frame and
@@ -4778,6 +5052,10 @@ end
 function RomImporter:play(version, fade)
   if self.workState == "working" then return end
   if self._hostPick then return end
+  if self._inboxJob then
+    self.tab = self._inboxJob.tab or self.tab
+    return
+  end
   if not self.ready[version] then return end
   if fade then
     if not self._launchFade then
@@ -4820,7 +5098,7 @@ end
 -- "re-import" a column: drop it back to the choose/drop state so a fresh ROM
 -- can be selected (the extract replaces that version's cache).
 function RomImporter:reimport(version)
-  if self.workState == "working" then return end
+  if self.workState == "working" or self._inboxJob then return end
   if not self.ready[version] then return end
   self.ready[version] = false
   self.returning[version] = false
@@ -5964,7 +6242,7 @@ local function handheldHost()
     or os.getenv("MUOS") == "1" or os.getenv("KNULLI") == "1"
 end
 
-function RomImporter:_installCartFile(source, version)
+function RomImporter:_installCartFile(source, version, batch)
   local CartStore = require("src.carts.CartStore")
   local name = cartSourceName(source)
   local bytes = readCartSource(source)
@@ -5978,8 +6256,12 @@ function RomImporter:_installCartFile(source, version)
       tostring(err))
     return false
   end
-  if cart.base then self:_refreshCarts(cart.base) end
-  if version and version ~= cart.base then self:_refreshCarts(version) end
+  if batch then
+    if cart.base then batch[cart.base] = true end
+  else
+    if cart.base then self:_refreshCarts(cart.base) end
+    if version and version ~= cart.base then self:_refreshCarts(version) end
+  end
   local title = tostring(cart.title or cart.id)
   if version and cart.base and cart.base ~= version then
     local info = GameVersion.info(cart.base)
@@ -5988,7 +6270,7 @@ function RomImporter:_installCartFile(source, version)
   else
     self._cartNotice = Strings("Imported %s. It is in this list now.", title)
   end
-  return true
+  return true, cart.id
 end
 
 function RomImporter:_openCartBrowser(version)
@@ -6007,31 +6289,79 @@ function RomImporter:_openCartBrowser(version)
   return false
 end
 
+local function cartInstalled(id)
+  local CartStore = require("src.carts.CartStore")
+  return love.filesystem.getInfo(CartStore.fileFor(id), "file") ~= nil
+end
+
+local function runCartScan(self, job)
+  for i, item in ipairs(job.items) do
+    job.index = i
+    local ok, id = self:_installCartFile(item.path, job.version, job.bases)
+    if ok then
+      job.anyOk = true
+      job.lastOk = self._cartNotice
+      if type(id) == "string" then saveReceipt(CARTS_RECEIPTS, job.receipts, item.stamp, id) end
+    else
+      job.fails = job.fails + 1
+      job.lastFail = self._cartNotice
+    end
+    coroutine.yield()
+  end
+end
+
+local function cartScanProgress(self, job)
+  local item = job.items[job.index + 1] or job.items[job.index]
+  if not item then return end
+  self._cartNotice = Strings("Importing %s (%d of %d) ...", item.name,
+    math.min(job.index + 1, #job.items), #job.items)
+  job.text = self._cartNotice
+end
+
+local function finishCartScan(self, job, err)
+  if err then
+    job.fails = job.fails + 1
+    job.lastFail = Strings("That cart could not be imported: %s", err)
+  end
+  if job.anyOk then
+    for base in pairs(job.bases) do self:_refreshCarts(base) end
+    if job.version and not job.bases[job.version] then self:_refreshCarts(job.version) end
+  end
+  if job.anyOk and job.lastFail then
+    self._cartNotice = Strings("%s (%d could not be imported.)", job.lastOk, job.fails)
+  elseif job.anyOk then
+    self._cartNotice = job.lastOk
+  else
+    self._cartNotice = job.lastFail
+  end
+end
+
 function RomImporter:rescanCartsAction(version)
-  if self.workState == "working" then return false end
+  if self.workState == "working" or self._inboxJob then return false end
   self:ensureCartsInboxDir()
   local candidates = self:scanCartsInbox()
   if #candidates == 0 then
     self:_setNxCartsInboxNotice()
     return false
   end
-  local anyOk, fails = false, 0
-  local lastOk, lastFail
+  local receipts = loadReceipts(CARTS_RECEIPTS)
+  local items = {}
   for _, path in ipairs(candidates) do
-    if self:_installCartFile(path, version) then
-      anyOk = true
-      lastOk = self._cartNotice
-    else
-      fails = fails + 1
-      lastFail = self._cartNotice
+    local stamp = inboxStamp(path)
+    local id = stamp and receipts[stamp]
+    if not (id and cartInstalled(id)) then
+      items[#items + 1] = { path = path, stamp = stamp, name = path:match("[^/]+$") or path }
     end
   end
-  if anyOk and lastFail then
-    self._cartNotice = Strings("%s (%d could not be imported.)", lastOk, fails)
-  elseif not anyOk then
-    self._cartNotice = lastFail
+  if #items == 0 then
+    self._cartNotice = Strings("Every .g1rcart in %s/ is already imported.", CARTS_INBOX_DIR)
+    return false
   end
-  return anyOk
+  local job = self:_startInboxJob({ kind = "carts", tab = version, version = version,
+    items = items, receipts = receipts, bases = {}, fails = 0, anyOk = false,
+    progress = cartScanProgress, finish = finishCartScan }, runCartScan)
+  if self._inboxJob == job then return true end
+  return job.anyOk
 end
 
 function RomImporter:_cartImportButtonLabel()
@@ -7136,6 +7466,7 @@ end
 
 function RomImporter:playArena(version, cartId, spec)
   if not version or not spec then return false end
+  self:_cancelInboxJob()
   self._handedOff = true
   resetPointerCursor(self)
   if self._flex then require("src.import.LauncherView").detach(self) end
@@ -7926,6 +8257,12 @@ function RomImporter:_beginModInstall(spec)
     self:_modInstallFailed(spec, "release has no downloadable .zip")
     return
   end
+  local tooLarge = require("src.mods.LauncherMods").nxReleaseTooLarge(
+    spec.name or spec.modId, release)
+  if tooLarge then
+    self:_modInstallFailed(spec, tooLarge)
+    return
+  end
   local version = release.version or os.time()
   local tmpName = ("mod_update_%s_%s.zip"):format(tostring(spec.modId),
     tostring(version))
@@ -8295,9 +8632,13 @@ function RomImporter:_pumpDepPulls()
           state.err = err or "No downloadable releases found on GitHub"
         else
           local rel = releases[1]
+          local tooLarge = rel and LauncherMods.nxReleaseTooLarge(depId, rel)
           if not rel or not rel.zip or not rel.zip.url then
             state.stage = "error"
             state.err = "Latest release has no downloadable .zip asset"
+          elseif tooLarge then
+            state.stage = "error"
+            state.err = tooLarge
           else
             local tmpName = ("dep_%s_%s.zip"):format(depId, tostring(rel.version or os.time()))
             state.dlHandle = ModUpdate.beginDownloadZip(rel.zip.url, tmpName, rel.zip.size)
@@ -8678,6 +9019,7 @@ end
 
 -- NX / desktop / Android labels and inbox hints for the FlexLove view.
 function RomImporter:_modsImportButtonLabel()
+  if self:modScanBusy() then return Strings("Installing...") end
   if self:_inboxImport() then return Strings("Scan again") end
   return Strings("Import mod .zip")
 end

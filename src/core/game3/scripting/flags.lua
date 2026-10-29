@@ -332,17 +332,8 @@ local function repairForGame(store)
   if rules and rules.repairSaveState then rules.repairSaveState(store) end
 end
 
-function Flags.newStore(seed)
-  local store = {
-    flags = {},
-    vars = {},
-  }
-  -- First Sevii boot: Bill street intro onFrame wants MAP_SCENE == 2.
-  -- Extracted scripts advance this (e.g. to 3 after door warp).
-  local game = lazyReq("src.core.game3.profile").resolveId(nil)
-  local seviiScene = Flags.forVersion(game).VAR_IDS.MAP_SCENE_ONE_ISLAND_HARBOR
-  if seviiScene then store.vars[seviiScene] = 2 end
-  return store
+function Flags.newStore()
+  return { flags = {}, vars = {} }
 end
 
 function Flags.loadInto(store, saved)

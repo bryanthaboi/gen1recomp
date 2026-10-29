@@ -69,15 +69,16 @@ T.eq(anchorsAfter({ centered = true, hold = true }), 0, "and with it off")
 
 -- --------------------------------------------------------- the save panel
 
--- PrintSaveScreenText prints at hlcoord 4,0 over the kept-open START menu box
--- at 9,0 (start_sub_menus.asm:641-647); docking the menu alone split it (#1619).
+-- engine/menus/draw_start_menu.asm:5 hlcoord 10,0
+-- engine/menus/main_menu.asm:384 hlcoord 4,0
+-- engine/menus/start_sub_menus.asm:645-646
 do
   local StartMenu = require("src.ui.StartMenu")
   local DataFx = T.fixtures.load()
   require("src.render.Font").load(DataFx)
   local pushed = {}
   local panelGame = {
-    data = DataFx, save = SaveData.newGame(),
+    data = DataFx, save = SaveData.newGame(), renderer = Renderer,
     stack = { states = pushed,
               push = function(_, s) pushed[#pushed + 1] = s end,
               pop = function() end,
@@ -93,9 +94,175 @@ do
   T.check(saveRow ~= nil, "the START menu carries a SAVE row")
   T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
     "the START menu alone still docks")
+  local shiftIn = Game.uiShiftRightInStack
+  T.check(shiftIn ~= nil and shiftIn({ states = pushed }) == false,
+    "the START menu alone does not shift the screen")
   saveRow.onSelect()
-  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), true,
-    "the SAVE panel holds the anchors so it cannot be split from the menu")
+  local panel = pushed[#pushed]
+  T.check(panel ~= menu, "SAVE puts the panel up over the kept-open menu")
+  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
+    "the SAVE panel does not hold the screen in the letterbox")
+  T.check(shiftIn ~= nil and shiftIn({ states = pushed }) == true,
+    "the SAVE panel shifts the whole screen right")
+
+  local saveBox = require("src.ui.Theme").saveBox
+  Renderer.canvas = Renderer.canvas or love.graphics.newCanvas(160, 144)
+  Renderer.uiCentered, Renderer.uiAnchorHold = false, false
+  Renderer:beginFrame(true)
+  Renderer.uiShiftRight = shiftIn ~= nil and shiftIn({ states = pushed })
+  for _, state in ipairs(pushed) do state:draw() end
+  Renderer:setUIAnchor(saveBox.tx * 8, saveBox.ty * 8, saveBox.tw * 8,
+                       saveBox.th * 8, "bottom")
+  Renderer:setUIAnchor(0, 96, 160, 48, "bottom")
+  T.eq(#(Renderer.uiAnchors or {}), 0,
+    "no piece of the save screen docks on its own, so none is cut from the canvas")
+
+  local gfx = love.graphics
+  local dims, pdims = gfx.getDimensions, gfx.getPixelDimensions
+  local pieces = {
+    { "START box", menu.tx, menu.tw, menu.ty, menu.th },
+    { "save panel", 4, 16, 0, 10 },
+    { "YES/NO", saveBox.tx, saveBox.tw, saveBox.ty, saveBox.th },
+    { "text box", 0, 20, 12, 6 },
+  }
+  for _, win in ipairs({ { 1280, 720 }, { 1000, 700 }, { 960, 544 } }) do
+    local tag = ("%dx%d"):format(win[1], win[2])
+    gfx.getDimensions = function() return win[1], win[2] end
+    gfx.getPixelDimensions = function() return win[1], win[2] end
+    local R = Renderer:frameRects()
+    local want = R.vux + R.vuw - 160 * R.Ux
+    T.eq(R.uox, want, tag .. ": the canvas is flush with the window's right edge")
+    for _, pc in ipairs(pieces) do
+      local x = R.uox + pc[2] * 8 * R.Ux
+      T.eq(x - pc[2] * 8 * R.Ux, want, tag .. ": the " .. pc[1] .. " rides the same x offset")
+    end
+    local startRight = R.uox + (menu.tx + menu.tw) * 8 * R.Ux
+    local panelRight = R.uox + 20 * 8 * R.Ux
+    local textRight = R.uox + 20 * 8 * R.Ux
+    T.eq(startRight, R.vux + R.vuw, tag .. ": the START box ends at the window edge")
+    T.check(startRight <= panelRight and startRight <= textRight
+      and menu.ty + menu.th <= 18,
+      tag .. ": no START box pixel lies outside the panel and text box columns")
+    Renderer.uiShiftRight = false
+    local C = Renderer:frameRects()
+    T.eq(C.uox, R.vux + math.floor((R.vuw - 160 * R.Ux) / 2),
+      tag .. ": without the save screen the letterbox is centred as before")
+    Renderer.uiCentered, Renderer.uiShiftRight = true, true
+    C = Renderer:frameRects()
+    T.eq(C.uox, R.vux + math.floor((R.vuw - 160 * R.Ux) / 2),
+      tag .. ": CENTERED ignores the shift")
+    Renderer.uiCentered, Renderer.uiShiftRight = false, true
+  end
+  gfx.getDimensions, gfx.getPixelDimensions = dims, pdims
+  Renderer.uiAnchors, Renderer.uiShiftRight = nil, false
+end
+
+-- ----------------------------------------------------------- the bag list
+
+-- data/text_boxes.asm:13 LIST_MENU_BOX 4,2,19,12
+-- data/text_boxes.asm:28 USE_TOSS_MENU_TEMPLATE 13,10,19,14
+-- engine/menus/draw_start_menu.asm:5 hlcoord 10,0
+do
+  local StartMenu = require("src.ui.StartMenu")
+  local BagMenu = require("src.ui.BagMenu")
+  local DataFx = T.fixtures.load()
+  require("src.render.Font").load(DataFx)
+  local pushed = {}
+  local bagGame = {
+    data = DataFx, save = SaveData.newGame(), renderer = Renderer,
+    stack = { states = pushed,
+              push = function(_, s) pushed[#pushed + 1] = s end,
+              pop = function() pushed[#pushed] = nil end,
+              top = function() return pushed[#pushed] end },
+  }
+  bagGame.save.player.name = "RED"
+  require("src.inventory.Bag").add(bagGame.save, "FIX_POTION", 1, DataFx)
+  local menu = StartMenu.new(bagGame)
+  pushed[#pushed + 1] = menu
+  local list = BagMenu.new(bagGame, { onClose = function() end })
+  pushed[#pushed + 1] = list
+  local bagAt = #pushed
+  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
+    "the bag does not hold the screen in the letterbox")
+  T.eq(Game.uiShiftRightInStack({ states = pushed }), true,
+    "the bag shifts the whole screen right")
+
+  local Font = require("src.render.Font")
+  local baseDrawBox = Font.drawBox
+  local boxes = {}
+  Font.drawBox = function(tx, ty, tw, th, ...)
+    boxes[#boxes + 1] = { tx = tx, ty = ty, tw = tw, th = th }
+    return baseDrawBox(tx, ty, tw, th, ...)
+  end
+  local function boxesOf(state)
+    boxes = {}
+    state:draw()
+    return boxes
+  end
+  local function boxAt(list_, ty)
+    for _, b in ipairs(list_) do
+      if b.ty == ty then return b end
+    end
+  end
+
+  Renderer.canvas = Renderer.canvas or love.graphics.newCanvas(160, 144)
+  Renderer.uiCentered, Renderer.uiAnchorHold = false, false
+  Renderer:beginFrame(true)
+  Renderer.uiShiftRight = Game.uiShiftRightInStack({ states = pushed })
+  menu:draw()
+  local listBox = boxAt(boxesOf(list), 2)
+  T.check(listBox ~= nil and listBox.tx == 4 and listBox.tw == 16 and listBox.th == 11,
+    "the item list box is LIST_MENU_BOX 4,2-19,12")
+  T.check(list.items[1] and list.items[1].value == "FIX_POTION",
+    "the bag lists the item")
+  list.onChoose(list.items[1], list)
+  local useToss = pushed[#pushed]
+  T.check(useToss ~= list, "A on an item puts the USE/TOSS box up over the bag")
+  local useTossBox = useToss ~= list and boxAt(boxesOf(useToss), 10) or nil
+  T.check(useTossBox ~= nil and useTossBox.tx == 13 and useTossBox.tw == 7
+    and useTossBox.th == 5,
+    "the USE/TOSS box is USE_TOSS_MENU_TEMPLATE 13,10-19,14")
+  Font.drawBox = baseDrawBox
+  Renderer:setUIAnchor(0, 96, 160, 48, "bottom")
+  T.eq(#(Renderer.uiAnchors or {}), 0,
+    "no piece of the bag screen docks on its own, so none is cut from the canvas")
+  T.eq(Game.uiShiftRightInStack({ states = pushed }), true,
+    "the USE/TOSS box keeps the bag's shift")
+
+  local party = setmetatable({}, { __index = require("src.ui.PartyMenu") })
+  T.eq(party.isOpaque, true, "the party menu is a full-screen state")
+  pushed[#pushed + 1] = party
+  local over = { states = pushed }
+  local drawFrom = Game.drawBaseInStack(over, #pushed)
+  T.eq(drawFrom, #pushed, "the party menu over the bag is the draw base")
+  T.eq(Game.uiShiftRightInStack(over, drawFrom), false,
+    "a party menu opened from the bag does not ride the bag's shift")
+  T.eq(Game.uiShiftRightInStack(over, bagAt), true,
+    "drawn from the bag, the shift is on")
+  pushed[#pushed] = nil
+
+  local gfx = love.graphics
+  local dims, pdims = gfx.getDimensions, gfx.getPixelDimensions
+  for _, win in ipairs({ { 1280, 720 }, { 1000, 700 }, { 960, 544 } }) do
+    local tag = ("%dx%d"):format(win[1], win[2])
+    gfx.getDimensions = function() return win[1], win[2] end
+    gfx.getPixelDimensions = function() return win[1], win[2] end
+    Renderer.uiCentered, Renderer.uiShiftRight = false, true
+    local R = Renderer:frameRects()
+    local edge = R.vux + R.vuw
+    T.eq(R.uox + (menu.tx + menu.tw) * 8 * R.Ux, edge,
+      tag .. ": the START box under the bag ends at the window edge")
+    T.eq(listBox and (R.uox + (listBox.tx + listBox.tw) * 8 * R.Ux), edge,
+      tag .. ": the item list box the bag draws ends at the window edge")
+    T.eq(useTossBox and (R.uox + (useTossBox.tx + useTossBox.tw) * 8 * R.Ux), edge,
+      tag .. ": the USE/TOSS box the bag draws ends at the window edge")
+    Renderer.uiCentered = true
+    local C = Renderer:frameRects()
+    T.eq(C.uox, R.vux + math.floor((R.vuw - 160 * R.Ux) / 2),
+      tag .. ": CENTERED keeps the bag in the centred letterbox")
+  end
+  gfx.getDimensions, gfx.getPixelDimensions = dims, pdims
+  Renderer.uiAnchors, Renderer.uiShiftRight, Renderer.uiCentered = nil, false, false
 end
 
 -- ------------------------------------------------- the scale half of it

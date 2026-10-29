@@ -40,6 +40,18 @@ local ITEM_X, UP_TEXT_Y = 8, 9
 local PAGE_MAX = 8
 -- pokeemerald/src/main.c:309
 local REPEAT_START, REPEAT_CONTINUE = 40, 5
+-- pokeemerald/src/player_pc.c:88
+local SWAP_LINE_LENGTH = 7
+-- pokeemerald/src/menu_helpers.c:399 CreateSwapLineSprites
+local SWAP_LINE = {}
+for i = 0, SWAP_LINE_LENGTH - 1 do
+  -- pokeemerald/src/player_pc.c:1341
+  SWAP_LINE[i + 1] = { frame = i == 0 and 0 or 4, x = i * 16 + 128, y = 0 }
+end
+local swapLineImg = {}
+-- pokeemerald/src/player_pc.c:356
+local SWAP_ARROW_COLORS = { bg = FrlgFont.STDPAL[1], fg = FrlgFont.STDPAL[3], shadow = FrlgFont.STDPAL[2] }
+ItemStorage.SWAP_ARROW_COLORS = SWAP_ARROW_COLORS
 
 local function se(name)
   local SE = require("src.core.game3.se_ids")
@@ -456,25 +468,52 @@ local function draw_list()
       local q = RomText.plain("gText_xVar1", { stringVars = { string.format("%3d", tonumber(e.qty) or 0) } })
       FrlgFont.draw(q, ox + 104 - FrlgFont.measure(q, narrow()), y, narrow())
     end
-    if ItemStorage.swapFrom == idx then Window.cursorPx(ox, y) end
+    -- pokeemerald/src/player_pc.c:1030
+    if ItemStorage.swapFrom == idx then Window.cursorPx(ox, y, { colors = SWAP_ARROW_COLORS }) end
   end
-  if ItemStorage.state == "swap" then
-    local y = oy + UP_TEXT_Y + ItemStorage.row * rh
-    love.graphics.setColor(0.4, 0.4, 0.4, 1)
-    love.graphics.rectangle("fill", ox + ITEM_X, y - 2, 96, 1)
-    love.graphics.setColor(1, 1, 1, 1)
-  else
+  if ItemStorage.state ~= "swap" then
     Window.cursorPx(ox, oy + UP_TEXT_Y + ItemStorage.row * rh)
   end
+end
+
+-- pokeemerald/src/player_pc.c:1339 ItemStorage_UpdateSwapLinePos
+function ItemStorage.swapLine()
+  if not ItemStorage.open or ItemStorage.state ~= "swap" or is_rs() then return nil end
+  local y = 1 + (ItemStorage.row + 1) * 16
+  for i = 1, #SWAP_LINE do SWAP_LINE[i].y = y end
+  return SWAP_LINE
+end
+
+local function draw_swap_line()
+  local sprites = ItemStorage.swapLine()
+  if not sprites then return end
+  local g = require("src.ui.game3.rse.pokeblock_gfx").of("rse/pokeblock")
+  if swapLineImg.gfx ~= g then
+    local pal = g:manifest().palettes.swap_line
+    swapLineImg.gfx = g
+    swapLineImg[0] = g:sprite("swap_line", 0, 16, 16, pal)
+    swapLineImg[4] = g:sprite("swap_line", 4, 16, 16, pal)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  for i = 1, #sprites do
+    local s = sprites[i]
+    love.graphics.draw(swapLineImg[s.frame], s.x - 8, s.y - 8)
+  end
+end
+
+-- pokeemerald/src/player_pc.c:1015
+function ItemStorage.iconItem()
+  local e = items()[(ItemStorage.state == "swap" and ItemStorage.swapFrom or pos()) + 1]
+  return e and e.id or nil
 end
 
 local function draw_icon()
   local tpl = WIN.icon
   frame(tpl)
-  local e = items()[pos() + 1]
+  local id = ItemStorage.iconItem()
   local BagChrome = require("src.ui.game3.rse.bag_chrome")
   local ItemsData = require("src.core.game3.items_data")
-  local icon = e and ItemsData.toNumericId(e.id) or BagChrome.returnIconIndex()
+  local icon = id and ItemsData.toNumericId(id) or BagChrome.returnIconIndex()
   -- pokeemerald/src/player_pc.c:1110
   BagChrome.drawItemIcon(icon, 24 - 16, 80 - 16)
 end
@@ -516,6 +555,7 @@ function ItemStorage.draw()
     Window.printPx(RomText.plain("gText_No"), yn.left * 8 + 8, yn.top * 8 + 1 + ph)
     Window.cursorPx(yn.left * 8, yn.top * 8 + 1 + (ItemStorage.yesCursor - 1) * ph)
   end
+  draw_swap_line()
 end
 
 return ItemStorage

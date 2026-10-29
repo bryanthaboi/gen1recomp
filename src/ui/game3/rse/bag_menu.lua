@@ -264,7 +264,18 @@ function RseBag.handleInput(input, Bag)
     return
   end
   local blocked = {}
-  if Bag.mode == "list" then
+  if Bag.mode == "move" then
+    -- pokeemerald/src/item_menu.c:1447 Task_HandleSwappingItemsInput
+    if not Bag._switch and not input:wasPressed("select") then
+      local down = input:wasPressed("down")
+      local up = input:wasPressed("up")
+      if (up or down) and moveCursor(Bag, down) then
+        se(sound("bagCursor", "SE_SELECT"))
+        startShake()
+      end
+    end
+    blocked = { up = true, down = true, left = true, right = true, l = true, r = true }
+  elseif Bag.mode == "list" then
     local lr = require("src.core.game3.options").lrMode(Bag._session)
     local dir = 0
     if Bag._location ~= "itempc" and Bag._location ~= "berry_tree" and Bag._location ~= "blender" then
@@ -355,7 +366,12 @@ local function drawList(Bag, pocket, rows, pal, selected)
     local idx = scroll + i
     local y = y0 + 1 + (i - 1) * 16
     local r = rows[idx]
-    if idx == Bag.cursor then
+    if Bag.mode == "move" then
+      if idx == Bag.moveFrom then
+        -- pokeemerald/src/item_menu.c:958
+        FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, x0, y, { colors = grayCursorColors(pal) })
+      end
+    elseif idx == Bag.cursor then
       local cc = selected and grayCursorColors(pal) or colors
       FrlgFont.drawGlyph(FrlgFont.CHAR_SELECTOR_ARROW, x0, y, { colors = cc })
     end
@@ -377,6 +393,20 @@ local function drawList(Bag, pocket, rows, pal, selected)
         local img = Kit.image(m.select)
         if img then love.graphics.setColor(1, 1, 1, 1) love.graphics.draw(img, x0 + 96, y - 1) end
       end
+    end
+  end
+  if Bag.mode == "move" then
+    local g = require("src.ui.game3.rse.pokeblock_gfx").of("rse/pokeblock")
+    local swapPal = g:manifest().palettes.swap_line
+    local arrow = g:sprite("swap_line", 0, 16, 16, swapPal)
+    local line = g:sprite("swap_line", 4, 16, 16, swapPal)
+    -- pokeemerald/src/item_menu_icons.c:587, src/menu_helpers.c:434 UpdateSwapLineSpritesPos
+    local row = Bag.cursor - 1 - scroll
+    local cy = 1 + (row + 1) * 16
+    love.graphics.setColor(1, 1, 1, 1)
+    for i = 0, 7 do
+      local cx = 120 + i * 16 - (i == 7 and 8 or 0)
+      love.graphics.draw(i == 0 and arrow or line, cx - 8, cy - 8)
     end
   end
   return scroll, s
@@ -466,7 +496,8 @@ function RseBag.draw(Bag)
   local variant = fem and "female" or nil
   local pal = fem and m.palettes.female or m.palettes.male
   local switching = Bag._switch ~= nil
-  local selected = Bag.mode ~= "list"
+  local moving = Bag.mode == "move"
+  local selected = Bag.mode ~= "list" and not moving
 
   local bgE = m.layers.bg
   local img = Kit.image(variant and bgE.variants and bgE.variants.female or bgE.png)
@@ -507,7 +538,8 @@ function RseBag.draw(Bag)
     scroll, s = drawList(Bag, pocket, rows, pal, selected)
   end
 
-  local sel = rows[Bag.cursor]
+  -- pokeemerald/src/item_menu.c:933
+  local sel = rows[moving and Bag.moveFrom or Bag.cursor]
   if not switching then
     -- pokeemerald/src/item_menu_icons.c:535
     local icon = sel and ItemsData.toNumericId(sel.id) or BagChrome.returnIconIndex()
@@ -523,6 +555,9 @@ function RseBag.draw(Bag)
       desc = RomText.plain("gText_ReturnToVar1", { stringVars = { RomText.at("gBagMenu_ReturnToStrings", loc) } })
     end
     if desc then drawDescription(desc, pal) end
+  elseif moving and sel and not switching then
+    -- pokeemerald/src/item_menu.c:1438
+    drawDescription(RomText.plain("gText_MoveVar1Where", { stringVars = { sel.name } }), pal)
   elseif Bag.mode == "action" and sel then
     if not (pocket == "TM_CASE" and drawTmHmInfo(sel)) then
       drawDescription(RomText.plain("gText_Var1IsSelected", { stringVars = { sel.name } }), pal)
@@ -546,10 +581,10 @@ function RseBag.draw(Bag)
     drawMessageBox(Bag._depositText)
   end
 
-  if Bag.mode == "list" and not switching then
+  if (Bag.mode == "list" or moving) and not switching then
     local t = st.k
-    -- pokeemerald/src/item_menu.c:360
-    if Bag._location ~= "itempc" and Bag._location ~= "berry_tree" and Bag._location ~= "blender" then
+    -- pokeemerald/src/item_menu.c:360, :1442
+    if not moving and Bag._location ~= "itempc" and Bag._location ~= "berry_tree" and Bag._location ~= "blender" then
       BagChrome.drawArrow("left", 28, 16, t)
       BagChrome.drawArrow("right", 100, 16, t)
     end

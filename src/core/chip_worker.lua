@@ -59,8 +59,6 @@ local stereoEpoch = 0  -- matches ChipAudio; stale pan buffers are dropped
 local effects = {}     -- queued "effect" prewarm requests, oldest first
 local produced = 0     -- buffers rendered for the current song so far
 
--- a song start outranks a prewarm: the first MUSIC_PREROLL buffers gate when
--- the song is heard, a prewarmed cry only has to be done before its play
 local PREROLL = 4
 
 local function renderEffect(req)
@@ -151,7 +149,7 @@ while true do
 
   local musicWants = engine and not finished and gen
     and outCh:getCount() < LOOKAHEAD
-  if #effects > 0 and not (musicWants and produced < PREROLL) then
+  if #effects > 0 and not (musicWants and produced < PREROLL * 2) then
     idleWait = false
     renderEffect(table.remove(effects, 1))
   elseif musicWants then

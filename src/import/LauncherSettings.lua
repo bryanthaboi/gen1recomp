@@ -115,13 +115,6 @@ local FILTERS = { "OFF", "1X", "2X", "3X" }
 -- The core rows.  Helper modules are required lazily under pcall: they are
 -- pure label/cycle tables, but the launcher must never die because a render
 -- module grew a dependency on live game data.
--- TOUCH PAD, VIBRATION and the layout editor, shared by both row sets.
---
--- Gold reads these out of its own `gold` block (src/core/gen2/Save.lua:297),
--- so `opts` is whichever table the gear is editing and the rows never have to
--- know which game they belong to.  #1100 / #1135: the Gold gear carried none
--- of them, so a phone player could turn the pad and the buzz off in Red and
--- had no way to reach either in Gold.
 local function addTouchRows(rows, add, opts, hooks)
   -- TOUCH PAD only where the overlay can appear, mirroring OptionsMenu's
   -- gate (mobile, or desktop forced by POKEPORT_TOUCH=1).
@@ -162,13 +155,6 @@ local function addTouchRows(rows, add, opts, hooks)
       end)
   end
 
-  -- TOUCH CONTROLS, the on-screen pad's layout editor.  It used to be a
-  -- button on the game panel, once per game -- but the overlay layout is
-  -- global (options.touchControls.layouts), so three tabs offered three
-  -- buttons that edited the same thing while crowding the column that has to
-  -- hold Play.  It belongs with the other control rows, behind the gear.
-  -- The host owns the editor screen, so the row only fires when a hook was
-  -- supplied (the standalone save editor opens this model with none).
   if hooks and hooks.editTouchControls then
     rows[#rows + 1] = {
       label = Strings("TOUCH CONTROLS"),
@@ -207,7 +193,13 @@ local function addOrientationRow(add, opts)
   end
 end
 
-local function coreRows(opts, hooks)
+local function clearTouchLayouts(tc)
+  if type(tc) == "table" then
+    tc.layouts, tc.positions, tc.scale = nil, nil, nil
+  end
+end
+
+local function coreRows(opts, hooks, gen)
   local rows = {}
   local function add(label, value, step)
     rows[#rows + 1] = { label = label, value = value, step = step }
@@ -430,8 +422,12 @@ local function coreRows(opts, hooks)
     danger = true,
     action = function()
       opts.bindings = nil
-      local tc = opts.touchControls
-      if type(tc) == "table" then tc.layouts = nil end
+      if gen == 3 then
+        if type(opts.game3) ~= "table" then opts.game3 = {} end
+        opts.game3.touchControls = { layouts = {} }
+      else
+        clearTouchLayouts(opts.touchControls)
+      end
       return true
     end,
   }
@@ -791,6 +787,17 @@ local function gen2Rows(opts, hooks, shared)
   addTouchRows(rows, add, shared, hooks)
   addOrientationRow(add, shared)
 
+  rows[#rows + 1] = {
+    label = Strings("RESET REBINDS"),
+    actionLabel = Strings("Reset"),
+    danger = true,
+    action = function()
+      opts.bindings = nil
+      opts.touchControls = { layouts = {} }
+      return true
+    end,
+  }
+
   return rows
 end
 
@@ -809,8 +816,8 @@ function LauncherSettings.open(hooks, version)
   local opts = SaveData.loadOptions()
   local sections
   local GameVersion = require("src.core.GameVersion")
-  if GameVersion.VERSIONS[version]
-      and GameVersion.generation(version) == 2 then
+  local gen = GameVersion.VERSIONS[version] and GameVersion.generation(version)
+  if gen == 2 then
     local block = opts[GEN2_KEY]
     if type(block) ~= "table" then
       block = {}
@@ -821,7 +828,7 @@ function LauncherSettings.open(hooks, version)
     }
   else
     sections = {
-      { title = Strings("Game Options"), rows = coreRows(opts, hooks) },
+      { title = Strings("Game Options"), rows = coreRows(opts, hooks, gen) },
     }
   end
   local launcher = {

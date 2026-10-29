@@ -78,22 +78,25 @@ function Editor.load(opts)
   local applied
   if gen == 2 then
     local gold = type(optsTbl.gold) == "table" and optsTbl.gold or {}
-    local hotbar = gold.hotbar
-    if hotbar == nil then hotbar = optsTbl.hotbar end
+    local hotbar = optsTbl.hotbar
+    if gold.hotbar == false and hotbar ~= false then hotbar = false end
     applied = {
-      touchControls = gold.touchControls,
-      haptics = gold.haptics or optsTbl.haptics,
+      touchControls = require("src.core.gen2.Save").touchControls(optsTbl),
+      haptics = optsTbl.haptics,
       hotbar = hotbar,
       generation = 2,
     }
   elseif gen == 3 then
     local g3 = type(optsTbl.game3) == "table" and optsTbl.game3 or {}
-    local hotbar = g3.hotbar
-    if hotbar == nil then hotbar = optsTbl.hotbar end
+    local flat = type(optsTbl.touchControls) == "table" and optsTbl.touchControls or {}
+    local layout = type(g3.touchControls) == "table" and g3.touchControls or flat
     applied = {
-      touchControls = g3.touchControls or optsTbl.touchControls,
-      haptics = g3.haptics or optsTbl.haptics,
-      hotbar = hotbar,
+      touchControls = {
+        enabled = flat.enabled, skin = flat.skin,
+        layouts = layout.layouts, positions = layout.positions, scale = layout.scale,
+      },
+      haptics = optsTbl.haptics,
+      hotbar = optsTbl.hotbar,
       generation = 3,
     }
   else
@@ -170,22 +173,18 @@ end
 local function persist()
   local opts = SaveData.loadOptions()
   local cfg = TouchControls:config()
-  local block = {
-    enabled = cfg.enabled,
-    skin = cfg.skin,
-    layouts = cfg.layouts,
-  }
   local GameVersion = require("src.core.GameVersion")
   local gen = GameVersion.VERSIONS[Editor.version]
     and GameVersion.generation(Editor.version) or 1
-  if gen == 2 then
-    opts.gold = type(opts.gold) == "table" and opts.gold or {}
-    opts.gold.touchControls = block
-  elseif gen == 3 then
-    opts.game3 = type(opts.game3) == "table" and opts.game3 or {}
-    opts.game3.touchControls = block
+  if gen == 1 then
+    opts.touchControls = { enabled = cfg.enabled, skin = cfg.skin, layouts = cfg.layouts }
   else
-    opts.touchControls = block
+    local flat = type(opts.touchControls) == "table" and opts.touchControls or {}
+    flat.enabled, flat.skin = cfg.enabled, cfg.skin
+    opts.touchControls = flat
+    local home = gen == 2 and "gold" or "game3"
+    opts[home] = type(opts[home]) == "table" and opts[home] or {}
+    opts[home].touchControls = { layouts = cfg.layouts }
   end
   SaveData.saveOptions(opts)
 end
