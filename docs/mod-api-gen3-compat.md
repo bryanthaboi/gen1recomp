@@ -112,6 +112,12 @@ and 13 report that they have no Gen 3 target. Routing is
 | Code registry, no data target | `migrations` |
 | No Gen 3 target (reported, never merged) | `apricorns`, `audio`, `battle_sprite_scales`, `constants`, `field`, `held_items`, `link_fields`, `phone_contacts`, `radio_channels`, `rulesets`, `text_pointers`, `tilesets`, `transitions` |
 
+`render_pipelines` run all three stages on Gen 3: `drawWorld` owns the field
+plane (`src/core/game3/display.lua`), `worldPresent` folds over it before the
+UI, `present` over the whole frame, and every pipeline gets its OPTION row.
+The Gen 3 `ctx` and `ctx.drawField(opts)` are described in `docs/modding.md`
+("Rendering pipelines") and [RFC 0022](rfcs/0022-gen3-world-pipeline.md).
+
 On an `api` 3 mod, `pokemon`, `moves`, `items`, `trainers` and `encounters`
 take the canonical Gen 1 record shape; `text`, `rom_text`, `landmarks` and
 `decorations` pass native shapes through; registries with a Gen 3 shape and no

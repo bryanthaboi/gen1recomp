@@ -338,6 +338,64 @@ Pipelines.setLevel("dirty", 0)
 Pipelines.reset()
 Pipelines.install(nil)
 
+-- ------- Gen 3 has a world pass too (docs/rfcs/0022)
+--
+-- A Gen 3 dataset used to make every world pipeline inert: no row, no
+-- level, never drawn.  The Gen 3 field plane now asks the world pipeline
+-- first (src/core/game3/display.lua), so the same mod has to be selectable
+-- and drawn there exactly as on Gen 1 and Gen 2 -- driven only through the
+-- public mod API.
+do
+  local g3files = {
+    ["mods/g3world/manifest.json"] = manifest("g3world"),
+    ["mods/g3world/main.lua"] = [[
+      local mod = ...
+      local T = mod.exports
+      T.out = love.graphics.newCanvas(2, 2)
+      T.calls = 0
+      mod.content.render_pipelines:register("g3diorama", {
+        label = "G3",
+        levels = { "OFF", "ON" },
+        gate = function() return true end,
+        drawWorld = function(ctx)
+          T.calls = T.calls + 1
+          T.gen = ctx.generation
+          return T.out
+        end,
+      })
+    ]],
+  }
+  local g3data = {}
+  local g3loader = Loader.new({ fs = memfs(g3files) })
+  check(g3loader:load(g3data), "the Gen 3 world-pipeline mod loads clean: "
+    .. table.concat(g3loader.errors, "; "))
+  Schemas.bindGen3(g3data, "firered")
+  Pipelines.install(g3data)
+  local G3 = g3loader.exports.g3world
+
+  -- no-mod parity on Gen 3: off means the vanilla field plane
+  eq(Pipelines.worldPipeline(), nil, "Gen 3: a switched-off world pipeline leaves the vanilla plane")
+  eq(G3.calls, 0, "Gen 3: no draw callback runs while off")
+
+  -- the seam: switch it on through the ladder and it owns the world
+  eq(Pipelines.setLevel("g3diorama", 1), 1, "Gen 3: a world pipeline can be switched on")
+  eq(Pipelines.worldPipeline(), "g3diorama", "Gen 3: the world pipeline owns the world pass")
+  eq(Pipelines.drawWorld("g3diorama", { generation = 3 }), G3.out,
+    "Gen 3: drawWorld hands back the mod's canvas")
+  eq(G3.gen, 3, "Gen 3: the frame context says which generation it is")
+  eq(Pipelines.canToggle("g3diorama", nil, nil), true,
+    "Gen 3: the mod's own gate decides whether the player may toggle it")
+
+  -- a restored level survives a boot on Gen 3 instead of being forced OFF
+  Pipelines.applyOptions({ pipelines = { g3diorama = 1 } })
+  eq(Pipelines.level("g3diorama"), 1, "Gen 3: a stored level is restored")
+  Pipelines.applyOptions({ pipelines = { g3diorama = 0 } })
+  eq(Pipelines.worldPipeline(), nil, "Gen 3: switched off again, the vanilla plane is back")
+
+  Pipelines.reset()
+  Pipelines.install(nil)
+end
+
 -- ------- and with no mods at all, the whole subsystem is inert
 
 eq(#Pipelines.list(), 0, "a mod-free boot registers no pipelines")

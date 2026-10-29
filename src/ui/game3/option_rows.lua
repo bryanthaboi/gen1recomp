@@ -227,7 +227,8 @@ local function buildRows(ctx, skip)
   local Pipelines = require("src.render.Pipelines")
   for _, entry in ipairs(Pipelines.list()) do
     local id = entry.id
-    if entry.def.present then
+    -- every pipeline gets a row now that Gen 3 has a world pass
+    if entry.def.present or entry.def.drawWorld or entry.def.worldPresent then
       add({
         id = "pipeline:" .. id,
         label = Strings(entry.def.label or id:upper()),

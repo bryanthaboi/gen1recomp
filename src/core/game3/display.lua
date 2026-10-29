@@ -249,7 +249,14 @@ function Display.presentUi(game, winW, winH, kind, drawFn)
   return false
 end
 
-local function drawFieldPlane(game, vw, vh, Renderer)
+local Pipelines = require("src.render.Pipelines")
+local drawWorldPipeline  -- below drawFieldPlane
+
+-- `fieldOpts` reaches FieldView.draw (skipActors / actorsOnly), and
+-- `animate == false` skips this frame's sprite animation tick -- a render
+-- pipeline may draw the field more than once per frame and must not make
+-- every sprite animate twice as fast.
+local function drawFieldPlane(game, vw, vh, Renderer, fieldOpts, animate)
   local Bg = require("src.core.game3.bg")
   local Oam = require("src.core.game3.oam")
   local FieldView = require("src.core.game3.field_view")
@@ -270,10 +277,12 @@ local function drawFieldPlane(game, vw, vh, Renderer)
     })
     Renderer:endUprightPass()
   else
-    FieldView.draw(game, vw, vh, { exchangeCanvas = exchange })
+    local opts = { exchangeCanvas = exchange }
+    for k, v in pairs(fieldOpts or {}) do opts[k] = v end
+    FieldView.draw(game, vw, vh, opts)
   end
   Oam.setLayer(prev)
-  Oam.animateSprites("world")
+  if animate ~= false then Oam.animateSprites("world") end
   Oam.buildOamBuffer()
   if Bg.hasVisible() then
     for pri = 3, 0, -1 do
@@ -283,6 +292,39 @@ local function drawFieldPlane(game, vw, vh, Renderer)
   else
     Oam.flush("world")
   end
+end
+
+-- The Gen 3 half of the world-pipeline seam (docs/rfcs/0022): the same ctx
+-- keys Gen 1 and Gen 2 hand a pipeline where they mean the same thing, plus
+-- `drawField(opts)`, which draws the vanilla field plane -- tiles, sprites
+-- and field effects, OAM included -- into whatever canvas is current, at
+-- world-pixel scale.  `opts.skipActors` / `opts.actorsOnly` split it into
+-- ground and actors.  Sprite animation ticks on the first call only.
+drawWorldPipeline = function(game, id, vw, vh, Renderer)
+  local FieldView = require("src.core.game3.field_view")
+  local Map = require("src.core.game3.map")
+  local _, _, pw, ph = Renderer:playfieldRect()
+  local animated = false
+  local ctx = {
+    generation = 3,
+    cam = FieldView.camera(game, vw, vh),
+    vw = vw, vh = vh,
+    width = pw, height = ph,
+    scale = Renderer:fitScale(),
+    level = Pipelines.level(id),
+    map = Map.current,
+    drawField = function(opts)
+      love.graphics.push("all")
+      love.graphics.origin()
+      local ok, err = pcall(drawFieldPlane, game, vw, vh, nil, opts, not animated)
+      animated = true
+      love.graphics.pop()
+      if not ok then error(err, 0) end
+    end,
+  }
+  local override = Pipelines.drawWorld(id, ctx)
+  if override then override = Pipelines.worldPresent(override, ctx) end
+  return override
 end
 
 local uiRenderer
@@ -372,14 +414,32 @@ local function presentPlanes(game)
   love.graphics.push("all")
   love.graphics.origin()
   local vw, vh = Renderer:worldViewSize()
-  drawFieldPlane(game, vw, vh, Renderer)
+  local Transition = package.loaded["src.core.game3.battle_transition"]
+  local Fade = package.loaded["src.ui.game3.fade"]
+  local override = nil
+  -- A render pipeline (src/render/Pipelines.lua) may own the field plane,
+  -- exactly as on Gen 1 and Gen 2: it hands back one finished window-size
+  -- image (composited by Renderer:endFrame like Gen 1's worldOverride) or
+  -- nil to leave this frame to the vanilla draw.  The battle transition and
+  -- the barn-door wipe paint onto the world canvas, so they keep the
+  -- vanilla plane for the few frames they run.
+  local transitioning = (Transition and Transition.isActive and Transition.isActive())
+    or (Fade and Fade.barnDoorWipeActive and Fade.barnDoorWipeActive())
+  local pipelineId = not transitioning and Pipelines.worldPipeline() or nil
+  if pipelineId then
+    override = drawWorldPipeline(game, pipelineId, vw, vh, Renderer)
+    -- setWorldOverride rejects a non-canvas return; the vanilla plane then
+    -- draws as if the pipeline had declined, never a blank world
+    Renderer:setWorldOverride(override)
+    override = Renderer.worldOverride
+  end
+  -- with no world pipeline on, this is the vanilla frame, call for call
+  if not override then drawFieldPlane(game, vw, vh, Renderer) end
   love.graphics.pop()
   love.graphics.setCanvas(Renderer.worldCanvas)
-  local Transition = package.loaded["src.core.game3.battle_transition"]
   if Transition and Transition.isActive and Transition.isActive() then
     Transition.drawWorld(Renderer.worldCanvas, vw, vh)
   end
-  local Fade = package.loaded["src.ui.game3.fade"]
   if Fade and Fade.barnDoorWipeActive and Fade.barnDoorWipeActive() then
     love.graphics.push("all")
     love.graphics.origin()

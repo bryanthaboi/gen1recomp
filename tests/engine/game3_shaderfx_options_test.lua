@@ -99,7 +99,9 @@ do
   Pipelines.install(data)
   local rows = ids(Rows.build({ options = {} }))
   check(rows["pipeline:grade"] ~= nil, "a mod post-process pipeline gets a Gen 3 row")
-  check(rows["pipeline:voxel"] == nil, "a world-only pipeline is not offered on Gen 3")
+  -- Gen 3 has a world pass since docs/rfcs/0022, so a world-only pipeline is
+  -- a real display mode there and gets its row like any other
+  check(rows["pipeline:voxel"] ~= nil, "a world-only pipeline is offered on Gen 3")
   local opts = {}
   rows["pipeline:grade"].step({ options = opts }, 1)
   eq(opts.pipelines and opts.pipelines.grade, 1, "the row persists its level")

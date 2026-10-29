@@ -752,6 +752,16 @@ Three rules worth knowing:
 Returning `nil` from `drawWorld` is a normal answer meaning "not this
 frame"; the engine draws the vanilla world instead.
 
+**Gen 3** (FireRed, LeafGreen, Ruby, Sapphire, Emerald) runs the same three
+stages ([RFC 0022](rfcs/0022-gen3-world-pipeline.md)). Its `ctx` carries
+`generation = 3`, `cam`, `vw`/`vh`, `width`/`height`, `scale`, `level`, `map`
+and `ctx.drawField(opts)`, which draws the vanilla field plane -- tiles,
+sprites and field effects -- into the current canvas at world-pixel scale
+(`opts.skipActors` / `opts.actorsOnly` split ground from actors). There is no
+`ctx.state`, `paletteFor` or `drawFx` on Gen 3: field effects are part of the
+plane `drawField` draws. During the battle transition and the barn-door wipe
+the vanilla plane is kept.
+
 ## Variable-size overworld sprites
 
 The `sprites` registry keeps the vanilla 16x16 grounded walker as its default,

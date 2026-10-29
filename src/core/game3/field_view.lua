@@ -1695,6 +1695,19 @@ local function drawMosaicLayer(level, ox, oy, drawFn)
   love.graphics.pop()
 end
 
+-- The camera FieldView.draw tracks this frame (top-left, world pixels), for a
+-- render pipeline that draws the field itself (docs/rfcs/0022).  Same rule as
+-- the draw below: centred on the player, plus the scripted pan.
+function FieldView.camera(game, canvasW, canvasH)
+  canvasW = canvasW or Display.W
+  canvasH = canvasH or Display.H
+  local px, py = playerPixels(game)
+  return {
+    x = math.floor((px or 0) + CELL / 2 - canvasW / 2) + (FieldView.cameraPanX or 0),
+    y = math.floor((py or 0) + CELL / 2 - canvasH / 2) + (FieldView.cameraPanY or 0),
+  }
+end
+
 function FieldView.draw(game, canvasW, canvasH, opts)
   canvasW = canvasW or Display.W
   canvasH = canvasH or Display.H
