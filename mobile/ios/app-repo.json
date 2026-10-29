@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.3.98",
+          "date": "2026-10-29",
+          "size": 44721717,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.3.98/gen1recomp++-0.3.98-ios.ipa",
+          "localizedDescription": "squash deez\n\n## Issues closed\n\n- #3066 Trainer gender bug? (Sapphire)\n- #3069 Can't move items in bag in Gen 3 (Emerald, FRLG)\n- #3071 Jessie james sprites are not colored with advanced colors (OVERWORLD)\n- #3073 some attack moves like SMOG, bug the color pallete in battle while its attacking (ADVANCE COLORS)\n- #3075 Pressing L and  ZL or zr etc speed up the game\n- #3076 Dynamic UI isnt working properly\n- #3078 Button mapping option missing\n- #3079 modkit lint MK301 rejects the assets/generated/ paths that mod.datasets view.assets:path requires\n- #3080 emerald export\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.97",
           "date": "2026-10-26",
           "size": 44714538,
