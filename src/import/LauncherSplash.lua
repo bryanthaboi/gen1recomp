@@ -1,7 +1,10 @@
 local LauncherSplash = {}
 LauncherSplash.__index = LauncherSplash
+LauncherSplash.spooky = os.time() < os.time({
+  year = 2026, month = 11, day = 1, hour = 0, min = 0, sec = 0,
+})
 
-local DURATION = 381 / 30
+local DURATION = LauncherSplash.spooky and 381 / 30 or 127 / 30
 local FADE_SECONDS = 0.75
 local REVEAL_START_SECONDS = 127 / 60
 local REVEAL_SECONDS = 0.65
@@ -17,7 +20,8 @@ function LauncherSplash.new()
   if options.splashVideo == false then return nil end
   local self = setmetatable({ elapsed = 0, age = 0, opacity = 1 }, LauncherSplash)
   local ok, err = pcall(function()
-    self.video = love.graphics.newVideo("assets/launcher/spooky.ogv", {
+    self.video = love.graphics.newVideo(LauncherSplash.spooky
+      and "assets/launcher/spooky.ogv" or "assets/launcher/splash.ogv", {
       audio = love.audio ~= nil and options.splashMute ~= true,
     })
     self.video:setFilter("linear", "linear")
