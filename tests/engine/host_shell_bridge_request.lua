@@ -122,4 +122,24 @@ body, err, code = HostShell.httpRequest("https://sync.example/sync/save", {
 eq(err, "no request transport on this platform",
   "a platform with no bridge at all keeps its old answer")
 
+-- Switch can fetch mod releases and archives through love-nx's download
+-- bridge, even though it has neither curl nor the signed-request bridge.
+love.system.getOS = function() return "NX" end
+local download
+love.system.httpDownload = function(url, path, userAgent, accept)
+  download = { url = url, path = path, userAgent = userAgent, accept = accept }
+  return true
+end
+check(HostShell.canFetch(), "Switch's native download bridge is a fetch transport")
+local downloaded, downloadErr = HostShell.httpDownload(
+  "https://mods.example/mod.zip",
+  "sdmc:/switch/gen1recomp/pokemon-love2d/mod_update_demo_1.2.0.zip",
+  "gen1recomp-mod-updater")
+eq(downloaded, true, "Switch mod archive download reaches the native bridge: "
+  .. tostring(downloadErr))
+eq(download.url, "https://mods.example/mod.zip", "download URL is preserved")
+eq(download.path, "sdmc:/switch/gen1recomp/pokemon-love2d/mod_update_demo_1.2.0.zip",
+  "the Switch destination path reaches love-nx unchanged")
+eq(download.userAgent, "gen1recomp-mod-updater", "the mod updater user agent is preserved")
+
 T.finish("host shell bridge request")

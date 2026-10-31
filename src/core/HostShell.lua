@@ -319,14 +319,13 @@ end
 -- ------- HTTP transport ----------------------------------------------------
 --
 -- Every remote fetch (mod index, mod releases, thumbnails) used to shell out
--- to curl, which macOS / Windows 10+ / desktop Linux all ship and Android does
--- not: adding a mod index on Android died with "curl is not available on this
--- platform" (#597).  Android goes through the GameActivity.httpDownload JNI
--- bridge instead (HttpsURLConnection, using the INTERNET permission link play
--- already needs), surfaced by our vendored liblove as
--- love.system.httpDownload(url, absPath, userAgent, accept).  Both transports
--- block the calling thread and deal in whole files, so callers keep exactly
--- the contract they had with curl.
+-- to curl, which desktop OSes ship and mobile / console ports may not. Android
+-- goes through the GameActivity.httpDownload JNI bridge instead
+-- (HttpsURLConnection, using the INTERNET permission link play already needs),
+-- surfaced by our vendored liblove as love.system.httpDownload(url, absPath,
+-- userAgent, accept). love-nx can expose the same download bridge on Switch.
+-- Both transports block the calling thread and deal in whole files, so callers
+-- keep exactly the contract they had with curl.
 
 -- DIAGNOSING A FAILED FETCH.  curl's own stderr ("curl: (56) The requested
 -- URL returned error: 403") went straight to the terminal, naming neither the
@@ -595,13 +594,15 @@ local function haveBridge()
   end
   -- The OS allowlist is deliberate: the bridge is a per-port native addition,
   -- not part of LOVE, so a build that exports the name on a platform we never
-  -- wired one for is a name collision, not a transport.  UWP is listed because
-  -- Xbox has no curl and no way to spawn one (Platform.canSpawnProcess is
-  -- false there), so the bridge is its only possible transport (#876).  Its
+  -- wired one for is a name collision, not a transport. NX is listed for
+  -- love-nx builds that expose the native download bridge. UWP is listed
+  -- because Xbox has no curl and no way to spawn one (Platform.canSpawnProcess
+  -- is false there), so the bridge is its only possible transport (#876). Its
   -- LOVE backend does not export it today and this still returns false, but
   -- the gate is no longer the thing in the way.
   local osName = love.system.getOS and love.system.getOS()
-  return osName == "Android" or osName == "iOS" or osName == "UWP"
+  return osName == "Android" or osName == "iOS" or osName == "NX"
+    or osName == "UWP"
 end
 
 local function haveRequestBridge()
@@ -678,18 +679,18 @@ function HostShell.httpDownload(url, absPath, userAgent, accept, maxTime, etagPa
   if not haveBridge() then
     return nil, "no network transport on this platform"
   end
-  -- The Android/iOS bridge has no conditional-GET support -- etagPath is
+  -- The native bridge has no conditional-GET support -- etagPath is
   -- silently ignored here, so a downloaded preset re-fetches in full every
-  -- time on those platforms.  No transport-level ETag/If-None-Match hook
+  -- time on bridge-only platforms. No transport-level ETag/If-None-Match hook
   -- exists on the bridge to hang one off, and it's low-priority for now.
   local ok, done = pcall(love.system.httpDownload, url, absPath, userAgent, accept)
   if ok and done then return true end
   return nil, "download failed for " .. url
 end
 
--- GET returning the body.  curl streams it through a pipe; the Android bridge
--- can only write a file, so there we fetch into the save directory (the only
--- writable root on Android) and read it back.
+-- GET returning the body. curl streams it through a pipe; the native bridge
+-- can only write a file, so there we fetch into the save directory and read
+-- it back.
 function HostShell.httpGet(url, userAgent, accept, maxTime)
   if type(url) ~= "string" or url == "" then return nil, "missing url" end
   userAgent = userAgent or "gen1recomp"
