@@ -477,6 +477,11 @@ local ROWS = {
     text = function(options)
       return Strings(require("src.core.LogicClock").label(options.logicClock))
     end },
+  { label = Strings.source("UI LAYOUT"), key = "uiLayout", port = true,
+    values = { "centered", "dynamic" },
+    display = {
+      centered = Strings.source("CENTERED"), dynamic = Strings.source("DYNAMIC"),
+    } },
   { label = Strings.source("BATTLE LAYOUT"), key = "battleLayout", port = true,
     values = { "og", "wide" },
     display = {
@@ -560,8 +565,8 @@ local GROUPS = {
   { id = "group.speed", label = Strings.source("SPEED"),
     members = { "textSpeed", "speed" } },
   { id = "group.video", label = Strings.source("VIDEO"),
-    members = { "videoMode", "orientation", "faithfulRes", "screenPos", "fpsCap", "vsync",
-      "logicClock" } },
+    members = { "uiLayout", "videoMode", "orientation", "faithfulRes", "screenPos", "fpsCap",
+      "vsync", "logicClock" } },
   { id = "group.graphics", label = Strings.source("GRAPHICS"),
     members = { "color", "uiLetterbox", "shaderfx", "shaderfx2", "frame" } },
   { id = "group.audio", label = Strings.source("AUDIO"),

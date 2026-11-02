@@ -353,6 +353,9 @@ pack_game_love() {
     $MANIFESTS \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' -x '*.psd' \
     -x 'data/generated/*' -x 'assets/generated/*')
+  if [ -f "$ROOT/PATCH_NOTES.md" ]; then
+    (cd "$ROOT" && zip -q "$LOVE_FILE" PATCH_NOTES.md)
+  fi
   # NOTE: grep -q here would race pipefail: it exits on first match, unzip
   # dies of SIGPIPE (141), and the pipeline "fails" nondeterministically.
   # >/dev/null keeps grep reading the whole stream instead.

@@ -143,6 +143,19 @@ for _, win in ipairs({ { 1920, 1080 }, { 1280, 720 }, { 1000, 700 }, { 1001, 700
     check(right <= W and right > W - R.Up,
       tag .. ": the shifted canvas ends within one GB pixel of the window edge")
   end
+  tag = ("%dx%d save split"):format(W, H)
+  R, pieces = phaseChecks(tag, W, H, { shift = 12 })
+  if R and pieces[1] then
+    eq(#pieces, 2, tag .. ": the canvas goes out in two slices")
+    local top, bot = pieces[1], pieces[2] or pieces[1]
+    local right = top.x + 160 * R.Ux
+    check(right <= W and right > W - R.Up,
+      tag .. ": rows 0-11 end within one GB pixel of the window edge")
+    eq(top.clip[4], 96 * R.Uy, tag .. ": the upper slice stops at row 12")
+    eq(bot.x, R.uox, tag .. ": rows 12-17 go out at the centred letterbox x")
+    eq(bot.clip[2], R.uoy + 96 * R.Uy, tag .. ": the lower slice starts at row 12")
+    eq(bot.clip[1], R.uox, tag .. ": nothing of the lower slice is blitted right of the letterbox")
+  end
 end
 
 local function placements(W, H, opts)

@@ -99,6 +99,54 @@ local function setTabScroll(imp, value)
   imp._tabScroll[tabKeyOf(imp)] = clamp(value, 0, tabScrollMax(imp))
 end
 
+local function routeMove(imp, start, move)
+  if move == 0 then return 0, false end
+  local picker = start.picker
+  if picker then
+    local want = (picker.scroll or 0) + move
+    picker.scroll = Kit.scrollClamp(want, picker.maxScroll)
+    return want - picker.scroll, false
+  end
+  if start.region then
+    local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
+      tabScrollMax(imp), move)
+    setTabScroll(imp, at)
+    move = leftover
+  end
+  if move ~= 0 and start.inner and Kit.dragX then
+    Kit.dragAdd(move)
+    return move, true
+  end
+  return move, false
+end
+
+local function stopGlide(imp)
+  if imp._fling then
+    imp._fling, imp._flingFed = nil, nil
+    Kit.dragEnd()
+  end
+  Kit.flingStop()
+end
+
+local function stepGlide(imp, dt)
+  local g = imp._fling
+  if not g then return end
+  if imp._modalKey ~= g.modal or tabKeyOf(imp) ~= g.tab
+      or (imp._flingFed and (Kit.dragAccum or 0) ~= 0) then
+    return stopGlide(imp)
+  end
+  local d = Kit.flingStep(dt, Kit.scale)
+  if d == 0 then return stopGlide(imp) end
+  local carry = (g.carry or 0) + d
+  local step = carry >= 0 and math.floor(carry) or -math.floor(-carry)
+  g.carry = carry - step
+  imp._flingFed = nil
+  if step == 0 then return end
+  local leftover, fed = routeMove(imp, g, step)
+  imp._flingFed = fed or nil
+  if leftover ~= 0 and not fed then stopGlide(imp) end
+end
+
 -- ------------------------------------------------------------- lifecycle
 
 local function ensureState(imp)
@@ -141,6 +189,7 @@ function LauncherView.detach(imp)
   Kit.occlude(nil)
   if imp then
     imp._consumedTouch, imp._consumedTouchUntil = nil, nil
+    stopGlide(imp)
   end
   if imp and imp._themeVideo then
     imp._themeVideo:release()
@@ -174,16 +223,17 @@ local function noDragAt(imp, x, y)
 end
 
 local function armMouse(imp, x, y)
-  if noDragAt(imp, x, y) then
+  local caught = imp._fling ~= nil
+  stopGlide(imp)
+  if noDragAt(imp, x, y) and not caught then
     imp._clickPt = { x = x, y = y }
     return
   end
   local shielded = imp._modalUpNow
   imp._mouseAt = {
-    x = x, y = y,
+    x = x, y = y, caught = caught, inner = true,
     region = not shielded and tabScrollMax(imp) > 0
       and inRect(imp._tabRegionRect, x, y) or false,
-    page = not shielded and (imp._pageScrollMax or 0) > 0 or false,
   }
   Kit.dragBegin(x, y)
 end
@@ -251,32 +301,30 @@ function LauncherView.update(imp, dt)
       start.dragged = true
     end
     if start.dragged then
-      local last = start.lastY or start.y
-      local move = -(my - last)
-      if move ~= 0 and start.region then
-        local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
-          tabScrollMax(imp), move)
-        setTabScroll(imp, at)
-        move = leftover
-      end
-      if move ~= 0 and start.page and (imp._pageScrollMax or 0) > 0 then
-        local at, leftover = Kit.scrollHandoff(imp._pageScroll or 0,
-          imp._pageScrollMax, move)
-        imp._pageScroll = at
-        move = leftover
-      end
-      if move ~= 0 then Kit.dragAdd(move) end
+      routeMove(imp, start, -(my - (start.lastY or start.y)))
     end
     start.lastY = my
   elseif not down and imp._mouseAt then
     local start = imp._mouseAt
     imp._mouseAt = nil
     Kit.dragEnd()
-    if not start.dragged then
+    if not start.dragged and not start.caught then
       imp._clickPt = { x = start.x, y = start.y }
     end
   end
   imp._prevMouseDown = down
+
+  local touches = imp._touchAt
+  if touches then
+    for _, touch in pairs(touches) do
+      if touch.dragged then
+        Kit.flingSample(touch.pending or 0, dt)
+        touch.pending = 0
+        break
+      end
+    end
+  end
+  stepGlide(imp, dt)
 
   -- Drain the action queue OUTSIDE the draw, so an action is free to destroy
   -- the view (Play/Edit) or block in a native picker.  The batch is resolved
@@ -291,6 +339,7 @@ end
 
 function LauncherView.wheelmoved(imp, dx, dy)
   if not imp._flex then return end
+  if (dy or 0) ~= 0 then stopGlide(imp) end
   imp._wheelY = (imp._wheelY or 0) + (dy or 0)
 end
 
@@ -374,12 +423,15 @@ function LauncherView.touchpressed(imp, id, x, y)
     or settings and (settings.confirm and (ms and ms._settingsConfirm or false) or settings)
     or ms and imp._modalKey and ms[imp._modalKey]
   local shielded = imp._modalUpNow
+  local caught = imp._fling ~= nil
+  stopGlide(imp)
+  Kit.flingReset()
   imp._touchAt[tostring(id)] = {
-    x = x, y = y, started = love.timer.getTime(),
+    x = x, y = y, started = love.timer.getTime(), caught = caught,
+    modal = imp._modalKey, tab = tabKeyOf(imp),
     region = not shielded and tabScrollMax(imp) > 0 and inRect(imp._tabRegionRect, x, y),
-    page = not shielded,
     picker = picker and inRect(picker.rect, x, y) and picker or nil,
-    inner = not noDragAt(imp, x, y),
+    inner = caught or not noDragAt(imp, x, y),
   }
   if imp._touchAt[tostring(id)].inner then Kit.dragBegin(x, y) end
 end
@@ -393,25 +445,9 @@ function LauncherView.touchmoved(imp, id, x, y)
       start.dragged = true
     end
     if start.dragged then
-      local last = start.lastY or start.y
-      local move = -(y - last)
-      if move ~= 0 and start.picker then
-        start.picker.scroll = Kit.scrollClamp((start.picker.scroll or 0) + move, start.picker.maxScroll)
-        move = 0
-      end
-      if move ~= 0 and start.region then
-        local at, leftover = Kit.scrollHandoff(tabScrollAt(imp),
-          tabScrollMax(imp), move)
-        setTabScroll(imp, at)
-        move = leftover
-      end
-      if move ~= 0 and start.page and (imp._pageScrollMax or 0) > 0 then
-        local at, leftover = Kit.scrollHandoff(imp._pageScroll or 0,
-          imp._pageScrollMax, move)
-        imp._pageScroll = at
-        move = leftover
-      end
-      if move ~= 0 and start.inner then Kit.dragAdd(move) end
+      local move = -(y - (start.lastY or start.y))
+      routeMove(imp, start, move)
+      start.pending = (start.pending or 0) + move
     end
     start.lastY = y
   end
@@ -429,14 +465,25 @@ function LauncherView.touchreleased(imp, id, x, y)
   end
   local start = imp._touchAt and imp._touchAt[tid]
   if imp._touchAt then imp._touchAt[tid] = nil end
-  if start and start.inner then Kit.dragEnd() end
+  local glide = false
+  if start and start.dragged then
+    Kit.flingSample(start.pending or 0, 0)
+    start.pending = 0
+    glide = Kit.flingRelease(Kit.scale) ~= 0
+  end
+  if glide then
+    start.carry = 0
+    imp._fling, imp._flingFed = start, nil
+  elseif start and start.inner then
+    Kit.dragEnd()
+  end
   -- A release with no matching press is leftover from the previous host
   -- (game / save editor), not a launcher tap (#2079).
   if not start then
     imp._suppressMouseUntil = love.timer.getTime() + ACT_DEDUP
     return
   end
-  if start and (start.dragged or start.longPressed) then
+  if start and (start.dragged or start.longPressed or start.caught) then
     -- Suppress the mouse click SDL will synthesize for this same gesture.
     imp._suppressClickUntil = love.timer.getTime() + ACT_DEDUP
     return
@@ -1561,9 +1608,7 @@ end
 
 -- ------------------------------------------------------------- header
 -- Rail, logo row (settings and quit on the right), tab bar.
--- Returns the y at which content may start.  Its vertical arithmetic is
--- mirrored by headerHeight() at the bottom of this file (the short-window
--- scroll decision needs the height before anything draws) -- keep in sync.
+-- Returns the y at which content may start.
 -- Header chrome is fixed: the same six tabs, the same gear and Quit, every
 -- frame.  Their tab rows, opts tables and action closures are built once
 -- instead of 60 times a second -- only `active`, `image` and the queued
@@ -3811,8 +3856,6 @@ local function footerLayout(imp, m, markW)
   }
 end
 
--- Pinned to the bottom of the window; returns the y it starts at, so the
--- panels above know how much room they have.
 -- Deliberately compact: at a large UI scale the footer is pure overhead
 -- competing with the panel for a short window's height, so the mark and the
 -- link share one line and the trust warning is capped at a single line.
@@ -6922,30 +6965,7 @@ end
 
 -- ------------------------------------------------------------ frame assembly
 
--- Mirror of buildHeader's vertical arithmetic, so the frame can decide
--- whether the window is tall enough BEFORE anything draws.  Keep in sync
--- with buildHeader (rail, logo row, tab row, hairline).
-local function headerHeight(m)
-  local _, _, labelH, rows = headerTabMetrics(m)
-  return m.railH + m.logoH + math.floor(12 * m.s) + math.floor(6 * m.s)
-    + rows * (m.chip + labelH) + (rows - 1) * math.floor(4 * m.s)
-    + math.floor(8 * m.s) + 1
-end
-
--- The panel space a tab needs to lay out without crushing itself.  Below
--- this the page SCROLLS (wheel / touch drag) instead of compressing: the
--- pinned Play block used to walk up over the cards on a short window, which
--- is unusable, and the footer simply lives below the fold until scrolled to.
 local function minPanelHeight(m)
-  -- One column stacks the ROM card and the slot card in a single pile, so it
-  -- needs more room than the side-by-side layout; two columns only have to
-  -- fit the taller of the two.  Both numbers came DOWN sharply when the
-  -- pinned Touch-Controls / Reset-rebinds pair moved behind the gear and the
-  -- save-file buttons moved into the slot card: the pile they used to sit on
-  -- top of was what forced 460/660 (#852), and a threshold larger than the
-  -- content pushes the whole page below the fold on windows that could have
-  -- shown it outright (a 1280x720 desktop was scrolling for 93px of nothing).
-  -- Whatever a window still cannot show, the page scroll above reaches.
   return math.floor((m.twoCol and 340 or 470) * m.s)
 end
 
@@ -6989,13 +7009,32 @@ local function drawTabLayer(imp, tabId, x, contentY, w, viewH, availH, m, dx)
     love.graphics.push()
     love.graphics.translate(dx, 0)
   end
+  local navFirst = Kit._navN or 0
   local py = Kit.scrollBegin(x, contentY, w, viewH, at, maxAt)
-  local budgetH = math.floor(viewH * (1 + PANEL_OVERSCAN))
+  local budgetH = math.floor(availH * (1 + PANEL_OVERSCAN))
   local panelW = math.max(0, w - Kit.scrollGutter(m.s))
   local contentH = buildTabPanel(imp, x, py + 5, panelW, availH - 5, budgetH - 5, m)
-  contentH = (contentH or (availH - 5)) + 10
+  local footH = footerHeight(imp, m)
+  local footY = math.max(py + (contentH or (availH - 5)) + 10, py + viewH - footH)
+  buildFooter(imp, m, footY)
+  contentH = footY - py + footH
   imp._tabContentH[tabId] = contentH
   imp._tabScrollMax[tabId] = Kit.scrollExtent(contentH, viewH)
+  local focus = Kit.focusId
+  if dx == 0 and Kit._ringShown and focus and focus ~= imp._tabRevealFor then
+    for i = navFirst + 1, Kit._navN or 0 do
+      local slot = Kit._nav[i]
+      if slot.id == focus then
+        if slot.y < contentY then
+          at = at - (contentY - slot.y)
+        elseif slot.y + slot.h > contentY + viewH then
+          at = at + (slot.y + slot.h - contentY - viewH)
+        end
+        break
+      end
+    end
+  end
+  if dx == 0 then imp._tabRevealFor = focus end
   at = clamp(at, 0, tabScrollMax(imp))
   imp._tabScroll[tabId] = at
   Kit.scrollEnd(x, contentY, w, viewH, at, tabScrollMax(imp))
@@ -7018,15 +7057,7 @@ function LauncherView.draw(imp)
   local click = imp._clickPt
   if click then mx, my = click.x, click.y end
 
-  -- SHORT-WINDOW SCROLL.  When the space between header and footer falls
-  -- under the panel minimum, the whole page (header included) scrolls by a
-  -- plain y offset: layout runs off a shifted m.top, so hit tests, focus
-  -- rects and drawing all agree with the real pointer and no transform is
-  -- involved.  Modals and the loader keep the REAL metrics and stay
-  -- centred in the window.
   local footH = footerHeight(imp, m)
-  local naturalAvail = m.h - headerHeight(m) - footH
-  local scrollMax = math.max(0, minPanelHeight(m) - naturalAvail)
 
   Kit.beginFrame(mx, my, click ~= nil, imp._wheelY or 0)
   imp._clickPt = nil
@@ -7081,15 +7112,6 @@ function LauncherView.draw(imp)
         rect.x, rect.y, rect.w, rect.h, step)))
     end
   end
-  local scroll = math.max(0, math.min(imp._pageScroll or 0, scrollMax))
-  if scrollMax > 0 and (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks then
-    local moved = math.max(0, math.min(scroll - Kit.wheelY * step, scrollMax))
-    if moved ~= scroll then
-      scroll = moved
-      Kit.wheelY = 0
-    end
-  end
-  imp._pageScroll, imp._pageScrollMax = scroll, scrollMax
   if (Kit.wheelY or 0) ~= 0 and not Kit.blockClicks
       and tabScrollMax(imp) > 0 then
     local was = tabScrollAt(imp)
@@ -7100,25 +7122,11 @@ function LauncherView.draw(imp)
     end
   end
 
-  -- The header is the only block that moves with the page scroll, so shift
-  -- m.top across the call and put it back rather than wrapping `m` in a
-  -- proxy: the proxy cost two tables a frame and put a metatable lookup on
-  -- every m.* read for the rest of the frame.
-  local baseTop = m.top
-  if scroll > 0 then m.top = baseTop - scroll end
   local contentY = buildHeader(imp, m)
-  m.top = baseTop
-  local footY, availH
-  if scrollMax > 0 then
-    availH = minPanelHeight(m)
-    footY = contentY + availH
-  else
-    footY = m.top + m.h - footH
-    availH = footY - contentY
-  end
+  local viewH = math.max(0, m.top + m.h - contentY)
+  local availH = math.max(viewH - footH, minPanelHeight(m))
 
   local x, w = m.contentX, m.contentW
-  local viewH = math.max(0, availH)
   local rect = imp._tabRegionRect
   if not rect then rect = {}; imp._tabRegionRect = rect end
   rect.x, rect.y, rect.w, rect.h = x, contentY, w, viewH
@@ -7136,7 +7144,6 @@ function LauncherView.draw(imp)
   end
 
   if imp.tab == "box" then require("src.import.BoxOrganizer").drawSticky(imp, m) end
-  buildFooter(imp, m, footY)
   Kit.blockClicks = Transition.active()
   local held = imp._modalHeld
   if held then imp[held.key] = held.value end

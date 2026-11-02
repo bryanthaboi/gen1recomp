@@ -189,11 +189,6 @@ function FieldMoves.bindEngineFlags(order)
   -- row, so every id from BUG_CONTEST_TIMER up shifts one.
   FieldMoves.BUG_CONTEST_FLAG = byName["ENGINE_BUG_CONTEST_TIMER"] or 16
   FieldMoves.BIKE_SHOP_CALL_FLAG = byName["ENGINE_BIKE_SHOP_CALL_ENABLED"] or 19
-  -- pokecrystal constants/engine_flags.asm:66-92 vs pokegold :65-91
-  for _, row in ipairs(FieldMoves.FLYPOINTS or {}) do
-    row.goldFlag = row.goldFlag or row.flag
-    row.flag = byName[row.name] or row.goldFlag
-  end
   return flags
 end
 
@@ -472,70 +467,51 @@ end
 
 -- ------------------------------------------------------------------- fly
 --
--- data/maps/flypoints.asm, verbatim and in order: FlyMap walks this table by
--- index, so the order is the order the picker scrolls in.  Nothing in the ROM
--- points at it as script data, so it is not in landmarks.lua and is
--- transcribed here; FieldMoves.flyPoints reads landmarks.lua for the index and
--- the printed name, and simply drops any row the cache has no landmark for.
---
--- `flag` is the row's ENGINE_FLYPOINT_* id, constants/engine_flags.asm's
--- const_def count (0-based, ENGINE_RADIO_CARD is 0): the byte a town's own
--- MAPCALLBACK_NEWMAP callback sets with `setflag` the first time you walk in,
--- and what FieldMoves.hasVisitedSpawn below actually reads.
--- Ids are pokegold's; bindEngineFlags rebinds by name (pokecrystal
--- constants/engine_flags.asm:25 ENGINE_MOBILE_SYSTEM shifts them +1).
-FieldMoves.FLYPOINTS = {
-  -- Johto
-  { landmark = "LANDMARK_NEW_BARK_TOWN",    spawn = "SPAWN_NEW_BARK",      flag = 64, name = "ENGINE_FLYPOINT_NEW_BARK" },
-  { landmark = "LANDMARK_CHERRYGROVE_CITY", spawn = "SPAWN_CHERRYGROVE",   flag = 65, name = "ENGINE_FLYPOINT_CHERRYGROVE" },
-  { landmark = "LANDMARK_VIOLET_CITY",      spawn = "SPAWN_VIOLET",        flag = 66, name = "ENGINE_FLYPOINT_VIOLET" },
-  { landmark = "LANDMARK_AZALEA_TOWN",      spawn = "SPAWN_AZALEA",        flag = 67, name = "ENGINE_FLYPOINT_AZALEA" },
-  { landmark = "LANDMARK_GOLDENROD_CITY",   spawn = "SPAWN_GOLDENROD",     flag = 69, name = "ENGINE_FLYPOINT_GOLDENROD" },
-  { landmark = "LANDMARK_ECRUTEAK_CITY",    spawn = "SPAWN_ECRUTEAK",      flag = 71, name = "ENGINE_FLYPOINT_ECRUTEAK" },
-  { landmark = "LANDMARK_OLIVINE_CITY",     spawn = "SPAWN_OLIVINE",       flag = 70, name = "ENGINE_FLYPOINT_OLIVINE" },
-  { landmark = "LANDMARK_CIANWOOD_CITY",    spawn = "SPAWN_CIANWOOD",      flag = 68, name = "ENGINE_FLYPOINT_CIANWOOD" },
-  { landmark = "LANDMARK_MAHOGANY_TOWN",    spawn = "SPAWN_MAHOGANY",      flag = 72, name = "ENGINE_FLYPOINT_MAHOGANY" },
-  { landmark = "LANDMARK_LAKE_OF_RAGE",     spawn = "SPAWN_LAKE_OF_RAGE",  flag = 73, name = "ENGINE_FLYPOINT_LAKE_OF_RAGE" },
-  { landmark = "LANDMARK_BLACKTHORN_CITY",  spawn = "SPAWN_BLACKTHORN",    flag = 74, name = "ENGINE_FLYPOINT_BLACKTHORN" },
-  { landmark = "LANDMARK_SILVER_CAVE",      spawn = "SPAWN_MT_SILVER",     flag = 75, name = "ENGINE_FLYPOINT_SILVER_CAVE" },
-  -- Kanto
-  { landmark = "LANDMARK_PALLET_TOWN",      spawn = "SPAWN_PALLET",        flag = 52, name = "ENGINE_FLYPOINT_PALLET" },
-  { landmark = "LANDMARK_VIRIDIAN_CITY",    spawn = "SPAWN_VIRIDIAN",      flag = 53, name = "ENGINE_FLYPOINT_VIRIDIAN" },
-  { landmark = "LANDMARK_PEWTER_CITY",      spawn = "SPAWN_PEWTER",        flag = 54, name = "ENGINE_FLYPOINT_PEWTER" },
-  { landmark = "LANDMARK_CERULEAN_CITY",    spawn = "SPAWN_CERULEAN",      flag = 55, name = "ENGINE_FLYPOINT_CERULEAN" },
-  { landmark = "LANDMARK_VERMILION_CITY",   spawn = "SPAWN_VERMILION",     flag = 57, name = "ENGINE_FLYPOINT_VERMILION" },
-  { landmark = "LANDMARK_ROCK_TUNNEL",      spawn = "SPAWN_ROCK_TUNNEL",   flag = 56, name = "ENGINE_FLYPOINT_ROCK_TUNNEL" },
-  { landmark = "LANDMARK_LAVENDER_TOWN",    spawn = "SPAWN_LAVENDER",      flag = 58, name = "ENGINE_FLYPOINT_LAVENDER" },
-  { landmark = "LANDMARK_CELADON_CITY",     spawn = "SPAWN_CELADON",       flag = 60, name = "ENGINE_FLYPOINT_CELADON" },
-  { landmark = "LANDMARK_SAFFRON_CITY",     spawn = "SPAWN_SAFFRON",       flag = 59, name = "ENGINE_FLYPOINT_SAFFRON" },
-  { landmark = "LANDMARK_FUCHSIA_CITY",     spawn = "SPAWN_FUCHSIA",       flag = 61, name = "ENGINE_FLYPOINT_FUCHSIA" },
-  { landmark = "LANDMARK_CINNABAR_ISLAND",  spawn = "SPAWN_CINNABAR",      flag = 62, name = "ENGINE_FLYPOINT_CINNABAR" },
-  { landmark = "LANDMARK_INDIGO_PLATEAU",   spawn = "SPAWN_INDIGO",        flag = 63, name = "ENGINE_FLYPOINT_INDIGO_PLATEAU" },
-}
-
--- spawn -> row, built once, so hasVisitedSpawn below does not walk the whole
--- table on every call.
+-- data/maps/flypoints.asm:1
 local FLYPOINT_BY_SPAWN = {}
-for _, row in ipairs(FieldMoves.FLYPOINTS) do
-  FLYPOINT_BY_SPAWN[row.spawn] = row
+
+function FieldMoves.bindFlypoints(rows, spawns)
+  local list, bySpawn = {}, {}
+  for spawn, row in pairs(type(rows) == "table" and rows or {}) do
+    if type(spawn) == "string" and type(row) == "table"
+        and type(row.landmark) == "string"
+        and (type(spawns) ~= "table" or type(spawns[spawn]) == "table") then
+      local entry = { spawn = spawn, landmark = row.landmark, flag = row.flag,
+        region = row.region == "kanto" and "kanto" or "johto",
+        order = row.order }
+      list[#list + 1] = entry
+      bySpawn[spawn] = entry
+    end
+  end
+  table.sort(list, function(a, b)
+    if a.region ~= b.region then return a.region == "johto" end
+    local oa, ob = a.order or math.huge, b.order or math.huge
+    if oa ~= ob then return oa < ob end
+    return a.spawn < b.spawn
+  end)
+  local kanto = #list + 1
+  for i, entry in ipairs(list) do
+    if entry.region == "kanto" then kanto = i break end
+  end
+  FieldMoves.FLYPOINTS, FLYPOINT_BY_SPAWN = list, bySpawn
+  FieldMoves.KANTO_FLYPOINT = kanto
+  return list
 end
 
--- KANTO_FLYPOINT: the first Kanto row, 1-based here.  FlyMap splits the table
--- at it and shows one region's half or the other, never both.
-FieldMoves.KANTO_FLYPOINT = 13
+FieldMoves.bindFlypoints(nil)
 
--- HasVisitedSpawn is a bit in wVisitedSpawns, which the ENGINE_FLYPOINT_*
--- engine flags drive: a town's own MAPCALLBACK_NEWMAP callback runs `setflag
--- ENGINE_FLYPOINT_<X>` the first time the map loads, and Script_setflag
--- (Vm.lua) lands that on save.engineFlags[id] the same way ENGINE_ZEPHYRBADGE
--- and the rest of the namespace do -- see FieldMoves.FLYPOINTS' `flag`
--- column for the id.
---
--- A save from before this read the engine flags is missing that entry
--- entirely (engineFlags[id] == nil, not false), so the old bookkeeping --
--- save.visitedSpawns, a plain spawn-name set World used to write by hand --
--- is kept as the fallback for exactly that case.  A save that has both
--- trusts the engine flag; a fresh save never touches visitedSpawns again.
+function FieldMoves.noteVisit(save, mapId, spawns)
+  if not (save and mapId and type(spawns) == "table") then return end
+  for _, row in ipairs(FieldMoves.FLYPOINTS) do
+    local spawn = spawns[row.spawn]
+    if row.flag == nil and type(spawn) == "table" and spawn.map == mapId then
+      save.visitedSpawns = save.visitedSpawns or {}
+      save.visitedSpawns[row.spawn] = true
+    end
+  end
+end
+
+-- engine/pokegear/pokegear.asm:2189
 function FieldMoves.hasVisitedSpawn(save, spawn)
   if not (save and spawn) then return false end
   local row = FLYPOINT_BY_SPAWN[spawn]

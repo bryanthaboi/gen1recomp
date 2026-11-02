@@ -747,6 +747,8 @@ REQUIRED_SYMBOLS = {
     "PCMailGFX", "BillsPCOrangePalette",
     # New-game / Pokecenter respawn table (data/maps/spawn_points.asm)
     "SpawnPoints",
+    # data/maps/flypoints.asm:1, data/events/engine_flags.asm:7
+    "Flypoints", "EngineFlags", "wVisitedSpawns",
     "NewPokedexOrder", "AlphabeticalPokedexOrder", "Landmarks",
     # GoldSilverIntro (engine/movie/intro.asm): three acts of BG art, each a
     # compressed tile sheet plus a 2x2 metatile table and a metatile grid, and

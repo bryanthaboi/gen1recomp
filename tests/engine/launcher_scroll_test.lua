@@ -176,7 +176,7 @@ modImp._wheelY = -1
 LauncherView.draw(modImp)
 check((modImp._tabScroll.mods or 0) > 0,
   "a notch over the region scrolls the list like any other tab")
-eq(modImp._pageScroll, 0, "without reaching the page behind it")
+eq(reg.y + reg.h, 780, "the region runs to the bottom of the window, so there is no page behind it")
 
 modImp._tabScroll.mods = modImp._tabScrollMax.mods
 LauncherView.draw(modImp)
@@ -254,7 +254,7 @@ eq(dragMods._tabScroll.mods, math.min(60, dRegionMax),
 LauncherView.touchmoved(dragMods, 7, dreg.x + 20,
   dreg.y + 30 - 60 - dRegionMax * 2)
 eq(dragMods._tabScroll.mods, dRegionMax, "carrying on saturates the region")
-check((dragMods._pageScroll or 0) > 0, "and only then reaches the page")
+eq(dreg.y + dreg.h, 780, "and the region it saturates is the only scroller down to the window bottom")
 LauncherView.touchreleased(dragMods, 7, dreg.x + 20, dreg.y - 900)
 
 if false then

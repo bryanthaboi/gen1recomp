@@ -103,13 +103,26 @@ do
   T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
     "the SAVE panel does not hold the screen in the letterbox")
   T.check(shiftIn ~= nil and shiftIn({ states = pushed }) == true,
-    "the SAVE panel shifts the whole screen right")
+    "the bare SAVE panel shifts the whole screen right")
+  panel.openPrompt()
+  local prompt = pushed[#pushed]
+  T.check(getmetatable(prompt) == require("src.render.TextBox"),
+    "the panel puts its YES/NO question up in a text box")
+  T.eq(Game.uiAnchorsHeldInStack({ states = pushed }), false,
+    "the save prompt does not hold the screen in the letterbox")
+  T.eq(shiftIn({ states = pushed }), 12,
+    "with the prompt up the save screen splits at row 12")
+  pushed[#pushed + 1] = { draw = function() end }
+  T.eq(shiftIn({ states = pushed }), 12,
+    "a YES/NO over the prompt keeps the split")
+  pushed[#pushed] = nil
 
-  local saveBox = require("src.ui.Theme").saveBox
+  local Theme = require("src.ui.Theme")
+  local saveBox, textBox = Theme.saveBox, Theme.textBox
   Renderer.canvas = Renderer.canvas or love.graphics.newCanvas(160, 144)
   Renderer.uiCentered, Renderer.uiAnchorHold = false, false
   Renderer:beginFrame(true)
-  Renderer.uiShiftRight = shiftIn ~= nil and shiftIn({ states = pushed })
+  Renderer.uiShiftRight = shiftIn({ states = pushed })
   for _, state in ipairs(pushed) do state:draw() end
   Renderer:setUIAnchor(saveBox.tx * 8, saveBox.ty * 8, saveBox.tw * 8,
                        saveBox.th * 8, "bottom")
@@ -117,41 +130,53 @@ do
   T.eq(#(Renderer.uiAnchors or {}), 0,
     "no piece of the save screen docks on its own, so none is cut from the canvas")
 
+  T.check(saveBox.ty + saveBox.th <= 12,
+    "the save YES/NO lies above the split row")
+  T.check(textBox.tx == 0 and textBox.tw == 20 and textBox.ty == 12
+    and textBox.ty + textBox.th == 18,
+    "the text box covers every column of rows 12-17, so no START pixel is left below the split")
+
   local gfx = love.graphics
   local dims, pdims = gfx.getDimensions, gfx.getPixelDimensions
-  local pieces = {
-    { "START box", menu.tx, menu.tw, menu.ty, menu.th },
-    { "save panel", 4, 16, 0, 10 },
-    { "YES/NO", saveBox.tx, saveBox.tw, saveBox.ty, saveBox.th },
-    { "text box", 0, 20, 12, 6 },
+  local upper = {
+    { "START box", menu.tx, menu.tw },
+    { "save panel", 4, 16 },
   }
   for _, win in ipairs({ { 1280, 720 }, { 1000, 700 }, { 960, 544 } }) do
     local tag = ("%dx%d"):format(win[1], win[2])
     gfx.getDimensions = function() return win[1], win[2] end
     gfx.getPixelDimensions = function() return win[1], win[2] end
     local R = Renderer:frameRects()
-    local want = R.vux + R.vuw - 160 * R.Ux
-    T.eq(R.uox, want, tag .. ": the canvas is flush with the window's right edge")
-    for _, pc in ipairs(pieces) do
-      local x = R.uox + pc[2] * 8 * R.Ux
-      T.eq(x - pc[2] * 8 * R.Ux, want, tag .. ": the " .. pc[1] .. " rides the same x offset")
+    local flush = R.vux + R.vuw - 160 * R.Ux
+    local centred = R.vux + math.floor((R.vuw - 160 * R.Ux) / 2)
+    T.eq(R.splitRow, 12, tag .. ": the frame splits at row 12")
+    T.eq(R.splitUox, flush, tag .. ": rows 0-11 are flush with the window's right edge")
+    T.eq(R.uox, centred, tag .. ": rows 12-17 keep the centred letterbox x")
+    for _, pc in ipairs(upper) do
+      T.eq(R.splitUox + (pc[2] + pc[3]) * 8 * R.Ux, R.vux + R.vuw,
+        tag .. ": the " .. pc[1] .. " ends at the window edge")
     end
-    local startRight = R.uox + (menu.tx + menu.tw) * 8 * R.Ux
-    local panelRight = R.uox + 20 * 8 * R.Ux
-    local textRight = R.uox + 20 * 8 * R.Ux
-    T.eq(startRight, R.vux + R.vuw, tag .. ": the START box ends at the window edge")
-    T.check(startRight <= panelRight and startRight <= textRight
-      and menu.ty + menu.th <= 18,
-      tag .. ": no START box pixel lies outside the panel and text box columns")
+    T.eq(R.splitUox + saveBox.tx * 8 * R.Ux, flush,
+      tag .. ": the YES/NO rides the flush-right rows over the panel's left")
+    T.eq(R.uox + textBox.tx * 8 * R.Ux, centred,
+      tag .. ": the text box starts at the centred letterbox x")
+    T.eq(R.uox + (textBox.tx + textBox.tw) * 8 * R.Ux, centred + 160 * R.Ux,
+      tag .. ": the text box ends at the centred letterbox's right edge")
+    T.check(win[1] == 160 * R.Ux or R.uox + 160 * R.Ux < R.vux + R.vuw,
+      tag .. ": the text box is not flush right")
+    Renderer.uiShiftRight = true
+    local W = Renderer:frameRects()
+    T.eq(W.uox, flush, tag .. ": the bare panel still shifts the whole canvas")
+    T.eq(W.splitRow, nil, tag .. ": and does not split it")
     Renderer.uiShiftRight = false
     local C = Renderer:frameRects()
-    T.eq(C.uox, R.vux + math.floor((R.vuw - 160 * R.Ux) / 2),
-      tag .. ": without the save screen the letterbox is centred as before")
-    Renderer.uiCentered, Renderer.uiShiftRight = true, true
+    T.eq(C.uox, centred, tag .. ": without the save screen the letterbox is centred as before")
+    T.eq(C.splitRow, nil, tag .. ": and nothing splits")
+    Renderer.uiCentered, Renderer.uiShiftRight = true, 12
     C = Renderer:frameRects()
-    T.eq(C.uox, R.vux + math.floor((R.vuw - 160 * R.Ux) / 2),
-      tag .. ": CENTERED ignores the shift")
-    Renderer.uiCentered, Renderer.uiShiftRight = false, true
+    T.eq(C.uox, centred, tag .. ": CENTERED ignores the split")
+    T.eq(C.splitRow, nil, tag .. ": CENTERED never splits")
+    Renderer.uiCentered, Renderer.uiShiftRight = false, 12
   end
   gfx.getDimensions, gfx.getPixelDimensions = dims, pdims
   Renderer.uiAnchors, Renderer.uiShiftRight = nil, false

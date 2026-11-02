@@ -3074,7 +3074,7 @@ Battle.MOVE_EFFECTS.EFFECT_BATON_PASS = function(self, attacker)
   self:clearCounterMoves(sent)
   self:emit({ kind = "send", side = side, mon = sent,
     hp = sent.hp or 0, status = sent.status or false,
-    level = sent.level, experience = sent.experience,
+    level = sent.level, experience = sent.experience, textDone = true,
     text = Strings("Go! %s!", self:monName(sent)) })
 end
 
@@ -4433,7 +4433,7 @@ function Battle:switch(index)
   self.stages.player = Battle.newStages()
   self:emit({ kind = "send", side = "player", mon = mon,
     hp = mon.hp or 0, status = mon.status or false,
-    level = mon.level, experience = mon.experience,
+    level = mon.level, experience = mon.experience, textDone = true,
     text = Strings("Go! %s!", self:monName(mon)) })
   -- battle.battler_switched, the payload BattleState:resolveSwitch emits on
   -- Gen 1: the side record, whoever walked in, and whoever walked out.
@@ -4946,7 +4946,7 @@ function Battle:switchEnemy(index)
   self.stages.enemy = Battle.newStages()
   self:emit({ kind = "send", side = "enemy", mon = self.enemy,
     hp = self.enemy.hp or 0, status = self.enemy.status or false,
-    level = self.enemy.level, experience = self.enemy.experience,
+    level = self.enemy.level, experience = self.enemy.experience, textDone = true,
     text = Battle.sentOutText(trainerName, self:monName(self.enemy)) })
   Runtime.emit("battle.battler_switched", {
     battle = self, side = self:sideRecord(self.enemy), battler = self.enemy,
@@ -5689,7 +5689,7 @@ function Battle:forcedReplacement(side, index, noOffer)
     self:emit({ kind = "send", side = "enemy", mon = mon,
       replacement = not noOffer,
       hp = mon.hp or 0, status = mon.status or false,
-      level = mon.level, experience = mon.experience,
+      level = mon.level, experience = mon.experience, textDone = true,
       text = Battle.sentOutText((self.trainer and self.trainer.name) or "Foe",
         self:monName(mon)) })
     Runtime.emit("battle.battler_switched", {

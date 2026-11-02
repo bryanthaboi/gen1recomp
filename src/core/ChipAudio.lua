@@ -78,6 +78,7 @@ local statXrtSum, statXrtCount, statXrtMax = 0, 0, nil
 local statSyncRenders, statSyncMs, statSyncMsMax = 0, 0, 0
 local statSyncLast
 local statPrewarmHits = 0
+local statParkHits = 0
 local lastCosted
 
 -- ---------------------------------------------------------------------------
@@ -108,6 +109,11 @@ local fxInFlight = {}
 local fxInFlightCount = 0
 local FX_IN_FLIGHT_MAX = 2
 local drainEffects, dropEffects, pumpEffects
+
+local parkCh
+local park
+local parkSerial = 0
+local drainPark, clearPark, pumpPark, musicKey
 
 local function ensureWorker()
   if workerReady ~= nil then return workerReady end
@@ -279,6 +285,45 @@ local function readyToStart(m)
   return queued >= (m.preroll or 1) or (m.finished and queued > 0)
 end
 
+function musicKey(data, header, allowLoops)
+  local volumes = ChipSynth.getChannelVolumes()
+  local pitches = ChipSynth.getChannelPitches()
+  return table.concat({
+    tostring(data and data.audio), tostring(header),
+    tostring(allowLoops ~= false),
+    sampleRate(), ChipSynth.getStereo() and 1 or 0,
+    volumes[1], volumes[2], volumes[3], volumes[4],
+    pitches[1], pitches[2], pitches[3], pitches[4], stereoEpoch, fxEpoch,
+  }, "|")
+end
+
+function drainPark()
+  if not parkCh then return end
+  while true do
+    local result = parkCh:pop()
+    if not result then return end
+    if park and result.serial == park.serial then
+      if result.sd then
+        park.bufs[#park.bufs + 1] = result.sd
+      else
+        if result.error ~= "finished" then
+          require("src.core.Logger").warn("chip audio park: %s",
+            tostring(result.error))
+        end
+        park = nil
+      end
+    end
+  end
+end
+
+function clearPark()
+  if park and park.pushed and workerReady and cmdCh then
+    cmdCh:push({ cmd = "unpark" })
+  end
+  park = nil
+  if parkCh then parkCh:clear() end
+end
+
 function ChipAudio.playMusic(data, header, allowLoops)
   if not ensureWorker() then
     return playMusicSync(data, header, allowLoops)
@@ -292,6 +337,13 @@ function ChipAudio.playMusic(data, header, allowLoops)
   local ok2, source = pcall(
     love.audio.newQueueableSource, sampleRate(), 16, 2, MUSIC_BUFFER_COUNT)
   if not ok2 then return nil, source end
+  drainPark()
+  local parked = park
+  local key = parked and musicKey(data, header, allowLoops)
+  if parked and (parked.key ~= key or #parked.bufs < MUSIC_PREROLL) then
+    if parked.key == key then clearPark() end
+    parked = nil
+  end
   ChipAudio.stopMusic()
   musicGen = musicGen + 1
   local gen = musicGen
@@ -301,15 +353,54 @@ function ChipAudio.playMusic(data, header, allowLoops)
                channelPitches = ChipSynth.getChannelPitches(),
                stereo = ChipSynth.getStereo(),
                sampleRate = sampleRate(),
-               stereoEpoch = stereoEpoch })
+               stereoEpoch = stereoEpoch,
+               parkSerial = parked and parked.serial or nil,
+               parkSkip = parked and #parked.bufs or nil })
   currentMusic = { source = source, gen = gen, threaded = true,
                    started = false, finished = false,
                    stereoEpoch = stereoEpoch,
                    preroll = (allowLoops ~= false) and MUSIC_PREROLL or 1 }
+  if parked then
+    park = nil
+    for _, sd in ipairs(parked.bufs) do
+      if not pcall(source.queue, source, sd) then break end
+    end
+    statParkHits = statParkHits + 1
+  end
   return source
 end
 
+function ChipAudio.prepareMusic(data, header, allowLoops)
+  if suspended or type(header) ~= "table" or allowLoops == false then
+    return false
+  end
+  if not ensureWorker() or not workerAlive() then return false end
+  local key = musicKey(data, header, allowLoops)
+  if park and park.key == key then return true end
+  clearPark()
+  parkCh = parkCh or love.thread.getChannel("chipaudio_park")
+  parkSerial = parkSerial + 1
+  park = { key = key, serial = parkSerial, bufs = {}, request = {
+    cmd = "park", serial = parkSerial, header = header,
+    allowLoops = allowLoops, audio = slimAudio(data),
+    channelVolumes = ChipSynth.getChannelVolumes(),
+    channelPitches = ChipSynth.getChannelPitches(),
+    stereo = ChipSynth.getStereo(),
+    sampleRate = sampleRate(),
+  } }
+  pumpPark()
+  return true
+end
+
+function ChipAudio.parkState()
+  drainPark()
+  if not park then return nil end
+  return { key = park.key, serial = park.serial, pushed = park.pushed == true,
+           buffers = #park.bufs, ready = #park.bufs >= MUSIC_PREROLL }
+end
+
 local function pushChannelMix()
+  clearPark()
   if workerReady and cmdCh then
     cmdCh:push({ cmd = "channelMix",
                  volumes = ChipSynth.getChannelVolumes(),
@@ -420,6 +511,7 @@ function ChipAudio.stats()
     prewarmQueued = #fxQueue,
     prewarmInFlight = fxInFlightCount,
     prewarmReady = fxReadyCount,
+    parkHits = statParkHits,
   }
   local function num(value, places)
     if type(value) ~= "number" then return "-" end
@@ -447,6 +539,10 @@ function ChipAudio.update()
   if suspended then return end
   pushHeld = false
   if fxCh then pumpEffects() end
+  if park then
+    drainPark()
+    pumpPark()
+  end
   local m = currentMusic
   if not m then return end
   if m.threaded then
@@ -531,6 +627,7 @@ end
 -- hot reload: the next play re-reads programs.bin (a mod may have swapped the
 -- file out from under the single-slot bank cache), on both threads
 function ChipAudio.invalidate()
+  clearPark()
   ChipAudio.stopMusic()
   ChipSynth.invalidateBanks()
   dropEffects()
@@ -541,6 +638,8 @@ end
 -- process exits and the worker's command loop only returns on "quit", so
 -- skipping this leaves the process running after the window is gone (#339).
 function ChipAudio.shutdown()
+  clearPark()
+  parkCh = nil
   ChipAudio.stopMusic()
   if workerReady and cmdCh then cmdCh:push({ cmd = "quit" }) end
   if worker then pcall(function() worker:wait() end) end
@@ -586,6 +685,7 @@ function ChipAudio.setStereo(enabled)
   enabled = not not enabled
   if ChipSynth.getStereo() == enabled then return end
   ChipSynth.setStereo(enabled)
+  clearPark()
   stereoEpoch = stereoEpoch + 1
   local m = currentMusic
   if m and m.engine then
@@ -642,12 +742,16 @@ function ChipAudio.selectSampleRate(options)
   local osName = love and love.system and love.system.getOS
     and love.system.getOS() or nil
   if osName == "Android" and tier ~= "high" then return 22050 end
+  if osName == "NX" and (options and options.performance) ~= "high" then
+    return 22050
+  end
   return 44100
 end
 
 function ChipAudio.setSampleRate(rate)
   local before = sampleRate()
   if ChipSynth.setSampleRate(rate) == before then return false end
+  clearPark()
   ChipAudio.stopMusic()
   return true
 end
@@ -814,6 +918,16 @@ local function musicHasHeadroom()
   if not depth then return true end
   if outCh then depth = depth + outCh:getCount() end
   return depth >= MUSIC_PREROLL * 4 * (fxInFlightCount + 1)
+end
+
+function pumpPark()
+  if not park or park.pushed then return end
+  if not workerAlive() then
+    park = nil
+    return
+  end
+  if not musicHasHeadroom() then return end
+  if pcall(cmdCh.push, cmdCh, park.request) then park.pushed = true end
 end
 
 local function frontSlot()

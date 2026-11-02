@@ -130,6 +130,8 @@ local TRAINER_SLIDE_FRAMES = TRAINER_SLIDE_STEPS * TRAINER_SLIDE_FRAMES_PER_STEP
 -- ../pokecrystal/engine/battle/core.asm:82-84
 local BACKPIC_SLIDE_STEPS = 9
 local BACKPIC_SLIDE_FRAMES = BACKPIC_SLIDE_STEPS * TRAINER_SLIDE_FRAMES_PER_STEP
+-- ../pokecrystal/engine/battle/core.asm:44-46
+local INTRO_DELAY_FRAMES = 40
 
 -- BattleWinSlideInEnemyTrainerFrontpic (engine/battle/core.asm:6279-6318) and
 -- WinTrainerBattle's DelayFrames 40 (:2311)
@@ -646,12 +648,17 @@ function BattleState.new(game, opts)
       -- ShowBattleTextEnemySentOut, then ShowSetEnemyMonAndSendOutAnimation
       -- (core.asm:2978-2980, 3354): this is where the mon's frontpic first
       -- appears, where ANIM_SEND_OUT_MON plays and where the HUD comes up.
-      self:push({ kind = "send", side = "enemy", mon = enemy,
+      self:push({ kind = "send", side = "enemy", mon = enemy, textDone = true,
         text = Battle.sentOutText(trainerName, self:name(enemy)) })
     end
   end
   local player = self.battle and self.battle.player
   if player then
+    -- ../pokecrystal/engine/battle/core.asm:25-31
+    if not (self.battle.linkBattle and self.battle.mirrored) then
+      -- ../pokecrystal/engine/battle/core.asm:44-46
+      self:push({ kind = "intro-delay" })
+    end
     -- ../pokecrystal/engine/battle/core.asm:82-84
     self:push({ kind = "backpic-slide" })
     self:push({ kind = "sendout",
@@ -1786,9 +1793,8 @@ function BattleState:latchCaughtPic()
   end
 end
 
--- One logic frame of a running animation.  B cuts it short, the way holding B
--- pages a text box.
-function BattleState:stepAnim(input)
+-- engine/battle_anims/anim_commands.asm:100-139
+function BattleState:stepAnim()
   if not self.anim then return end
   local hit = self.anim.hitSound
   if hit ~= nil then
@@ -1800,17 +1806,6 @@ function BattleState:stepAnim(input)
     end
     self.anim.hitSound = nil
     self:playHitSound(hit)
-  end
-  if input and (input:wasPressed("b") or input:wasPressed("start")) then
-    -- Cut short: only the explicit latches (a caught mon) survive a skip.
-    self:latchCaughtPic()
-    local ended = self.anim
-    self.anim = nil
-    self:clearVanishReveal(nil, ended)
-    -- Cart still reaches the after-anim arm after a move script ends; a skip
-    -- of the move should not drop the hit shake that follows it.
-    if self:startPendingAfterAnim() then return end
-    return self:endSendOutAnim(true)
   end
   if not self.anim:step() then
     self:latchCaughtPic()
@@ -1895,13 +1890,13 @@ end
 -- REMOVE_MON / RETURN_MON also serve SUBSTITUTE, SKY_ATTACK, BEAT_UP and
 
 -- Whatever Call_PlayBattleAnim was standing in front of: a send-out's cry and
--- HUD update run the moment its animation is done, cut short or not.
-function BattleState:endSendOutAnim(skipped)
+-- HUD update run the moment its animation is done.
+function BattleState:endSendOutAnim()
   local after = self.afterSendOut
   if not after then return end
   self.afterSendOut = nil
   self.picHidden[after.side] = false
-  if after.shiny and not skipped then
+  if after.shiny then
     after.shiny = nil
     if self:animForId("ANIM_SEND_OUT_MON", after.side, 1) then
       self.afterSendOut = after
@@ -1927,7 +1922,7 @@ end
 
 function BattleState:advanceQueue()
   local event = table.remove(self.queue, 1)
-  self.messagePages, self.messageCarry = nil, nil
+  self.messagePages, self.messageCarry, self.messageDone = nil, nil, nil
   local pendingSend = self.pendingSendOut
   if pendingSend then
     self.pendingSendOut = nil
@@ -2154,6 +2149,12 @@ function BattleState:advanceQueue()
     self.trainerSlide = 0
     return
   end
+  -- ../pokecrystal/engine/battle/core.asm:44-46
+  if event.kind == "intro-delay" then
+    self.messageTimer = 0
+    self.messageDelay = INTRO_DELAY_FRAMES
+    return
+  end
   -- ../pokecrystal/engine/battle/core.asm:82-84
   if event.kind == "backpic-slide" then
     self.backpicSlide = 0
@@ -2290,9 +2291,13 @@ function BattleState:advanceQueue()
       -- ../pokecrystal/home/text.asm:887-896
       self.messageTimer = 0
       self.messageDelay = TEXT_PAUSE_FRAMES
+    elseif event.textDone and not self.messagePages then
+      -- ../pokecrystal/home/text.asm:566
+      self.messageTimer = 0
     else
       self.messageTimer = MESSAGE_FRAMES
     end
+    self.messageDone = event.textDone and true or nil
     -- BattleStartMessage's own line: the enemy HUD comes up on the step after
     -- it returns (engine/battle/core.asm:7808-7817), not with it.
     if event.intro then self.introTextShown = true end
@@ -2904,7 +2909,7 @@ function BattleState:update(_dt)
   -- pokegold data/moves/animations.asm .Click: a finished keepsprites run
   -- no longer owns the loop, just the OAM the draw path still reads.
   if self.anim and not (self.anim:done() and self.anim.keepSprites) then
-    self:stepAnim(input)
+    self:stepAnim()
     return
   end
 
@@ -3524,8 +3529,9 @@ end
 -- catch rate is at least the final rate is the one whose byte the roll has to
 -- come in under.
 function BattleState:pokeballWobble()
-  local throw = self.ballThrow
-  if not throw then return 0 end
+  local throw = self.ballThrow or { caught = false, rate = 0, wobble = 0 }
+  self.ballThrow = throw
+  -- engine/battle_anims/pokeball_wobble.asm:14-16
   throw.wobble = (throw.wobble or 0) + 1
   if throw.wobble == WOBBLE_LIMIT + 1 then
     return throw.caught and 1 or 2
@@ -3540,8 +3546,7 @@ function BattleState:pokeballWobble()
   return roll < chance and 0 or 2
 end
 
--- Which of the four lines the throw earned.  With no animation to run (an
--- older cache, or BATTLE SCENE off) nothing ever wobbled, so it is the first.
+-- engine/items/item_effects.asm:411-422
 function BattleState:ballFailureText()
   local wobble = (self.ballThrow and self.ballThrow.wobble) or 1
   return Strings(BALL_FAILURE_TEXT[
@@ -3872,6 +3877,7 @@ function BattleState:showPages(text)
   self.message = pages[1]
   self.messageCarry = nil
   self.messageTimer = MESSAGE_FRAMES
+  self.messageDone = nil
 end
 
 function BattleState:nextPage()
@@ -3882,7 +3888,8 @@ function BattleState:nextPage()
   self.message = pages[i]
   self.messageCarry = self.messageCarried and self.messageCarried[i]
     and pages[i] or nil
-  self.messageTimer = MESSAGE_FRAMES
+  -- ../pokecrystal/home/text.asm:566
+  self.messageTimer = (i >= #pages and self.messageDone) and 0 or MESSAGE_FRAMES
   if i >= #pages then
     self.messagePages = nil
     -- ../pokecrystal/engine/battle/core.asm:3146-3147

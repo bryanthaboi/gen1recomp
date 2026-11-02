@@ -58,25 +58,17 @@ do
   T.eq(s.picHidden.enemy, false, "an unrelated animation never latches")
 end
 
--- stepAnim, cut short with B: the property the latch exists for -- a caught
--- mon must not reappear even if the player skips past "Gotcha!".
+-- engine/battle_anims/anim_commands.asm:100-139
 do
   local caughtAnim = { animId = "ANIM_THROW_POKE_BALL",
     step = function() return true end, keepSprites = false }
   local s = newSelf({ anim = caughtAnim, ballThrow = { caught = true } })
-  local input = { wasPressed = function(_, key) return key == "b" end }
+  s.revealSentOut = function() end
+  s.revealVanished = function() end
+  local input = { wasPressed = function(_, key) return key == "b" or key == "start" end }
   s:stepAnim(input)
-  T.eq(s.picHidden.enemy, true, "a B-skipped catch still latches")
-  T.eq(s.anim, nil, "B cuts the runner short")
-end
-
-do
-  local breakFreeAnim = { animId = "ANIM_THROW_POKE_BALL",
-    step = function() return true end, keepSprites = false }
-  local s = newSelf({ anim = breakFreeAnim, ballThrow = { caught = false } })
-  local input = { wasPressed = function(_, key) return key == "b" end }
-  s:stepAnim(input)
-  T.eq(s.picHidden.enemy, false, "a B-skipped break-free does not latch")
+  T.eq(s.anim, caughtAnim, "B or START mid-throw leaves the runner running")
+  T.eq(s.picHidden.enemy, false, "a catch mid-flight does not latch yet")
 end
 
 T.finish("gen2 ball throw pic latch bug 1232")

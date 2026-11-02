@@ -58,13 +58,13 @@ function ChoiceBox:update(dt)
   elseif input:wasPressed("a") then
     -- HandleMenuInput_ (home/window.asm): SFX_PRESS_AB on A and B alike
     if not self.noSound then
-      require("src.core.Sound").play(self.game.data, "Press_AB")
+      require("src.core.Sound").playPress(self.game.data)
     end
     self.pending = (self.index == 1)
     self.holdFrames = Timing.YES_NO_ANSWER
   elseif input:wasPressed("b") then
     if not self.noSound then
-      require("src.core.Sound").play(self.game.data, "Press_AB")
+      require("src.core.Sound").playPress(self.game.data)
     end
     -- .choseSecondMenuItem writes wCurrentMenuItem = 1 before the hold, so
     -- the cursor visibly snaps to NO for those 15 frames

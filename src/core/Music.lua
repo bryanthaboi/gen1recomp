@@ -447,6 +447,7 @@ function Music.playMap(data, mapId, onBike, surfing, fade, song)
     Music.play(data, play, nil,
       { reason = "map", mapId = mapId, fade = fade })
   end
+  Music.prepareBattle(data, "wild")
 end
 
 -- toggle the surf override mid-map (starting/ending a surf)
@@ -464,6 +465,26 @@ function Music.playBattle(data, kind, trainerId, song)
     Music.play(data, song or b[kind] or b.wild, nil,
       { reason = "battle", kind = kind, trainerId = trainerId })
   end
+end
+
+function Music.prepare(data, song)
+  if not (love and love.audio) or not song then return false end
+  if Runtime.wantsHook("music.select") then return false end
+  local def = songDef(data, song)
+  if not def or state.failed[song] or song == state.current then
+    return false
+  end
+  if not (def.chip or (def.address and def.bank)) then return false end
+  local ok, parked = pcall(
+    require("src.core.ChipAudio").prepareMusic, data, def, true)
+  return ok and parked or false
+end
+
+function Music.prepareBattle(data, kind, song)
+  local audio = data and data.audio
+  local b = audio and audio.battle
+  if not b or audio.generation == 2 then return false end
+  return Music.prepare(data, song or b[kind] or b.wild)
 end
 
 -- victory theme (Music_DefeatedWildMon/Trainer/GymLeader): starts the
@@ -548,6 +569,7 @@ function Music.restoreMap(data, reason)
   state.restoreLeft = nil
   local play = effectiveMapSong(data, state.mapSong)
   if play then Music.play(data, play, nil, { reason = reason or "map" }) end
+  Music.prepareBattle(data, "wild")
 end
 
 -- Overwrite the remembered map song without playing anything: the wMapMusic

@@ -17,12 +17,14 @@ local PACKS = {
   {"rse/fan_club"}, {"rse/contest"}, {"rse/contest_data"}, {"rse/rs_contest_gfx"},
   {"rse/berry_blender"}, {"cable_car"}, {"birch"}, {"starter_choose"}, {"wallclock"},
   {"naming", {version = 3}}, {"rse/menus"}, {"rse/common_ui"}, {"rse/bag"},
-  {"rse/berry_tag"}, {"rse/party"}, {"rse/summary"}, {"rse/mail"}, {"rse/easy_chat"},
-  {"rse/trendy_phrase"}, {"rse/easy_chat_editor", {editorVersion = 2}}, {"rse/rs_egg_hatch"},
+  {"rse/berry_tag"}, {"rse/party"}, {"rse/summary"}, {"rse/mail"}, {"rse/easy_chat", {titlePalette = 1}},
+  {"rse/trendy_phrase", {titlePalette = 1}}, {"rse/easy_chat_editor", {editorVersion = 2, titlePalette = 1}},
+  {"rse/rs_egg_hatch"},
   {"pokemon/storage", {version = 6}}, {"rse/pokedex", {packVersion = 1}}, {"rse/pokedex_detail"}, {"rse/diploma"},
   {"rse/trainer_card"}, {"rse/trade"}, {"rse/pokenav"}, {"rse/pokenav_detail"},
   {"rse/pokenav_shell"}, {"rse/pokenav_condition", {packVersion = 1}}, {"rse/pokenav_ribbons"}, {"rs/assets"},
 }
+M.PACKS = PACKS
 
 local MODULES = {
   {"pokemon/battle/manifest.lua", {format = require("src.import.gba.battle_chrome_extract").FORMAT_VERSION, layout = "rse", assetLayout = "rs",

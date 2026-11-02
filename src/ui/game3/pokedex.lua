@@ -83,16 +83,10 @@ local CATEGORY_PAGE_COORDS = {
   },
 }
 
-local function se(id)
-  pcall(function()
-    local Audio = require("src.core.game3.audio")
-    local SE = require("src.core.game3.se_ids")
-    if type(id) == "number" then
-      Audio.playSe(id)
-    elseif SE and SE[id] then
-      Audio.playSe(SE[id])
-    end
-  end)
+local function se(name)
+  local id = require("src.core.game3.se_ids")[name]
+  if id == nil then error("pokedex: no SE " .. tostring(name), 2) end
+  pcall(function() require("src.core.game3.audio").playSe(id) end)
 end
 
 local function play_cry(speciesId)
@@ -423,12 +417,14 @@ local function handle_category_grid_input(input)
         Pokedex.categoryPage = Pokedex.categoryPage - 1
         local newMons = (pages[Pokedex.categoryPage] and pages[Pokedex.categoryPage].mons) or {}
         Pokedex.categorySlot = math.max(1, #newMons)
-        se("SE_PAGE")
+        -- pokefirered/src/pokedex_screen.c:2549
+        se("SE_BALL_TRAY_ENTER")
       elseif maxPages > 1 and input:wasPressed("l") then
         Pokedex.categoryPage = maxPages
         local newMons = (pages[Pokedex.categoryPage] and pages[Pokedex.categoryPage].mons) or {}
         Pokedex.categorySlot = 1
-        se("SE_PAGE")
+        -- pokefirered/src/pokedex_screen.c:2549
+        se("SE_BALL_TRAY_ENTER")
       end
     else
       Pokedex.categorySlot = Pokedex.categorySlot - 1
@@ -439,11 +435,13 @@ local function handle_category_grid_input(input)
       if Pokedex.categoryPage < maxPages then
         Pokedex.categoryPage = Pokedex.categoryPage + 1
         Pokedex.categorySlot = 1
-        se("SE_PAGE")
+        -- pokefirered/src/pokedex_screen.c:2570
+        se("SE_BALL_TRAY_ENTER")
       elseif maxPages > 1 and input:wasPressed("r") then
         Pokedex.categoryPage = 1
         Pokedex.categorySlot = 1
-        se("SE_PAGE")
+        -- pokefirered/src/pokedex_screen.c:2570
+        se("SE_BALL_TRAY_ENTER")
       end
     else
       Pokedex.categorySlot = Pokedex.categorySlot + 1
@@ -469,8 +467,6 @@ local function handle_category_grid_input(input)
       Pokedex.screen = "data"
       se("SE_SELECT")
       play_cry(sp)
-    else
-      se("SE_HAZARD")
     end
   elseif input:wasPressed("select") then
     local sp = curMons[Pokedex.categorySlot]
@@ -528,10 +524,12 @@ local function handle_ordered_list_input(input)
       Pokedex.cursor = Pokedex.listCursor
       se("SE_SELECT")
     else
+      local prev = Pokedex.listCursor
       Pokedex.listCursor = math.max(1, Pokedex.listCursor - 10)
       Pokedex.cursor = Pokedex.listCursor
       Pokedex.listScroll = math.max(0, Pokedex.listCursor - 1)
-      se("SE_PAGE")
+      -- pokefirered/src/list_menu.c:623
+      if Pokedex.listCursor ~= prev then se("SE_SELECT") end
     end
   elseif input:wasPressed("right") or input:wasPressed("r") then
     if Pokedex.currentOrder == "numerical_kanto" and Pokedex.mode == "kanto" then
@@ -539,12 +537,14 @@ local function handle_ordered_list_input(input)
       Pokedex.mode = "national"
       se("SE_SELECT")
     else
+      local prev = Pokedex.listCursor
       Pokedex.listCursor = math.min(total, Pokedex.listCursor + 10)
       Pokedex.cursor = Pokedex.listCursor
       if Pokedex.listCursor > Pokedex.listScroll + LIST_VISIBLE then
         Pokedex.listScroll = math.max(0, Pokedex.listCursor - LIST_VISIBLE)
       end
-      se("SE_PAGE")
+      -- pokefirered/src/list_menu.c:623
+      if Pokedex.listCursor ~= prev then se("SE_SELECT") end
     end
   elseif input:wasPressed("a") then
     local sp = list[Pokedex.listCursor]
@@ -556,8 +556,6 @@ local function handle_ordered_list_input(input)
       Pokedex.subScreenPrev = "ordered_list"
       se("SE_SELECT")
       play_cry(sp)
-    else
-      se("SE_HAZARD")
     end
   elseif input:wasPressed("select") then
     local sp = list[Pokedex.listCursor]

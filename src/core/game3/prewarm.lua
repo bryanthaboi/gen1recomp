@@ -1,7 +1,7 @@
 local Warm = require("src.core.game3.warm")
 local Prewarm = {}
 
-Prewarm.FIELD_SE = { "SE_SELECT", "SE_WIN_OPEN", "SE_WALL_HIT", "SE_EXIT", "SE_RS_DOOR", "SE_LEDGE",
+Prewarm.FIELD_SE = { "SE_SELECT", "SE_WIN_OPEN", "SE_WALL_HIT", "SE_EXIT", "SE_DOOR", "SE_LEDGE",
   "SE_SLIDING_DOOR", "SE_PIN" }
 
 Prewarm.BATTLE_SE = { "SE_BALL_OPEN", "SE_BALL_THROW", "SE_FAINT", "SE_NOT_EFFECTIVE", "SE_EFFECTIVE",

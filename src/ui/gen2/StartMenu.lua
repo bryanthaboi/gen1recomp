@@ -33,6 +33,7 @@ StartMenu.__index = StartMenu
 -- Not opaque: the overworld keeps drawing underneath, the way the real menu
 -- slides a window over the map.
 StartMenu.isOpaque = false
+StartMenu.dockSelf = true
 
 -- SFX_MENU on open, SFX_READ_TEXT_2 (the click) on select
 -- (StartMenu_Show's `ld de, SFX_MENU / call PlaySFX` and .Select's
@@ -403,41 +404,53 @@ function StartMenu:draw()
   local top = self.contest and 2 or 0
   local height = math.min(#self.items * 2 + 2, Chrome.SCREEN_H - top)
   if self.contest then self:drawContestStatus() end
+  local prompting = self.phase == "confirmContest" or self.phase == "confirm"
+  local docked = Chrome.dockPush("topright", prompting and 12 or nil)
   Chrome.box(10, top, 10, height)
   self.list:draw()
 
   if self.phase == "confirmContest" then
+    Chrome.dockPop(docked)
+    docked = Chrome.dockPush("bottom")
     self:drawPrompt()
+    Chrome.dockPop(docked)
     -- pokecrystal engine/pokemon/mon_menu.asm:442
     if self:promptTyping() then return end
+    docked = Chrome.dockPush("topright")
     -- pokecrystal home/menu.asm:418
     Chrome.box(14, 7, 6, 5)
     Chrome.print(Strings("YES"), 16, 8)
     Chrome.print(Strings("NO"), 16, 10)
     Chrome.cursor(15, self.confirmChoice == 1 and 8 or 10)
+    Chrome.dockPop(docked)
     return
   end
+  Chrome.dockPop(docked)
+  docked = Chrome.dockPush("bottom")
 
   if self.phase == "confirm" then
     self:drawPrompt()
-    if self:promptTyping() then return end
-    Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-    Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-    Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
-    Chrome.cursor(YESNO_X + 1,
-      YESNO_Y + (self.confirmChoice == 1 and 1 or 3))
+    if not self:promptTyping() then
+      Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
+      Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+      Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+      Chrome.cursor(YESNO_X + 1,
+        YESNO_Y + (self.confirmChoice == 1 and 1 or 3))
+    end
+    Chrome.dockPop(docked)
     return
   end
 
-  if not self.showDescription then return end
-  local item = self.list:current()
+  local item = self.showDescription and self.list:current()
   local desc = item and item.desc
-  if not desc then return end
-  -- ._DrawMenuAccount ClearBox (0,13) 5 rows by 10, .PrintMenuAccount decoord
-  -- 0, 14 and the desc's `next` steps two rows (start_menu.asm:366-382).
-  Chrome.paletteFill(0, 13 * 8, 10 * 8, 5 * 8)
-  Chrome.print(desc[1] or "", 0, 14)
-  Chrome.print(desc[2] or "", 0, 16)
+  if desc then
+    -- ._DrawMenuAccount ClearBox (0,13) 5 rows by 10, .PrintMenuAccount decoord
+    -- 0, 14 and the desc's `next` steps two rows (start_menu.asm:366-382).
+    Chrome.paletteFill(0, 13 * 8, 10 * 8, 5 * 8)
+    Chrome.print(desc[1] or "", 0, 14)
+    Chrome.print(desc[2] or "", 0, 16)
+  end
+  Chrome.dockPop(docked)
 end
 
 StartMenu.ITEMS = ITEMS

@@ -793,6 +793,20 @@ end
 local ATLAS_HINT_CAP = 16
 local DECODE_HINT_CAP = 32
 
+local function warmMapSprites(mapId, how)
+  local data = Game.data
+  local def = data.maps[mapId]
+  if not (def and data.sprites) then return end
+  for _, obj in ipairs(def.objects or {}) do
+    local spriteDef = data.sprites[obj.sprite]
+    if spriteDef and type(obj.index) == "number"
+       and objectVisible(Game.save, mapId, obj) then
+      SpriteRenderer.queueWarmSprite(spriteDef,
+        string.format("%s_obj_%d", mapId, obj.index), how)
+    end
+  end
+end
+
 -- Queue the image file decodes a map's build will need: its tileset sheet and
 -- the sprite sheets of the objects rebuildGhosts / a real entry would spawn
 -- (same objectVisible filter).  Returns how many new requests were queued.
@@ -830,6 +844,7 @@ local function prefetchMapImages(mapId, front, budget, seen)
       want(NPC.spriteImagePath(data, obj), true)
     end
   end
+  warmMapSprites(mapId, nil)
   return queued
 end
 
@@ -845,6 +860,7 @@ function OverworldState:prefetchAtlases(rootId, front)
   if not (Game.data and require("src.render.AtlasPrefetch").available()) then
     return
   end
+  self.warmHold = true
   local ok, err = pcall(function()
     local TileRenderer = require("src.render.TileRenderer")
     local gbc = PaletteFX.usesGbcPack()
@@ -864,7 +880,11 @@ function OverworldState:prefetchAtlases(rootId, front)
         near[#near + 1] = n.id
       end
       local skip = {}
-      for _, id in ipairs(near) do skip[id] = true end
+      warmMapSprites(rootId, "now")
+      for _, id in ipairs(near) do
+        skip[id] = true
+        warmMapSprites(id, "now")
+      end
       list = {}
       for _, id in ipairs(OverworldState.prefetchTargets(maps, near, hops, rw, rh, skip)) do
         if id ~= rootId then list[#list + 1] = id end
@@ -1449,6 +1469,11 @@ function OverworldState:update(dt)
   self:drainPendingScripts()
   self.runner:update()
   self:updateParallel()
+  if self.warmHold then
+    self.warmHold = nil
+  else
+    SpriteRenderer.pumpWarm(1)
+  end
   -- keep the player sprite in sync with the bike state (the drawer
   -- picks the red_bike sheet while riding)
   self.player.onBike = Game.save.onBike
@@ -4248,6 +4273,17 @@ function OverworldState:playTrainerMusic(cls)
   return theme
 end
 
+-- audio/play_battle_music.asm:1
+function OverworldState.prepareTrainerBattleMusic(data, cls, partyIndex)
+  local trainer = data and data.trainers and cls and data.trainers[cls]
+  if not trainer then return false end
+  local BattleState = require("src.battle.BattleState")
+  local probe = setmetatable({ data = data, kind = "trainer", oppClass = cls,
+    partyIndex = partyIndex or 1, trainer = trainer }, BattleState)
+  return require("src.core.Music").prepareBattle(data,
+    probe:computeMusicKind(), probe:battleTheme())
+end
+
 -- Public pre-trainer gate. A mod may retain continueBattle while a registered
 -- preparation screen is on top, then resume once with an optional ordered
 -- save-party index scope. The hook is cold on a no-mod boot.
@@ -4310,6 +4346,8 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
     if stingPlayed or self.engaging then return end
     stingPlayed = true
     self:playTrainerMusic(d.trainerClass)
+    OverworldState.prepareTrainerBattleMusic(Game.data, d.trainerClass,
+      d.trainerParty)
   end
   local function startBattle(options)
     self.cancelledTrainerSight = nil
@@ -4654,6 +4692,8 @@ function OverworldState:startTrainerApproach(npc, dist)
   -- self.engaging and does not restart it (#764)
   local theme = meetTrainerTheme(npc.def.trainerClass)
   if theme then require("src.core.Music").play(Game.data, theme) end
+  OverworldState.prepareTrainerBattleMusic(Game.data, npc.def.trainerClass,
+    npc.def.trainerParty)
   local function fight()
     self:engageTrainer(npc, function()
       npc.frozen = false

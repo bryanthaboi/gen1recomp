@@ -277,6 +277,8 @@ local function place_held(loc, boxId, slot)
   if loc == "party" and is_rs() then
     if reject_native(not RsStorage.canReplaceParty(BoxStorageUI._session, slot, held) and "LastPoke") then return end
   end
+  -- pokefirered/src/pokemon_storage_system_tasks.c:977
+  se(se_id("SE_SELECT"))
   local ok, target, errorName = Storage.placeHeldMon(BoxStorageUI._session, held, loc, slot, boxId, BoxStorageUI.holdingSource)
   if not ok then
     BoxStorageUI._status, BoxStorageUI.mode = tostring(errorName or ""), "message"
@@ -285,7 +287,6 @@ local function place_held(loc, boxId, slot)
   BoxStorageUI.holdingMon = target
   BoxStorageUI.holdingSource = target and {loc = loc, boxId = boxId, slot = slot} or nil
   if not target then BoxStorageUI._holdingOrigin = nil end
-  se(se_id("SE_BAG_POCKET"))
 end
 
 function BoxStorageUI.isOpen()
@@ -551,7 +552,7 @@ local function handle_input(input)
           local ok, err = Storage.withdraw(BoxStorageUI._session, bId, sId)
           if ok then
             BoxStorageUI.mode = returnMode
-            se(se_id("SE_BAG_POCKET"))
+            se(se_id("SE_SELECT")) -- pokefirered/src/pokemon_storage_system_tasks.c:992
           else
             BoxStorageUI._status = storage_text("PartyFull", "gText_YourPartysFull")
             BoxStorageUI.mode = "message"
@@ -616,7 +617,7 @@ local function handle_input(input)
             -- pokefirered/src/pokemon_storage_system_tasks.c:1501
             BoxStorageUI._status = RomText.plain("gText_PlacedItemInBag")
             BoxStorageUI.mode = "message"
-            se(se_id("SE_BAG_POCKET"))
+            se(se_id("SE_SELECT")) -- pokefirered/src/pokemon_storage_system_tasks.c:1493
           elseif err == "bag_full" then
             BoxStorageUI._status = RomText.plain("gText_BagIsFull2")
             BoxStorageUI.mode = "message"
@@ -636,6 +637,7 @@ local function handle_input(input)
           local px = GRID_ORIGIN_X + col * COL_W + 12
           local py = GRID_ORIGIN_Y + row * ROW_H + 12
           if loc == "party" then px, py = PcChrome.getPartyCursorCoords(sId) end
+          se(se_id("SE_SELECT")) -- pokefirered/src/pokemon_storage_system_tasks.c:1017
           BoxStorageUI.mode = "browse"
           BoxStorageUI.drawerOpen = false
           ReleaseSeq.start({
@@ -646,14 +648,11 @@ local function handle_input(input)
             slotIdx = sId,
             startX = px,
             startY = py,
-            onComplete = function(released)
+            onComplete = function()
               BoxStorageUI.mode = returnMode
               if loc == "party" then
                 BoxStorageUI.drawerOpen = true
                 BoxStorageUI.partyCursor = math.max(1, math.min(sId, #(BoxStorageUI._session.party or {})))
-              end
-              if released then
-                se(se_id("SE_BAG_POCKET"))
               end
             end,
           })
@@ -731,7 +730,7 @@ local function handle_input(input)
       local box = current_box_data()
       if box then box.wallpaper = BoxStorageUI.wallpaperCursor end
       BoxStorageUI.mode = "browse"
-      se(se_id("SE_BAG_POCKET"))
+      se(se_id("SE_SELECT")) -- pokefirered/src/pokemon_storage_system_tasks.c:1808
     elseif input:wasPressed("b") then
       BoxStorageUI.mode = is_rs() and "pick_wallpaper_group" or "browse"
       se(5)

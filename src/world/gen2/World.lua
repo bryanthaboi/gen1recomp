@@ -915,6 +915,8 @@ function World:load()
   self.constants =
     self:dataTable("gen2Constants", "data/generated/constants.lua") or {}
   FieldMoves.bindEngineFlags(self.constants.engineFlagOrder)
+  FieldMoves.bindFlypoints(self.landmarks and self.landmarks.flypoints,
+    self.landmarks and self.landmarks.spawns)
   -- The side tables a script command NAMES rather than carries: the phone
   -- book, the in-game trades, the elevator's floor labels and the decoration
   -- descriptions.  A cache built before the extractor reached them has no
@@ -1220,6 +1222,7 @@ function World:load()
     readVar = function(varId)
       return self:readVar(varId)
     end,
+    mapId = function() return self.map and self.map.id end,
     -- `special` ids resolve through the extracted SpecialsPointers order.
     specialOrder = self.constants and self.constants.specialOrder,
     lookupTrainer = function(class, member)
@@ -1267,6 +1270,8 @@ function World:load()
     badWarp = function() self:reloadMapBadWarp("bad_warp") end,
     encounterMusic = function(class)
       self:playTrainerEncounterMusic(class)
+      local object = self.vm and self.vm.trainerObject
+      self:prepareTrainerBattleMusic(class, object and object.member)
     end,
     showEmote = function(emote, object, frames)
       self:showEmote(emote, object, frames)
@@ -2762,6 +2767,7 @@ function World:playMapMusic()
                   FieldMoves.isSurfing(self.playerState), nil,
                   self:mapMusicSong(self.map.id))
   end
+  self:prepareBattleMusic()
 end
 
 -- data/maps/setup_scripts.asm:48, :117
@@ -2785,6 +2791,7 @@ function World:setMapMusic(mapId, seamless, method)
   end
   -- data/maps/setup_scripts.asm:51, home/audio.asm:294
   if bikeRow and MAPSETUP_MUSIC_FADE_IN[method] then Music.fadeIn(4) end
+  self:prepareBattleMusic()
 end
 
 -- home/audio.asm:379
@@ -2795,6 +2802,7 @@ function World:restoreMapMusic()
   -- engine/events/overworld.asm:1627
   local reason = FieldMoves.isBiking(self.playerState) and "bike" or nil
   Music.restoreMap(data, reason)
+  self:prepareBattleMusic()
 end
 
 -- ForceMapMusic (engine/overworld/map_setup.asm:201), the music row every
@@ -7048,6 +7056,21 @@ function World:playBattleMusic(opts)
   return song
 end
 
+function World:prepareBattleMusic(opts)
+  local data = self.game and self.game.data
+  local audio = data and data.audio
+  if not (audio and audio.songs and self.map) then return false end
+  return Music.prepare(data, BattleMusic.battleSong(self:battleMusicContext(opts)))
+end
+
+-- engine/events/trainer_scripts.asm:6
+function World:prepareTrainerBattleMusic(class, member)
+  local record = class and member and self:trainerParty(class, member)
+  if not record then return false end
+  return self:prepareBattleMusic({ trainer = { class = record.class,
+    classId = record.classId, memberId = record.id } })
+end
+
 -- ../pokecrystal/engine/battle/start_battle.asm:15
 function World.transitionStatusByte(status, turns)
   if status == "sleep" then return math.min(turns or 1, 7) end
@@ -9193,6 +9216,8 @@ function World:atlasFor(mapDef)
   return atlas, tileset
 end
 
+World.bakeQuads = setmetatable({}, { __mode = "k" })
+
 -- Bakes one map's 32px blocks into a single canvas.
 --
 -- With palettes available this is a GBC-accurate render, not a grayscale one:
@@ -9214,11 +9239,14 @@ function World:bakeMapImage(map, daytime, flicker)
   -- Map pixels, not the screen's: a DPI-scaled canvas bakes them non-square
   -- (#208, see src/render/PixelCanvas.lua).
   local canvas = PixelCanvas.new(pw, ph, "nearest")
-  local quads = {}
+  local quads = World.bakeQuads[atlas]
+  if not quads then
+    quads = {}
+    World.bakeQuads[atlas] = quads
+  end
   local crystal = self:isCrystal()
-  local function quadFor(tile)
+  local function quadFor(tile, attr)
     if crystal then
-      local attr = TileAttrs.forTile(tileset, tile)
       return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
     end
     local q = quads[tile]
@@ -9255,33 +9283,54 @@ function World:bakeMapImage(map, daytime, flicker)
     clearColor = { c[1] / 255, c[2] / 255, c[3] / 255 }
   end
 
-  local function drawTiles(slot)
-    for by = 0, map.height - 1 do
-      for bx = 0, map.width - 1 do
-        -- LoadMetatiles reads block id 0 as the map header's border block,
-        -- not as tileset block 0 (see src/world/gen2/BorderFill.lua), so a
-        -- hole in the block list paints the same wall the margin does.
-        local blockId = BorderFill.blockFor(
-          map.blocks[by * map.width + bx + 1], map.borderBlock)
-        local block = blocks and blocks[(blockId or 0) + 1]
-        if block then
-          for i = 0, 15 do
-            local tile = block[i + 1] or 0
-            local tileSlot = crystal
-              and TileAttrs.paletteSlot(tileset, tile)
-              or (tilePalettes and tilePalettes[tile + 1] or 1)
-            if not slot or tileSlot == slot then
-              local tx = bx * 32 + (i % 4) * 8
-              local ty = by * 32 + math.floor(i / 4) * 8
-              if crystal then
-                local attr = TileAttrs.forTile(tileset, tile)
-                TileAttrs.drawFlippedTile(atlas, quadFor(tile), tx, ty, attr)
-              else
-                love.graphics.draw(atlas, quadFor(tile), tx, ty)
-              end
+  local bySlot = {}
+  local attrMemo = {}
+  for by = 0, map.height - 1 do
+    for bx = 0, map.width - 1 do
+      -- LoadMetatiles reads block id 0 as the map header's border block,
+      -- not as tileset block 0 (see src/world/gen2/BorderFill.lua), so a
+      -- hole in the block list paints the same wall the margin does.
+      local blockId = BorderFill.blockFor(
+        map.blocks[by * map.width + bx + 1], map.borderBlock)
+      local block = blocks and blocks[(blockId or 0) + 1]
+      if block then
+        for i = 0, 15 do
+          local tile = block[i + 1] or 0
+          local attr, slot = false, 0
+          if crystal then
+            attr = attrMemo[tile]
+            if not attr then
+              attr = TileAttrs.forTile(tileset, tile)
+              attrMemo[tile] = attr
             end
+            slot = attr.palette or -1
+          elseif colored then
+            slot = tilePalettes[tile + 1] or 1
           end
+          if not colored then slot = 0 end
+          local list = bySlot[slot]
+          if not list then
+            list = {}
+            bySlot[slot] = list
+          end
+          local n = #list
+          list[n + 1] = tile
+          list[n + 2] = bx * 32 + (i % 4) * 8
+          list[n + 3] = by * 32 + math.floor(i / 4) * 8
+          list[n + 4] = attr
         end
+      end
+    end
+  end
+
+  local function drawList(list)
+    if not list then return end
+    for k = 1, #list, 4 do
+      local tile, tx, ty, attr = list[k], list[k + 1], list[k + 2], list[k + 3]
+      if crystal then
+        TileAttrs.drawFlippedTile(atlas, quadFor(tile, attr), tx, ty, attr)
+      else
+        love.graphics.draw(atlas, quadFor(tile), tx, ty)
       end
     end
   end
@@ -9301,10 +9350,13 @@ function World:bakeMapImage(map, daytime, flicker)
     love.graphics.origin()
     if colored then
       for slot = 1, 8 do
-        GbcPalette.with(bgSet[slot], function() drawTiles(slot) end)
+        local list = bySlot[slot]
+        if list then
+          GbcPalette.with(bgSet[slot], function() drawList(list) end)
+        end
       end
     else
-      drawTiles(nil)
+      drawList(bySlot[0])
     end
     love.graphics.pop()
   end)
@@ -9407,6 +9459,17 @@ end
 -- dropped whenever the daytime, COLOR mode, custom ramp (by identity, the
 -- same thing tostring keys on) or flicker phase moves, so a stale key is
 -- never handed out.
+function World:touchMapImage(key)
+  local clock = (self.bakeClock or 0) + 1
+  self.bakeClock = clock
+  local use = self.mapImageUse
+  if not use then
+    use = {}
+    self.mapImageUse = use
+  end
+  use[key] = clock
+end
+
 local function mapKeyMemo(self)
   local daytime = self.daytime
   local flicker = (daytime == "DARK") and self.flickerPhase or 1
@@ -9443,7 +9506,10 @@ function World:imageFor(mapId)
   local flicker = (daytime == "DARK") and self.flickerPhase or 1
   local cacheKey = self:mapCacheKey(mapId)
   local cached = self.mapImages[cacheKey]
-  if cached then return cached end
+  if cached then
+    World.touchMapImage(self, cacheKey)
+    return cached
+  end
   local def = self.maps[mapId]
   if not def then return nil end
   local tileset = self.tilesets[def.tileset]
@@ -9451,6 +9517,7 @@ function World:imageFor(mapId)
   local map = Map.new(def, tileset)
   local img, bgSet = self:bakeMapImage(map, daytime, flicker)
   self.mapImages[cacheKey] = img
+  World.touchMapImage(self, cacheKey)
   -- Under the same key as the bake: the overlay needs both the cell list and
   -- the palettes the bake resolved.
   self.animCells[cacheKey] = self:animCellsFor(map, tileset) or false
@@ -10012,7 +10079,10 @@ function World:borderImageFor(mapId)
     entry.keys[row] = cacheKey
   end
   local cached = self.mapImages[cacheKey]
-  if cached ~= nil then return cached or nil end
+  if cached ~= nil then
+    World.touchMapImage(self, cacheKey)
+    return cached or nil
+  end
   local atlas = self:atlasFor(def)
   if not atlas then return nil end
   local bgSet = self.palettes and daytime
@@ -10025,6 +10095,7 @@ function World:borderImageFor(mapId)
   -- `false` rather than nil: a bake that cannot be made (a headless run with
   -- no canvas support) must not be retried once per frame forever.
   self.mapImages[cacheKey] = (ok and img) or false
+  World.touchMapImage(self, cacheKey)
   return (ok and img) or nil
 end
 
@@ -10316,6 +10387,27 @@ function World:applySpritePalette(entity)
     ("gen2:%s:%d"):format(tostring(daytime), id))
 end
 
+function World:warmMapSprites(mapId)
+  local def = self.maps and self.maps[mapId]
+  if not (def and self.palettes and self.sprites) then return end
+  local daytime = self.daytime
+    or Palettes.daytimeFor(self.map and self.map.def, self:hour(), self.flashUsed)
+  for _, obj in ipairs(def.objects or {}) do
+    local shown = not self.events or (self.events:objectVisible(obj.eventFlag)
+      and self:objectTimeVisible(obj))
+    local name = shown and obj.sprite and self:resolveSprite(obj.sprite)
+    local spriteDef = type(name) == "table" and name or (name and self.sprites[name])
+    if spriteDef then
+      local colors = Palettes.spritePalette(self.palettes, daytime, spriteDef, obj)
+      if colors then
+        local id = Palettes.objectPaletteId(obj) or spriteDef.paletteId or 0
+        SpriteRenderer.queueWarmGen2(spriteDef, colors,
+          ("gen2:%s:%d"):format(tostring(daytime), id))
+      end
+    end
+  end
+end
+
 -- the two vanilla links the time-of-day chains wrap, hoisted so an empty
 -- chain allocates no closure (src/world/OverworldController.lua does the same
 -- for the Gen 1 pair)
@@ -10408,9 +10500,16 @@ function World:applyPalettes()
   return changed
 end
 
-function World:rebuildNeighbors()
+function World:rebuildNeighbors(opts)
+  local previous = {}
+  if opts and opts.defer then
+    for _, nb in ipairs(self.neighbors or {}) do previous[nb.id] = nb.image end
+  end
   self.neighbors = {}
-  if not self.map then return end
+  if not self.map then
+    self.bakeQueue = {}
+    return
+  end
   local s = self:pixelZoomScale()
   local d = Playfield.ratio()
   local ww, wh = Playfield.dimensions()
@@ -10421,12 +10520,126 @@ function World:rebuildNeighbors()
   self.viewW, self.viewH = vw, vh
   local list = World.computeNeighbors(
     self.maps, self.map.id, NEIGHBOR_HOPS, vw, vh)
+  local deferred = {}
   for _, n in ipairs(list) do
-    local img = self:imageFor(n.id)
+    local img = previous[n.id]
+    if img and self.mapImages[self:mapCacheKey(n.id)] == nil then
+      deferred[#deferred + 1] = n.id
+    else
+      img = self:imageFor(n.id)
+    end
     if img then
       table.insert(self.neighbors, { id = n.id, ox = n.ox, oy = n.oy, image = img })
     end
   end
+  self:queueNeighborBakes(deferred)
+  self:trimMapImages()
+end
+
+World.MAP_IMAGE_CAP = 48
+
+function World:queueNeighborBakes(first)
+  local queue, seen = {}, {}
+  for _, id in ipairs(first or {}) do
+    if not seen[id] then
+      seen[id] = true
+      queue[#queue + 1] = id
+    end
+  end
+  local map = self.map
+  local def = map and self.maps and self.maps[map.id]
+  local warm = {}
+  if def then
+    seen[map.id] = true
+    warm[#warm + 1] = map.id
+    for _, nb in ipairs(self.neighbors or {}) do
+      seen[nb.id] = true
+      warm[#warm + 1] = nb.id
+    end
+    for _, dir in ipairs({ "north", "south", "west", "east" }) do
+      local conn = def.connections and def.connections[dir]
+      local nextId = conn and (conn.mapId or conn.map)
+      if type(nextId) == "string" and self.maps[nextId] then
+        for _, n in ipairs(World.computeNeighbors(
+            self.maps, nextId, NEIGHBOR_HOPS, self.viewW, self.viewH)) do
+          if not seen[n.id] then
+            seen[n.id] = true
+            warm[#warm + 1] = n.id
+            if self.mapImages and self.mapImages[self:mapCacheKey(n.id)] == nil then
+              queue[#queue + 1] = n.id
+            end
+          end
+        end
+      end
+    end
+  end
+  local grass = {}
+  for _, id in ipairs(warm) do
+    self:warmMapSprites(id)
+    grass[#grass + 1] = self.maps[id]
+  end
+  self.grassWarm = grass
+  self.bakeQueue = queue
+  self.bakeHold = true
+  return queue
+end
+
+function World:pumpBakes()
+  if not self.mapImages then return false end
+  if self.bakeHold then
+    self.bakeHold = nil
+    return false
+  end
+  local queue = self.bakeQueue
+  local baked = false
+  while not baked and queue and queue[1] do
+    local id = table.remove(queue, 1)
+    baked = self.mapImages[self:mapCacheKey(id)] == nil
+    local img = self:imageFor(id)
+    if img then
+      for _, nb in ipairs(self.neighbors or {}) do
+        if nb.id == id then nb.image = img end
+      end
+    end
+  end
+  SpriteRenderer.pumpWarm(1)
+  local grass = self.grassWarm
+  if grass and grass[1] then self:grassAtlasFor(table.remove(grass, 1)) end
+  local stamp = self.rolloverStamp
+  if stamp and not baked and not (queue and queue[1]) then
+    self.rolloverStamp = nil
+    self:trimMapImages(stamp)
+  end
+  return baked
+end
+
+function World:trimMapImages(before)
+  local images = self.mapImages
+  if not images then return 0 end
+  local use = self.mapImageUse or {}
+  local held = {}
+  if self.mapImage then held[self.mapImage] = true end
+  for _, nb in ipairs(self.neighbors or {}) do
+    if nb.image then held[nb.image] = true end
+  end
+  local keys, count = {}, 0
+  for key, img in pairs(images) do
+    count = count + 1
+    if not held[img] then keys[#keys + 1] = key end
+  end
+  table.sort(keys, function(a, b) return (use[a] or 0) < (use[b] or 0) end)
+  local dropped = 0
+  for _, key in ipairs(keys) do
+    local stale = before and (use[key] or 0) <= before
+    if not stale and count - dropped <= World.MAP_IMAGE_CAP then break end
+    safeRelease(images[key])
+    images[key] = nil
+    use[key] = nil
+    if self.animCells then self.animCells[key] = nil end
+    if self.bgSets then self.bgSets[key] = nil end
+    dropped = dropped + 1
+  end
+  return dropped
 end
 
 function World:setMap(mapId, cx, cy, facing, opts)
@@ -10488,32 +10701,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
     self, "ENGINE_ALWAYS_ON_BIKE", Bike.ENGINE_ALWAYS_ON_BIKE), false)
   self:setEngineFlag(World.engineFlagId(
     self, "ENGINE_DOWNHILL", Bike.ENGINE_DOWNHILL), false)
-  -- "Respawn in Pokemon Centers" (home/map.asm, LoadMapAttributes' .SetSpawn):
-  -- walking from an OUTDOOR map into an INDOOR one whose tileset is
-  -- TILESET_POKECENTER rewrites wLastSpawnMapGroup / wLastSpawnMapNumber, and
-  -- that pair is what a whiteout reads.  It is the only thing in the game that
-  -- moves the respawn point, and it has to run on the map load rather than on
-  -- the heal: the cart moves your spawn when you walk in the DOOR, whether or
-  -- not you talk to the nurse.
-  --
-  -- Missing this was not a small divergence.  MrPokemonsHouse.asm does
-  -- `blackoutmod CHERRYGROVE_CITY` in the first half hour of the game, so with
-  -- no other writer the respawn point was pinned to Cherrygrove for the entire
-  -- rest of the run: every whiteout at the Elite Four teleported the player
-  -- back across Johto.  (Found by the Gold route bot, which spent about 40k
-  -- frames per Elite Four attempt walking home from Cherrygrove.)
-  --
-  -- Divergence, deliberate: the cart stores the OUTDOOR map and resolves it
-  -- through data/maps/spawn_points.asm to get coordinates inside that town's
-  -- Pokecenter.  No spawn table is emitted into the cache, and World:warpToSpawn
-  -- already prefers a stored map id over the SPAWN_* lookup, so store the
-  -- Pokecenter itself.  Same building, same town; the landing tile is its door
-  -- rather than the mat in front of the counter.
-  --
-  -- A named method rather than eight inline lines so that
-  -- tests/gen2_pokecenter_spawn_test.lua can drive the shipped rule instead of
-  -- restating it: setMap needs a tileset, a Map and the callback machinery
-  -- before it will run at all, which is more world than the rule needs.
+  -- home/map.asm:695
   self:updateWhiteoutSpawn(def, mapId)
 
   -- ResetFlashIfOutOfCave: the FLASH flag survives a warp between two cave
@@ -10521,10 +10709,8 @@ function World:setMap(mapId, cx, cy, facing, opts)
   if def.environment == "ROUTE" or def.environment == "TOWN" then
     self.flashUsed = false
   end
-  -- No noteFlypoint call here anymore: MAPCALLBACK_NEWMAP (run below, once
-  -- the map is actually loaded) is a town's own `setflag ENGINE_FLYPOINT_*`,
-  -- and FieldMoves.hasVisitedSpawn now reads that flag straight off
-  -- save.engineFlags instead of a second write this function used to make.
+  FieldMoves.noteVisit(self.game and self.game.save, mapId,
+    self.landmarks and self.landmarks.spawns)
   -- The map load repaints everything, so a fade sheet and a screen shake left
   -- over from the script that warped cannot survive it -- LoadMapPalettes and
   -- DeleteMapObject are what end both on the cart.
@@ -11586,9 +11772,11 @@ function World:pollTimeOfDay()
   if self.paletteClock < PALETTE_POLL_STEPS then return end
   self.paletteClock = 0
   if self:applyPalettes() then
-    self.mapImages = {}
+    self.rolloverStamp = self.bakeClock or 0
+    self.mapImages = self.mapImages or {}
     self.mapImage = self:imageFor(self.map.id)
-    self:rebuildNeighbors()
+    self:rebuildNeighbors({ defer = true })
+    self:prepareBattleMusic()
   end
   -- The hour-window objects (World:objectTimeVisible) key off the raw hour,
   -- not just the palette daytime, so their respawn rides the same poll: on the
@@ -11621,6 +11809,7 @@ end
 function World:step()
   self:stepBody()
   if not self.map or not self.player then return end
+  if self.rolloverStamp or not self:busy() then self:pumpBakes() end
   Follower.update(self.game, self)
   Gen1Facade.worldTick(self, 1 / 60)
 end

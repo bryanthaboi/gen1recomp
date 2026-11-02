@@ -28,7 +28,7 @@
 --     for every visible cell, every frame, on strings that never change.
 --  4. Lists PAGINATE.  Row count is bounded by the page size, so a 500-mod
 --     index costs exactly what a 10-mod one does.  There is no virtualised
---     scroller and no momentum integrator to run.
+--     scroller.
 --  5. Draw flat.  No stencil, no mesh, no canvas, no shader, no blend-mode
 --     change -- every one is a pipeline flush.  Rounded corners, the emboss
 --     and a card's drop shadow are allowed because they only add VERTICES at
@@ -1006,7 +1006,7 @@ end
 -- -------------------------------------------------------------------- pager
 -- Prev / Next / "1-12 of 151".  Drawn even for a single page, so a list is
 -- never silently truncated.  A long list still PAGES rather than scrolling:
--- no momentum, bounded row count per frame.
+-- bounded row count per frame.
 -- Returns the new page (1-based) and the row height consumed.
 local pagerLabels = {}
 
@@ -1071,6 +1071,67 @@ Kit.dragX = nil
 Kit.dragY = nil
 Kit.dragAccum = 0
 
+Kit.FLING_TAU = 0.5
+Kit.FLING_WINDOW = 0.1
+Kit.FLING_MIN = 120
+Kit.FLING_MAX = 6000
+Kit.FLING_REST = 30
+
+local FLING_RING = 32
+local fling = { n = 0, head = 0, dy = {}, dt = {}, v = 0 }
+Kit.fling = fling
+
+function Kit.flingReset()
+  fling.n, fling.head, fling.v = 0, 0, 0
+end
+
+function Kit.flingSample(dy, dt)
+  dy, dt = dy or 0, math.max(0, dt or 0)
+  if dt == 0 and fling.n > 0 then
+    fling.dy[fling.head] = fling.dy[fling.head] + dy
+    return
+  end
+  local i = fling.head % FLING_RING + 1
+  fling.head, fling.dy[i], fling.dt[i] = i, dy, dt
+  if fling.n < FLING_RING then fling.n = fling.n + 1 end
+end
+
+function Kit.flingRelease(scale)
+  scale = scale or Kit.scale
+  local sum, span = 0, 0
+  for k = 0, fling.n - 1 do
+    if span >= Kit.FLING_WINDOW - 1e-9 then break end
+    local i = (fling.head - 1 - k) % FLING_RING + 1
+    sum, span = sum + fling.dy[i], span + fling.dt[i]
+  end
+  fling.n = 0
+  local v = span > 0 and sum / span or 0
+  local vmax = Kit.FLING_MAX * scale
+  v = math.max(-vmax, math.min(vmax, v))
+  if math.abs(v) < Kit.FLING_MIN * scale then v = 0 end
+  fling.v = v
+  return v
+end
+
+function Kit.flingStep(dt, scale)
+  local v = fling.v
+  if v == 0 or not dt or dt <= 0 then return 0 end
+  local k = math.exp(-dt / Kit.FLING_TAU)
+  local d = v * Kit.FLING_TAU * (1 - k)
+  v = v * k
+  if math.abs(v) < Kit.FLING_REST * (scale or Kit.scale) then v = 0 end
+  fling.v = v
+  return d
+end
+
+function Kit.flingStop()
+  fling.v = 0
+end
+
+function Kit.flinging()
+  return fling.v ~= 0
+end
+
 function Kit.dragBegin(x, y)
   Kit.dragX, Kit.dragY, Kit.dragAccum = x, y, 0
 end
@@ -1081,6 +1142,7 @@ end
 
 function Kit.dragEnd()
   Kit.dragX, Kit.dragY, Kit.dragAccum = nil, nil, 0
+  fling.v = 0
 end
 
 local function dragOriginIn(x, y, w, h)
@@ -1116,6 +1178,7 @@ function Kit.wheelPage(x, y, w, h, page, total, perPage)
       local want = (out or 1) + flips
       out = math.floor(Theme.clamp(want, 1, pages))
       Kit.dragAccum = out ~= want and 0 or acc - flips * stepPx
+      if out ~= want then fling.v = 0 end
     end
   end
   return out
@@ -1165,7 +1228,9 @@ function Kit.scrollInput(offset, maxScroll, x, y, w, h)
   local at = Kit.scrollWheel(offset, maxScroll, x, y, w, h)
   if not Kit.blockClicks and (Kit.dragAccum or 0) ~= 0
       and dragOriginIn(x, y, w, h) then
-    at = Kit.scrollClamp(at + Kit.dragAccum, maxScroll)
+    local want = at + Kit.dragAccum
+    at = Kit.scrollClamp(want, maxScroll)
+    if at ~= want then fling.v = 0 end
     Kit.dragAccum = 0
   end
   return at

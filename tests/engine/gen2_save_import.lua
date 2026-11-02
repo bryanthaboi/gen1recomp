@@ -181,6 +181,7 @@ for _, version in ipairs({ "gold", "silver", "crystal" }) do
     eq(bare.engineFlags[64 + shift], nil,
        version .. ": and a pre-Mr.-Pokemon save has no flypoint at all")
     if shift == 0 then
+      require("tests.fixtures.gen2_flypoints").bind("gold")
       eq(FieldMoves.hasVisitedSpawn(save, "SPAWN_AZALEA"), true,
          version .. ": FLY offers the town the cart unlocked")
       eq(FieldMoves.hasVisitedSpawn(save, "SPAWN_CHERRYGROVE"), false,

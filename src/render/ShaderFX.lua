@@ -123,6 +123,52 @@ local function dirname(path)
   return path:match("^(.*)/[^/]+$") or ""
 end
 
+local function nativeDirname(path)
+  return path:match("^(.*)[/\\][^/\\]+$") or ""
+end
+
+local function isAbsolutePath(path)
+  return path:match("^[/\\]") ~= nil or path:match("^%a:[/\\]") ~= nil
+    or path:match("^%w+:/") ~= nil
+end
+
+local function splitRoot(path)
+  local p = path:gsub("\\", "/"):gsub("^//%?/", "")
+  local root = p:match("^%w+:/") or p:match("^/") or ""
+  local parts = {}
+  for part in normalizePath(p:sub(#root + 1)):gmatch("[^/]+") do parts[#parts + 1] = part end
+  return root:lower(), parts
+end
+
+local function canonicalDir(dir)
+  local okFfi, ffi = pcall(require, "ffi")
+  if not okFfi or type(ffi) ~= "table" or ffi.os == "Windows" then return dir end
+  pcall(ffi.cdef, "char *realpath(const char *path, char *resolved_path);")
+  pcall(ffi.cdef, "void free(void *ptr);")
+  local ok, out = pcall(function()
+    local p = ffi.C.realpath(dir, nil)
+    if p == nil then return nil end
+    local s = ffi.string(p)
+    ffi.C.free(p)
+    return s
+  end)
+  return ok and out or dir
+end
+
+local function relativePath(path, baseDir)
+  if not isAbsolutePath(path) or not isAbsolutePath(baseDir) then return nil end
+  local pRoot, p = splitRoot(path)
+  local bRoot, b = splitRoot(baseDir)
+  if pRoot ~= bRoot then return nil end
+  local fold = pRoot:match("^%a:/$") and string.lower or tostring
+  local i = 1
+  while i <= #p and i <= #b and fold(p[i]) == fold(b[i]) do i = i + 1 end
+  local out = {}
+  for _ = i, #b do out[#out + 1] = ".." end
+  for k = i, #p do out[#out + 1] = p[k] end
+  return table.concat(out, "/")
+end
+
 -- .png (a LUT) is a real dependency but never itself a source of references.
 local TEXT_EXT = { slang = true, slangp = true, inc = true, h = true }
 local REF_EXT = { slang = true, slangp = true, inc = true, h = true, png = true }
@@ -863,6 +909,12 @@ function ShaderFX.load(entry)
   local ok, preset = pcall(chunk)
   if not ok then return nil, "cached artifact failed to run: " .. tostring(preset) end
   if type(preset) ~= "table" then return nil, "cached artifact did not return a table" end
+  local base = nativeDirname(entry.fullPath)
+  for _, t in ipairs(preset.textures or {}) do
+    if type(t.path) == "string" and not isAbsolutePath(t.path) then
+      t.path = base .. "/" .. t.path
+    end
+  end
   local state = newChainState(preset)
   state.entryName = entry.name -- see updateYawTwist/sizeTable's Accelerometer branch
   return state
@@ -949,6 +1001,12 @@ local function doConvert(entry, es)
   ShaderSourcePatches.apply(entry)
   local preset, err = ShaderFX.translate(entry.fullPath, es == nil and defaultEs() or es)
   if not preset then return false, err end
+  local base = canonicalDir(nativeDirname(entry.fullPath))
+  for _, t in ipairs(preset.textures or {}) do
+    if type(t.path) == "string" then
+      t.path = relativePath(t.path, base) or t.path
+    end
+  end
   local buf = {}
   serializeLua(preset, buf)
   local path = ShaderFX.artifactPath(entry)

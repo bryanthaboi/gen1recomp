@@ -11,15 +11,15 @@
 -- row, the pager and "+ New save slot" drawn-but-inert.  The fix makes the
 -- threshold column-aware, so those windows scroll instead of clipping.
 --
--- The seam is LauncherView.draw itself: it publishes the page-scroll extent
--- on the importer (imp._pageScroll / imp._pageScrollMax, the values the
+-- The seam is LauncherView.draw itself: it publishes the tab region's extent
+-- on the importer (imp._tabScroll / imp._tabScrollMax, the values the
 -- touch-drag and wheel paths feed), so a headless draw shows whether the
 -- scroll engaged without reading any file-local constant.
 --
 -- What is asserted here is REACHABILITY, not scrolling: "+ New save slot" is
 -- the control that sits at the very bottom of the one-column pile, and the
 -- bug was that it drew where no tap could land.  Either it fits in the
--- window outright, or the page scrolls far enough to bring it in -- both are
+-- window outright, or the region scrolls far enough to bring it in -- both are
 -- correct, and which one a given window gets depends on how tall the panel's
 -- content happens to be.  Asserting "this window scrolls" instead pinned the
 -- test to the size of the stack: when the pinned Touch-Controls /
@@ -94,14 +94,14 @@ local function reachable(imp, H)
     return (y2 - y1) > 1
   end
   if visible() then return true end
-  imp._pageScroll = 1e6          -- clamps to the extent inside draw()
+  imp._tabScroll[imp.tab or "red"] = 1e6
   return visible()
 end
 
 -- ------------------------------------------------ #852: the bottom is reachable
 -- 480x900 one column: enough room for the old flat 460*s threshold, not for
--- the one-column stack.  Before the fix draw() left _pageScrollMax at 0 here
--- and the slot card sat clipped inert against the pinned buttons.
+-- the one-column stack.  Before the fix the slot card sat clipped inert
+-- against the pinned buttons.
 window(480, 900)
 local m = Layout.metrics(1200)
 eq(m.twoCol, false, "480-wide window lays out one column")
@@ -111,29 +111,24 @@ check(reachable(imp, 900),
   "one-column window can reach the bottom of the slot card")
 imp = freshLauncher()
 LauncherView.draw(imp)
-eq(imp._pageScroll, 0, "a fresh page starts at the top")
+eq(imp._tabScroll.red or 0, 0, "a fresh page starts at the top")
 
--- A short portrait phone still engages page scroll after removing the gaps
--- beside the header/footer dividers; 360x780 now fits without page overflow.
 window(360, 740)
 local pm = Layout.metrics(1200)
 local phone = freshLauncher()
 LauncherView.draw(phone)
-check((phone._pageScrollMax or 0) > 0,
-  "portrait-phone one-column window engages the page scroll")
-eq(phone._pageScroll, 0, "a fresh page starts at the top")
+LauncherView.draw(phone)
+eq(phone._pageScrollMax or 0, 0, "and no page scroll stacks on top of it")
+eq(phone._tabScroll.red or 0, 0, "a fresh page starts at the top")
 
--- The wheel moves the page (the same offset the touch drag feeds), and the
--- offset clamps to the extent, so the whole stack down to "+ New save slot"
--- and the footer is reachable rather than clipped away.
-local extent = phone._pageScrollMax
+local extent = phone._tabScrollMax.red
 phone._wheelY = -1
 LauncherView.draw(phone)
-eq(phone._pageScroll, math.min(math.floor(48 * pm.s), extent),
-  "one wheel notch scrolls the page down by its step")
-phone._pageScroll = 1e6
+eq(phone._tabScroll.red, math.min(math.floor(48 * pm.s), extent),
+  "one wheel notch scrolls the region down by its step")
+phone._tabScroll.red = 1e6
 LauncherView.draw(phone)
-eq(phone._pageScroll, phone._pageScrollMax,
+eq(phone._tabScroll.red, phone._tabScrollMax.red,
   "an offset past the end clamps to the extent, so the bottom is reachable")
 check(reachable(phone, 740),
   "the scrolled portrait phone reaches the bottom of the slot card")
@@ -143,7 +138,8 @@ check(reachable(phone, 740),
 window(480, 1200)
 local tall = freshLauncher()
 LauncherView.draw(tall)
-eq(tall._pageScrollMax, 0,
+LauncherView.draw(tall)
+eq(tall._tabScrollMax.red or 0, 0,
   "a tall one-column window does not scroll for nothing")
 
 -- --------------------------------------- #810: launcher anchored in units

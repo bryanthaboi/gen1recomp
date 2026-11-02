@@ -605,9 +605,17 @@ function Game.uiAnchorsHeldInStack(stack)
 end
 
 function Game.uiShiftRightInStack(stack, from)
+  local TextBox = require("src.render.TextBox")
+  local boxAbove = false
   for i = #(stack and stack.states or {}), from or 1, -1 do
     local state = stack.states[i]
-    if state and state.uiShiftRight then return true end
+    if state and state.uiShiftRight then
+      if type(state.uiShiftRight) == "number" and boxAbove then
+        return state.uiShiftRight
+      end
+      return true
+    end
+    if getmetatable(state) == TextBox then boxAbove = true end
   end
   return false
 end
@@ -728,12 +736,13 @@ function Game:draw()
   Renderer.uiCentered = not Game.dynamicUI(self.save)
   Renderer.uiAnchorHold = Game.uiAnchorsHeldInStack(self.stack)
   local shiftRight = false
-  if not Renderer.uiCentered and not Renderer.uiAnchorHold
-     and Game.uiShiftRightInStack(self.stack, drawFrom) then
+  local shift = not Renderer.uiCentered and not Renderer.uiAnchorHold
+    and Game.uiShiftRightInStack(self.stack, drawFrom)
+  if shift then
     if ModRuntime.wantsHook("render.compose") then
       Renderer.uiAnchorHold = true
     else
-      shiftRight = true
+      shiftRight = shift
     end
   end
   Renderer:beginFrame(Game.uiCanvasTransparent(

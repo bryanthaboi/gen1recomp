@@ -144,7 +144,7 @@ carelessRun.release()
 
 local gen2Game = {
   data = {
-    encounters = {
+    gen2Encounters = {
       grass = {
         NEW_BARK_TOWN = {
           rates = { MORN = 51, DAY = 51, NITE = 51 },

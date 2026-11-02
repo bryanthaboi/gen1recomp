@@ -191,6 +191,29 @@ hotkeys (`2`/`3`/`5` are claimed before any mod pipeline hotkey runs).
 If the handheld stutters with extras on, try **OPTIONS → PERFORMANCE** →
 `LOW` or `BALANCED`.
 
+## Shader presets
+
+**OPTIONS → SHADER FX** cannot convert presets on Switch, and cannot download
+them unless the installed love-nx exports the native HTTP download bridge:
+stock love-nx 11.5-nx1 has no HTTPS transport, so **DOWNLOAD SHADERS** is
+greyed out. There is no shader converter in the Switch build, so an
+unconverted preset reads `UPDATE`.
+Presets converted on a PC run on Switch:
+
+1. On a desktop build, open **SHADER FX**, press **DOWNLOAD SHADERS** (or copy
+   a pack into `shaders/` by hand) and press **A** on every preset you want,
+   so its row loses the `CONVERT` hint. Each converted `.slangp` gets a `.lua`
+   file written next to it.
+2. Copy that desktop `shaders/` folder (inside the desktop save folder
+   `pokemon-love2d/`) whole, LUT images included, to
+   `sdmc:/switch/gen1recomp/pokemon-love2d/shaders/` by MTP / SD / FTP.
+3. Reopen **SHADER FX** on Switch. Copied presets show without a hint and
+   activate with **A**.
+
+Presets that use LUT images need a desktop build from this release or newer;
+an older convert stored the PC's absolute LUT paths, so reconvert those before
+copying. Converted presets have not yet been confirmed on Switch hardware.
+
 ## Limitations
 
 - You need homebrew (custom firmware, hbmenu). This project does not set that
@@ -199,8 +222,9 @@ If the handheld stutters with extras on, try **OPTIONS → PERFORMANCE** →
   not supported. The game needs full memory.
 - ROMs, mods, and saves are copied manually via MTP, direct SD, or FTP. There
   is no automated deploy.
-- Updates use the native OTA launcher only. The LÖVE self-updater and remote
-  **FIND MODS** stay off on Switch.
+- Updates use the native OTA launcher only. The LÖVE self-updater stays off
+  on Switch. Remote **FIND MODS** and **DOWNLOAD SHADERS** stay off unless the
+  installed love-nx exports the native HTTP download bridge.
 - Tested on Switch OLED. Switch V1 / Erista boot confirmed by the community.
   Other models may work but are less tested.
 

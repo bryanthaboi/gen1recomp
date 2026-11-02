@@ -122,8 +122,6 @@ body, err, code = HostShell.httpRequest("https://sync.example/sync/save", {
 eq(err, "no request transport on this platform",
   "a platform with no bridge at all keeps its old answer")
 
--- Switch can fetch mod releases and archives through love-nx's download
--- bridge, even though it has neither curl nor the signed-request bridge.
 love.system.getOS = function() return "NX" end
 local download
 love.system.httpDownload = function(url, path, userAgent, accept)

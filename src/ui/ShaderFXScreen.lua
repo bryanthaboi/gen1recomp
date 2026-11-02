@@ -6,6 +6,8 @@ local ListMenu = require("src.ui.ListMenu")
 local ShaderFX = require("src.render.ShaderFX")
 local Strings = require("src.core.Strings")
 local Screens = require("src.ui.Screens")
+local HostShell = require("src.core.HostShell")
+local Platform = require("src.core.Platform")
 
 local ShaderFXScreen = setmetatable({}, { __index = ListMenu })
 ShaderFXScreen.__index = ShaderFXScreen
@@ -34,7 +36,7 @@ local function applyRowState(item, canConvert)
 end
 
 -- OFF, every real preset, then the permanent DOWNLOAD SHADERS action row.
-local function buildItems(active, canConvert)
+local function buildItems(active, canConvert, canFetch)
   local items = { { label = label(nil), entry = nil } }
   local selected = 1
   for _, entry in ipairs(ShaderFX.list()) do
@@ -43,7 +45,8 @@ local function buildItems(active, canConvert)
     items[#items + 1] = item
     if active and active.name == entry.name then selected = #items end
   end
-  items[#items + 1] = { label = Strings("DOWNLOAD SHADERS"), download = true }
+  items[#items + 1] = { label = Strings("DOWNLOAD SHADERS"), download = true,
+    muted = not canFetch or nil }
   return items, selected
 end
 
@@ -55,7 +58,8 @@ function ShaderFXScreen.new(game, slot)
   local title = (slot == "secondary") and "SHADER FX 2" or "SHADER FX"
   ShaderFX.clearBridgeQuarantine()
   local canConvert = ShaderFX.canConvert()
-  local items, selected = buildItems(ShaderFX.activeEntry(slot), canConvert)
+  local canFetch = HostShell.canFetch() and true or false
+  local items, selected = buildItems(ShaderFX.activeEntry(slot), canConvert, canFetch)
 
   local self = setmetatable(ListMenu.new(game, title, items, {
     -- 7 rows leaves the title line and the one-line footer hint free.
@@ -69,7 +73,7 @@ function ShaderFXScreen.new(game, slot)
   -- Rebuilds from ShaderFX.list() (e.g. after an install adds presets), keeping
   -- the cursor on the same row index (clamped) rather than resetting to OFF.
   local function refresh()
-    local newItems = buildItems(ShaderFX.activeEntry(slot), canConvert)
+    local newItems = buildItems(ShaderFX.activeEntry(slot), canConvert, canFetch)
     self.items = newItems
     self.index = math.max(1, math.min(self.index, #newItems))
   end
@@ -108,6 +112,10 @@ function ShaderFXScreen.new(game, slot)
 
   self.onChoose = function(item)
     if item.download then
+      if not canFetch then
+        self.footer = Strings("Copy to shaders/")
+        return
+      end
       -- Ignore a repeat press while one is already in flight.
       if self.downloadJob then return end
       self.downloadJob = ShaderFX.downloadPresets()
@@ -120,7 +128,9 @@ function ShaderFXScreen.new(game, slot)
     if item.entry and not item.entry.converted then
       if not canConvert then
         local bridgeErr = ShaderFX.bridgeError and ShaderFX.bridgeError()
-        if type(bridgeErr) == "string" and bridgeErr:find("cannot locate symbol", 1, true) then
+        if Platform.isNX() then
+          self.footer = Strings("Convert on a PC")
+        elseif type(bridgeErr) == "string" and bridgeErr:find("cannot locate symbol", 1, true) then
           self.footer = Strings("Update the app")
         else
           self.footer = Strings("Reinstall the app")

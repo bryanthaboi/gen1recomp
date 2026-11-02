@@ -20,7 +20,16 @@ return function(game)
     Pokemon.new(game.data, "SPEAROW", 11),
   }
   local t = now()
-  while now() - t < 2.5 do U.wait(1) end
+  while now() - t < 8 do
+    U.wait(1)
+    local ps = ChipAudio.parkState()
+    if now() - t >= 2.5 and ps and ps.ready then break end
+  end
+  U.log(("Route 1 settled %.2f s"):format(now() - t))
+  local park = ChipAudio.parkState()
+  local parkHits = ChipAudio.stats().parkHits
+  U.log("park on Route 1", park and park.buffers, park and tostring(park.pushed),
+    tostring(Music.current()), ChipAudio.stats().line)
 
   local marks = {}
   local realPlay = ChipAudio.playMusic
@@ -52,10 +61,12 @@ return function(game)
   local backgroundAtPlay = marks.queuedAtPlay
     and (marks.queuedAtPlay - frontQueued)
   local startedT, drainedT, queuedAtStart, background, minDepth
+  local frames, startFrames = 0, nil
   local floor = ChipAudio.MUSIC_PREROLL * 2
   local t0 = now()
   while now() - t0 < 6 do
     U.wait(1)
+    frames = frames + 1
     local st = ChipAudio.stats()
     if startedT and backgroundAtPlay
         and st.prewarmQueued < backgroundAtPlay then
@@ -67,6 +78,7 @@ return function(game)
     end
     if not startedT and marks.playT and not ChipAudio.awaitingFirstBuffer() then
       startedT = now()
+      startFrames = frames
       queuedAtStart = st.prewarmQueued
       U.log(("music started %.1fms after playMusic, depth=%s q=%d inflight=%d ready=%d")
         :format((startedT - marks.playT) * 1000, tostring(st.depth),
@@ -92,6 +104,12 @@ return function(game)
   result(startedT ~= nil and marks.playT ~= nil
       and startedT - marks.playT < 0.5,
     "battle theme starts within 0.5 s of its cue on desktop")
+  result(park ~= nil and park.ready,
+    "the wild battle theme is parked on Route 1 before the encounter")
+  result(st.parkHits == (parkHits or 0) + 1, "the battle cue takes the park")
+  result(startFrames ~= nil and startFrames <= 2,
+    ("battle theme first note within 2 frames of the cue (%s)")
+      :format(tostring(startFrames)))
   result(marks.inFlightAtPlay == 0,
     ("no battle prewarm reaches the worker before the theme's play (%s in flight)")
       :format(tostring(marks.inFlightAtPlay)))
@@ -104,5 +122,82 @@ return function(game)
       :format(floor, tostring(minDepth)))
   result(st.underruns == (marks.underrunsAtPlay or 0),
     "no music underrun after the cue")
+
+  U.teleport(game, "ROUTE_3", 16, 6, "left")
+  U.wait(15)
+  local ow = game.overworld
+  local trainerNpc, stand
+  for _, n in ipairs((ow and ow.npcs) or {}) do
+    if n.def and n.def.trainerClass and not ow:trainerDefeated(n) then
+      for _, side in ipairs({ { 0, 1, "up" }, { 0, -1, "down" },
+                              { 1, 0, "left" }, { -1, 0, "right" } }) do
+        local cx, cy = n.cellX + side[1], n.cellY + side[2]
+        if ow.map:isWalkableCell(cx, cy) and not ow:npcAtCell(cx, cy) then
+          trainerNpc, stand = n, { cx, cy, side[3] }
+          break
+        end
+      end
+    end
+    if trainerNpc then break end
+  end
+  result(trainerNpc ~= nil, "a Route 3 trainer to talk to")
+  if not trainerNpc then love.event.quit(1) return end
+  U.log("trainer", trainerNpc.def.trainerClass, trainerNpc.def.trainerParty,
+    stand[1], stand[2])
+  U.teleport(game, "ROUTE_3", stand[1], stand[2], stand[3])
+  U.wait(10)
+  local trainerParkHits = ChipAudio.stats().parkHits
+  local cue = {}
+  local realBattle = Music.playBattle
+  Music.playBattle = function(...)
+    if not cue.t then
+      cue.park = ChipAudio.parkState()
+      cue.t = now()
+      cue.frame = 0
+      realBattle(...)
+      cue.depth = ChipAudio.stats().depth
+      return
+    end
+    return realBattle(...)
+  end
+  U.tap(game, "a")
+  local waitT = now()
+  while now() - waitT < 3 do
+    U.wait(1)
+    local ps = ChipAudio.parkState()
+    if ps and ps.ready then break end
+  end
+  for _ = 1, 40 do
+    if cue.t then break end
+    U.tap(game, "a")
+    U.wait(6)
+  end
+  local trainerFrames
+  local cueWait = now()
+  while cue.t and now() - cueWait < 3 do
+    U.wait(1)
+    cue.frame = cue.frame + 1
+    if not ChipAudio.awaitingFirstBuffer() then
+      trainerFrames = cue.frame
+      cue.ms = (now() - cue.t) * 1000
+      break
+    end
+  end
+  Music.playBattle = realBattle
+  local wantTheme = game.data.audio.battle.trainer
+  U.log("trainer cue", tostring(Music.current()), "frames",
+    tostring(trainerFrames), ("%.1f ms"):format(cue.ms or -1),
+    "buffers queued on the cue", tostring(cue.depth))
+  result(cue.t ~= nil and Music.current() == wantTheme,
+    "the trainer battle cue plays " .. tostring(wantTheme))
+  local wantDef = game.data.audio.songs[wantTheme]
+  result(cue.park ~= nil and cue.park.ready and wantDef ~= nil
+      and cue.park.key:find("|" .. tostring(wantDef) .. "|", 1, true) ~= nil,
+    "the trainer battle theme is parked before the cue")
+  result(ChipAudio.stats().parkHits == (trainerParkHits or 0) + 1,
+    "the trainer battle cue takes the park")
+  result(trainerFrames ~= nil and trainerFrames <= 2,
+    ("trainer battle theme first note within 2 frames of the cue (%s)")
+      :format(tostring(trainerFrames)))
   love.event.quit(failed and 1 or 0)
 end

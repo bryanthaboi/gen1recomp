@@ -78,7 +78,7 @@ function StartMenu.new(game)
     local panel
     panel = {
       -- engine/menus/start_sub_menus.asm:645-646
-      uiShiftRight = true,
+      uiShiftRight = 12,
       delay = 0,
       update = function()
         -- ld c, 30 / jp DelayFrames: the bare panel holds before the

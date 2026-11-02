@@ -16,6 +16,7 @@ require("src.core.Logger").warn = function() end
 
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Pokegear = require("src.ui.gen2.Pokegear")
+require("tests.fixtures.gen2_flypoints").bind("gold")
 
 local function fakeInput()
   local pressed = {}

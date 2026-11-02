@@ -595,6 +595,39 @@ Gold reads `boot` and `emotes`. `boot` is the New Game spawn (`startMap`, `start
 Not available on Gen 3: there is no native target for this registry.
 A write here is dropped and reported on a Gen 3 boot.
 
+## fly_points
+
+- semantics: `record`
+- target: none
+
+Gen 2 only: Red, Blue and Yellow have no native target for this registry.
+A write here on a Gen 1 boot is dropped
+and reported. See the Gold subsection below for where it does land.
+
+| field | type | required |
+|---|---|---|
+| `flag` | integer 0..65535 | no |
+| `landmark` | landmarks id | yes |
+| `order` | integer >= 0 | no |
+| `region` | one of "johto" \| "kanto" | yes |
+
+<!-- snippet: illustrative -->
+```lua
+mod.content.fly_points:register("SPAWN_MOD_TOWN", { landmark = "LANDMARK_MOD_TOWN", region = "johto", order = 3 })
+```
+
+Gen 2 only. The id is the SPAWN_* row (see `spawns`) the point lands on; a row whose spawn is missing is dropped. `order` places it in its region's cursor order (the cart's rows are 0..23); a row without one sorts after them by id. Without `flag` the point counts as visited the first time the player enters the spawn's map; with `flag` (an engine flag id of 256 or more that no other row claims) the mod's map script sets it. A cart row keeps its own flag. Kanto rows appear only once SPAWN_INDIGO is visited, as on the cart.
+
+### On Gold (Gen 2)
+
+- semantics: `record`
+- target: `Data.gen2Landmarks.flypoints`
+
+### On Gen 3
+
+Not available on Gen 3: there is no native target for this registry.
+A write here is dropped and reported on a Gen 3 boot.
+
 ## font
 
 - semantics: `record`
@@ -1558,6 +1591,40 @@ mod.content.screens:register("QuestLog", { new = function(game) ... end })
 ```lua
 mod.content.sfx:register("SFX_MOD_CHIME", { file = "chime.ogg" })
 ```
+
+## spawns
+
+- semantics: `record`
+- target: none
+
+Gen 2 only: Red, Blue and Yellow have no native target for this registry.
+A write here on a Gen 1 boot is dropped
+and reported. See the Gold subsection below for where it does land.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | no |
+| `index` | integer 0..255 | no |
+| `map` | maps id | yes |
+| `x` | integer 0..255 | yes |
+| `y` | integer 0..255 | yes |
+
+<!-- snippet: illustrative -->
+```lua
+mod.content.spawns:patch("SPAWN_VIOLET", { x = 30 })
+```
+
+Gen 2 only. Ids are SPAWN_* names. `map` is the OUTDOOR map a town's Pokemon Center is entered from, and `x`/`y` the cell a Fly or a whiteout lands on there; walking from that map into a Pokemon Center makes the row the whiteout point. `index` is the cart's SPAWN_* byte; a registered row has none and is never written to a .sav.
+
+### On Gold (Gen 2)
+
+- semantics: `record`
+- target: `Data.gen2Landmarks.spawns`
+
+### On Gen 3
+
+Not available on Gen 3: there is no native target for this registry.
+A write here is dropped and reported on a Gen 3 boot.
 
 ## sprites
 

@@ -591,6 +591,7 @@ Schemas.GEN2 = {
   held_items = "gen2HeldItems", phone_contacts = "gen2PhoneContacts",
   decorations = "gen2Decorations", apricorns = "gen2Apricorns",
   landmarks = "gen2Landmarks.landmarks", radio_channels = "gen2RadioChannels",
+  spawns = "gen2Landmarks.spawns", fly_points = "gen2Landmarks.flypoints",
   -- Still no Gen 2 home.  Every one of these is a system Gold reimplements
   -- WITHOUT reading a registry: the Gen 1 target is still built and merged
   -- into, but nothing in a Gold boot ever looks at it.  Closing one is a
@@ -649,7 +650,7 @@ Schemas.GEN2 = {
 Schemas.GEN1 = {
   held_items = false, phone_contacts = false, decorations = false,
   apricorns = false, landmarks = false, radio_channels = false,
-  rom_text = false, marts = false,
+  rom_text = false, marts = false, spawns = false, fly_points = false,
 }
 
 Schemas.GEN3 = {
@@ -667,6 +668,7 @@ Schemas.GEN3 = {
   font = "gen3Font", audio = false,
   held_items = false, phone_contacts = false, decorations = false,
   apricorns = false, radio_channels = false, marts = false,
+  spawns = false, fly_points = false,
   landmarks = "gen3Landmarks",
 }
 
@@ -3928,6 +3930,70 @@ R.landmarks = {
     .. "region layout (0 Kanto, 1..3 Sevii) and Ruby/Sapphire/Emerald ignore "
     .. "it. The pretty tilemap art is not redrawn.",
 }
+
+-- data/maps/spawn_points.asm:7
+R.spawns = {
+  semantics = "record",
+  fields = {
+    id = f.opt(f.str),
+    index = f.opt(f.int(0, 255)),
+    map = f.id("maps"),
+    x = f.int(0, 255), y = f.int(0, 255),
+  },
+  example = 'mod.content.spawns:patch("SPAWN_VIOLET", { x = 30 })',
+  notes = "Gen 2 only. Ids are SPAWN_* names. `map` is the OUTDOOR map a "
+    .. "town's Pokemon Center is entered from, and `x`/`y` the cell a Fly or a "
+    .. "whiteout lands on there; walking from that map into a Pokemon Center "
+    .. "makes the row the whiteout point. `index` is the cart's SPAWN_* byte; "
+    .. "a registered row has none and is never written to a .sav.",
+}
+
+local FLY_MOD_FLAG_FLOOR = 256
+
+-- data/maps/flypoints.asm:1
+R.fly_points = {
+  semantics = "record",
+  fields = {
+    landmark = f.id("landmarks"),
+    region = f.enum{ "johto", "kanto" },
+    order = f.opt(f.int(0)),
+    flag = f.opt(f.int(0, 65535)),
+  },
+  example = 'mod.content.fly_points:register("SPAWN_MOD_TOWN", '
+    .. '{ landmark = "LANDMARK_MOD_TOWN", region = "johto", order = 3 })',
+  notes = "Gen 2 only. The id is the SPAWN_* row (see `spawns`) the point "
+    .. "lands on; a row whose spawn is missing is dropped. `order` places it in "
+    .. "its region's cursor order (the cart's rows are 0..23); a row without "
+    .. "one sorts after them by id. Without `flag` the point counts as visited "
+    .. "the first time the player enters the spawn's map; with `flag` (an "
+    .. "engine flag id of " .. FLY_MOD_FLAG_FLOOR .. " or more that no other "
+    .. "row claims) the mod's map script sets it. A cart row keeps its own "
+    .. "flag. Kanto rows appear only once SPAWN_INDIGO is visited, as on the "
+    .. "cart.",
+}
+
+function Schemas.gen2FlyPointValue(registry, id, value, data)
+  if type(value) ~= "table" or value == Merge.DELETE then return value end
+  local flag = value.flag
+  if type(flag) ~= "number" then return value end
+  if flag < FLY_MOD_FLAG_FLOOR then
+    local base = data and data.gen2Landmarks and data.gen2Landmarks.flypoints
+    local native = type(base) == "table" and base[id]
+    if type(native) == "table" and native.flag == flag then return value end
+    error(("fly_points: %s flag %s is a cart engine flag; use %d or more")
+      :format(tostring(id), tostring(flag), FLY_MOD_FLAG_FLOOR), 0)
+  end
+  for other in pairs(registry and registry.ops or {}) do
+    if other ~= id then
+      local row = registry:get(other)
+      if type(row) == "table" and row.flag == flag then
+        error(("fly_points: flag collision: %d (%s and %s)")
+          :format(flag, tostring(other), tostring(id)), 0)
+      end
+    end
+  end
+  return value
+end
 
 -- PlayRadioStationPointers (engine/pokegear/pokegear.asm).  Id = the station
 -- the dial resolves to, which is the LoadStation_* id the show state machine

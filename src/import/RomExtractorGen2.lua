@@ -5132,10 +5132,8 @@ function RomExtractorGen2:extractEncounters()
   -- than inside it because the park's encounters come from HERE for the
   -- twenty minutes the contest runs and from NATIONAL_PARK's grass row the
   -- rest of the time.
-  -- Gated on the symbol the same way TreeMons above is, so an older manifest
-  -- still imports and BugContest.MONS carries the park.
   self:trace("bug contest mons")
-  local bugContest = self.symbols.ContestMons and self:readContestMons() or nil
+  local bugContest = self:readContestMons()
 
   -- The two tables that sit IN FRONT of the ordinary ones.  Swarms are the
   -- same grass / water records keyed by map (_SwarmWildmonCheck searches them
@@ -5653,6 +5651,54 @@ function RomExtractorGen2:extractPokedex()
   return data
 end
 
+-- data/maps/flypoints.asm:1
+function RomExtractorGen2:readFlypoints(landmarkOrder, spawnOrder)
+  local kanto
+  for index, id in ipairs(landmarkOrder) do
+    if id == "LANDMARK_PALLET_TOWN" then kanto = index - 1 break end
+  end
+  if kanto == nil then error("landmarkOrder has no LANDMARK_PALLET_TOWN") end
+  local fly = self:symbol("Flypoints")
+  local rows, need, pending = {}, {}, 0
+  for row = 0, #spawnOrder do
+    local base = fly.address + row * 2
+    local landmark = self.rom:byte(fly.bank, base)
+    if landmark == 0xff then break end
+    local spawn = self.rom:byte(fly.bank, base + 1)
+    local spawnId = spawnOrder[spawn + 1]
+    local landmarkId = landmarkOrder[landmark + 1]
+    if not (spawnId and landmarkId) then
+      error(("Flypoints row %d names an unknown landmark %d / spawn %d")
+        :format(row, landmark, spawn))
+    end
+    rows[spawnId] = { landmark = landmarkId,
+      region = landmark >= kanto and "kanto" or "johto", order = row }
+    if need[spawn] == nil then need[spawn] = spawnId pending = pending + 1 end
+  end
+  -- data/events/engine_flags.asm:7
+  local flags = self:symbol("EngineFlags")
+  local visited = self:symbol("wVisitedSpawns").address
+  local span = math.ceil(#spawnOrder / 8)
+  local row = 0
+  while pending > 0 and row < 0x200 do
+    local base = flags.address + row * 3
+    local offset = self.rom:word(flags.bank, base) - visited
+    local mask = self.rom:byte(flags.bank, base + 2)
+    if offset >= 0 and offset < span and mask > 0 then
+      local bit = 0
+      while mask > 1 do mask = math.floor(mask / 2) bit = bit + 1 end
+      local spawnId = need[offset * 8 + bit]
+      if spawnId and rows[spawnId].flag == nil then
+        rows[spawnId].flag = row
+        pending = pending - 1
+      end
+    end
+    row = row + 1
+  end
+  if pending > 0 then error("EngineFlags has no row for every Flypoints spawn") end
+  return rows
+end
+
 -- Pokegear town map: each landmark's pixel position and name.  The macro adds
 -- the screen origin (x + 8, y + 16) so the values are already OAM
 -- coordinates; store them back in tilemap space, which is what a UI wants.
@@ -5697,6 +5743,7 @@ function RomExtractorGen2:extractLandmarks()
       y = self.rom:byte(spawnSymbol.bank, base + 3),
     }
   end
+  out.flypoints = self:readFlypoints(order, self.manifest.constants.spawnOrder or {})
 
   self:write("landmarks", out)
   return out

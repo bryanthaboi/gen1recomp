@@ -5109,10 +5109,6 @@ function RomImporter:reimport(version)
   end
 end
 
-local function clamp(v, lo, hi)
-  return math.max(lo, math.min(hi, v))
-end
-
 -- UTF-8 helpers for the slot-rename field (#205).  The `utf8` library only
 -- exists inside LOVE (plain luajit, which loads this module in tests, has
 -- none), so codepoint walking is done by hand -- the same lead-byte width
@@ -5137,17 +5133,6 @@ local function utf8Cap(t, maxChars)
   end
   return t
 end
-
--- Page-scroll arithmetic, kept pure (no love, no self) so the engine tier can
--- pin it: given how tall the column under the tab bar wants to be and how much
--- room is left under it, say whether the page scrolls, where it sits, and how
--- far it can go.  A window that grew back pulls the offset down with it rather
--- than leaving the page parked past its own end.
-function RomImporter.pageScrollFor(naturalH, viewportH, scroll)
-  local maxPage = math.max(0, (naturalH or 0) - math.max(0, viewportH or 0))
-  return maxPage > 0, clamp(scroll or 0, 0, maxPage), maxPage
-end
-
 
 -- The whole launcher surface is the FlexLove view (src/import/LauncherView):
 -- it rebuilds the element tree from this importer's state every frame and

@@ -366,12 +366,9 @@ function TradeAnimView:finish()
   if self.onDone then self.onDone() end
 end
 
+-- engine/movie/trade_animation.asm:222-232
 function TradeAnimView:update(_dt)
   if self.done then return end
-  local input = self.game and self.game.input
-  if input and (input:wasPressed("b") or input:wasPressed("start")) then
-    return self:finish()
-  end
   -- ../pokecrystal/engine/gfx/pic_animation.asm:79-89
   if self.picAnim then
     if self.picAnim:step() then self.picAnim = nil end

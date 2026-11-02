@@ -94,6 +94,53 @@ end
 
 SpriteRenderer.obpImage = getObpImage
 
+local warmQueue, warmQueued = {}, {}
+local WARM_MAX = 96
+local WARM_PATIENCE = 240
+
+function SpriteRenderer.queueWarm(path, colors, group, how)
+  if type(path) ~= "string" or type(colors) ~= "table" then return false end
+  if (type(group) ~= "string" and type(group) ~= "number")
+     or group ~= group then
+    return false
+  end
+  local key = path .. "#obp" .. group
+  if obpCache[key] or warmQueued[key] or #warmQueue >= WARM_MAX then
+    return false
+  end
+  warmQueued[key] = true
+  warmQueue[#warmQueue + 1] = { path = path, colors = colors, group = group,
+                                key = key, age = 0, now = how == "now" }
+  if how == "decode" then Assets.prefetchImage(path, false) end
+  return true
+end
+
+function SpriteRenderer.pumpWarm(limit)
+  limit = limit or 1
+  local baked, i = 0, 1
+  while i <= #warmQueue and baked < limit do
+    local item = warmQueue[i]
+    item.age = item.age + 1
+    local done = obpCache[item.key] ~= nil
+    local ready = not done and (item.now or Assets.decodeReady(item.path))
+    if done or ready or item.age > WARM_PATIENCE then
+      table.remove(warmQueue, i)
+      warmQueued[item.key] = nil
+      if ready then
+        pcall(getObpImage, item.path, item.colors, item.group)
+        baked = baked + 1
+      end
+    else
+      i = i + 1
+    end
+  end
+  return baked
+end
+
+function SpriteRenderer.warmPending()
+  return #warmQueue
+end
+
 -- any OBJ-palette bake exists for the sheet (obpByPath indexes every one)
 function SpriteRenderer.hasObp(path) return obpByPath[path] ~= nil end
 
@@ -109,6 +156,7 @@ function SpriteRenderer.invalidate()
   imageCache = {}
   obpCache = {}
   obpByPath = {}
+  warmQueue, warmQueued = {}, {}
 end
 
 Assets.register(SpriteRenderer.invalidate)
@@ -321,13 +369,38 @@ end
 -- runs on map entry and once a second.  The mode joins the cache group
 -- because the bake is per-palette -- without it, DMG would keep serving the
 -- colour bake it made first.
+local function gen2Obp(colors, group)
+  return GbcPalette.resolve(colors), group .. "|" .. tostring(GbcPalette.mode)
+end
+
 function SpriteRenderer:gen2Obp()
-  return GbcPalette.resolve(self.objColors),
-    self.objGroup .. "|" .. tostring(GbcPalette.mode)
+  return gen2Obp(self.objColors, self.objGroup)
 end
 
 local function liveTrueColor(def)
   return def and (def.gbaArt or (def.trueColor and PaletteFX.honorsTrueColor()))
+end
+
+function SpriteRenderer.queueWarmGen2(spriteDef, colors, group)
+  local path = SpriteRenderer.imagePath(spriteDef)
+  if not path or not colors or liveTrueColor(spriteDef) then return false end
+  local resolved, key = gen2Obp(colors, group or "gen2")
+  return SpriteRenderer.queueWarm(path, resolved, key, "decode")
+end
+
+function SpriteRenderer.queueWarmSprite(spriteDef, seed, how)
+  local path = SpriteRenderer.imagePath(spriteDef)
+  if not path or liveTrueColor(spriteDef) then return false end
+  local colors, group
+  if PaletteFX.usesGbcPack() then
+    colors, group = PaletteFX.spriteObp(spriteDef, seed)
+    if not colors then return false end
+  elseif PaletteFX.usesSpriteObp() then
+    colors, group = PaletteFX.ogObjWorld()
+  else
+    colors, group = PaletteFX.dmgObj()
+  end
+  return SpriteRenderer.queueWarm(path, colors, group, how)
 end
 
 function SpriteRenderer:resolveImage()

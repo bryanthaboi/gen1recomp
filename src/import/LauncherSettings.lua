@@ -784,6 +784,10 @@ local function gen2Rows(opts, hooks, shared)
       return true
     end)
 
+  add(Strings("UI LAYOUT"),
+    ladder(opts, "uiLayout",
+      { { "centered", "CENTERED" }, { "dynamic", "DYNAMIC" } }, "centered"))
+
   addTouchRows(rows, add, shared, hooks)
   addOrientationRow(add, shared)
 

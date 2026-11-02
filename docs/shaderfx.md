@@ -87,8 +87,15 @@ mod index already use.
 
 Downloaded presets are *not* pre-converted. The buildbot is RetroArch's asset
 mirror and has no notion of this project's cache format, so a downloaded preset
-goes through the same `CONVERT` row a hand-copied one does. Every platform
-ships both convert and use; there is no asymmetry to work around.
+goes through the same `CONVERT` row a hand-copied one does. Desktop, Android
+and iOS ship both convert and use. Switch and Xbox UWP ship use only (see
+"Where CONVERT is unavailable" below).
+
+`DOWNLOAD SHADERS` needs a network transport. When `HostShell.canFetch()` is
+false (stock Switch, Xbox, a desktop with no curl) the row is drawn muted and
+`A` on it sets the footer to `Copy to shaders/` instead of starting a download
+that cannot succeed. On Switch an unconverted preset's footer reads
+`Convert on a PC`.
 
 Repeat downloads are conditional. The zip itself is deleted right after
 extraction, so what is cached instead is the buildbot's own ETag
@@ -257,7 +264,10 @@ release cannot silently go out without one again.
 The Switch build uses devkitPro's toolchain, which is not a rustc target; the
 UWP appcontainer is unproven for loading a desktop MSVC DLL. On both, presets
 converted elsewhere still activate and run normally, and `ShaderFX.canConvert()`
-returns false with `ShaderFX.bridgeError()` explaining why.
+returns false with `ShaderFX.bridgeError()` explaining why. For Switch, convert
+in a desktop build (which emits the same GLSL 1.20 dialect Switch renders with)
+and copy its whole `shaders/` folder, each `.slangp` with the `.lua` written
+beside it plus the LUT images, as described in `docs/switch-install.md`.
 
 **Statically linked bridges.** On iOS there is no loadable library at all:
 the bridge is linked straight into the app binary, so its symbols live in the
@@ -470,6 +480,15 @@ preset it came from. The file is a plain `return { ... }` chunk written by
 `Json.decode` produces. Array detection walks every key rather than trusting
 `#t`, since `#t` counts a trailing nil as absent and a sparse table can pass a
 naive length check by accident.
+
+Texture (LUT) paths are written relative to the preset's folder. librashader
+resolves them to canonical absolute paths (symlinks followed, `\\?\` on
+Windows), so `convert` relativizes each one against the `realpath` of the
+preset's directory. `ShaderFX.load(entry)` joins a relative path back onto the
+folder the preset sits in now, so a converted `shaders/` tree still finds its
+LUTs after it is copied to another device. An artifact written before this
+change keeps its absolute paths and only finds its LUTs on the machine that
+converted it; reconvert it to make it portable.
 
 `ShaderFX.load(entry)` `loadfile`s that chunk and builds a chain state. On
 failure it says "convert this preset first" rather than falling back to a live
@@ -757,7 +776,8 @@ None of these are theoretical.
   go through them can be running a stale translation.
 - **Artifacts are per-device.** The GLSL dialect is baked in at convert time.
   Copying a converted preset folder between a phone and a desktop copies a
-  wrong artifact along with it.
+  wrong artifact along with it. Desktop to Switch shares the dialect, but a
+  copied artifact has not yet been run on Switch hardware.
 - **The bundled bridge is only as good as the build machine.**
   `scripts/build.sh` bundles the cdylib for mac, win and linux via
   `bundle_shader_bridge`, building it with cargo when a prebuilt one is not
