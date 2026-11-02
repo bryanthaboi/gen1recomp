@@ -56,7 +56,8 @@ return function(game)
 
   local function settle()
     for _ = 1, 600 do
-      if screen.typer and screen.typer:done() then return true end
+      if screen.typer and screen.typedText == screen.message
+          and screen.typer:done() then return true end
       U.wait(1)
     end
     return false

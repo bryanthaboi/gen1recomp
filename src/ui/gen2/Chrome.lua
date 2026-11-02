@@ -165,6 +165,27 @@ function Chrome.withPanel(winW, winH, r, g, b, drawFn, scale)
   G.pop()
 end
 
+Chrome.dock = nil
+
+function Chrome.dockPush(edge, clipRow)
+  local dock = Chrome.dock
+  if not (dock and edge) then return false end
+  local G = love.graphics
+  local clip = edge == "topright" and (clipRow or dock.clipRow)
+  G.push(clip and "all" or "transform")
+  if edge == "topright" then
+    G.translate(dock.dx, dock.dt or 0)
+    if clip then clipTo(0, 0, Chrome.SCREEN_W * 8, clip * 8) end
+  else
+    G.translate(0, dock.dy)
+  end
+  return true
+end
+
+function Chrome.dockPop(pushed)
+  if pushed then love.graphics.pop() end
+end
+
 function Chrome.withClip(drawFn)
   local G = love.graphics
   G.push("all")

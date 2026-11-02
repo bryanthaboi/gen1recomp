@@ -199,38 +199,10 @@ function BugContest.isActive(save)
   return (state and state.active) == true
 end
 
--- ------------------------------------------------------- the encounter table
---
--- data/wild/bug_contest_mons.asm, transcribed.  `chance` is the row's slice of
--- 100, NOT a cumulative total: ChooseWildEncounter_BugContest subtracts each
--- row from the roll until it borrows.  The ten real rows already add to 100, so
--- the trailing VENOMOTH row -- whose chance byte is -1, i.e. "always" -- is
--- unreachable.  It is kept because dropping it would be editing the cart's
--- table, and because it is the row a modified chance list would fall through
--- to.
-BugContest.MONS = {
-  { chance = 20, species = "CATERPIE",   min = 7,  max = 18 },
-  { chance = 20, species = "WEEDLE",     min = 7,  max = 18 },
-  { chance = 10, species = "METAPOD",    min = 9,  max = 18 },
-  { chance = 10, species = "KAKUNA",     min = 9,  max = 18 },
-  { chance = 5,  species = "BUTTERFREE", min = 12, max = 15 },
-  { chance = 5,  species = "BEEDRILL",   min = 12, max = 15 },
-  { chance = 10, species = "VENONAT",    min = 10, max = 16 },
-  { chance = 10, species = "PARAS",      min = 10, max = 17 },
-  { chance = 5,  species = "SCYTHER",    min = 13, max = 14 },
-  { chance = 5,  species = "PINSIR",     min = 13, max = 14 },
-  { chance = 255, species = "VENOMOTH",  min = 30, max = 40 },
-}
-
--- The extractor writes the same eleven rows as encounters.bugContest, which is
--- its own table in the cache and not a grass row: the park's grass entry is
--- what the map rolls off OUTSIDE the twenty minutes.  This reader prefers the
--- cache, so the transcription above is the pinned fallback rather than a
--- second source of truth that can drift.
+-- data/wild/bug_contest_mons.asm:1
 function BugContest.contestMons(data)
-  local extracted = data and data.encounters and data.encounters.bugContest
-  if type(extracted) == "table" and #extracted > 0 then return extracted end
-  return BugContest.MONS
+  local encounters = data and data.gen2Encounters
+  return encounters and encounters.bugContest or {}
 end
 
 -- `call Random` gives one byte.  Kept on the module, not taken from the VM, so

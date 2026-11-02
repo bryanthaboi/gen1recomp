@@ -1067,6 +1067,7 @@ eq(fieldWorld({}, FLYER, { badges = {}, environment = "ROUTE" })
   :useFieldMove("FLY", FLYER[1]).badge, "STORM", "FLY wants the STORMBADGE")
 
 -- Flypoints: Johto's twelve rows, filtered by what has been visited.
+require("tests.fixtures.gen2_flypoints").bind("gold")
 local LANDMARKS = {
   landmarks = {
     LANDMARK_NEW_BARK_TOWN = { index = 1, name = "NEW BARK\nTOWN" },
@@ -1237,7 +1238,7 @@ contestScent.encounters = ALWAYS
 contestScent.game.save.bugContest = { active = true }
 contestScent.game.data = {
   items = DATA.items, moves = DATA.moves, pokemon = DATA.pokemon,
-  encounters = { bugContest = {
+  gen2Encounters = { bugContest = {
     { chance = 1000, species = "HOOTHOOT", min = 5, max = 5 },
   } },
 }

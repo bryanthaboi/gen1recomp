@@ -1371,6 +1371,8 @@ Game2.SESSION_SFX = {
   "Sfx_ExitBuilding", "Sfx_JumpOverLedge", "Sfx_WarpTo", "Sfx_WarpFrom",
   "Sfx_Save", "Sfx_Transaction", "Sfx_Wrong", "Sfx_SwitchPokemon",
   "Sfx_GetBadge", "Sfx_Strength",
+  -- engine/phone/phone.asm:565
+  "Sfx_Call",
 }
 
 function Game2:prewarmSessionSfx()
@@ -1436,6 +1438,8 @@ function Game2:update(dt)
     -- ../pokecrystal/engine/overworld/events.asm:177-191
     if self.world and self.world.map then MapNameSign.frame(self.world) end
   end
+  local atlasPrefetch = package.loaded["src.render.AtlasPrefetch"]
+  if atlasPrefetch then atlasPrefetch.update() end
   -- TILT eases toward its new angle in real time, not on the logic clock, so
   -- fast-forward does not fling the camera over.
   Tilt.update(dt)
@@ -2009,6 +2013,50 @@ local function hasVisibleOverlay(stack, base)
   return false
 end
 
+local function dockEdge(state)
+  if state.dockSelf then return nil end
+  return "bottom"
+end
+
+local function wholeDots(gap, s)
+  return math.floor(math.max(0, gap) / s + 1e-6)
+end
+
+function Game2:uiDock(w, h, s, ox, oy)
+  local options = self.options
+  if not (options and options.uiLayout == "dynamic") then return nil end
+  local px, py, pw, ph = Chrome.playfieldRect(w, h)
+  local gapR = px + pw - ox - Chrome.SCREEN_W * 8 * s
+  local gapB = py + ph - oy - Chrome.SCREEN_H * 8 * s
+  local gapT = oy - py
+  local stack = self.stack
+  local clipRow
+  for i = stack:visibleBase(), #stack.states do
+    local state = stack.states[i]
+    if stack:renderVisible(state) then
+      if state.dockClipRow then
+        clipRow = state.dockClipRow
+      elseif getmetatable(state) == TextBox then
+        clipRow = clipRow or Chrome.SCREEN_H - 6
+      end
+    end
+  end
+  return { dx = wholeDots(gapR, s), dy = wholeDots(gapB, s),
+    dt = -wholeDots(gapT, s), clipRow = clipRow }
+end
+
+function Game2:drawDockedStack()
+  local stack = self.stack
+  for i = stack:visibleBase(), #stack.states do
+    local state = stack.states[i]
+    if stack:renderVisible(state) and state.draw then
+      local pushed = Chrome.dockPush(dockEdge(state))
+      state:draw()
+      Chrome.dockPop(pushed)
+    end
+  end
+end
+
 function Game2:drawScene(w, h)
   local G = love.graphics
   -- render.compose reads this after the scene is drawn; the plain overworld
@@ -2166,16 +2214,20 @@ function Game2:drawScene(w, h)
       --
       -- This is the split src/render/Renderer.lua makes for Gen 1, whose UI
       -- LAYOUT defaults to CENTERED: `Renderer:uiScale` returns `fitScale()`
-      -- and only the world canvas follows `Zoom.scale`.  Gold has no DYNAMIC
-      -- row to opt into the step-down half, so CENTERED is the whole rule
-      -- here.
+      -- and only the world canvas follows `Zoom.scale`.
       local s = self.world:fitScale()
       local ox, oy = Chrome.fitOrigin(w, h, s)
       if layer then G.setCanvas(layer) end
       G.push()
       G.translate(ox, oy)
       G.scale(s, s)
-      self.stack:draw()
+      Chrome.dock = self:uiDock(w, h, s, ox, oy)
+      if Chrome.dock then
+        self:drawDockedStack()
+      else
+        self.stack:draw()
+      end
+      Chrome.dock = nil
       G.pop()
       if layer then G.setCanvas(sceneCanvas) end
     end

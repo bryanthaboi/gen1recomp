@@ -101,8 +101,8 @@ native Gen 3 call site.
 
 ## Registries
 
-Of the 47 registries, 34 are available on Emerald (33 on FireRed and LeafGreen)
-and 13 report that they have no Gen 3 target. Routing is
+Of the 49 registries, 34 are available on Emerald (33 on FireRed and LeafGreen)
+and 15 report that they have no Gen 3 target. Routing is
 `Schemas.GEN3` in `src/mods/Schemas.lua`.
 
 | Routing | Registries |
@@ -110,7 +110,7 @@ and 13 report that they have no Gen 3 target. Routing is
 | Own Gen 3 table (`gen3*`) | `pokemon`, `moves`, `items`, `trainers`, `encounters`, `text`, `rom_text`, `map_scripts`, `move_effects`, `statuses`, `ai_classes`, `battle_anims`, `palettes`, `font`, `landmarks`, `decorations` (Ruby, Sapphire, Emerald only) |
 | Shared Gen 1 target | `balls`, `commands`, `evolution_methods`, `growth_rates`, `icons`, `item_effects`, `maps`, `render_pipelines`, `screens`, `sprites`, `strings`, `tokens`, `type_chart`, `music`, `sfx`, `cries`, `map_songs` |
 | Code registry, no data target | `migrations` |
-| No Gen 3 target (reported, never merged) | `apricorns`, `audio`, `battle_sprite_scales`, `constants`, `field`, `held_items`, `link_fields`, `phone_contacts`, `radio_channels`, `rulesets`, `text_pointers`, `tilesets`, `transitions` |
+| No Gen 3 target (reported, never merged) | `apricorns`, `audio`, `battle_sprite_scales`, `constants`, `field`, `held_items`, `link_fields`, `phone_contacts`, `radio_channels`, `rulesets`, `spawns`, `fly_points`, `text_pointers`, `tilesets`, `transitions` |
 
 On an `api` 3 mod, `pokemon`, `moves`, `items`, `trainers` and `encounters`
 take the canonical Gen 1 record shape; `text`, `rom_text`, `landmarks` and

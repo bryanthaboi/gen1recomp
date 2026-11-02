@@ -15,7 +15,7 @@ local VERBS = { "register", "override", "patch", "remove" }
 local PASSTHROUGH = { text = true, rom_text = true, field = true,
   decorations = true, landmarks = true, battle_anims = true, constants = true,
   icons = true, map_scripts = true, palettes = true, sprites = true,
-  balls = true, maps = true, marts = true }
+  balls = true, maps = true, marts = true, spawns = true, fly_points = true }
 local UNSUPPORTED = "unsupported: "
 
 local function refuse(reason) error(UNSUPPORTED .. reason, 0) end

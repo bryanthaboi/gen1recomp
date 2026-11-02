@@ -654,7 +654,7 @@ function step(self, dt)
     end
     if self:sfxHeld() then return end
     if input:wasPressed("a") or input:wasPressed("b") then
-      require("src.core.Sound").play(self.game.data, "Press_AB")
+      require("src.core.Sound").playPress(self.game.data)
       self.waiting = false
       if self.contAdvance then
         -- ContText / ManualTextScroll: keep the box, scroll one line

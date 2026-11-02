@@ -211,6 +211,12 @@ local function play_se(id)
   pcall(function() Audio.playSe(id) end)
 end
 
+local function se_id(name)
+  local id = SE[name]
+  if id == nil then error("catch_seq: no SE " .. tostring(name) .. " in " .. tostring(SE.current), 2) end
+  return id
+end
+
 -- pokefirered/src/pokeball.c:132
 local BALL_ANIMS = {
   [0] = { { 0, 1 } },
@@ -483,7 +489,7 @@ function CB.initialFall(b)
   b.cb = CB.bounce
 end
 
-local BOUNCE_SE = { SE.SE_BALL_BOUNCE_1, SE.SE_BALL_BOUNCE_2, SE.SE_BALL_BOUNCE_3 }
+local BOUNCE_SE = { "SE_BALL_BOUNCE_1", "SE_BALL_BOUNCE_2", "SE_BALL_BOUNCE_3" }
 
 -- pokefirered/src/battle_anim_special.c:937
 function CB.bounce(b)
@@ -498,7 +504,7 @@ function CB.bounce(b)
       d[3] = d[3] + 257
       local count = math.floor(d[3] / 256)
       if count == 4 then lastBounce = true end
-      play_se(BOUNCE_SE[count] or SE.SE_BALL_BOUNCE_4)
+      play_se(se_id(BOUNCE_SE[count] or "SE_BALL_BOUNCE_4"))
     end
   elseif low == 1 then
     b.y2 = -BallOpen.cos(d[5], d[4])
@@ -680,12 +686,29 @@ local function star_cb(p)
   if translate_arc(p) then p.dead = true end
 end
 
+local CLICK_SE = {
+  -- pokefirered/src/battle_anim_special.c:1187
+  firered = "SE_BALL_CLICK",
+  -- pokeemerald/src/battle_anim_throw.c:1319
+  emerald = "SE_RG_BALL_CLICK",
+  -- pokeruby/src/battle_anim_special.c:1130
+  ruby = false,
+}
+
+local function click_se()
+  local name = CLICK_SE[SE.current]
+  if name == nil then error("catch_seq: no capture click entry for " .. tostring(SE.current), 2) end
+  return name
+end
+
 -- pokefirered/src/battle_anim_special.c:1180
 function CB.doClick(b)
   local d = b.data
   d[4] = d[4] + 1
+  local click = (d[4] == 40 or d[4] == 60) and click_se()
   if d[4] == 40 then
-    play_se(SE.SE_BALL_CLICK)
+    if not click then return end
+    play_se(se_id(click))
     b.blend.coeff, b.blend.r, b.blend.g, b.blend.b = 6, 0, 0, 0
     -- pokefirered/src/battle_anim_special.c:1266
     for _, c in ipairs(CAPTURE_STARS) do
@@ -693,7 +716,7 @@ function CB.doClick(b)
       p.invisible = false
       arc_init(p, 24, b.x + c[1], b.y + c[2], c[3])
     end
-  elseif d[4] == 60 then
+  elseif d[4] == 60 and click then
     BallOpen.beginFade(6, 0, { obj = b.blend, delay = 2, color = { 0, 0, 0 } })
   elseif d[4] == 95 then
     b.released = true
@@ -743,6 +766,8 @@ function CB.signalEnd(b)
     b.dead = true
   end
 end
+
+CatchSeq._cb = CB
 
 -- pokefirered/src/sprite.c:304
 local function ball_update(b)

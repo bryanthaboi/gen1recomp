@@ -93,6 +93,9 @@ rm -f "$WORK/game-payload.zip"
   tools/rom_manifest_silver.json tools/rom_manifest_crystal.json \
   tools/rom_manifest_firered.json tools/rom_manifest_leafgreen.json tools/rom_manifest_emerald.json tools/rom_manifest_ruby.json tools/rom_manifest_sapphire.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
+if [ -f "$ROOT/PATCH_NOTES.md" ]; then
+  (cd "$ROOT" && zip -q "$WORK/game-payload.zip" PATCH_NOTES.md)
+fi
 unzip -Z1 "$WORK/game-payload.zip" > "$WORK/payload-listing.txt"
 if grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' "$WORK/payload-listing.txt"; then
   fail "payload unexpectedly contains generated ROM data"

@@ -470,6 +470,9 @@ pack_game_love() {
     tools/rom_manifest_firered.json tools/rom_manifest_leafgreen.json tools/rom_manifest_emerald.json tools/rom_manifest_ruby.json tools/rom_manifest_sapphire.json \
     -x '*.DS_Store' -x '*/.git/*' -x '*/.DS_Store' -x '*.psd' \
     -x 'data/generated/*' -x 'assets/generated/*')
+  if [ -f "$ROOT/PATCH_NOTES.md" ]; then
+    (cd "$ROOT" && zip -q "$LOVE_FILE" PATCH_NOTES.md)
+  fi
   # List once and match against the captured text: piping unzip straight into
   # grep under `set -o pipefail` SIGPIPEs unzip as soon as grep exits early,
   # and the pipeline's 141 outranks grep's own status.  For the generated-data

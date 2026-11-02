@@ -844,7 +844,7 @@ local function drawBody(imp, s, x, y, w, _, m)
     end)
   y = selectorY + rowH + gap
   grid(imp, s, kind, gx + pad, y, gridW, m)
-  y = math.max(stageY + stageH, wide and mainY + detailH or 0) + gap
+  y = (wide and math.max(stageY + stageH, mainY + detailH) or stageY + stageH) + gap
   y = y + controls(imp, s, x, y, w, m, gridW)
   y = y + boxRail(imp, s, x, y, w, m)
   return y - top

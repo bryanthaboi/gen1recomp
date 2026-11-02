@@ -471,4 +471,19 @@ do
   Sound.playCry = realPlayCry
 end
 
+-- engine/movie/trade_animation.asm:145-147
+-- engine/movie/trade_animation.asm:222-232
+do
+  local view = newView(FAKE)
+  local mash = { wasPressed = function(_, key) return key == "b" or key == "start" end }
+  view.game = { input = mash }
+  local finished = 0
+  view.onDone = function() finished = finished + 1 end
+  local before = view.frame
+  for _ = 1, 10 do view:update(1 / 60) end
+  eq(view.done and true or false, false, "B or START does not end the trade animation")
+  eq(finished, 0, "a mashed trade animation does not hand back to the script early")
+  check(view.picAnim ~= nil or view.frame > before, "the trade animation keeps stepping under a mash")
+end
+
 S.finish()

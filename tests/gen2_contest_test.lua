@@ -333,8 +333,27 @@ do
 end
 
 -- ---- ContestMons and the contest's own encounter table ---------------------
-local rows = BugContest.contestMons(nil)
-eq(#rows, 11, "eleven rows, including the unreachable VENOMOTH")
+-- data/wild/bug_contest_mons.asm:1
+local CONTEST_MONS = {
+  { chance = 20, species = "CATERPIE",   min = 7,  max = 18 },
+  { chance = 20, species = "WEEDLE",     min = 7,  max = 18 },
+  { chance = 10, species = "METAPOD",    min = 9,  max = 18 },
+  { chance = 10, species = "KAKUNA",     min = 9,  max = 18 },
+  { chance = 5,  species = "BUTTERFREE", min = 12, max = 15 },
+  { chance = 5,  species = "BEEDRILL",   min = 12, max = 15 },
+  { chance = 10, species = "VENONAT",    min = 10, max = 16 },
+  { chance = 10, species = "PARAS",      min = 10, max = 17 },
+  { chance = 5,  species = "SCYTHER",    min = 13, max = 14 },
+  { chance = 5,  species = "PINSIR",     min = 13, max = 14 },
+  { chance = 255, species = "VENOMOTH",  min = 30, max = 40 },
+}
+local CONTEST_DATA = { gen2Encounters = { bugContest = CONTEST_MONS } }
+
+local rows = BugContest.contestMons(CONTEST_DATA)
+eq(rows, CONTEST_MONS, "contestMons reads gen2Encounters.bugContest")
+eq(#BugContest.contestMons(nil), 0, "no cache table, no contest rows")
+eq(BugContest.chooseWild(nil, seq(0, 0)), nil, "and no contest mon")
+check(BugContest.MONS == nil, "no transcribed copy of ContestMons")
 local total = 0
 for index = 1, 10 do total = total + rows[index].chance end
 eq(total, 100, "the ten reachable rows add to exactly 100")
@@ -342,18 +361,18 @@ eq(rows[11].species, "VENOMOTH", "so the -1 fallthrough row is VENOMOTH")
 
 -- ChooseWildEncounter_BugContest: reject a byte of 200 or more, halve it into
 -- 0..99, then subtract each row's slice until it borrows.
-local wild = BugContest.chooseWild(nil, seq(200, 0, 5))
+local wild = BugContest.chooseWild(CONTEST_DATA, seq(200, 0, 5))
 eq(wild.species, "CATERPIE", "roll 0 lands in the first slice")
 eq(wild.level, 7 + 5 % 12, "min 7 plus the level roll over the 12-wide span")
 
 -- 180 halves to 90, which is inside SCYTHER's 90..94 slice.
-wild = BugContest.chooseWild(nil, seq(180, 1))
+wild = BugContest.chooseWild(CONTEST_DATA, seq(180, 1))
 eq(wild.species, "SCYTHER", "roll 90 lands on SCYTHER")
 eq(wild.level, 14, "13 plus 1 & 1, over a span of two")
 
 -- A row whose min and max match skips the level roll entirely, so no second
 -- byte is consumed; check the boundary rows instead.
-wild = BugContest.chooseWild(nil, seq(198, 0))
+wild = BugContest.chooseWild(CONTEST_DATA, seq(198, 0))
 eq(wild.species, "PINSIR", "roll 99 is the last reachable slice")
 
 -- TryWildEncounter_BugContest.  `40 percent` is `40 * $ff / 100`, so the
@@ -1153,11 +1172,6 @@ do
 end
 
 -- ---- the cache against the transcriptions ---------------------------------
---
--- The same two tables by two routes: BugContest.MONS and BugContest.FLAGS were
--- transcribed from pokegold, the rows below were followed out of the ROM.  Any
--- drift means one of them is wrong, which is the same pin
--- tests/gen2_world_test.lua holds CmdQueue.STONE_TABLES to.
 do
   local cache = os.getenv("GOLD_CACHE")
   if not cache then
@@ -1178,20 +1192,17 @@ do
     if type(extracted) ~= "table" or #extracted == 0 then
       check(true, "cache predates ContestMons extraction (SKIP)")
     else
-      eq(#extracted, #BugContest.MONS, "the same eleven rows")
-      for index, hand in ipairs(BugContest.MONS) do
+      eq(#extracted, #CONTEST_MONS, "the same eleven rows")
+      for index, hand in ipairs(CONTEST_MONS) do
         local row = extracted[index] or {}
         eq(row.species, hand.species, ("row %d species"):format(index))
         eq(row.chance, hand.chance, ("row %d chance"):format(index))
         eq(row.min, hand.min, ("row %d min level"):format(index))
         eq(row.max, hand.max, ("row %d max level"):format(index))
       end
-      -- And the reader really does take the cache over the transcription.
-      eq(BugContest.contestMons({ encounters = encounters }), extracted,
-        "contestMons prefers the extracted table")
-      -- Rolled through the cache rather than the transcription, the slices
-      -- still land where ChooseWildEncounter_BugContest puts them.
-      local rolled = BugContest.chooseWild({ encounters = encounters },
+      eq(BugContest.contestMons({ gen2Encounters = encounters }), extracted,
+        "contestMons reads the extracted table")
+      local rolled = BugContest.chooseWild({ gen2Encounters = encounters },
         seq(180, 1))
       eq(rolled.species, "SCYTHER", "roll 90 off the cache is still SCYTHER")
       eq(rolled.level, 14, "at level 14")

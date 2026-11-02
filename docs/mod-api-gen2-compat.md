@@ -394,7 +394,7 @@ because `trigger.kind` already says which sweep this is.
 rather than Red's. It has to: both games call it `GREAT_BALL`, and Red's record
 carries no `multiplier`, so seeding Red's would leave Gold's x1.5 reading nil.
 
-**Content registries that exist because Gold does.** Seven systems Red has no
+**Content registries that exist because Gold does.** Nine systems Red has no
 counterpart for, so there is no Gen 1 table to share and none of these carries
 a Gen 1 target at all. The routed Gen 2 path is their only home, and
 `Schemas.GEN1` gates them on a Red boot the way `Schemas.GEN2` gates
@@ -409,22 +409,26 @@ a Gen 1 target at all. The routed Gen 2 path is their only home, and
 | `landmarks` | `LANDMARK_*` | `Nests.landmarkId` / `Nests.landmark`, which resolve a map header's landmark byte |
 | `radio_channels` | station ids | `MapRadio.channelRecord`, which puts a registered station on the dial |
 | `rom_text` | disassembly text labels | `RomText(data, label, fallback)`, through `data.text` |
+| `spawns` | `SPAWN_*` | `World:flyTo`, `World:healPoint` and the New Game spawn, through `gen2Landmarks.spawns` |
+| `fly_points` | `SPAWN_*` (the row the point lands on) | `FieldMoves.bindFlypoints`, called from `World:load`, which builds the FLY picker's rows |
 
 `Game2:load` calls `Phone.useRegistry`, `Decorations.useRegistry`,
 `Apricorns.useRegistry` and `ItemEffects.applyHeldItems` immediately after
-`mods:load`, so the merge is live before the first frame. `landmarks` and
-`radio_channels` and `rom_text` need no such call: their consumers take `data`
-at call time.
+`mods:load`, so the merge is live before the first frame. `landmarks`,
+`spawns`, `radio_channels` and `rom_text` need no such call: their consumers
+take `data` at call time. `fly_points` is bound by `World:load`, which runs
+after `mods:load`.
 
-`landmarks` merges onto the cache's own `gen2Landmarks.landmarks` and
-`held_items` onto the view `Game2` builds from `data.items`, so both fold
+`landmarks`, `spawns` and `fly_points` merge onto the cache's own
+`gen2Landmarks.landmarks`, `.spawns` and `.flypoints`, and `held_items` onto
+the view `Game2` builds from `data.items`, so all four fold
 against the vanilla row -- a `register` for an existing id collides, a
 `patch` stacks. Phone contacts, decorations, apricorns and radio channels come
 into existence as the merge, seeded from their module's literals by
 `src/mods/Builtins.lua`; `rom_text` folds against the extracted `data.text`
 table loaded by `Game2`.
 
-Four honest limits on that surface:
+Honest limits on that surface:
 
 - `held_items` reaches the battle by being written back onto `data.items`, so a
   held row for an id with no `data.items` record lands nowhere. To invent a
@@ -448,6 +452,13 @@ Four honest limits on that surface:
   registered wall station gets a dial position and a name (Pokegear-only
   signals may carry just a name), and a registered contact gets a row the
   Pokegear indexes, but neither invents a screen.
+- `spawns` and `fly_points` rows a mod registers have no cart byte: a
+  registered spawn has no `SPAWN_*` index and a mod flypoint flag (256 or
+  more) has no `wVisitedSpawns` bit, so neither is written to an exported
+  .sav. A flag-less mod flypoint is stored as visited the first time the
+  player enters its spawn's map. A flag below 256 is refused unless it is
+  that cart row's own flag, and a flag two rows claim fails the second mod's
+  load.
 
 **Record shapes.** A registry whose Gen 2 records genuinely differ carries a
 Gen 2 schema beside its Gen 1 one (`gen2Fields` / `gen2Keys` / `gen2Write` in

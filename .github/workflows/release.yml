@@ -124,10 +124,20 @@ jobs:
 
   love-payload:
     name: build release game.love
-    needs: version
+    needs: [version, notes]
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
       - name: Build shared payload
         run: |
           scripts/pack_love.sh \
@@ -562,7 +572,8 @@ jobs:
 
   android:
     name: build Android
-    needs: [version, shaderfx-bridge]
+    needs: [version, notes, shaderfx-bridge]
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.shaderfx-bridge.result == 'success' }}
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -573,6 +584,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Download the Android ShaderFX bridge
         uses: actions/download-artifact@v8
@@ -620,7 +642,8 @@ jobs:
 
   ios:
     name: build iOS
-    needs: [version, shaderfx-bridge]
+    needs: [version, notes, shaderfx-bridge]
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.shaderfx-bridge.result == 'success' }}
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     concurrency:
       group: mac-signing-keychain
@@ -634,6 +657,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Import signing certificate into a temporary keychain
         if: github.repository == 'bryanthaboi/gen1recomp'
@@ -679,7 +713,8 @@ jobs:
 
   switch:
     name: build Switch
-    needs: version
+    needs: [version, notes]
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -690,6 +725,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Restore pinned love-nx binaries
         uses: actions/cache@v6
@@ -719,7 +765,8 @@ jobs:
 
   ps4:
     name: build PS4
-    needs: version
+    needs: [version, notes]
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       OO_TAG: v0.5.4
@@ -728,6 +775,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Restore pinned love-ps4 runtime
         uses: actions/cache@v6
@@ -817,7 +875,8 @@ jobs:
 
   rg34xxsp:
     name: build Anbernic RG34XXSP port
-    needs: [version, shaderfx-bridge, luajit-linux-arm64]
+    needs: [version, notes, shaderfx-bridge, luajit-linux-arm64]
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.shaderfx-bridge.result == 'success' && needs.luajit-linux-arm64.result == 'success' }}
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -828,6 +887,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Download the Linux arm64 ShaderFX bridge
         uses: actions/download-artifact@v8
@@ -869,7 +939,8 @@ jobs:
 
   linux-arm-sbc:
     name: build Linux ARM SBC PortMaster port
-    needs: [version, shaderfx-bridge, luajit-linux-arm64]
+    needs: [version, notes, shaderfx-bridge, luajit-linux-arm64]
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.shaderfx-bridge.result == 'success' && needs.luajit-linux-arm64.result == 'success' }}
     runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
     steps:
       # The self-hosted runner lives under the machine owner's home
@@ -880,6 +951,17 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Download release notes
+        if: needs.notes.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: gen1recomp-release-notes
+          path: dist/release-notes
+
+      - name: Stage release notes for the payload
+        if: needs.notes.result == 'success'
+        run: cp dist/release-notes/release-notes.md PATCH_NOTES.md
 
       - name: Download the Linux arm64 ShaderFX bridge
         uses: actions/download-artifact@v8
@@ -928,7 +1010,6 @@ jobs:
   notes:
     name: write release notes
     needs: version
-    if: github.repository == 'bryanthaboi/gen1recomp'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

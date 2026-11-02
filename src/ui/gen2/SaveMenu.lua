@@ -300,6 +300,7 @@ end
 
 function SaveMenu:drawPanel()
   local summary = Save.summary(self.save)
+  local docked = Chrome.dockPush("topright")
   Chrome.box(PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
   if summary then
     Chrome.print(Strings("PLAYER %s", summary.name), LABEL_X, LABEL_Y)
@@ -313,6 +314,8 @@ function SaveMenu:drawPanel()
     Chrome.print(":", TIME_X + 3, TIME_Y)
     Chrome.print(Chrome.number(summary.minutes, 2, true), TIME_X + 4, TIME_Y)
   end
+  Chrome.dockPop(docked)
+  docked = Chrome.dockPush("bottom")
 
   -- SpeechTextbox: interior 18x4 at (0,12), so the two lines are at (1,14)
   -- and (1,16) -- `line` is the box's lower line, two rows down.
@@ -333,8 +336,12 @@ function SaveMenu:drawPanel()
     Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
     Chrome.cursor(YESNO_X + 1, YESNO_Y + (self.choice == 1 and 1 or 3))
   end
+  Chrome.dockPop(docked)
   love.graphics.setColor(1, 1, 1, 1)
 end
+
+SaveMenu.dockClipRow = 12
+SaveMenu.dockSelf = true
 
 function SaveMenu:draw()
   self:drawPanel()

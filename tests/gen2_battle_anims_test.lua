@@ -19,12 +19,25 @@ local check, eq = S.check, S.eq
 local cache = os.getenv("GOLD_CACHE")
 if not cache then
   local home = os.getenv("HOME") or ""
-  cache = home .. "/Library/Application Support/LOVE/gold-dev/gold"
+  local bases = { home .. "/Library/Application Support/LOVE", home .. "/.local/share/love" }
+  local ids = { os.getenv("POKEPORT_IDENTITY") or "", "g1r-gold", "pokeport-test-caches" }
+  for _, base in ipairs(bases) do
+    for _, id in ipairs(ids) do
+      local root = base .. "/" .. id .. "/gold"
+      local f = id ~= "" and io.open(root .. "/data/generated/battle_anims.lua", "r")
+      if f then
+        f:close()
+        cache = cache or root
+      end
+    end
+  end
+  cache = cache or (bases[1] .. "/g1r-gold/gold")
 end
 
 local path = cache .. "/data/generated/battle_anims.lua"
 local file = io.open(path, "r")
 if not file then
+  print("[skip] no Gold cache at " .. path)
   check(true, "no Gold cache at " .. path .. " (SKIP)")
   S.finish()
   return

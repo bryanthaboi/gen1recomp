@@ -1856,6 +1856,137 @@ do
     "and the third row scrolls in instead of being cut")
 end
 
+-- ../pokecrystal/data/text/battle.asm:240-246
+-- ../pokecrystal/data/text/common_2.asm:137-140
+-- ../pokecrystal/home/text.asm:566
+-- ../pokecrystal/engine/battle/core.asm:44-46
+do
+  local function trainerBattle()
+    local lead = Mon.new(DATA, "CYNDAQUIL", 10, { dvs = perfect })
+    local bench = Mon.new(DATA, "TOTODILE", 10, { dvs = perfect })
+    local foe1 = Mon.new(DATA, "PIDGEY", 5, { dvs = perfect })
+    local foe2 = Mon.new(DATA, "PIDGEY", 6, { dvs = perfect })
+    foe1.moves = { { id = "TACKLE", pp = 35, maxPp = 35 } }
+    foe2.moves = { { id = "TACKLE", pp = 35, maxPp = 35 } }
+    local party = { lead, bench }
+    local save = { party = party, inventory = {} }
+    local game = {
+      data = DATA, save = save, input = Input, options = {},
+      stack = { push = function() end, pop = function() end,
+        top = function() return nil end },
+    }
+    local battle = Battle.new({ data = DATA, party = party, random = detRandom,
+      trainer = { class = "FALKNER", name = "FALKNER", party = { foe1, foe2 } } })
+    return game, battle, save
+  end
+
+  local game, battle, save = trainerBattle()
+  local intro = BattleState.new(game, { battle = battle, save = save })
+  local sendAt, delayAt, slideAt
+  for i, event in ipairs(intro.queue) do
+    if event.kind == "send" and event.side == "enemy" then sendAt = sendAt or i end
+    if event.kind == "intro-delay" then delayAt = i end
+    if event.kind == "backpic-slide" then slideAt = i end
+  end
+  check(sendAt and intro.queue[sendAt].textDone == true,
+    "the intro's enemy send line ends on done")
+  check(delayAt and slideAt and delayAt == slideAt - 1 and delayAt > sendAt,
+    "DelayFrames 40 sits between the enemy send-out and the back pic slide")
+
+  -- ../pokecrystal/engine/battle/core.asm:25-31
+  local function hasDelay(mirrored)
+    local g, b, sv = trainerBattle()
+    b.linkBattle = true
+    b.mirrored = mirrored
+    for _, event in ipairs(BattleState.new(g, { battle = b, save = sv }).queue) do
+      if event.kind == "intro-delay" then return true end
+    end
+    return false
+  end
+  eq(hasDelay(true), false, "the internal-clock link player skips DelayFrames 40")
+  eq(hasDelay(false), true, "the external-clock link player keeps DelayFrames 40")
+
+  battle:takeEvents()
+  check(battle:switchEnemy(2), "the AI rotates its second mon in")
+  local rotate
+  for _, event in ipairs(battle:takeEvents()) do
+    if event.kind == "send" then rotate = event end
+  end
+  check(rotate and rotate.textDone == true, "an AI switch's sent-out line ends on done")
+
+  local _, pbattle = trainerBattle()
+  pbattle:takeEvents()
+  check(pbattle:switch(2), "the bench mon comes in")
+  local go
+  for _, event in ipairs(pbattle:takeEvents()) do
+    if event.kind == "send" then go = event end
+  end
+  check(go and go.textDone == true, "the player's Go! line ends on done")
+
+  local function typed(screen)
+    for _ = 1, 400 do
+      if not screen:syncTyper() then break end
+      Input:step()
+      screen:update(1 / 60)
+    end
+    return table.concat(screen:messageLines(), "|")
+  end
+  local function reachesNext(screen)
+    for _ = 1, 600 do
+      if screen.message == "NEXT" then return true end
+      Input:step()
+      screen:update(1 / 60)
+    end
+    return screen.message == "NEXT"
+  end
+
+  local screen = newScreen()
+  check(runToMenu(screen), "reached the menu")
+  screen.battle:takeEvents()
+  local mon = Mon.new(DATA, "PIDGEY", 5, { dvs = perfect })
+  mon.nickname = "DRAGONITE"
+  screen.phase = "resolving"
+  screen:push({ kind = "send", side = "enemy", mon = mon, hp = mon.hp,
+    textDone = true, text = Battle.sentOutText("CHAMPION LANCE", "DRAGONITE") })
+  screen:push({ kind = "message", text = "NEXT" })
+  screen:advanceQueue()
+  eq(typed(screen), "CHAMPION LANCE|sent out", "page 1 of the sent-out line")
+  check(screen.messageTimer > 0, "cont still waits for A on page 1")
+  tapper(screen)("a")
+  eq(typed(screen), "sent out|DRAGONITE!", "page 2 types the name")
+  eq(screen.messageTimer, 0, "done leaves no press on the name page")
+  check(reachesNext(screen), "the queue moves on with no press after the name page")
+
+  local player = newScreen()
+  check(runToMenu(player), "reached the menu")
+  player.battle:takeEvents()
+  player.phase = "resolving"
+  player:push({ kind = "send", side = "player", mon = player.battle.player,
+    hp = player.battle.player.hp, textDone = true,
+    text = "Go! CYNDAQUIL!" })
+  player:push({ kind = "message", text = "NEXT" })
+  player:advanceQueue()
+  eq(player.messageTimer, 0, "Go! X! holds for no press")
+  check(reachesNext(player), "and the queue moves on by itself")
+
+  local plain = newScreen()
+  check(runToMenu(plain), "reached the menu")
+  plain.battle:takeEvents()
+  plain.phase = "resolving"
+  plain:push({ kind = "send", side = "enemy", mon = mon, hp = mon.hp, textDone = true,
+    text = Battle.sentOutText("JOE", "PIDGEY") })
+  plain:push({ kind = "message", text = "Will JOE change POKéMON?\nNEXT" })
+  plain:advanceQueue()
+  tapper(plain)("a")
+  typed(plain)
+  for _ = 1, 600 do
+    if plain.message and plain.message:find("change", 1, true) then break end
+    Input:step()
+    plain:update(1 / 60)
+  end
+  check(plain.messageTimer > 0, "a prompt line after a done line still waits")
+end
+
 -- ---- MoveSelectionScreen's two boxes (#1478) ------------------------------
 -- engine/battle/core.asm:5074-5094, MoveInfoBox :5403-5478
 do

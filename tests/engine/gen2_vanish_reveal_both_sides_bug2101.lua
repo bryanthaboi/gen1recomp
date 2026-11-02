@@ -77,7 +77,6 @@ local function noLatch(screen)
 end
 
 local idle = { wasPressed = function() return false end }
-local skip = { wasPressed = function(_, b) return b == "b" end }
 
 local function fakeAnim(screen)
   local runs = {}
@@ -139,9 +138,9 @@ for _, order in ipairs({ { "player", "enemy" }, { "enemy", "player" } }) do
     order[1] .. " anim: the other mon is still down")
   screen:advanceQueue()
   eq(#runs, 2, order[1] .. " anim: the second strike starts its script")
-  screen:stepAnim(skip)
+  screen:stepAnim(idle)
   eq(screen.picHidden[order[2]], false,
-    order[1] .. " anim: a B skip brings the second mon back")
+    order[1] .. " anim: the second script's end brings that mon back")
   check(noLatch(screen), order[1] .. " anim: no latch is left behind")
 end
 

@@ -25,6 +25,18 @@ PatchNotes.REPO_FILES = {
   "mobile/ios/app-repo.json",
 }
 
+PatchNotes.FETCH_FAILED = "Unable to fetch patch notes."
+
+PatchNotes.NO_TRANSPORT = "This build has no patch notes packed in, and this platform "
+  .. "cannot check GitHub for them.\n\n"
+  .. "Release notes: github.com/bryanthaboi/gen1recomp/releases"
+
+function PatchNotes.canCheckOnline()
+  local Platform = require("src.core.Platform")
+  if not Platform.networkValidated() then return false end
+  return require("src.core.HostShell").canFetch() and true or false
+end
+
 local function nonempty(s)
   return type(s) == "string" and s:find("%S")
 end
@@ -60,7 +72,7 @@ local function readCachePath(path)
   return ok and nonempty(text) and text or nil
 end
 
-function PatchNotes.fromCache(engine)
+function PatchNotes.fromCache(engine, exactOnly)
   for _, path in ipairs(PatchNotes.CACHE_FILES) do
     local text = readCachePath(path)
     if text then
@@ -70,6 +82,7 @@ function PatchNotes.fromCache(engine)
           if doc[engine] and nonempty(doc[engine]) then
             return doc[engine], engine
           end
+          if exactOnly then return nil, nil end
           local bestVer, bestNotes
           for ver, notes in pairs(doc) do
             if nonempty(notes) and (not bestVer or Semver.compare(ver, bestVer) > 0) then
@@ -147,16 +160,22 @@ function PatchNotes.body(Check)
     return notes, ver or engine
   end
 
-  notes, ver = PatchNotes.fromCache(engine)
+  notes, ver = PatchNotes.fromCache(engine, true)
   if notes then return notes, ver end
 
   notes = PatchNotes.fromFile()
   if notes then return notes, engine end
 
+  notes, ver = PatchNotes.fromCache(engine)
+  if notes then return notes, ver end
+
   notes, ver = PatchNotes.fromRepo(engine)
   if notes then return notes, ver end
 
-  return "Unable to fetch patch notes.", engine
+  if not PatchNotes.canCheckOnline() then
+    return PatchNotes.NO_TRANSPORT, engine
+  end
+  return PatchNotes.FETCH_FAILED, engine
 end
 
 return PatchNotes

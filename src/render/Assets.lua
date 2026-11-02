@@ -85,6 +85,15 @@ function Assets.prefetchImage(path, front)
   return AtlasPrefetch.requestDecode(path, front)
 end
 
+function Assets.decodeReady(path)
+  if Assets.isComposed(path) then return true end
+  local resolved = Assets.resolve(path)
+  if not prefetchable(resolved) or not AtlasPrefetch.available() then
+    return true
+  end
+  return AtlasPrefetch.peekDecoded(resolved) ~= nil
+end
+
 AtlasPrefetch.resolveDecodable = function(path)
   local resolved = Assets.resolve(path)
   return prefetchable(resolved) and resolved or nil

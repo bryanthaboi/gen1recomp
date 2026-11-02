@@ -14153,6 +14153,10 @@
       64,
       23725
     ],
+    "EngineFlags": [
+      3,
+      16461
+    ],
     "EnteiBackpic": [
       29,
       26732
@@ -14324,6 +14328,10 @@
     "FlinchedText": [
       64,
       22239
+    ],
+    "Flypoints": [
+      36,
+      23500
     ],
     "Font": [
       62,
@@ -21128,6 +21136,10 @@
     "wBaseUnusedFrontpic": [
       1,
       53554
+    ],
+    "wVisitedSpawns": [
+      1,
+      55790
     ]
   },
   "text": {

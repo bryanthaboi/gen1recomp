@@ -42,13 +42,13 @@ Gen2Facade.FIELDS = {
   "player", "enemy", "party", "enemyParty", "trainer", "wild", "over", "outcome", "battleType",
   "random", "participants", "payDay", "amuletCoin", "timeOfDay", "boxFilled", "data",
   "inBattleTowerBattle", "linkBattle", "events", "turnOpen", "pendingSwitch", "pendingEnemySwitch",
-  "forcedSwitch",
+  "forcedSwitch", "mirrored",
 }
 
 Gen2Facade.NILABLE = {
   battleType = true, payDay = true, amuletCoin = true, timeOfDay = true, boxFilled = true,
   outcome = true, inBattleTowerBattle = true, turnOpen = true, pendingSwitch = true,
-  pendingEnemySwitch = true, forcedSwitch = true,
+  pendingEnemySwitch = true, forcedSwitch = true, mirrored = true,
 }
 
 Gen2Facade.METHODS = {

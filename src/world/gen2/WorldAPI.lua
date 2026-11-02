@@ -304,7 +304,7 @@ function WorldAPI:effectiveEncounters(mapId, terrain, opts)
   end
   local game = self.game
   local data = game and game.data
-  local encounters = data and data.encounters
+  local encounters = data and data.gen2Encounters
   local save = game and game.save
   local tables = encounters
   if encounters and save then

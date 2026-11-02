@@ -69,6 +69,7 @@ tests/engine/champion_victory_music_bug2835.lua
 tests/engine/chip_analog_path.lua
 tests/engine/chip_audio_preroll_test.lua
 tests/engine/chip_mono_fastpath_test.lua
+tests/engine/chip_music_park_key.lua
 tests/engine/chip_music_start_vs_prewarm_3065.lua
 tests/engine/chip_sample_rate_test.lua
 tests/engine/confusion_selfhit_anim_bug1578.lua
@@ -270,6 +271,8 @@ tests/engine/gen2_anim_bake_scissor_bug1895.lua
 tests/engine/gen2_anim_param_feed_sweep.lua
 tests/engine/gen2_badge_jingle_bug1930.lua
 tests/engine/gen2_badge_sfx_after_waitbutton_bug1934.lua
+tests/engine/gen2_bake_queue_test.lua
+tests/engine/gen2_prefetch_drain_3093.lua
 tests/engine/gen2_ball_anim_id_bug1804.lua
 tests/engine/gen2_ball_throw_pic_latch_bug1232.lua
 tests/engine/gen2_battle_anim_view_fill_palette_test.lua
@@ -317,6 +320,7 @@ tests/engine/gen2_fly_leaves_bug1889.lua
 tests/engine/gen2_fly_leaves_hide_bug1960.lua
 tests/engine/gen2_fly_map_arrow_bug1477.lua
 tests/engine/gen2_flypoint_rebind_bug1836.lua
+tests/engine/gen2_flypoints_extract_3092.lua
 tests/engine/gen2_forget_move_window_bug1980.lua
 tests/engine/gen2_fresh_export_2283.lua
 tests/engine/gen2_front_anim_mod_sheet_bug1827.lua
@@ -401,6 +405,7 @@ tests/engine/gen2_trainer_battle_pal_bug1970.lua
 tests/engine/gen2_trainer_card_text_palette_test.lua
 tests/engine/gen2_treemon_extract_bug2043.lua
 tests/engine/gen2_typer_bug2046.lua
+tests/engine/gen2_ui_layout_option.lua
 tests/engine/gen2_unown_words_box_palette_test.lua
 tests/engine/gen2_vanish_reveal_both_sides_bug2101.lua
 tests/engine/gen2_waitbutton_arrow_bug2045.lua
@@ -484,6 +489,7 @@ tests/engine/launch_uri_args_test.lua
 tests/engine/launcher_cart_ring_bug2003.lua
 tests/engine/launcher_delete_confirm.lua
 tests/engine/launcher_find_details.lua
+tests/engine/launcher_fling_test.lua
 tests/engine/launcher_game_popup_fill_bug1874.lua
 tests/engine/launcher_gba_cart.lua
 tests/engine/launcher_gold_touch_rows.lua
@@ -497,11 +503,12 @@ tests/engine/launcher_nx_pad_cursor_test.lua
 tests/engine/launcher_nx_version_chip_test.lua
 tests/engine/launcher_one_column_reach_bug852.lua
 tests/engine/launcher_osk_touch_bug1861.lua
-tests/engine/launcher_page_scroll.lua
 tests/engine/launcher_patch_notes.lua
 tests/engine/launcher_return_pointer_bug2079.lua
+tests/engine/launcher_scroll_test.lua
 tests/engine/launcher_secret_emerald_test.lua
 tests/engine/launcher_settings_persist_2740.lua
+tests/engine/launcher_single_scroller_3088.lua
 tests/engine/launcher_skins_options_reads_bug2038.lua
 tests/engine/launcher_skins_tab.lua
 tests/engine/launcher_skins_ux.lua
@@ -562,6 +569,7 @@ tests/engine/nickname_title_fits_box_bug2319.lua
 tests/engine/npc_stay_turns_bug2117.lua
 tests/engine/npc_walk_cadence_bug1303.lua
 tests/engine/nurse_bow_bug995.lua
+tests/engine/nx_asset_overlay_memo_test.lua
 tests/engine/nx_display_test.lua
 tests/engine/nx_quit_policy_2720.lua
 tests/engine/nx_yellow_boot_test.lua
@@ -602,6 +610,7 @@ tests/engine/party_fieldmove_order_bug792.lua
 tests/engine/party_icon_anim_freeze_bug2682.lua
 tests/engine/party_icon_og_obj_bug2268.lua
 tests/engine/party_submenu_cancel_bug1833.lua
+tests/engine/patch_notes_offline_3099.lua
 tests/engine/pc_accessed_text_bug1529.lua
 tests/engine/pc_item_switch_bug1962.lua
 tests/engine/pc_league_row_bug1566.lua
@@ -707,7 +716,9 @@ tests/engine/second_screen_touch_test.lua
 tests/engine/shaderfx_bridge_quarantine_2098.lua
 tests/engine/shaderfx_ffi_c_fallback.lua
 tests/engine/shaderfx_grid_alignment_2235.lua
+tests/engine/shaderfx_lut_relative_paths.lua
 tests/engine/shaderfx_no_bridge_ui.lua
+tests/engine/shaderfx_no_transport_ui.lua
 tests/engine/shaderfx_portable_paths_2227.lua
 tests/engine/silph7f_rival_exit_bug2242.lua
 tests/engine/skin_format_import_test.lua
@@ -725,6 +736,7 @@ tests/engine/speed_hotkey_no_wrap_3075.lua
 tests/engine/spinner_step_bug2585.lua
 tests/engine/sprite_multicell.lua
 tests/engine/sprite_sheet_length_bug2123.lua
+tests/engine/sprite_warm_queue_test.lua
 tests/engine/ss_anne_captain_face_bug2189.lua
 tests/engine/ss_anne_departure_anim_bug2560.lua
 tests/engine/start_menu_cursor_bug1821.lua
@@ -889,6 +901,8 @@ tests/game3_quest_log_integration_test.lua
 tests/game3_reflection_neighbor_test.lua
 tests/game3_renewable_hidden_items_test.lua
 tests/game3_resident_caches_2695_test.lua
+tests/game3_rs_cache_readiness_format_test.lua
+tests/game3_rs_capture_click_skip_test.lua
 tests/game3_rs_flash_2762_test.lua
 tests/game3_rs_naming_kb_crop_2701_test.lua
 tests/game3_rs_pokedex_palette_2710_test.lua
@@ -902,6 +916,7 @@ tests/game3_save_menu_layout_test.lua
 tests/game3_save_pokeball_test.lua
 tests/game3_scenario_menu_test.lua
 tests/game3_se_bgm_volume_test.lua
+tests/game3_se_names_resolve_test.lua
 tests/game3_se_source_cache_test.lua
 tests/game3_seagallop_anim_test.lua
 tests/game3_seam_warm_budget_test.lua
@@ -923,10 +938,16 @@ tests/game3_trainer_rewards_dialogs_test.lua
 tests/game3_u12_healthbox_hp_text_test.lua
 tests/game3_ui_braille_test.lua
 tests/game3_weather_test.lua
+tests/gen2_battle_anims_test.lua
+tests/gen2_battle_ui_test.lua
+tests/gen2_contest_test.lua
 tests/gen2_double_faint_loss_test.lua
 tests/gen2_fly_map_test.lua
 tests/gen2_gamecorner_test.lua
 tests/gen2_menus_test.lua
+tests/gen2_phone_jingle_test.lua
+tests/gen2_trade_gfx_test.lua
+tests/gen2_world_test.lua
 tests/launcher_mods_install_zip_test.lua
 tests/mod_graphics_tests.lua
 tests/mod_link_tests.lua
@@ -934,9 +955,13 @@ tests/mod_world_tests.lua
 tests/modkit/cases/bag_capacity.lua
 tests/modkit/cases/dataset_views_gen2_emotes.lua
 tests/modkit/cases/dataset_views_gen2_metadata.lua
+tests/modkit/cases/encounter_table.lua
+tests/modkit/cases/gen2_bug_contest_encounters.lua
+tests/modkit/cases/gen2_fly_points.lua
 tests/modkit/cases/gen2_marts_registry.lua
 tests/modkit/cases/gen2_native_index_range.lua
 tests/modkit/cases/gen2_phone_contacts.lua
+tests/modkit/cases/gen2_script_ctx_map_label.lua
 tests/modkit/cases/link_desync.lua
 tests/modkit/cases/mod_map_outdoor_encounters.lua
 tests/modkit/cases/unified_effects.lua

@@ -164,40 +164,55 @@ return function(game)
         check(tag .. "_save_prompt_up", getmetatable(game.stack:top()) == ChoiceBox)
         R = Renderer:frameRects()
         local ox, oy = R.uox, R.uoy
+        local topOx = R.splitUox or ox
+        local centred = R.vux + math.floor((R.vuw - R.uiw * R.Ux) / 2)
         local nAnchors = #(Renderer.uiAnchors or {})
         if mode == "dynamic" then
           check(tag .. "_save_no_global_hold", Renderer.uiAnchorHold == false)
           check(tag .. "_save_nothing_docked_alone",
-            nAnchors == 0 and Renderer.uiShiftRight == true,
+            nAnchors == 0 and Renderer.uiShiftRight == 12,
             ("anchors=%d shift=%s"):format(nAnchors, tostring(Renderer.uiShiftRight)))
-          check(tag .. "_save_canvas_flush_right",
-            math.abs(ox - (winR - R.uiw * R.Ux)) < 1,
-            ("uox=%.0f want=%.0f"):format(ox, winR - R.uiw * R.Ux))
+          check(tag .. "_save_upper_rows_flush_right",
+            R.splitUox ~= nil and math.abs(topOx - (winR - R.uiw * R.Ux)) < 1,
+            ("splitUox=%s want=%.0f"):format(tostring(R.splitUox), winR - R.uiw * R.Ux))
+          check(tag .. "_save_text_rows_centred", math.abs(ox - centred) < 1,
+            ("uox=%.0f want=%.0f"):format(ox, centred))
         else
           check(tag .. "_save_unchanged_no_anchors", nAnchors == 0
-            and not Renderer.uiShiftRight and math.abs(ox - (boxR - R.uvpw)) < 1,
+            and not Renderer.uiShiftRight and R.splitRow == nil
+            and math.abs(ox - (boxR - R.uvpw)) < 1,
             ("uox=%.0f"):format(ox))
         end
         local path = shotPath(w, h, mode, "save_prompt")
         U.still(game, path)
         local img = loadShot(path)
         check(tag .. "_save_shot_loaded", img ~= nil)
-        local right = ox + R.uvpw
-        local px = darkColumnIn(img, right - tile, right, oy + 2 * tile, oy + 8 * tile)
-        local sx = darkColumnIn(img, right - tile, right, oy + 10 * tile + 2, oy + 12 * tile - 2)
-        local tx = darkColumnIn(img, right - tile, right, oy + 13 * tile, oy + 17 * tile)
+        local topRight = topOx + R.uvpw
+        local botRight = ox + R.uvpw
+        local px = darkColumnIn(img, topRight - tile, topRight, oy + 2 * tile, oy + 8 * tile)
+        local sx = darkColumnIn(img, topRight - tile, topRight, oy + 10 * tile + 2, oy + 12 * tile - 2)
+        local tx = darkColumnIn(img, botRight - tile, botRight, oy + 13 * tile, oy + 17 * tile)
         local lx = darkColumnIn(img, ox, ox + tile, oy + 13 * tile, oy + 17 * tile)
-        local yx = darkColumnIn(img, ox, ox + tile, oy + 8 * tile, oy + 11 * tile)
+        local yx = darkColumnIn(img, topOx, topOx + tile, oy + 8 * tile, oy + 11 * tile)
         local by = darkRowIn(img, oy + R.uvph - tile, oy + R.uvph, ox + 2 * tile, ox + 18 * tile)
         local edge = mode == "dynamic" and "window" or "letterbox"
         check(tag .. "_save_shot_panel_border_at_" .. edge .. "_right", px ~= nil
           and (mode ~= "dynamic" or px >= winR - tile), ("x=%s"):format(tostring(px)))
         check(tag .. "_save_shot_start_border_same_column", sx ~= nil and sx == px,
           ("x=%s"):format(tostring(sx)))
-        check(tag .. "_save_shot_text_box_right_same_column", tx ~= nil and tx == px,
-          ("x=%s"):format(tostring(tx)))
-        check(tag .. "_save_shot_yes_no_flush_with_text_box_left", lx ~= nil and yx == lx,
-          ("textLeft=%s yesNoLeft=%s"):format(tostring(lx), tostring(yx)))
+        check(tag .. "_save_shot_text_box_right_at_letterbox_right", tx ~= nil
+          and tx >= botRight - tile and tx < botRight, ("x=%s"):format(tostring(tx)))
+        check(tag .. "_save_shot_text_box_left_at_letterbox_left", lx ~= nil
+          and lx < ox + tile, ("x=%s"):format(tostring(lx)))
+        check(tag .. "_save_shot_yes_no_left_on_upper_rows", yx ~= nil
+          and yx < topOx + tile, ("x=%s"):format(tostring(yx)))
+        if mode == "dynamic" and px and math.abs(topOx - ox) >= tile then
+          local bottomRow = (menu.ty or 0) + (menu.th or 0)
+          local low = darkColumnIn(img, px, px + 1, oy + 12 * tile + 2,
+            oy + math.min(bottomRow, 18) * tile - 2)
+          check(tag .. "_save_shot_no_start_box_beside_text_box",
+            bottomRow <= 12 or low == nil, ("x=%s"):format(tostring(low)))
+        end
         check(tag .. "_save_shot_text_box_bottom_border", by ~= nil,
           ("y=%s"):format(tostring(by)))
       end

@@ -461,7 +461,6 @@ for _, version in ipairs(VERSIONS) do
 
     if generation ~= 3 then
       local game = loader.game
-      if generation == 2 then game.data.encounters = data.gen2Encounters end
       local native = require(generation == 1 and "src.world.WorldAPI" or "src.world.gen2.WorldAPI")
         .new(game, "a_common")
       local world = UnifiedWorld.new(function() return game end, generation, version, "a_common")

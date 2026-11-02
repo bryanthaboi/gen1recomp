@@ -944,7 +944,12 @@ function Renderer:frameRects()
   end
   r.uox = uoxPx / dpiX
   if self.uiShiftRight and not self.uiCentered then
-    r.uox = (vx + math.floor(pw - uiw * Up) - r.insetRight) / dpiX
+    local flush = (vx + math.floor(pw - uiw * Up) - r.insetRight) / dpiX
+    if type(self.uiShiftRight) == "number" then
+      r.splitRow, r.splitUox = self.uiShiftRight, flush
+    else
+      r.uox = flush
+    end
   end
   r.uoy = uoyPx / dpiY
   return r
@@ -1352,7 +1357,13 @@ function Renderer:endFrame(zones, worldZones, frameOpts)
   -- centred letterbox.  With nothing anchored this is the single blit it has
   -- always been.
   local anchors = self.uiAnchors
-  if not anchors or #anchors == 0 then
+  if R.splitRow and (not anchors or #anchors == 0) then
+    local cut = math.min(uvph, R.splitRow * 8 * Uy)
+    local sx = R.splitUox
+    blit(self.canvas, Ux, Uy, zones, Ux, Uy, sx, uoy, clipToView(sx, uoy, uvpw, cut))
+    blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy,
+         clipToView(uox, uoy + cut, uvpw, uvph - cut))
+  elseif not anchors or #anchors == 0 then
     blit(self.canvas, Ux, Uy, zones, Ux, Uy, uox, uoy, clipToView(uox, uoy, uvpw, uvph))
   else
     local rest = { { clipToView(uox, uoy, uvpw, uvph) } }

@@ -37,6 +37,8 @@ local GENERATED_PREFIXES = {
 local NxAssetOverlay = {}
 
 local originals -- raw love functions, non-nil while installed
+local found = {}
+local registered = false
 
 -- Resolve `path` to the active version's prefixed copy when that file
 -- exists (gold|yellow|blue|red/{assets,data}/generated/...).  The versioned
@@ -59,8 +61,16 @@ local function versioned(path)
   local prefix = GameVersion.cachePrefix()
   if prefix == "" then return nil end
   local candidate = prefix .. path
-  if originals.getInfo(candidate) then return candidate end
+  if found[candidate] then return candidate end
+  if originals.getInfo(candidate) then
+    found[candidate] = true
+    return candidate
+  end
   return nil
+end
+
+function NxAssetOverlay.invalidate()
+  found = {}
 end
 
 local function wrapLoader(fn)
@@ -105,6 +115,12 @@ function NxAssetOverlay.install()
   if originals then return end
   if not (love and love.filesystem) then return end
   originals = {}
+  found = {}
+  if not registered then
+    registered = pcall(function()
+      require("src.render.Assets").register(NxAssetOverlay.invalidate)
+    end)
+  end
   for _, spec in ipairs(WRAP_SPEC) do
     local ns, name = spec[1], spec[2]
     local fn = love[ns] and love[ns][name]
@@ -131,6 +147,7 @@ function NxAssetOverlay.uninstall()
   end
   love.filesystem.getInfo = originals.getInfo
   originals = nil
+  found = {}
 end
 
 return NxAssetOverlay

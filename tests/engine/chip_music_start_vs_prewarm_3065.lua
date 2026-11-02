@@ -7,6 +7,7 @@ love = require("tests.love_stub")
 local ffi = require("ffi")
 
 local SCALE = 10
+local musicScale = SCALE
 local MUSIC_MS = 12.9
 local FRAME = 1 / 60
 
@@ -86,6 +87,8 @@ local renders = {}
 local workerMusic = 0
 local workerSongs = 0
 local playsPushed = 0
+local parkRenders = {}
+local lastRenderOut = 0
 
 local channels = {}
 local function channel(name)
@@ -94,6 +97,9 @@ local function channel(name)
   local items = {}
   ch = { items = items }
   function ch:push(v)
+    if name == "chipaudio_park" and type(v) == "table" and v.sd then
+      parkRenders[#parkRenders + 1] = { out = lastRenderOut }
+    end
     if name == "chipaudio_cmd" and type(v) == "table" then
       if v.cmd == "play" then playsPushed = playsPushed + 1 end
       if v.cmd == "effect" then
@@ -127,7 +133,9 @@ local WorkerSynth = {
     return { finished = function() return false end }
   end,
   soundData = function()
-    coroutine.yield(MUSIC_MS * SCALE / 1000)
+    local out = channels.chipaudio_out
+    lastRenderOut = out and out:getCount() or 0
+    coroutine.yield(MUSIC_MS * musicScale / 1000)
     workerMusic = workerMusic + 1
     return { music = true }
   end,
@@ -328,7 +336,69 @@ end
 
 battleStart(0, 0)
 for phase = 0, 11 do battleStart(phase, 26) end
+
+local function preparedStart(phase, gapMs)
+  local tag = (" (prepared, phase %d, gap %d ms)"):format(phase, gapMs)
+  check(ChipAudio.playMusic({ audio = {} }, song(3), true) ~= nil,
+    "route song plays" .. tag)
+  local routeSource = queueables[#queueables]
+  step(60 + phase)
+  local data, battle = newBattle()
+  local theme = song(4)
+  local parked = ChipAudio.prepareMusic ~= nil
+    and ChipAudio.prepareMusic(data, theme, true)
+  check(parked, "the battle theme is parked during map music" .. tag)
+  step(600)
+  local ps = ChipAudio.parkState and ChipAudio.parkState()
+  check(ps ~= nil and ps.ready, "the park holds the theme's preroll" .. tag)
+  eq(#routeSource.underruns, 0,
+    "route music never underruns while the park renders" .. tag)
+  local hits = ChipAudio.stats().parkHits or 0
+  BattleState.prewarmCries(battle)
+  now = now + gapMs / 1000
+  runWorker(now)
+  local t0 = now
+  check(ChipAudio.playMusic(data, theme, true) ~= nil,
+    "battle theme cued" .. tag)
+  local music = queueables[#queueables]
+  step(math.floor(3 / FRAME))
+  check(music.firstPlay ~= nil and music.firstPlay - t0 <= 2 * FRAME + 1e-9,
+    ("a parked battle theme starts within 2 frames of the cue (%s s)"):format(
+      music.firstPlay and ("%.3f"):format(music.firstPlay - t0) or "never")
+      .. tag)
+  eq(ChipAudio.stats().parkHits, hits + 1, "the cue took the park" .. tag)
+  eq(#music.underruns, 0, ("no underrun in the first 3 s of a parked theme (%s)")
+    :format(table.concat(music.underruns, ", ")) .. tag)
+  step(math.floor(57 / FRAME))
+  local st = ChipAudio._effectStateForTest()
+  eq(st.queued + st.inFlight, 0,
+    "the background prewarm still drains behind a parked theme" .. tag)
+end
+
+for phase = 0, 5 do preparedStart(phase, 26) end
 check(workerError == nil, "worker ran clean: " .. tostring(workerError))
+
+do
+  musicScale = 12.3
+  check(ChipAudio.playMusic({ audio = {} }, song(3), true) ~= nil,
+    "route song plays near realtime")
+  local routeSource = queueables[#queueables]
+  step(math.floor(20 / FRAME))
+  parkRenders = {}
+  local theme = song(4)
+  check(ChipAudio.prepareMusic({ audio = {} }, theme, true),
+    "a park is requested while the worker runs near realtime")
+  step(math.floor(40 / FRAME))
+  local early = 0
+  for _, r in ipairs(parkRenders) do
+    if r.out < 8 then early = early + 1 end
+  end
+  eq(early, 0, ("a worker near realtime renders the song ahead of a park "
+    .. "(%d of %d park buffers cut in)"):format(early, #parkRenders))
+  eq(#routeSource.underruns, 0, "the song never underruns behind the park")
+  musicScale = SCALE
+  step(math.floor(10 / FRAME))
+end
 
 local data2, battle2 = newBattle()
 BattleState.prewarmCries(battle2)

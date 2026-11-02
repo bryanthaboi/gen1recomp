@@ -499,11 +499,41 @@ end
 
 TrainerCard.side = "front"
 
-local function play_se(name)
-  local ok, Audio = pcall(require, "src.core.game3.audio")
-  if not ok or not Audio then return end
-  local fn = Audio.playSe or Audio.playSE
-  if fn then pcall(fn, name) end
+local CARD_SE = {
+  open = {
+    -- pokefirered/src/trainer_card.c:543
+    firered = "SE_CARD_OPEN",
+    -- pokeemerald/src/trainer_card.c:430
+    emerald = "SE_RG_CARD_OPEN",
+  },
+  flip = {
+    -- pokefirered/src/trainer_card.c:564
+    firered = "SE_CARD_FLIP",
+    -- pokeemerald/src/trainer_card.c:449
+    emerald = "SE_RG_CARD_FLIP",
+  },
+  flipping = {
+    -- pokefirered/src/trainer_card.c:1787
+    firered = "SE_CARD_FLIPPING",
+    -- pokeemerald/src/trainer_card.c:1740
+    emerald = "SE_RG_CARD_FLIPPING",
+  },
+  flipped = {
+    -- pokefirered/src/trainer_card.c:583
+    firered = "SE_CARD_OPEN",
+    -- pokeemerald/src/trainer_card.c:468
+    emerald = "SE_RG_CARD_OPEN",
+  },
+}
+
+local function play_se(kind)
+  local SE = require("src.core.game3.se_ids")
+  local name = CARD_SE[kind][SE.current]
+  if name == nil then error("trainer_card: no " .. kind .. " SE for " .. tostring(SE.current), 2) end
+  local id = SE[name]
+  if id == nil then error("trainer_card: no SE " .. name .. " in " .. tostring(SE.current), 2) end
+  local Audio = require("src.core.game3.audio")
+  pcall(Audio.playSe, id)
 end
 
 -- src/trainer_card.c:1700 Task_AnimateCardFlipDown +7 to 77, Task_AnimateCardFlipUp -5 to 0
@@ -517,7 +547,7 @@ end
 
 local function beginFlip()
   TrainerCard._flip = { phase = "down", top = 0 }
-  play_se("SE_CARD_FLIP")
+  play_se("flip")
 end
 
 function TrainerCard.update(dt)
@@ -529,13 +559,13 @@ function TrainerCard.update(dt)
       f.top = FLIP_TOP_MAX
       f.phase = "up"
       TrainerCard.flip()
-      play_se("SE_CARD_FLIPPING")
+      play_se("flipping")
     end
   else
     f.top = f.top - FLIP_UP_STEP
     if f.top <= 0 then
       TrainerCard._flip = nil
-      play_se("SE_CARD_OPEN")
+      play_se("flipped")
     end
   end
 end
@@ -646,7 +676,7 @@ function TrainerCard.show(opts)
   TrainerCard._onClose = opts.onClose
   ensureAssets()
   Stack.push("trainer", TrainerCard, { hideBelow = true, fullscreen = true })
-  play_se("SE_CARD_OPEN")
+  play_se("open")
 end
 
 function TrainerCard.close()

@@ -139,6 +139,16 @@ withOS("Android", function()
   eq(ChipAudio.selectSampleRate({ performance = "high" }), 44100,
      "an Android user who picked HIGH gets the full rate back")
 end)
+withOS("NX", function()
+  eq(ChipAudio.selectSampleRate({ performance = "auto" }), 22050,
+     "a Switch at AUTO halves it")
+  eq(ChipAudio.selectSampleRate({}), 22050,
+     "and so does a Switch with no stored tier")
+  eq(ChipAudio.selectSampleRate({ performance = "balanced" }), 22050,
+     "and at BALANCED")
+  eq(ChipAudio.selectSampleRate({ performance = "high" }), 44100,
+     "a Switch user who picked HIGH gets the full rate back")
+end)
 
 ChipAudio._setEnvRateForTest("32000")
 withOS("Android", function()

@@ -1288,6 +1288,9 @@ function Loader:_contentApi(mod, registry, deprecation)
   local function prepare(id, value, mode)
     if loader.generation == 2 then
       if registry.name == "marts" then return Schemas.gen2MartValue(id, value) end
+      if registry.name == "fly_points" then
+        return Schemas.gen2FlyPointValue(registry, id, value, loader.baseData)
+      end
       return Schemas.gen2Index(registry, id, value, loader.baseData, mode)
     end
     return value
