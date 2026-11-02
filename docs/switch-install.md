@@ -169,9 +169,11 @@ Mods install from a zip inbox (same transfer methods as ROMs):
 2. In the launcher, open **MODS** → **Scan again** → enable the mod →
    **Play**.
 
-Remote **FIND MODS** / GitHub download stays **off** on Switch. Do not put
-mod zips into git. Community mods ship their own OPTIONS / rebinds. This port
-does not document third-party control tables.
+Remote **FIND MODS** / GitHub downloads require the native HTTP download
+bridge in the installed love-nx build; if it is unavailable, install mods
+from the `imports/mods/` inbox instead. Do not put mod zips into git.
+Community mods ship their own OPTIONS / rebinds. This port does not document
+third-party control tables.
 
 ### Joy-Con shortcuts (Select + face)
 
