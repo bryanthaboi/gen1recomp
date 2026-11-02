@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.0",
+          "date": "2026-11-02",
+          "size": 44727368,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.0/gen1recomp++-0.4.0-ios.ipa",
+          "localizedDescription": "bugs and some switch stuff\n\n## Issues closed\n\n- #3083 Whitescreen on Trendy Phrase/Gabbys Interview screen\n- #3088 Scrolling issues on iOS\n- #3089 Missing phone jingle\n- #3090 Gen2 Bug-Catching Contest ignores the encounters registry\n- #3091 Gold: script.command's ctx.mapId is never the map label\n- #3092 Gen 2: mods can't add Fly destinations\n- #3094 Pokeball catching animation is skipping CRYSTAL\n- #3096 Asking to press button while trainer send pokemon\n- #3097 Shaders cant be downloaded on switch\n- #3098 No dynamic option UI on crystal\n\n## Contributors\n\n- @booshankles\n- @bryanthaboi"
+        },
+        {
           "version": "0.3.99",
           "date": "2026-10-31",
           "size": 44722207,
