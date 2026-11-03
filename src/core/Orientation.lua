@@ -40,6 +40,9 @@ local HINTS = {
   reverseLandscape = "LandscapeRight",
 }
 
+local IOS_AUTO_HINT = "Portrait LandscapeLeft LandscapeRight PortraitUpsideDown"
+Orientation.IOS_AUTO_HINT = IOS_AUTO_HINT
+
 function Orientation.normalize(mode)
   if HINTS[mode] then return mode end
   return Orientation.DEFAULT
@@ -154,8 +157,14 @@ function Orientation.apply(mode)
     -- SDL_HINT_ORIENTATIONS is "SDL_IOS_ORIENTATIONS" in the SDL2 Android
     -- ships and "SDL_ORIENTATIONS" in the SDL3 the iOS app links; each
     -- engine ignores the other's key.
-    ffi.C.SDL_SetHint("SDL_IOS_ORIENTATIONS", HINTS[mode])
-    ffi.C.SDL_SetHint("SDL_ORIENTATIONS", HINTS[mode])
+    local hint = HINTS[mode]
+    -- iOS AUTO names every orientation: with an empty hint SDL3 falls back
+    -- to the window's starting aspect (conf.lua opens 1080x1920) and pins a
+    -- rotating display to portrait.  UIKit still applies the Info.plist list
+    -- and the rotation lock.
+    if not android and mode == "auto" then hint = IOS_AUTO_HINT end
+    ffi.C.SDL_SetHint("SDL_IOS_ORIENTATIONS", hint)
+    ffi.C.SDL_SetHint("SDL_ORIENTATIONS", hint)
     -- On iOS the hint is the lock: UIKit re-asks on every rotation
     -- (SDL_uikitviewcontroller.m supportedInterfaceOrientations).
     if not android then return true end

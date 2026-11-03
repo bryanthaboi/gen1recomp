@@ -349,9 +349,81 @@ static void GRInstallApplicationURLHooks(void)
 }
 @end
 
+// SDL_uikitmetalview sets layer.contentsScale once, when the view is created,
+// but SDL_GetWindowSizeInPixels reads the screen's current nativeScale. On a
+// display whose scale changes while the app runs (the iPhone Duo's inner
+// display) the drawable then no longer matches the pixel size LÖVE draws to.
+// Refresh the scale before SDL sizes the drawable. A swizzle keeps the SDL
+// tree pristine; if SDL renames the class the hook no-ops.
+static IMP GRMetalUpdateDrawableSizeOriginal;
+
+static void GRMetalUpdateDrawableSize(UIView *self, SEL selector)
+{
+    CALayer *layer = self.layer;
+    UIScreen *screen = self.window.screen;
+    // contentsScale 1 means a low-DPI window; SDL keeps that at 1.
+    if (screen && layer.contentsScale > 1.0) {
+        CGFloat scale = screen.nativeScale;
+        if (scale > 0 && fabs(layer.contentsScale - scale) > 0.001) {
+            layer.contentsScale = scale;
+        }
+    }
+    ((void (*)(id, SEL))GRMetalUpdateDrawableSizeOriginal)(self, selector);
+}
+
+static void GRInstallMetalScaleHook(void)
+{
+    Class metalView = NSClassFromString(@"SDL_uikitmetalview");
+    Method method = metalView
+        ? class_getInstanceMethod(metalView, @selector(updateDrawableSize)) : NULL;
+    if (method && !GRMetalUpdateDrawableSizeOriginal) {
+        GRMetalUpdateDrawableSizeOriginal =
+            method_setImplementation(method, (IMP)GRMetalUpdateDrawableSize);
+    }
+}
+
+// UIKit_ComputeViewFrame in the bundled SDL3 sizes the window from the
+// deprecated -[UIApplication statusBarOrientation], which can keep answering
+// portrait after the scene has rotated. Answer with the window scene's
+// interface orientation instead (process-wide; the original is the fallback
+// when no scene reports one). SDL main limits this flip to iOS < 13, so the
+// hook can go once LÖVE's Apple dependencies pick that SDL up.
+static IMP GRStatusBarOrientationOriginal;
+
+static UIInterfaceOrientation GRStatusBarOrientation(UIApplication *self, SEL selector)
+{
+    UIWindowScene *best = nil;
+    for (UIScene *scene in self.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        if (!best || scene.activationState == UISceneActivationStateForegroundActive) {
+            best = (UIWindowScene *)scene;
+        }
+    }
+    UIInterfaceOrientation orientation = UIInterfaceOrientationUnknown;
+    if (@available(iOS 16.0, *)) {
+        orientation = best.effectiveGeometry.interfaceOrientation;
+    } else {
+        orientation = best.interfaceOrientation;
+    }
+    if (orientation != UIInterfaceOrientationUnknown) return orientation;
+    return ((UIInterfaceOrientation (*)(id, SEL))GRStatusBarOrientationOriginal)(self, selector);
+}
+
+static void GRInstallOrientationHook(void)
+{
+    Method method = class_getInstanceMethod([UIApplication class],
+                                            @selector(statusBarOrientation));
+    if (method && !GRStatusBarOrientationOriginal) {
+        GRStatusBarOrientationOriginal =
+            method_setImplementation(method, (IMP)GRStatusBarOrientation);
+    }
+}
+
 __attribute__((constructor))
 static void GRBootstrapInstall(void)
 {
+    GRInstallMetalScaleHook();
+    GRInstallOrientationHook();
     GRInstallDelegateURLHooks();
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserverForName:UIApplicationDidFinishLaunchingNotification
