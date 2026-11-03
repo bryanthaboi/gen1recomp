@@ -5,6 +5,9 @@
 
 local Runtime = require("src.mods.Runtime")
 
+-- Lazy: DuoPosture -> SafeArea -> this module.
+local DuoPosture
+
 local Viewport = {
   rect = nil,
   full = nil,
@@ -56,10 +59,19 @@ function Viewport.begin(generation)
     width = w, height = h, pixelWidth = pw, pixelHeight = ph,
     dpiX = dpiX, dpiY = dpiY, generation = generation,
   }
-  local requested
+  -- Foldables (src/core/DuoPosture.lua) put the game in its own half; that
+  -- rect is the default a layout mod's render.viewport wraps, so a mod can
+  -- still take over.  Nil (and nearly free) without a hinge.
+  DuoPosture = DuoPosture or require("src.core.DuoPosture")
+  local duo = DuoPosture.current(generation)
+  local duoRect = duo and duo.game and {
+    x = duo.game.x, y = duo.game.y,
+    width = duo.game.w, height = duo.game.h,
+  } or nil
+  local requested = duoRect
   if Runtime.wantsHook("render.viewport") then
     requested = Runtime.call("render.viewport", function(ctx)
-      return { x = 0, y = 0, width = ctx.width, height = ctx.height }
+      return duoRect or { x = 0, y = 0, width = ctx.width, height = ctx.height }
     end, context)
   end
   local rect = clampRect(requested, w, h)

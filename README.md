@@ -110,7 +110,9 @@ SHA-1 before creating any game data. FireRed, LeafGreen, Ruby, Sapphire, and Eme
 | Sapphire | 1.2 | 16 MiB | `89b45fb172e6b55d51fc0e61989775187f6fe63c` |
 
 **Platform notes:** [Linux](docs/platforms/linux.md),
-[iOS](docs/platforms/ios.md), [Xbox Dev Mode](docs/platforms/xbox.md),
+[iOS](docs/platforms/ios.md) (and the
+[iPhone Duo](docs/platforms/iphone-duo.md) foldable layouts),
+[Xbox Dev Mode](docs/platforms/xbox.md),
 [handhelds](docs/platforms/handhelds.md),
 [Nintendo Switch](docs/platforms/switch.md), and
 [PlayStation 4](docs/platforms/ps4.md) each have their own install steps.

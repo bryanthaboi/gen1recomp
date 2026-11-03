@@ -10,6 +10,7 @@ entry: a desktop shortcut per game, a Steam entry, or a handheld frontend.
 | `--cart=id` | boot the installed custom cart with that id |
 | `--slot=2` | load that save slot; takes a slot number or a slot id |
 | `--launcher` | open the launcher anyway, so you can edit a shortcut you already made |
+| `POKEPORT_DUO_HINGE=closed\|partial\|open[:angle]` | environment variable: pretend a foldable hinge is in that state, to preview the [iPhone Duo layouts](../platforms/iphone-duo.md) on a desktop (`off` disables them) |
 | `--no-sync` | skip the save sync a linked device otherwise runs before the game boots (`POKEPORT_LAUNCH_SYNC=0`) |
 | `--update` | check for a release first, and restart once into it if one is ready (`POKEPORT_LAUNCH_UPDATE=1`; `-update` works too) |
 | `--update-mods` | run the MODS tab's Update all (mods and custom carts) without the confirm, then boot; stays on the launcher if an update fails (`POKEPORT_LAUNCH_UPDATE_MODS=1`; `--updatemods` works too) |

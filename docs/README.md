@@ -17,6 +17,7 @@ editor, and developer setup live on the
 
 - [Linux (AppImage / Flatpak)](platforms/linux.md)
 - [iOS](platforms/ios.md)
+- [iPhone Duo (foldable) layouts](platforms/iphone-duo.md)
 - [Xbox Dev Mode](platforms/xbox.md)
 - [Handhelds](platforms/handhelds.md)
 - [Nintendo Switch](platforms/switch.md)

@@ -94,6 +94,8 @@ tests/engine/diploma_test.lua
 tests/engine/disable_same_turn_bug860.lua
 tests/engine/discord_join_requested.lua
 tests/engine/drum_envelope_ring.lua
+tests/engine/duo_posture_test.lua
+tests/engine/duo_touch_controls_test.lua
 tests/engine/effect_stereo_bug626.lua
 tests/engine/enemy_hud_after_cry_bug2118.lua
 tests/engine/errorhandler_fallback_test.lua

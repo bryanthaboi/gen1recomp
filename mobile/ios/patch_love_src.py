@@ -37,7 +37,8 @@ AUDIO_H = LOVE_SRC / "src" / "modules" / "audio" / "openal" / "Audio.h"
 AUDIO_CPP = LOVE_SRC / "src" / "modules" / "audio" / "openal" / "Audio.cpp"
 ENTITLEMENTS_SRC = IOS_DIR / "overlays" / "love-ios.entitlements"
 
-NATIVE_FILES = ("GRPickerBridge.swift", "GRHealthBridge.swift", "GRBootstrap.m")
+NATIVE_FILES = ("GRPickerBridge.swift", "GRHealthBridge.swift",
+                "GRHingeBridge.swift", "GRBootstrap.m")
 
 MARKER = "gen1recomp iOS picker bridge"
 
@@ -170,6 +171,7 @@ int w_syncHealthSteps(lua_State *L)
 
 WRAP_REGISTRATION = """#ifdef LOVE_IOS
 	{ "getDeviceModel", w_getDeviceModel },
+	{ "getHinge", w_getHinge },
 	{ "pickFile", w_pickFile },
 	{ "pickFileKinds", w_pickFileKinds },
 	{ "createFile", w_createFile },
@@ -220,6 +222,7 @@ int w_syncHealthSteps(lua_State *L)
 
 WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
 	{ "getDeviceModel", w_getDeviceModel },
+	{ "getHinge", w_getHinge },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "httpDownload", w_httpDownload },
 	{ "httpRequest", w_httpRequest },
@@ -231,6 +234,32 @@ WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
 
 BRIDGE_EXTRA_FUNCS = """
 #ifdef LOVE_IOS
+// love.system.getHinge() -> "closed"|"partial"|"open"|"unknown", angle in
+// degrees; nil on devices without a hinge (GRHingeBridge.swift, iPhone Duo).
+int w_getHinge(lua_State *L)
+{
+	Class cls = objc_getClass("GRHingeBridge");
+	if (cls == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	typedef long (*GRLong)(Class, SEL);
+	long status = ((GRLong)objc_msgSend)(cls, sel_registerName("hingeStatus"));
+	if (status < 0)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	long tenths = ((GRLong)objc_msgSend)(cls, sel_registerName("hingeAngleTenths"));
+	const char *name = status == 1 ? "closed"
+		: status == 2 ? "partial"
+		: status == 3 ? "open" : "unknown";
+	lua_pushstring(L, name);
+	lua_pushnumber(L, (lua_Number) tenths / 10.0);
+	return 2;
+}
+
 int w_getDeviceModel(lua_State *L)
 {
 	Class cls = objc_getClass("GRDeviceBridge");
@@ -423,9 +452,11 @@ int w_pollLaunchURI(lua_State *L)
 ID_FILE_PICKER = "6E1AC0DE0001000000000001"
 ID_FILE_OBJC = "6E1AC0DE0001000000000002"
 ID_FILE_HEALTH = "6E1AC0DE0001000000000003"
+ID_FILE_HINGE = "6E1AC0DE0001000000000004"
 ID_BUILD_PICKER = "6E1AC0DE0002000000000001"
 ID_BUILD_OBJC = "6E1AC0DE0002000000000002"
 ID_BUILD_HEALTH = "6E1AC0DE0002000000000003"
+ID_BUILD_HINGE = "6E1AC0DE0002000000000004"
 SOURCES_PHASE_ID = "FA0B7F021A95AAF3000E1D17"  # love-ios Sources phase
 IOS_APP_CONFIG_IDS = (
     "FA0B7F261A95AAF4000E1D17",  # Debug
@@ -436,6 +467,7 @@ IOS_APP_CONFIG_IDS = (
 PBX_SOURCES = (
     ("GRPickerBridge.swift", ID_FILE_PICKER, ID_BUILD_PICKER, "sourcecode.swift"),
     ("GRHealthBridge.swift", ID_FILE_HEALTH, ID_BUILD_HEALTH, "sourcecode.swift"),
+    ("GRHingeBridge.swift", ID_FILE_HINGE, ID_BUILD_HINGE, "sourcecode.swift"),
     ("GRBootstrap.m", ID_FILE_OBJC, ID_BUILD_OBJC, "sourcecode.c.objc"),
 )
 

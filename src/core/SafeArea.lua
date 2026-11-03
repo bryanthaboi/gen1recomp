@@ -11,6 +11,10 @@ local GameViewport = require("src.render.GameViewport")
 
 local SafeArea = {}
 
+-- Lazy: DuoPosture is required here only when a rect is asked for, since it
+-- requires this module back (through GameViewport) while the pad lays out.
+local DuoPosture
+
 function SafeArea.windowRect()
   local ww, wh = 0, 0
   if love and love.graphics and love.graphics.getDimensions then
@@ -54,6 +58,10 @@ function SafeArea.windowRect()
   y = math.max(0, math.min(y, wh))
   w = math.max(1, math.min(w, ww - x))
   h = math.max(1, math.min(h, wh - y))
+  -- Foldables light their whole panel (src/core/DuoPosture.lua); a no-op
+  -- unless a hinge is reported.
+  DuoPosture = DuoPosture or require("src.core.DuoPosture")
+  x, y, w, h = DuoPosture.adjustSafe(ww, wh, x, y, w, h)
   return x, y, w, h
 end
 
