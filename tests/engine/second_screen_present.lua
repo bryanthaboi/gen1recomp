@@ -36,6 +36,7 @@ package.preload.ffi = function() return fakeFfi end
 
 local SecondScreen = require(name)
 local image = { getFFIPointer = function() return "pixels" end }
+T.eq(SecondScreen.scalingAvailable(), false, "Lua updates cannot advertise scaling on an older APK")
 
 T.eq(SecondScreen.available(), false,
   "an unbound presentation is not render-ready")
@@ -62,6 +63,19 @@ T.eq(SecondScreen.push(image, 160, 144), true,
   "the original push ABI remains available")
 T.same(calls.push, { "pixels", 160, 144 },
   "legacy callers retain the original frame path")
+
+C.love_android_present_secondary_scaled = function(ptr,w,h,background,policy)
+  calls.scaled={ptr,w,h,background,policy};return 1
+end
+package.loaded[name]=nil
+SecondScreen=require(name)
+T.eq(SecondScreen.scalingAvailable(),true,"matching native bridge enables explicit scaling")
+T.eq(SecondScreen.push(image,240,216,0x112233,"secondary:integer"),true,"integer frame is accepted")
+T.same(calls.scaled,{"pixels",240,216,0x112233,2},"integer policy reaches the APK")
+T.eq(calls.target,2,"integer suffix preserves the external destination")
+T.eq(SecondScreen.push(image,240,216,0,"handheld:fit"),true,"fit frame is accepted")
+T.eq(calls.scaled[5],1,"fit policy reaches the APK")
+T.eq(calls.target,1,"fit suffix preserves the handheld destination")
 
 package.loaded[name] = oldModule
 package.loaded.ffi = oldFfi

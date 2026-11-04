@@ -2563,7 +2563,7 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryFrameWidth;
     private static volatile int secondaryFrameHeight;
     private static volatile int secondaryBackground;
-    private static volatile boolean secondaryFrameCover;
+    private static volatile int secondaryFrameScaling;
     private static final Object secondaryFrameLock = new Object();
     private static volatile long secondaryDetectionAt;
     private static volatile boolean secondaryDetected;
@@ -2714,7 +2714,7 @@ public class GameActivity extends SDLActivity {
                 if (secondaryFrame != null) {
                     p.setBackground(secondaryBackground);
                     p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling);
                 }
             }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
@@ -2851,6 +2851,15 @@ public class GameActivity extends SDLActivity {
     public static boolean presentSecondaryFrame(
             java.nio.ByteBuffer rgba, int width, int height,
             int backgroundColor, boolean cover) {
+        return presentSecondaryFrameScaled(rgba, width, height, backgroundColor,
+            cover ? FramePlacement.COVER : FramePlacement.LEGACY);
+    }
+
+    @Keep
+    public static boolean presentSecondaryFrameScaled(
+            java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling) {
+        if (scaling < FramePlacement.LEGACY || scaling > FramePlacement.COVER) return false;
         long bytes = (long) width * height * 4;
         if (rgba == null || width <= 0 || height <= 0
                 || bytes <= 0 || bytes > Integer.MAX_VALUE
@@ -2865,17 +2874,17 @@ public class GameActivity extends SDLActivity {
             secondaryFrameWidth = width;
             secondaryFrameHeight = height;
             secondaryBackground = backgroundColor;
-            secondaryFrameCover = cover;
+            secondaryFrameScaling = scaling;
             SecondaryPresentation p = secondaryPresentation;
             SecondaryActivity a = secondaryActivity;
             if (p == null && a == null) return false;
             try {
                 if (p != null) {
                     p.setBackground(backgroundColor);
-                    p.updateFrame(rgba, width, height, cover);
+                    p.updateFrame(rgba, width, height, scaling);
                 } else {
                     a.setBackground(backgroundColor);
-                    a.updateFrame(rgba, width, height, cover);
+                    a.updateFrame(rgba, width, height, scaling);
                 }
                 return true;
             } catch (Throwable t) {
@@ -2957,7 +2966,7 @@ public class GameActivity extends SDLActivity {
                 if (secondaryFrame != null) {
                     setBackground(secondaryBackground);
                     updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling);
                 }
             }
         }
@@ -2993,8 +3002,8 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h);
         }
 
-        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
-            frameView.updateFrame(buf, w, h, cover);
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
+            frameView.updateFrame(buf, w, h, scaling);
         }
 
         void setBackground(int color) {
@@ -3064,8 +3073,8 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h);
         }
 
-        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
-            frameView.updateFrame(buf, w, h, cover);
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
+            frameView.updateFrame(buf, w, h, scaling);
         }
 
         void setBackground(int color) {
@@ -3075,13 +3084,14 @@ public class GameActivity extends SDLActivity {
 
     private static class FrameView extends View {
         private android.graphics.Bitmap bitmap;
-        private final android.graphics.Rect dst = new android.graphics.Rect();
+        private final android.graphics.RectF dst = new android.graphics.RectF();
+        private final FramePlacement placement = new FramePlacement();
         private final android.graphics.Paint paint = new android.graphics.Paint();
         private final Object lock = new Object();
         private int fw, fh;
         private int backgroundColor = 0xFF000000;
         private int activePointer = -1;
-        private boolean cover;
+        private int scaling;
 
         FrameView(Context context) {
             super(context);
@@ -3091,12 +3101,12 @@ public class GameActivity extends SDLActivity {
         }
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
-            updateFrame(buf, w, h, false);
+            updateFrame(buf, w, h, FramePlacement.LEGACY);
         }
 
-        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
             synchronized (lock) {
-                this.cover = cover;
+                this.scaling = scaling;
                 if (bitmap == null || fw != w || fh != h) {
                     if (bitmap != null) bitmap.recycle();
                     bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
@@ -3182,14 +3192,10 @@ public class GameActivity extends SDLActivity {
             synchronized (lock) {
                 if (bitmap == null || fw == 0 || fh == 0) return;
                 int vw = getWidth(), vh = getHeight();
-                float fit = Math.min((float) vw / fw, (float) vh / fh);
-                if (fit <= 0) return;
-                float scale = cover
-                    ? Math.max((float) vw / fw, (float) vh / fh)
-                    : fit >= 2f ? (float) Math.floor(fit) : fit;
-                int dw = Math.round(fw * scale), dh = Math.round(fh * scale);
-                int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
-                dst.set(dx, dy, dx + dw, dy + dh);
+                if (vw <= 0 || vh <= 0) return;
+                placement.update(vw, vh, fw, fh, scaling);
+                dst.set(placement.x, placement.y,
+                    placement.x + placement.width, placement.y + placement.height);
                 canvas.drawColor(backgroundColor);
                 canvas.drawBitmap(bitmap, null, dst, paint);
             }

@@ -73,14 +73,25 @@ function DesktopCompanion.install(config)
     if not image then return 0, 0, 1 end
     local ww, wh = love.graphics.getDimensions()
     local cover = preference and preference:find("cover", 1, true)
-    local scale = (cover and math.max or math.min)(ww / sourceW, wh / sourceH)
-    return (ww - sourceW * scale) / 2, (wh - sourceH * scale) / 2, scale
+    local dpi = love.graphics.getDPIScale and love.graphics.getDPIScale() or 1
+    local dpiY = dpi
+    if love.graphics.getPixelDimensions then
+      local pw, ph = love.graphics.getPixelDimensions()
+      if ww > 0 and wh > 0 and pw > 0 and ph > 0 then dpi, dpiY = pw / ww, ph / wh end
+    end
+    local width, height = math.floor(ww*dpi + 1e-7), math.floor(wh*dpiY + 1e-7)
+    local scale = (cover and math.max or math.min)(width / sourceW, height / sourceH)
+    if preference and preference:match(":integer$") and scale >= 1 then
+      scale = math.floor(scale + 1e-7)
+    end
+    return math.floor((width - sourceW * scale) / 2 + 1e-7) / dpi,
+      math.floor((height - sourceH * scale) / 2 + 1e-7) / dpiY, scale / dpi, scale / dpiY
   end
 
   local function input(action, x, y)
     if not image then return false end
-    local dx, dy, scale = placement()
-    local sx, sy = math.floor((x - dx) / scale), math.floor((y - dy) / scale)
+    local dx, dy, scaleX, scaleY = placement()
+    local sx, sy = math.floor((x - dx) / scaleX), math.floor((y - dy) / scaleY)
     if sx < 0 or sy < 0 or sx >= sourceW or sy >= sourceH then return false end
     send("I", ("\n%s,%d,%d"):format(action, sx, sy))
     return true
@@ -97,9 +108,9 @@ function DesktopCompanion.install(config)
   function love.draw()
     love.graphics.clear(background[1], background[2], background[3], background[4])
     if not image then return end
-    local x, y, scale = placement()
+    local x, y, scaleX, scaleY = placement()
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(image, x, y, 0, scale, scale)
+    love.graphics.draw(image, x, y, 0, scaleX, scaleY)
   end
 
   function love.mousepressed(x, y, button)

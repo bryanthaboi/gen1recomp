@@ -1534,9 +1534,8 @@ int love_android_secondary_detected()
 	return detected ? 1 : 0;
 }
 
-extern "C" __attribute__((visibility("default")))
-int love_android_present_secondary(const void *rgba, int width, int height,
-	unsigned int background, int cover)
+static int present_secondary(const void *rgba, int width, int height,
+	unsigned int background, int scaling, bool explicitScaling)
 {
 	if (!rgba || width <= 0 || height <= 0)
 		return 0;
@@ -1545,8 +1544,9 @@ int love_android_present_secondary(const void *rgba, int width, int height,
 		return 0;
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
-	jmethodID method = env->GetStaticMethodID(activity, "presentSecondaryFrame",
-		"(Ljava/nio/ByteBuffer;IIIZ)Z");
+	jmethodID method = explicitScaling
+		? env->GetStaticMethodID(activity, "presentSecondaryFrameScaled", "(Ljava/nio/ByteBuffer;IIII)Z")
+		: env->GetStaticMethodID(activity, "presentSecondaryFrame", "(Ljava/nio/ByteBuffer;IIIZ)Z");
 	if (!method)
 	{
 		env->ExceptionClear();
@@ -1559,11 +1559,40 @@ int love_android_present_secondary(const void *rgba, int width, int height,
 		env->DeleteLocalRef(activity);
 		return 0;
 	}
-	jboolean shown = env->CallStaticBooleanMethod(activity, method, frame,
-		width, height, (jint) background, cover ? JNI_TRUE : JNI_FALSE);
+	jvalue args[5];
+	args[0].l = frame;
+	args[1].i = width;
+	args[2].i = height;
+	args[3].i = (jint) background;
+	if (explicitScaling)
+		args[4].i = scaling;
+	else
+		args[4].z = scaling ? JNI_TRUE : JNI_FALSE;
+	jboolean shown = env->CallStaticBooleanMethodA(activity, method, args);
+	if (env->ExceptionCheck())
+	{
+		env->ExceptionClear();
+		shown = JNI_FALSE;
+	}
 	env->DeleteLocalRef(frame);
 	env->DeleteLocalRef(activity);
 	return shown ? 1 : 0;
+}
+
+extern "C" __attribute__((visibility("default")))
+int love_android_present_secondary(const void *rgba, int width, int height,
+	unsigned int background, int cover)
+{
+	return present_secondary(rgba, width, height, background, cover, false);
+}
+
+extern "C" __attribute__((visibility("default")))
+int love_android_present_secondary_scaled(const void *rgba, int width, int height,
+	unsigned int background, int scaling)
+{
+	if (scaling < 0 || scaling > 3)
+		return 0;
+	return present_secondary(rgba, width, height, background, scaling, true);
 }
 
 extern "C" __attribute__((visibility("default")))
