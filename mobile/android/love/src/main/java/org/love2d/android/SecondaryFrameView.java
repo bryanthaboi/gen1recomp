@@ -97,7 +97,11 @@ class SecondaryFrameView extends GLSurfaceView implements GLSurfaceView.Renderer
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
             GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1);
-            GLES20.glDisable(GLES20.GL_DITHER); GLES20.glDisable(GLES20.GL_BLEND);
+            GLES20.glDisable(GLES20.GL_DITHER);
+            // Match the former premultiplied Bitmap/Canvas composition for
+            // legacy callers that submit transparent pixels over their border.
+            GLES20.glEnable(GLES20.GL_BLEND);
+            GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA);
             textureWidth = textureHeight = 0; uploadPending = true;
         }
     }
