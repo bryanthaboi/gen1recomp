@@ -2565,6 +2565,7 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryBackground;
     private static volatile int secondaryFrameScaling;
     private static int secondaryFrameFilter = FrameFilter.NEAREST;
+    private static boolean secondaryFrameExplicit;
     private static final Object secondaryFrameLock = new Object();
     private static volatile long secondaryDetectionAt;
     private static volatile boolean secondaryDetected;
@@ -2714,8 +2715,13 @@ public class GameActivity extends SDLActivity {
             synchronized (secondaryFrameLock) {
                 if (secondaryFrame != null) {
                     p.setBackground(secondaryBackground);
-                    p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    if (secondaryFrameExplicit) {
+                        p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    } else {
+                        p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling == FramePlacement.COVER);
+                    }
                 }
             }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
@@ -2852,8 +2858,8 @@ public class GameActivity extends SDLActivity {
     public static boolean presentSecondaryFrame(
             java.nio.ByteBuffer rgba, int width, int height,
             int backgroundColor, boolean cover) {
-        return presentSecondaryFrameScaled(rgba, width, height, backgroundColor,
-            cover ? FramePlacement.COVER : FramePlacement.LEGACY);
+        return submitSecondaryFrame(rgba, width, height, backgroundColor,
+            cover ? FramePlacement.COVER : FramePlacement.LEGACY, FrameFilter.NEAREST, false);
     }
 
     @Keep
@@ -2867,6 +2873,11 @@ public class GameActivity extends SDLActivity {
     public static boolean presentSecondaryFrameFiltered(
             java.nio.ByteBuffer rgba, int width, int height,
             int backgroundColor, int scaling, int filtering) {
+        return submitSecondaryFrame(rgba, width, height, backgroundColor, scaling, filtering, true);
+    }
+
+    private static boolean submitSecondaryFrame(java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling, int filtering, boolean explicit) {
         if (scaling < FramePlacement.LEGACY || scaling > FramePlacement.COVER
                 || filtering < FrameFilter.AUTO || filtering > FrameFilter.SHARP) return false;
         long bytes = (long) width * height * 4;
@@ -2885,16 +2896,19 @@ public class GameActivity extends SDLActivity {
             secondaryBackground = backgroundColor;
             secondaryFrameScaling = scaling;
             secondaryFrameFilter = filtering;
+            secondaryFrameExplicit = explicit;
             SecondaryPresentation p = secondaryPresentation;
             SecondaryActivity a = secondaryActivity;
             if (p == null && a == null) return false;
             try {
                 if (p != null) {
                     p.setBackground(backgroundColor);
-                    p.updateFrame(rgba, width, height, scaling, filtering);
+                    if (explicit) p.updateFrame(rgba, width, height, scaling, filtering);
+                    else p.updateFrame(rgba, width, height, scaling == FramePlacement.COVER);
                 } else {
                     a.setBackground(backgroundColor);
-                    a.updateFrame(rgba, width, height, scaling, filtering);
+                    if (explicit) a.updateFrame(rgba, width, height, scaling, filtering);
+                    else a.updateFrame(rgba, width, height, scaling == FramePlacement.COVER);
                 }
                 return true;
             } catch (Throwable t) {
@@ -2913,6 +2927,14 @@ public class GameActivity extends SDLActivity {
         SecondaryPresentation p = secondaryPresentation;
         SecondaryActivity a = secondaryActivity;
         if ((p != null || a != null) && buf != null && w > 0 && h > 0) {
+            synchronized (secondaryFrameLock) {
+                // A raw legacy producer owns no retained frame in the old API.
+                // Do not replay a previous explicit producer after recreation.
+                if (secondaryFrameExplicit) {
+                    secondaryFrame = null;
+                    secondaryFrameExplicit = false;
+                }
+            }
             if (p != null) p.updateFrame(buf, w, h);
             else a.updateFrame(buf, w, h);
         }
@@ -2947,7 +2969,7 @@ public class GameActivity extends SDLActivity {
     }
 
     public static class SecondaryActivity extends android.app.Activity {
-        private FrameView frameView;
+        private CompanionFrameView frameView;
 
         @Override
         protected void onCreate(Bundle savedInstanceState) {
@@ -2961,7 +2983,7 @@ public class GameActivity extends SDLActivity {
                 finish();
                 return;
             }
-            frameView = new FrameView(this);
+            frameView = new CompanionFrameView(this);
             android.view.Window w = getWindow();
             w.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -2975,8 +2997,13 @@ public class GameActivity extends SDLActivity {
             synchronized (secondaryFrameLock) {
                 if (secondaryFrame != null) {
                     setBackground(secondaryBackground);
-                    updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    if (secondaryFrameExplicit) {
+                        updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    } else {
+                        updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling == FramePlacement.COVER);
+                    }
                 }
             }
         }
@@ -3012,6 +3039,10 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
+        }
+
         void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
             frameView.updateFrame(buf, w, h, scaling);
         }
@@ -3026,11 +3057,11 @@ public class GameActivity extends SDLActivity {
     }
 
     private static class SecondaryPresentation extends android.app.Presentation {
-        private final FrameView frameView;
+        private final CompanionFrameView frameView;
 
         SecondaryPresentation(Context context, Display display) {
             super(context, display);
-            frameView = new FrameView(context);
+            frameView = new CompanionFrameView(context);
         }
 
         @Override
@@ -3087,6 +3118,10 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            frameView.updateFrame(buf, w, h, cover);
+        }
+
         void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
             frameView.updateFrame(buf, w, h, scaling);
         }
@@ -3100,17 +3135,176 @@ public class GameActivity extends SDLActivity {
         }
     }
 
-    private static class FrameView extends SecondaryFrameView {
-        FrameView(Context context) {
-            super(context, new SecondaryFrameView.TouchSink() {
-                @Override public void enqueue(String event) {
-                    synchronized (secondaryTouches) {
-                        if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
-                            secondaryTouches.clear(); secondaryTouches.addLast("cancel,0,0");
-                        } else secondaryTouches.addLast(event);
-                    }
+    /** Legacy output is created immediately; GLES exists only after explicit opt-in. */
+    private static class CompanionFrameView extends android.widget.FrameLayout {
+        private final SecondaryFrameRouter router;
+
+        CompanionFrameView(Context context) {
+            super(context);
+            final FrameView legacy = new FrameView(context);
+            addView(legacy, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            router = new SecondaryFrameRouter(new SecondaryFrameRouter.Output() {
+                @Override public void background(int color) { legacy.setFrameBackground(color); }
+                @Override public void frame(java.nio.ByteBuffer b, int w, int h, int mode, int filter) {
+                    legacy.updateFrame(b, w, h, mode == FramePlacement.COVER);
                 }
+                @Override public void visible(boolean value) { legacy.setVisibility(value ? VISIBLE : GONE); }
+            }, new SecondaryFrameRouter.Factory() {
+                @Override public SecondaryFrameRouter.Output create() {
+                    final SecondaryFrameView gpu = new SecondaryFrameView(getContext(),
+                        new SecondaryFrameView.TouchSink() {
+                            @Override public void enqueue(String event) { legacy.enqueueTouch(event); }
+                        });
+                    addView(gpu, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                    return new SecondaryFrameRouter.Output() {
+                        @Override public void background(int color) { gpu.setFrameBackground(color); }
+                        @Override public void frame(java.nio.ByteBuffer b, int w, int h, int mode, int filter) {
+                            gpu.updateFrame(b, w, h, mode, filter);
+                        }
+                        @Override public void visible(boolean value) { gpu.setVisibility(value ? VISIBLE : GONE); }
+                    };
+                }
+            }, new SecondaryFrameRouter.Dispatcher() {
+                @Override public void post(Runnable action) { CompanionFrameView.this.post(action); }
             });
+        }
+
+        void updateFrame(java.nio.ByteBuffer b, int w, int h) { router.legacy(b, w, h, false); }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, boolean cover) { router.legacy(b, w, h, cover); }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, int scaling) {
+            router.explicit(b, w, h, scaling, FrameFilter.NEAREST);
+        }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, int scaling, int filter) {
+            router.explicit(b, w, h, scaling, filter);
+        }
+        void setFrameBackground(int color) { router.background(color); }
+
+        @Override protected void onDetachedFromWindow() {
+            router.close();
+            super.onDetachedFromWindow();
+        }
+    }
+
+    private static class FrameView extends View {
+        private android.graphics.Bitmap bitmap;
+        private final android.graphics.Rect dst = new android.graphics.Rect();
+        private final android.graphics.Paint paint = new android.graphics.Paint();
+        private final Object lock = new Object();
+        private int fw, fh;
+        private int backgroundColor = 0xFF000000;
+        private int activePointer = -1;
+        private boolean cover;
+
+        FrameView(Context context) {
+            super(context);
+            paint.setFilterBitmap(false);
+            paint.setAntiAlias(false);
+            setBackgroundColor(0xFF000000);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
+            updateFrame(buf, w, h, false);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            synchronized (lock) {
+                this.cover = cover;
+                if (bitmap == null || fw != w || fh != h) {
+                    if (bitmap != null) bitmap.recycle();
+                    bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+                    fw = w; fh = h;
+                }
+                buf.rewind();
+                bitmap.copyPixelsFromBuffer(buf);
+            }
+            postInvalidate();
+        }
+
+        void setFrameBackground(int color) {
+            synchronized (lock) {
+                backgroundColor = 0xFF000000 | (color & 0x00FFFFFF);
+            }
+            postInvalidate();
+        }
+
+        private void enqueueTouch(String event) {
+            synchronized (secondaryTouches) {
+                if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
+                    secondaryTouches.clear();
+                    secondaryTouches.addLast("cancel,0,0");
+                } else {
+                    secondaryTouches.addLast(event);
+                }
+            }
+        }
+
+        private int logicalX(float x) {
+            return Math.min(fw - 1, Math.max(0,
+                (int) ((x - dst.left) * fw / dst.width())));
+        }
+
+        private int logicalY(float y) {
+            return Math.min(fh - 1, Math.max(0,
+                (int) ((y - dst.top) * fh / dst.height())));
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            synchronized (lock) {
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN && fw > 0
+                        && dst.contains((int) event.getX(), (int) event.getY())) {
+                    activePointer = event.getPointerId(0);
+                    enqueueTouch("down," + logicalX(event.getX()) + ","
+                        + logicalY(event.getY()));
+                } else if (action == android.view.MotionEvent.ACTION_MOVE
+                        && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        for (int sample = 0; sample < event.getHistorySize(); sample++) {
+                            enqueueTouch("move," + logicalX(event.getHistoricalX(index, sample))
+                                + "," + logicalY(event.getHistoricalY(index, sample)));
+                        }
+                        enqueueTouch("move," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    } else {
+                        activePointer = -1;
+                        enqueueTouch("cancel,0,0");
+                    }
+                } else if ((action == android.view.MotionEvent.ACTION_UP
+                        || (action == android.view.MotionEvent.ACTION_POINTER_UP
+                            && event.getPointerId(event.getActionIndex()) == activePointer))
+                        && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        enqueueTouch("up," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    }
+                    activePointer = -1;
+                } else if (action == android.view.MotionEvent.ACTION_CANCEL) {
+                    activePointer = -1;
+                    enqueueTouch("cancel,0,0");
+                }
+            }
+            return true;
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            synchronized (lock) {
+                if (bitmap == null || fw == 0 || fh == 0) return;
+                int vw = getWidth(), vh = getHeight();
+                float fit = Math.min((float) vw / fw, (float) vh / fh);
+                if (fit <= 0) return;
+                float scale = cover
+                    ? Math.max((float) vw / fw, (float) vh / fh)
+                    : fit >= 2f ? (float) Math.floor(fit) : fit;
+                int dw = Math.round(fw * scale), dh = Math.round(fh * scale);
+                int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
+                dst.set(dx, dy, dx + dw, dy + dh);
+                canvas.drawColor(backgroundColor);
+                canvas.drawBitmap(bitmap, null, dst, paint);
+            }
         }
     }
 }

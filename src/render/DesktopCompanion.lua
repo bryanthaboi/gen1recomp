@@ -1,7 +1,8 @@
 -- Minimal second-window process for src/render/DesktopScreen.lua.
 
 local DesktopCompanion = {}
-local PixelFilter = require("src.render.PixelFilter")
+local Preference = require("src.render.CompanionPreference")
+local PixelFilter
 
 function DesktopCompanion.install(config)
   local enet = require("enet")
@@ -74,6 +75,11 @@ function DesktopCompanion.install(config)
     if not image then return 0, 0, 1 end
     local ww, wh = love.graphics.getDimensions()
     local cover = preference and preference:find("cover", 1, true)
+    local destination, sizing = Preference.explicit(preference)
+    if not destination then
+      local scale = (cover and math.max or math.min)(ww / sourceW, wh / sourceH)
+      return (ww - sourceW * scale) / 2, (wh - sourceH * scale) / 2, scale, scale
+    end
     local dpi = love.graphics.getDPIScale and love.graphics.getDPIScale() or 1
     local dpiY = dpi
     if love.graphics.getPixelDimensions then
@@ -82,7 +88,6 @@ function DesktopCompanion.install(config)
     end
     local width, height = math.floor(ww*dpi + 1e-7), math.floor(wh*dpiY + 1e-7)
     local scale = (cover and math.max or math.min)(width / sourceW, height / sourceH)
-    local sizing = preference and preference:match(":([^:]+)")
     if sizing == "integer" and scale >= 1 then
       scale = math.floor(scale + 1e-7)
     end
@@ -112,8 +117,9 @@ function DesktopCompanion.install(config)
     if not image then return end
     local x, y, scaleX, scaleY = placement()
     love.graphics.setColor(1, 1, 1, 1)
-    local filter = preference and preference:match("^[^:]+:[^:]+:([^:]+)$")
+    local destination, _, filter = Preference.explicit(preference)
     if filter then
+      PixelFilter = PixelFilter or require("src.render.PixelFilter")
       local ww, wh = love.graphics.getDimensions()
       local pw, ph = love.graphics.getPixelDimensions()
       PixelFilter.draw(love.graphics, image, x, y, scaleX, scaleY, filter,

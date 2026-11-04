@@ -3,6 +3,7 @@
 -- Everything is guarded, so unsupported hosts keep the in-window layout.
 
 local SecondScreen = {}
+local Preference = require("src.render.CompanionPreference")
 local C = nil
 local ffi = nil
 local desktop = nil
@@ -114,21 +115,19 @@ function SecondScreen.push(imageData, w, h, background, preference)
   end
   if not C or not imageData then return false end
   if nativePresent and (background ~= nil or preference ~= nil) then
+    local destination, mode, filter = Preference.explicit(preference)
     if nativeTarget then
       local target = 0
-      local destination = type(preference) == "string" and preference:match("^([^:]+)")
-      if destination == "handheld" then
+      if destination == "handheld" or preference == "handheld" or preference == "handheld:cover" then
         target = 1
-      elseif destination == "secondary" then
+      elseif destination == "secondary" or preference == "secondary" or preference == "secondary:cover" then
         target = 2
       end
       pcall(C.love_android_secondary_target, target)
     end
     local cover = type(preference) == "string"
       and preference:sub(-6) == ":cover"
-    local mode = type(preference) == "string" and preference:match(":([^:]+)")
     local policy = mode == "fit" and 1 or mode == "integer" and 2
-    local filter = type(preference) == "string" and preference:match("^[^:]+:[^:]+:([^:]+)$")
     local filtering = ({ auto = 0, nearest = 1, bilinear = 2, sharp = 3 })[filter]
     if nativeFiltering and policy and filtering then
       local ok, shown = pcall(C.love_android_present_secondary_filtered,
