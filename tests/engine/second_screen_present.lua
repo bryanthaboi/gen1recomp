@@ -77,6 +77,18 @@ T.eq(SecondScreen.push(image,240,216,0,"handheld:fit"),true,"fit frame is accept
 T.eq(calls.scaled[5],1,"fit policy reaches the APK")
 T.eq(calls.target,1,"fit suffix preserves the handheld destination")
 
+T.eq(SecondScreen.filteringAvailable(),false,"a scaling-only APK cannot advertise filters")
+C.love_android_present_secondary_filtered=function(ptr,w,h,bg,policy,filter)
+  calls.filtered={ptr,w,h,bg,policy,filter};return 1
+end
+package.loaded[name]=nil;SecondScreen=require(name)
+T.eq(SecondScreen.filteringAvailable(),true,"matching native filter bridge is detected")
+for filter,id in pairs({auto=0,nearest=1,bilinear=2,sharp=3}) do
+  T.eq(SecondScreen.push(image,240,216,0x112233,"secondary:integer:"..filter),true,"filtered integer frame accepted")
+  T.same(calls.filtered,{"pixels",240,216,0x112233,2,id},"filter reaches JNI without changing geometry or pixels")
+  T.eq(calls.target,2,"filter suffix preserves display routing")
+end
+
 package.loaded[name] = oldModule
 package.loaded.ffi = oldFfi
 package.preload.ffi = oldPreload

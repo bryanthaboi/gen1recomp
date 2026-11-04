@@ -2564,6 +2564,7 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryFrameHeight;
     private static volatile int secondaryBackground;
     private static volatile int secondaryFrameScaling;
+    private static int secondaryFrameFilter = FrameFilter.NEAREST;
     private static final Object secondaryFrameLock = new Object();
     private static volatile long secondaryDetectionAt;
     private static volatile boolean secondaryDetected;
@@ -2714,7 +2715,7 @@ public class GameActivity extends SDLActivity {
                 if (secondaryFrame != null) {
                     p.setBackground(secondaryBackground);
                     p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling);
+                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
                 }
             }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
@@ -2859,7 +2860,15 @@ public class GameActivity extends SDLActivity {
     public static boolean presentSecondaryFrameScaled(
             java.nio.ByteBuffer rgba, int width, int height,
             int backgroundColor, int scaling) {
-        if (scaling < FramePlacement.LEGACY || scaling > FramePlacement.COVER) return false;
+        return presentSecondaryFrameFiltered(rgba, width, height, backgroundColor, scaling, FrameFilter.NEAREST);
+    }
+
+    @Keep
+    public static boolean presentSecondaryFrameFiltered(
+            java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling, int filtering) {
+        if (scaling < FramePlacement.LEGACY || scaling > FramePlacement.COVER
+                || filtering < FrameFilter.AUTO || filtering > FrameFilter.SHARP) return false;
         long bytes = (long) width * height * 4;
         if (rgba == null || width <= 0 || height <= 0
                 || bytes <= 0 || bytes > Integer.MAX_VALUE
@@ -2875,16 +2884,17 @@ public class GameActivity extends SDLActivity {
             secondaryFrameHeight = height;
             secondaryBackground = backgroundColor;
             secondaryFrameScaling = scaling;
+            secondaryFrameFilter = filtering;
             SecondaryPresentation p = secondaryPresentation;
             SecondaryActivity a = secondaryActivity;
             if (p == null && a == null) return false;
             try {
                 if (p != null) {
                     p.setBackground(backgroundColor);
-                    p.updateFrame(rgba, width, height, scaling);
+                    p.updateFrame(rgba, width, height, scaling, filtering);
                 } else {
                     a.setBackground(backgroundColor);
-                    a.updateFrame(rgba, width, height, scaling);
+                    a.updateFrame(rgba, width, height, scaling, filtering);
                 }
                 return true;
             } catch (Throwable t) {
@@ -2966,7 +2976,7 @@ public class GameActivity extends SDLActivity {
                 if (secondaryFrame != null) {
                     setBackground(secondaryBackground);
                     updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling);
+                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
                 }
             }
         }
@@ -3004,6 +3014,10 @@ public class GameActivity extends SDLActivity {
 
         void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
             frameView.updateFrame(buf, w, h, scaling);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling, int filtering) {
+            frameView.updateFrame(buf, w, h, scaling, filtering);
         }
 
         void setBackground(int color) {
@@ -3077,128 +3091,26 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h, scaling);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling, int filtering) {
+            frameView.updateFrame(buf, w, h, scaling, filtering);
+        }
+
         void setBackground(int color) {
             frameView.setFrameBackground(color);
         }
     }
 
-    private static class FrameView extends View {
-        private android.graphics.Bitmap bitmap;
-        private final android.graphics.RectF dst = new android.graphics.RectF();
-        private final FramePlacement placement = new FramePlacement();
-        private final android.graphics.Paint paint = new android.graphics.Paint();
-        private final Object lock = new Object();
-        private int fw, fh;
-        private int backgroundColor = 0xFF000000;
-        private int activePointer = -1;
-        private int scaling;
-
+    private static class FrameView extends SecondaryFrameView {
         FrameView(Context context) {
-            super(context);
-            paint.setFilterBitmap(false);
-            paint.setAntiAlias(false);
-            setBackgroundColor(0xFF000000);
-        }
-
-        void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
-            updateFrame(buf, w, h, FramePlacement.LEGACY);
-        }
-
-        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
-            synchronized (lock) {
-                this.scaling = scaling;
-                if (bitmap == null || fw != w || fh != h) {
-                    if (bitmap != null) bitmap.recycle();
-                    bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
-                    fw = w; fh = h;
-                }
-                buf.rewind();
-                bitmap.copyPixelsFromBuffer(buf);
-            }
-            postInvalidate();
-        }
-
-        void setFrameBackground(int color) {
-            synchronized (lock) {
-                backgroundColor = 0xFF000000 | (color & 0x00FFFFFF);
-            }
-            postInvalidate();
-        }
-
-        private void enqueueTouch(String event) {
-            synchronized (secondaryTouches) {
-                if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
-                    secondaryTouches.clear();
-                    secondaryTouches.addLast("cancel,0,0");
-                } else {
-                    secondaryTouches.addLast(event);
-                }
-            }
-        }
-
-        private int logicalX(float x) {
-            return Math.min(fw - 1, Math.max(0,
-                (int) ((x - dst.left) * fw / dst.width())));
-        }
-
-        private int logicalY(float y) {
-            return Math.min(fh - 1, Math.max(0,
-                (int) ((y - dst.top) * fh / dst.height())));
-        }
-
-        @Override
-        public boolean onTouchEvent(android.view.MotionEvent event) {
-            synchronized (lock) {
-                int action = event.getActionMasked();
-                if (action == android.view.MotionEvent.ACTION_DOWN && fw > 0
-                        && dst.contains((int) event.getX(), (int) event.getY())) {
-                    activePointer = event.getPointerId(0);
-                    enqueueTouch("down," + logicalX(event.getX()) + ","
-                        + logicalY(event.getY()));
-                } else if (action == android.view.MotionEvent.ACTION_MOVE
-                        && activePointer >= 0) {
-                    int index = event.findPointerIndex(activePointer);
-                    if (index >= 0 && fw > 0) {
-                        for (int sample = 0; sample < event.getHistorySize(); sample++) {
-                            enqueueTouch("move," + logicalX(event.getHistoricalX(index, sample))
-                                + "," + logicalY(event.getHistoricalY(index, sample)));
-                        }
-                        enqueueTouch("move," + logicalX(event.getX(index)) + ","
-                            + logicalY(event.getY(index)));
-                    } else {
-                        activePointer = -1;
-                        enqueueTouch("cancel,0,0");
+            super(context, new SecondaryFrameView.TouchSink() {
+                @Override public void enqueue(String event) {
+                    synchronized (secondaryTouches) {
+                        if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
+                            secondaryTouches.clear(); secondaryTouches.addLast("cancel,0,0");
+                        } else secondaryTouches.addLast(event);
                     }
-                } else if ((action == android.view.MotionEvent.ACTION_UP
-                        || (action == android.view.MotionEvent.ACTION_POINTER_UP
-                            && event.getPointerId(event.getActionIndex()) == activePointer))
-                        && activePointer >= 0) {
-                    int index = event.findPointerIndex(activePointer);
-                    if (index >= 0 && fw > 0) {
-                        enqueueTouch("up," + logicalX(event.getX(index)) + ","
-                            + logicalY(event.getY(index)));
-                    }
-                    activePointer = -1;
-                } else if (action == android.view.MotionEvent.ACTION_CANCEL) {
-                    activePointer = -1;
-                    enqueueTouch("cancel,0,0");
                 }
-            }
-            return true;
-        }
-
-        @Override
-        protected void onDraw(android.graphics.Canvas canvas) {
-            synchronized (lock) {
-                if (bitmap == null || fw == 0 || fh == 0) return;
-                int vw = getWidth(), vh = getHeight();
-                if (vw <= 0 || vh <= 0) return;
-                placement.update(vw, vh, fw, fh, scaling);
-                dst.set(placement.x, placement.y,
-                    placement.x + placement.width, placement.y + placement.height);
-                canvas.drawColor(backgroundColor);
-                canvas.drawBitmap(bitmap, null, dst, paint);
-            }
+            });
         }
     }
 }

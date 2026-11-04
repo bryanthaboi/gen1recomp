@@ -9,6 +9,7 @@ local desktop = nil
 local nativePresent = false
 local nativeTarget = false
 local nativeScaling = false
+local nativeFiltering = false
 
 local function log(msg)
   pcall(function() require("src.core.Logger").info("SecondScreen: %s", msg) end)
@@ -29,6 +30,8 @@ do
         unsigned int background, int cover);
       int love_android_present_secondary_scaled(const void *rgba, int w, int h,
         unsigned int background, int scaling);
+      int love_android_present_secondary_filtered(const void *rgba, int w, int h,
+        unsigned int background, int scaling, int filtering);
       void love_android_secondary_target(int target);
       const char *love_android_poll_secondary_touch();
     ]])
@@ -60,6 +63,8 @@ do
         return C.love_android_present_secondary_scaled
       end)
       nativeScaling = nativePresent and okScaling and scaling ~= nil
+      local okFiltering, filtering = pcall(function() return C.love_android_present_secondary_filtered end)
+      nativeFiltering = nativeScaling and okFiltering and filtering ~= nil
     end
   end
 end
@@ -99,6 +104,10 @@ function SecondScreen.scalingAvailable()
   return desktop ~= nil or nativeScaling
 end
 
+function SecondScreen.filteringAvailable()
+  return desktop ~= nil or nativeFiltering
+end
+
 function SecondScreen.push(imageData, w, h, background, preference)
   if desktop then
     return desktop.push(imageData, w, h, background, preference)
@@ -117,8 +126,15 @@ function SecondScreen.push(imageData, w, h, background, preference)
     end
     local cover = type(preference) == "string"
       and preference:sub(-6) == ":cover"
-    local policy = type(preference) == "string" and preference:match(":(fit)$") and 1
-      or type(preference) == "string" and preference:match(":(integer)$") and 2
+    local mode = type(preference) == "string" and preference:match(":([^:]+)")
+    local policy = mode == "fit" and 1 or mode == "integer" and 2
+    local filter = type(preference) == "string" and preference:match("^[^:]+:[^:]+:([^:]+)$")
+    local filtering = ({ auto = 0, nearest = 1, bilinear = 2, sharp = 3 })[filter]
+    if nativeFiltering and policy and filtering then
+      local ok, shown = pcall(C.love_android_present_secondary_filtered,
+        imageData:getFFIPointer(), w, h, background or 0, policy, filtering)
+      return ok and shown ~= 0
+    end
     if nativeScaling and policy then
       local ok, shown = pcall(C.love_android_present_secondary_scaled,
         imageData:getFFIPointer(), w, h, background or 0, policy)

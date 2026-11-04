@@ -1,6 +1,7 @@
 -- Minimal second-window process for src/render/DesktopScreen.lua.
 
 local DesktopCompanion = {}
+local PixelFilter = require("src.render.PixelFilter")
 
 function DesktopCompanion.install(config)
   local enet = require("enet")
@@ -81,7 +82,8 @@ function DesktopCompanion.install(config)
     end
     local width, height = math.floor(ww*dpi + 1e-7), math.floor(wh*dpiY + 1e-7)
     local scale = (cover and math.max or math.min)(width / sourceW, height / sourceH)
-    if preference and preference:match(":integer$") and scale >= 1 then
+    local sizing = preference and preference:match(":([^:]+)")
+    if sizing == "integer" and scale >= 1 then
       scale = math.floor(scale + 1e-7)
     end
     return math.floor((width - sourceW * scale) / 2 + 1e-7) / dpi,
@@ -110,7 +112,13 @@ function DesktopCompanion.install(config)
     if not image then return end
     local x, y, scaleX, scaleY = placement()
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(image, x, y, 0, scaleX, scaleY)
+    local filter = preference and preference:match("^[^:]+:[^:]+:([^:]+)$")
+    if filter then
+      local ww, wh = love.graphics.getDimensions()
+      local pw, ph = love.graphics.getPixelDimensions()
+      PixelFilter.draw(love.graphics, image, x, y, scaleX, scaleY, filter,
+        scaleX * pw / ww, scaleY * ph / wh)
+    else love.graphics.draw(image, x, y, 0, scaleX, scaleY) end
   end
 
   function love.mousepressed(x, y, button)

@@ -68,6 +68,30 @@ for _,case in ipairs({
   love.mousepressed(lastDraw[1]+120.25*lastDraw[3],lastDraw[2]+108.25*lastDraw[4],1)
   assert(sent[#sent]=="Itoken\ndown,120,108","fit and integer share exact pointer placement")
 end
+local activeFilter, activeShader, drawnFilter, drawnShader
+rendered.getWidth=function() return 240 end
+rendered.getHeight=function() return 216 end
+rendered.getFilter=function() return "nearest","nearest" end
+rendered.setFilter=function(_,value) activeFilter=value end
+love.graphics.newShader=function() return {send=function() end} end
+love.graphics.getShader=function() return activeShader end
+love.graphics.setShader=function(value) activeShader=value end
+local originalDraw=love.graphics.draw
+love.graphics.draw=function(...)
+  drawnFilter,drawnShader=activeFilter,activeShader;return originalDraw(...)
+end
+for _,case in ipairs({
+  {1240,1080,"auto",5,"nearest",false},
+  {1080,1240,"auto",4.5,"linear",true},
+  {1240,1080,"bilinear",5,"linear",false},
+  {1080,1240,"nearest",4.5,"nearest",false},
+}) do
+  ww,wh,dpi,pixelWidth=case[1],case[2],1,nil
+  queue[#queue+1]={type="receive",data="Ftoken\n240,216,0,secondary:fit:"..case[3].."\n"..string.rep("rgba",240*216)}
+  love.update();love.draw();near(lastDraw[3],case[4]);near(lastDraw[4],case[4])
+  assert(drawnFilter==case[5] and (drawnShader~=nil)==case[6],"desktop resolves actual output scale and manual filter")
+  assert(activeShader==nil and activeFilter=="nearest","desktop restores caller graphics state")
+end
 queue[#queue + 1] = { type = "receive", data = "Qtoken" }
 love.update()
 assert(quit, "parent can close the companion")

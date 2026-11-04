@@ -1535,7 +1535,7 @@ int love_android_secondary_detected()
 }
 
 static int present_secondary(const void *rgba, int width, int height,
-	unsigned int background, int scaling, bool explicitScaling)
+	unsigned int background, int scaling, bool explicitScaling, int filtering = -1)
 {
 	if (!rgba || width <= 0 || height <= 0)
 		return 0;
@@ -1544,7 +1544,9 @@ static int present_secondary(const void *rgba, int width, int height,
 		return 0;
 	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
 	jclass activity = env->FindClass("org/love2d/android/GameActivity");
-	jmethodID method = explicitScaling
+	jmethodID method = filtering >= 0
+		? env->GetStaticMethodID(activity, "presentSecondaryFrameFiltered", "(Ljava/nio/ByteBuffer;IIIII)Z")
+		: explicitScaling
 		? env->GetStaticMethodID(activity, "presentSecondaryFrameScaled", "(Ljava/nio/ByteBuffer;IIII)Z")
 		: env->GetStaticMethodID(activity, "presentSecondaryFrame", "(Ljava/nio/ByteBuffer;IIIZ)Z");
 	if (!method)
@@ -1559,7 +1561,7 @@ static int present_secondary(const void *rgba, int width, int height,
 		env->DeleteLocalRef(activity);
 		return 0;
 	}
-	jvalue args[5];
+	jvalue args[6];
 	args[0].l = frame;
 	args[1].i = width;
 	args[2].i = height;
@@ -1568,6 +1570,7 @@ static int present_secondary(const void *rgba, int width, int height,
 		args[4].i = scaling;
 	else
 		args[4].z = scaling ? JNI_TRUE : JNI_FALSE;
+	if (filtering >= 0) args[5].i = filtering;
 	jboolean shown = env->CallStaticBooleanMethodA(activity, method, args);
 	if (env->ExceptionCheck())
 	{
@@ -1593,6 +1596,15 @@ int love_android_present_secondary_scaled(const void *rgba, int width, int heigh
 	if (scaling < 0 || scaling > 3)
 		return 0;
 	return present_secondary(rgba, width, height, background, scaling, true);
+}
+
+extern "C" __attribute__((visibility("default")))
+int love_android_present_secondary_filtered(const void *rgba, int width, int height,
+    unsigned int background, int scaling, int filtering)
+{
+    if (scaling < 0 || scaling > 3 || filtering < 0 || filtering > 3)
+        return 0;
+    return present_secondary(rgba, width, height, background, scaling, true, filtering);
 }
 
 extern "C" __attribute__((visibility("default")))
