@@ -117,7 +117,7 @@ function DesktopCompanion.install(config)
     if not image then return end
     local x, y, scaleX, scaleY = placement()
     love.graphics.setColor(1, 1, 1, 1)
-    local destination, _, filter = Preference.explicit(preference)
+    local _, _, filter = Preference.explicit(preference)
     if filter then
       PixelFilter = PixelFilter or require("src.render.PixelFilter")
       local ww, wh = love.graphics.getDimensions()
