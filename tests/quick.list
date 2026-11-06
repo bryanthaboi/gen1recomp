@@ -57,6 +57,7 @@ tests/engine/cache_fs_blue_mount_test.lua
 tests/engine/cache_fs_gold_nx_load_test.lua
 tests/engine/cache_fs_headless_test.lua
 tests/engine/cache_fs_red_migration_test.lua
+tests/engine/camera_refit_test.lua
 tests/engine/canvas_dpiscale_lint.lua
 tests/engine/cart_import_cancel_bug1813.lua
 tests/engine/cart_import_picker.lua

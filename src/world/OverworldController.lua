@@ -6125,6 +6125,8 @@ function OverworldState:drawWorldFaded()
 end
 
 function OverworldState:draw()
+  -- the view can change size while the overworld is paused under a menu
+  self.camera:refit(Game.renderer:worldViewSize())
   Game.renderer:beginWorldPass()
   if not self:drawWorldFaded() then self:drawWorld() end
   Game.renderer:endWorldPass()
