@@ -3,11 +3,14 @@
 -- Everything is guarded, so unsupported hosts keep the in-window layout.
 
 local SecondScreen = {}
+local Preference = require("src.render.CompanionPreference")
 local C = nil
 local ffi = nil
 local desktop = nil
 local nativePresent = false
 local nativeTarget = false
+local nativeScaling = false
+local nativeFiltering = false
 
 local function log(msg)
   pcall(function() require("src.core.Logger").info("SecondScreen: %s", msg) end)
@@ -26,6 +29,10 @@ do
       int love_android_secondary_detected();
       int love_android_present_secondary(const void *rgba, int w, int h,
         unsigned int background, int cover);
+      int love_android_present_secondary_scaled(const void *rgba, int w, int h,
+        unsigned int background, int scaling);
+      int love_android_present_secondary_filtered(const void *rgba, int w, int h,
+        unsigned int background, int scaling, int filtering);
       void love_android_secondary_target(int target);
       const char *love_android_poll_secondary_touch();
     ]])
@@ -53,6 +60,12 @@ do
       nativePresent = okDetected and detected ~= nil
         and okPresent and present ~= nil
       nativeTarget = okTarget and target ~= nil
+      local okScaling, scaling = pcall(function()
+        return C.love_android_present_secondary_scaled
+      end)
+      nativeScaling = nativePresent and okScaling and scaling ~= nil
+      local okFiltering, filtering = pcall(function() return C.love_android_present_secondary_filtered end)
+      nativeFiltering = nativeScaling and okFiltering and filtering ~= nil
     end
   end
 end
@@ -87,23 +100,45 @@ function SecondScreen.detected()
   return SecondScreen.available()
 end
 
+-- Explicit :fit and :integer preferences need the matching native APK.
+function SecondScreen.scalingAvailable()
+  return desktop ~= nil or nativeScaling
+end
+
+function SecondScreen.filteringAvailable()
+  return desktop ~= nil or nativeFiltering
+end
+
 function SecondScreen.push(imageData, w, h, background, preference)
   if desktop then
     return desktop.push(imageData, w, h, background, preference)
   end
   if not C or not imageData then return false end
   if nativePresent and (background ~= nil or preference ~= nil) then
+    local destination, mode, filter = Preference.explicit(preference)
     if nativeTarget then
       local target = 0
-      if preference == "handheld" or preference == "handheld:cover" then
+      if destination == "handheld" or preference == "handheld" or preference == "handheld:cover" then
         target = 1
-      elseif preference == "secondary" or preference == "secondary:cover" then
+      elseif destination == "secondary" or preference == "secondary" or preference == "secondary:cover" then
         target = 2
       end
       pcall(C.love_android_secondary_target, target)
     end
     local cover = type(preference) == "string"
       and preference:sub(-6) == ":cover"
+    local policy = mode == "fit" and 1 or mode == "integer" and 2
+    local filtering = ({ auto = 0, nearest = 1, bilinear = 2, sharp = 3 })[filter]
+    if nativeFiltering and policy and filtering then
+      local ok, shown = pcall(C.love_android_present_secondary_filtered,
+        imageData:getFFIPointer(), w, h, background or 0, policy, filtering)
+      return ok and shown ~= 0
+    end
+    if nativeScaling and policy then
+      local ok, shown = pcall(C.love_android_present_secondary_scaled,
+        imageData:getFFIPointer(), w, h, background or 0, policy)
+      return ok and shown ~= 0
+    end
     local ok, shown = pcall(C.love_android_present_secondary,
       imageData:getFFIPointer(), w, h, background or 0, cover and 1 or 0)
     return ok and shown ~= 0

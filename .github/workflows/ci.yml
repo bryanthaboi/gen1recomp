@@ -447,6 +447,8 @@ jobs:
           cache: gradle
       - name: install ccache
         run: sudo apt-get install -y --no-install-recommends ccache
+      - name: test companion scaling, filtering and backend routing
+        run: python3 tests/android_companion_scaling_test.py
       - name: restore native build cache
         uses: actions/cache@v6
         with:

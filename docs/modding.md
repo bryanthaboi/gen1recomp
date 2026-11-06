@@ -1230,6 +1230,30 @@ bridge, enabling this facade opens a second resizable app window instead. It
 uses the same `available`, `detected`, `push`, `pollTouch` and `setEnabled`
 contract, so a mod does not need a desktop-specific rendering path.
 
+  Companion sizing can be selected explicitly with a preference of
+  `auto:fit`, `handheld:fit`, `secondary:fit`, or the corresponding `:integer`
+  form. `fit` preserves the complete frame at one proportional physical-pixel
+  scale. `integer` floors enlargements to a whole-number scale; smaller targets
+  still fit the complete frame. The image origin is aligned to physical pixels,
+  and touch coordinates use the same placement, including desktop DPI scaling.
+  Check `secondScreen.scalingAvailable()` before submitting these preferences:
+  updating Lua alone cannot add their native bridge to an older Android APK.
+
+  An optional third component selects companion sampling: `:auto`, `:nearest`,
+  `:bilinear`, or `:sharp`, for example `secondary:integer:auto`. Auto uses
+  nearest sampling at whole-number enlargement, sharp bilinear at fractional
+  enlargement, and bilinear when shrinking. Check
+  `secondScreen.filteringAvailable()` before requesting a filter. Omitting the
+  filter retains nearest sampling. Android creates the on-demand GLES output
+  only after an explicit fit/integer submission; legacy preferences and the
+  original push entry point retain the original Bitmap output. These policies
+  affect the submitted companion frame, independently of game-screen sampling.
+
+  ROM-free checks for the Android placement, filter policy and output routing
+  run with `python3 tests/android_companion_scaling_test.py` (JDK 17). The
+  corresponding Lua bridge, desktop DPI/touch and legacy compatibility suites
+  are included in `luajit tests/run_engine.lua`.
+
 `render.output_enabled` and `render.output` are the later, whole-window seam
 for mods that need the engine's normal composite rather than its separate
 layers. It runs after registered present pipelines and before ShaderFX,
