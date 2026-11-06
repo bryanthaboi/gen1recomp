@@ -3829,7 +3829,7 @@ end
 local TRUST_WARNING = "if you did not get this from bryanthaboi's github "
   .. "or a link from the discord that bryanthaboi himself posted, just know "
   .. "it might have been tampered with. go to the discord to verify "
-  .. COMMUNITY_URL .. " (or click the logo above)"
+  .. COMMUNITY_URL .. " (or click the logo below)"
 
 -- Mark + optional updater + Patch notes.  Chips match the mark's 22px
 -- height so they do not read as bigger than the logo; the row can still
@@ -3856,24 +3856,19 @@ local function footerLayout(imp, m, markW)
   }
 end
 
--- Deliberately compact: at a large UI scale the footer is pure overhead
--- competing with the panel for a short window's height, so the mark and the
--- link share one line and the trust warning is capped at a single line.
-local function footerHeight(imp, m)
-  -- Top pad + mark/update row + optional notes wrap row + gap + the FULL
-  -- wrapped trust message + bottom pad.  The message wraps to as many lines
-  -- as it needs: truncating a trust warning defeats its purpose, and the
-  -- bottom pad is not optional either (without it the last line sits flush
-  -- on the window edge and its lower half clips off).  The row is tapMin
-  -- tall because the small update button rides beside the mark.
+local function footerBarHeight(imp, m)
   local f = footerLayout(imp, m, math.floor(130 * m.s))
-  local h = math.floor(8 * m.s) + f.rowH + math.floor(6 * m.s)
+  local h = math.floor(8 * m.s) + f.rowH + math.floor(8 * m.s)
   if f.wrap then h = h + f.chipH + math.floor(6 * m.s) end
-  return h + Kit.wrapHeight("micro", TRUST_WARNING, m.contentW)
+  return h
+end
+
+local function trustHeight(m)
+  return math.floor(6 * m.s) + Kit.wrapHeight("micro", TRUST_WARNING, m.contentW)
     + math.floor(8 * m.s)
 end
 
-local function buildFooter(imp, m, y)
+local function buildFooterBar(imp, m, y)
   Theme.fill(m.x, y, m.w, 1, PAL.line, Theme.A.hairline)
   local cy = y + math.floor(8 * m.s)
   -- The BCG mark is dark ink; invert it for the black field.
@@ -3935,14 +3930,15 @@ local function buildFooter(imp, m, y)
     })
   end
   if f.wrap then
-    cy = cy + rowH + gap
-    notesBtn(m.x + math.floor((m.w - f.nw) / 2), cy)
-    cy = cy + chipH + math.floor(6 * m.s)
+    notesBtn(m.x + math.floor((m.w - f.nw) / 2), cy + rowH + gap)
   else
     notesBtn(cx + gap, chipY)
-    cy = cy + rowH + math.floor(6 * m.s)
   end
-  -- The trust message wraps in full, each line centred under the mark, and
+end
+
+local function buildTrustNote(imp, m, y)
+  local cy = y + math.floor(6 * m.s)
+  -- The trust message wraps in full, each line centred, and
   -- the URL inside it IS the link -- no separate link floating elsewhere.
   -- font:getWrap never splits an unspaced word, so the URL stays whole on
   -- one line and a plain substring find locates it.
@@ -5426,9 +5422,11 @@ local function buildModActionsModal(imp, m)
   end
   if hasImports then
     local missing = tonumber(mod.missingRequiredImports) or 0
+    local optMissing = tonumber(mod.missingOptionalImports) or 0
     local label = missing > 0
       and Strings("Imported files (%d required)", missing)
-      or Strings("Imported files")
+      or (optMissing > 0 and Strings("Imported files (%d optional)", optMissing)
+      or Strings("Imported files"))
     btn(imp, px + pad, row("modact-imports"), rw, m.btnH, "modact-imports",
       label, { kind = missing > 0 and "warn" or "accent", font = "small",
         action = function()
@@ -6271,6 +6269,8 @@ function Sync.fit(m, fixed, rows, gaps, texts)
   return fit
 end
 
+Sync.STATUS_LINES = 4
+
 function Sync.status(imp, m, x, y, w, eng, fit)
   local bh = (fit and fit.btnH) or m.btnH
   local gap = (fit and fit.gap) or math.floor(8 * m.s)
@@ -6278,14 +6278,21 @@ function Sync.status(imp, m, x, y, w, eng, fit)
     Loader.inline(x, y, w, bh, eng.status)
     return bh + gap
   end
-  Kit.text("small", Kit.ellipsize("small", eng.status or "", w), x, y,
-    eng.phase == "error" and PAL.red or PAL.muted)
+  if eng.phase == "error" then
+    local h = Kit.textWrapped("small", eng.status or "", x, y, w, PAL.red, Sync.STATUS_LINES)
+    return math.max(h, Kit.textHeight("small")) + gap + math.floor(2 * m.s)
+  end
+  Kit.text("small", Kit.ellipsize("small", eng.status or "", w), x, y, PAL.muted)
   return Kit.textHeight("small") + gap + math.floor(2 * m.s)
 end
 
-function Sync.reserve(m, eng)
+function Sync.reserve(m, eng, w)
   if eng:busy() then return m.btnH + math.floor(8 * m.s) end
-  return Kit.textHeight("small") + math.floor(10 * m.s)
+  local h = Kit.textHeight("small")
+  if eng.phase == "error" and w then
+    h = math.max(h, Kit.wrapHeight("small", eng.status or "", w, Sync.STATUS_LINES))
+  end
+  return h + math.floor(10 * m.s)
 end
 
 function Sync.row(imp, m, x, y, w, key, label, opts, fit)
@@ -6382,7 +6389,7 @@ function Sync.link(imp, m, eng)
   local fieldH = math.max(Kit.tapMin(), math.floor(36 * m.s))
   local fit = Sync.fit(m,
     2 * pad + Kit.textHeight("button") + math.floor(22 * m.s)
-      + 2 * (fieldH + math.floor(8 * m.s)) + Sync.reserve(m, eng),
+      + 2 * (fieldH + math.floor(8 * m.s)) + Sync.reserve(m, eng, innerW),
     2, 2, { { font = "small", str = hint, w = innerW, max = 2 } })
   local px, pw, cy, footY, done = Sync.title(imp, m, w, pad, fit)
   cy = cy + Kit.textWrapped("small", hint, px + pad, cy, innerW,
@@ -6418,7 +6425,7 @@ function Sync.mods(imp, m, eng)
   local planH = plan and (Kit.textHeight("small") + math.floor(8 * m.s)) or 0
   local fit = Sync.fit(m,
     2 * pad + Kit.textHeight("button") + math.floor(12 * m.s) + codeH + planH
-      + fieldH + math.floor(8 * m.s) + Sync.reserve(m, eng),
+      + fieldH + math.floor(8 * m.s) + Sync.reserve(m, eng, innerW),
     rows, rows, {})
   local px, pw, cy, footY, done = Sync.title(imp, m, w, pad, fit)
 
@@ -6520,7 +6527,7 @@ function Sync.home(imp, m, eng)
       and (Kit.textHeight("small") + math.floor(6 * m.s)) or 0
     fit = Sync.fit(m,
       2 * pad + Kit.textHeight("button") + math.floor(22 * m.s) + codesH
-        + devicesH + Sync.reserve(m, eng),
+        + devicesH + Sync.reserve(m, eng, innerW),
       (linked and 5 or 3) + #devices, (linked and 5 or 3) + #devices,
       { { font = "small", str = body, w = innerW, max = 5 } })
     if fit.over <= 0 or #devices == 0 then break end
@@ -7014,10 +7021,10 @@ local function drawTabLayer(imp, tabId, x, contentY, w, viewH, availH, m, dx)
   local budgetH = math.floor(availH * (1 + PANEL_OVERSCAN))
   local panelW = math.max(0, w - Kit.scrollGutter(m.s))
   local contentH = buildTabPanel(imp, x, py + 5, panelW, availH - 5, budgetH - 5, m)
-  local footH = footerHeight(imp, m)
-  local footY = math.max(py + (contentH or (availH - 5)) + 10, py + viewH - footH)
-  buildFooter(imp, m, footY)
-  contentH = footY - py + footH
+  local trustH = trustHeight(m)
+  local footY = math.max(py + (contentH or (availH - 5)) + 10, py + viewH - trustH)
+  buildTrustNote(imp, m, footY)
+  contentH = footY - py + trustH
   imp._tabContentH[tabId] = contentH
   imp._tabScrollMax[tabId] = Kit.scrollExtent(contentH, viewH)
   local focus = Kit.focusId
@@ -7057,7 +7064,8 @@ function LauncherView.draw(imp)
   local click = imp._clickPt
   if click then mx, my = click.x, click.y end
 
-  local footH = footerHeight(imp, m)
+  local barH = footerBarHeight(imp, m)
+  local barY = m.top + m.h - barH
 
   Kit.beginFrame(mx, my, click ~= nil, imp._wheelY or 0)
   imp._clickPt = nil
@@ -7123,8 +7131,8 @@ function LauncherView.draw(imp)
   end
 
   local contentY = buildHeader(imp, m)
-  local viewH = math.max(0, m.top + m.h - contentY)
-  local availH = math.max(viewH - footH, minPanelHeight(m))
+  local viewH = math.max(0, barY - contentY)
+  local availH = math.max(viewH - trustHeight(m), minPanelHeight(m))
 
   local x, w = m.contentX, m.contentW
   local rect = imp._tabRegionRect
@@ -7144,6 +7152,10 @@ function LauncherView.draw(imp)
   end
 
   if imp.tab == "box" then require("src.import.BoxOrganizer").drawSticky(imp, m) end
+  buildFooterBar(imp, m, barY)
+  local bar = imp._footerBarRect
+  if not bar then bar = {}; imp._footerBarRect = bar end
+  bar.x, bar.y, bar.w, bar.h = m.x, barY, m.w, barH
   Kit.blockClicks = Transition.active()
   local held = imp._modalHeld
   if held then imp[held.key] = held.value end

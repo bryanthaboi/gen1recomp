@@ -204,6 +204,7 @@ return function(game)
     engaged = engaged or world:scriptRunning()
     local ps = ChipAudio.parkState()
     if engaged and ps and ps.ready and now() - waitT > 1 then break end
+    if engaged and now() - waitT > 1 then break end
   end
   for _ = 1, 60 do
     if cue.t then break end
@@ -236,5 +237,98 @@ return function(game)
   result(trainerFrames ~= nil and trainerFrames <= 2,
     ("trainer battle theme first note within 2 frames of the cue (%s)")
       :format(tostring(trainerFrames)))
+
+  for _ = 1, 600 do
+    if top() == "Gen2BattleState" then break end
+    U.wait(1)
+  end
+  if top() == "Gen2BattleState" then
+    local screen = game.stack:top()
+    screen.battle.outcome = "win"
+    screen:finishBattle()
+  end
+  for _ = 1, 1800 do
+    if top() == nil and not world:scriptRunning() and world:acceptsMenuInput() then
+      break
+    end
+    if top() ~= nil or world:scriptRunning() then U.tap(game, "a") end
+    U.wait(1)
+  end
+  local beatFalkner
+  for _, list in pairs(world.vm.scripts) do
+    if type(list) == "table" then
+      for i, row in ipairs(list) do
+        if row.op == "loadtrainer" and row.class == 1 and row.member == 1 then
+          for j = i - 1, 1, -1 do
+            if list[j].op == "checkevent" then beatFalkner = list[j].event break end
+          end
+        end
+      end
+    end
+  end
+  result(beatFalkner ~= nil, "Falkner's beaten-flag found in his script")
+  if not beatFalkner then love.event.quit(1) return end
+  world.events:set(beatFalkner, false)
+  world:warpToMapId("VIOLET_GYM", 5, 2, "up")
+  local settleT = now()
+  while now() - settleT < 8 do
+    U.wait(1)
+    local ps = ChipAudio.parkState()
+    if now() - settleT >= 1 and ps and ps.ready and top() == nil then break end
+  end
+  local leaderHits = ChipAudio.stats().parkHits or 0
+  local leader = {}
+  world.playBattleMusic = function(self, opts)
+    if not leader.t and opts and opts.trainer then
+      leader.park = ChipAudio.parkState()
+      leader.t = now()
+      leader.frame = 0
+      leader.song = realBattleMusic(self, opts)
+      leader.depth = ChipAudio.stats().depth
+      return leader.song
+    end
+    return realBattleMusic(self, opts)
+  end
+  for _ = 1, 60 do
+    if world:scriptRunning() then break end
+    if world:acceptsMenuInput() and top() == nil then U.tap(game, "a") end
+    U.wait(1)
+  end
+  result(world:scriptRunning(), "talking to Falkner starts his script")
+  local hintT = now()
+  while now() - hintT < 1 do
+    U.wait(1)
+  end
+  local mashT = now()
+  while not leader.t and now() - mashT < 12 do
+    U.tap(game, "a")
+    U.wait(6)
+  end
+  local leaderFrames
+  local leaderWait = now()
+  while leader.t and now() - leaderWait < 3 do
+    U.wait(1)
+    leader.frame = leader.frame + 1
+    if not ChipAudio.awaitingFirstBuffer() then
+      leaderFrames = leader.frame
+      leader.ms = (now() - leader.t) * 1000
+      break
+    end
+  end
+  world.playBattleMusic = realBattleMusic
+  U.log("leader cue", tostring(leader.song), "frames", tostring(leaderFrames),
+    ("%.1f ms"):format(leader.ms or -1), "buffers queued on the cue",
+    tostring(leader.depth))
+  local leaderDef = leader.song and game.data.audio.songs[leader.song]
+  result(leader.t ~= nil and leader.song ~= nil and Music.current() == leader.song,
+    "Falkner's battle cue plays " .. tostring(leader.song))
+  result(leader.park ~= nil and leader.park.ready and leaderDef ~= nil
+      and leader.park.key:find("|" .. tostring(leaderDef) .. "|", 1, true) ~= nil,
+    "the gym leader theme is parked from Falkner's script before the cue")
+  result((ChipAudio.stats().parkHits or 0) == leaderHits + 1,
+    "Falkner's battle cue takes the park")
+  result(leaderFrames ~= nil and leaderFrames <= 2,
+    ("gym leader theme first note within 2 frames of the cue (%s)")
+      :format(tostring(leaderFrames)))
   love.event.quit(failed and 1 or 0)
 end

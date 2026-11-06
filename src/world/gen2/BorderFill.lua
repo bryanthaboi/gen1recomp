@@ -153,17 +153,9 @@ function BorderFill.bake(atlas, tileset, blockId, bgSet, waterFrame)
   love.graphics.pop()
   love.graphics.setCanvas()
   love.graphics.pop()
-  local img = canvas
-  if canvas.newImageData then
-    local ok, data = pcall(canvas.newImageData, canvas)
-    if ok and data then
-      local okImg, made = pcall(love.graphics.newImage, data)
-      if okImg and made then img = made end
-    end
-  end
-  img:setWrap("repeat", "repeat")
-  img:setFilter("nearest", "nearest")
-  return img
+  canvas:setWrap("repeat", "repeat")
+  canvas:setFilter("nearest", "nearest")
+  return canvas
 end
 
 -- VOID FILL (#1418): the beyond-edge scenery under survey zoom.  FADE (the

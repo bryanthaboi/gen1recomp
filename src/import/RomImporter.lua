@@ -48,7 +48,6 @@ end
 
 local CacheContract = require("src.import.CacheContract")
 local Transition = require("src.ui.kit.Transition")
-local COMMUNITY_URL = "https://bois.icu"
 
 local TAB_ORDER, TAB_AT = {}, {}
 local function tabOrder()
@@ -66,10 +65,6 @@ local function tabOrder()
   end
   return TAB_AT
 end
-local TRUST_WARNING = "if you did not get this from bryanthaboi's github " ..
-  "or a link from the discord that bryanthaboi himself posted, just know " ..
-  "it might have been tampered with. go to the discord to verify " ..
-  COMMUNITY_URL .. " (or click the logo above)"
 -- "Split-screen ROM selector" first-run palette (matches the FirstRun mockup):
 -- a dark neon arcade panel, one column per game.
 -- Red, Blue, and Yellow share the same importer flow once listed in
@@ -4597,6 +4592,25 @@ function RomImporter:_cycleTab(delta)
   self:_switchTab(target == "mods" and (self._modsInnerTab or "mods") or target)
 end
 
+function RomImporter:_cycleGame(delta)
+  local LauncherView = require("src.import.LauncherView")
+  local games = LauncherView.gameTabs(self)
+  if #games == 0 then return end
+  local cur = LauncherView.currentGame(self)
+  local idx
+  for i, g in ipairs(games) do
+    if cur and g.id == cur.id then idx = i; break end
+  end
+  local target
+  if idx then
+    target = games[((idx - 1 + delta) % #games) + 1]
+  else
+    target = delta > 0 and games[1] or games[#games]
+  end
+  self._gamePopup = nil
+  self:_switchTab(target.id)
+end
+
 local STICK_NAV_ON = 0.5
 local STICK_NAV_OFF = 0.3
 local STICK_NAV_DELAY = 0.28
@@ -5853,9 +5867,11 @@ function RomImporter:_syncNoteDownload(row)
 end
 
 function RomImporter:_openSync()
-  self:_syncEngine()
+  local eng = self:_syncEngine()
+  local kept = eng and not eng:linked() and eng.state or {}
   self._syncModal = self._syncModal
-    or { view = "home", code1 = "", code2 = "", share = "", withOptions = true }
+    or { view = "home", code1 = kept.code1 or "", code2 = kept.code2 or "",
+      share = "", withOptions = true }
   self._syncFocus = nil
   self:_disarmTextInput()
 end
@@ -6694,6 +6710,14 @@ function RomImporter:keypressed(key)
     if okOnline and OnlinePanel.back(self) then return end
   end
   if self.workState == "working" then return end
+  if self._flex and (key == "q" or key == "e") then
+    local okKit, Kit = pcall(require, "src.ui.kit.Kit")
+    local modal = require("src.import.LauncherView").modalKey(self)
+    if not (okKit and Kit.focus) and (modal == nil or modal == "_gamePopup") then
+      self:_cycleGame(key == "e" and 1 or -1)
+      return
+    end
+  end
   -- Keyboard focus ring: arrows move it, Enter activates it -- but only once
   -- the arrows have been used, so the long-standing "Enter plays the visible
   -- game" shortcut below still works for anyone who never touches the ring.

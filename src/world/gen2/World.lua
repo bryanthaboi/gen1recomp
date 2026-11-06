@@ -1273,6 +1273,10 @@ function World:load()
       local object = self.vm and self.vm.trainerObject
       self:prepareTrainerBattleMusic(class, object and object.member)
     end,
+    prepareTrainer = function(class, member)
+      if class == nil then return self:prepareBattleMusic() end
+      return self:prepareTrainerBattleMusic(class, member)
+    end,
     showEmote = function(emote, object, frames)
       self:showEmote(emote, object, frames)
     end,
@@ -6046,6 +6050,13 @@ function World:dropMapImages(mapId)
     end
   end
   if self.connectionMaps then self.connectionMaps[mapId] = nil end
+  if self.attrGrids then self.attrGrids[mapId] = nil end
+  if self.attrJob and self.attrJob.id == mapId then self.attrJob = nil end
+  local job = self.bakeJob
+  if job and job.id == mapId then
+    self.bakeJob = nil
+    if job.canvas and job.canvas.release then pcall(job.canvas.release, job.canvas) end
+  end
 end
 
 local function safeRelease(obj)
@@ -6059,6 +6070,8 @@ function World:release()
   self.pendingTrainerBattle = nil
   self.preparedTrainerBattle = nil
   self.cancelledTrainerSight = nil
+  self:dropBakeJob()
+  self.attrJob = nil
   if self.mapImages then
     for _, img in pairs(self.mapImages) do safeRelease(img) end
     self.mapImages = {}
@@ -6084,6 +6097,7 @@ function World:release()
 end
 
 function World:dropBakes()
+  self:dropBakeJob()
   for _, img in pairs(self.mapImages or {}) do safeRelease(img) end
   for _, strip in pairs(self.scrollStrips or {}) do safeRelease(strip) end
   self.mapImages = {}
@@ -6160,6 +6174,7 @@ end
 function World:refreshMapImages()
   if not self.mapImage then return false end
   self:dropMapImages(self.map and self.map.id)
+  if self.attrGrids and self.map then self.attrGrids[self.map.id] = nil end
   self.mapImage = self:imageFor(self.map.id)
   self:rebuildAttrGrid()
   self:rebuildNeighbors()
@@ -9230,11 +9245,9 @@ World.bakeQuads = setmetatable({}, { __mode = "k" })
 -- `daytime` is baked in, which is why mapImages is keyed by map *and* daytime:
 -- a night-to-morning rollover re-bakes rather than tinting, exactly like the
 -- cart reloading wBGPals1.
-function World:bakeMapImage(map, daytime, flicker)
+function World:beginMapBake(map, daytime, flicker)
   local atlas, tileset = self:atlasFor(map.def)
   if not atlas or not tileset then return nil end
-  local blocks = tileset.blocks
-  local tilesPerRow = tileset.tilesPerRow or 16
   local pw, ph = map.width * 32, map.height * 32
   -- Map pixels, not the screen's: a DPI-scaled canvas bakes them non-square
   -- (#208, see src/render/PixelCanvas.lua).
@@ -9243,19 +9256,6 @@ function World:bakeMapImage(map, daytime, flicker)
   if not quads then
     quads = {}
     World.bakeQuads[atlas] = quads
-  end
-  local crystal = self:isCrystal()
-  local function quadFor(tile, attr)
-    if crystal then
-      return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
-    end
-    local q = quads[tile]
-    if q then return q end
-    local sx = (tile % tilesPerRow) * 8
-    local sy = math.floor(tile / tilesPerRow) * 8
-    q = love.graphics.newQuad(sx, sy, 8, 8, atlas:getDimensions())
-    quads[tile] = q
-    return q
   end
 
   local tilePalettes = tileset.tilePalettes
@@ -9282,45 +9282,77 @@ function World:bakeMapImage(map, daytime, flicker)
     local c = GbcPalette.color(bgSet[1], 1)
     clearColor = { c[1] / 255, c[2] / 255, c[3] / 255 }
   end
+  return { map = map, atlas = atlas, tileset = tileset, canvas = canvas,
+    quads = quads, crystal = self:isCrystal(), bgSet = bgSet,
+    colored = colored, clearColor = clearColor, attrMemo = {}, nextBlock = 0,
+    mode = GbcPalette.mode, ramp = GbcPalette.customRamp }
+end
 
+function World:bakeMapChunk(job, budget)
+  local map, atlas, tileset = job.map, job.atlas, job.tileset
+  local blocks = tileset.blocks
+  local tilesPerRow = tileset.tilesPerRow or 16
+  local quads, crystal, colored = job.quads, job.crystal, job.colored
+  local tilePalettes = tileset.tilePalettes
+  local bgSet = job.bgSet
+  local function quadFor(tile, attr)
+    if crystal then
+      return TileAttrs.quadFor(atlas, tile, attr, tilesPerRow, quads)
+    end
+    local q = quads[tile]
+    if q then return q end
+    local sx = (tile % tilesPerRow) * 8
+    local sy = math.floor(tile / tilesPerRow) * 8
+    q = love.graphics.newQuad(sx, sy, 8, 8, atlas:getDimensions())
+    quads[tile] = q
+    return q
+  end
+
+  local width = map.width
+  local total = width * map.height
+  local first = job.nextBlock
+  local last = math.min(total, first + math.max(1, math.floor(budget / 16))) - 1
   local bySlot = {}
-  local attrMemo = {}
-  for by = 0, map.height - 1 do
-    for bx = 0, map.width - 1 do
-      -- LoadMetatiles reads block id 0 as the map header's border block,
-      -- not as tileset block 0 (see src/world/gen2/BorderFill.lua), so a
-      -- hole in the block list paints the same wall the margin does.
-      local blockId = BorderFill.blockFor(
-        map.blocks[by * map.width + bx + 1], map.borderBlock)
-      local block = blocks and blocks[(blockId or 0) + 1]
-      if block then
-        for i = 0, 15 do
-          local tile = block[i + 1] or 0
-          local attr, slot = false, 0
-          if crystal then
-            attr = attrMemo[tile]
-            if not attr then
-              attr = TileAttrs.forTile(tileset, tile)
-              attrMemo[tile] = attr
-            end
-            slot = attr.palette or -1
-          elseif colored then
-            slot = tilePalettes[tile + 1] or 1
+  local attrMemo = job.attrMemo
+  local tiles = 0
+  for index = first, last do
+    local by, bx = math.floor(index / width), index % width
+    -- LoadMetatiles reads block id 0 as the map header's border block,
+    -- not as tileset block 0 (see src/world/gen2/BorderFill.lua), so a
+    -- hole in the block list paints the same wall the margin does.
+    local blockId = BorderFill.blockFor(map.blocks[index + 1], map.borderBlock)
+    local block = blocks and blocks[(blockId or 0) + 1]
+    if block then
+      for i = 0, 15 do
+        local tile = block[i + 1] or 0
+        local attr, slot = false, 0
+        if crystal then
+          attr = attrMemo[tile]
+          if not attr then
+            attr = TileAttrs.forTile(tileset, tile)
+            attrMemo[tile] = attr
           end
-          if not colored then slot = 0 end
-          local list = bySlot[slot]
-          if not list then
-            list = {}
-            bySlot[slot] = list
-          end
-          local n = #list
-          list[n + 1] = tile
-          list[n + 2] = bx * 32 + (i % 4) * 8
-          list[n + 3] = by * 32 + math.floor(i / 4) * 8
-          list[n + 4] = attr
+          slot = attr.palette or -1
+        elseif colored then
+          slot = tilePalettes[tile + 1] or 1
         end
+        if not colored then slot = 0 end
+        local list = bySlot[slot]
+        if not list then
+          list = {}
+          bySlot[slot] = list
+        end
+        local n = #list
+        list[n + 1] = tile
+        list[n + 2] = bx * 32 + (i % 4) * 8
+        list[n + 3] = by * 32 + math.floor(i / 4) * 8
+        list[n + 4] = attr
+        tiles = tiles + 1
       end
     end
+  end
+  if job.wanted then
+    job.anim = self:animCellsRange(map, tileset, job.wanted, job.anim, first, last)
   end
 
   local function drawList(list)
@@ -9335,8 +9367,13 @@ function World:bakeMapImage(map, daytime, flicker)
     end
   end
 
-  canvas:renderTo(function()
-    love.graphics.clear(clearColor[1], clearColor[2], clearColor[3], 1)
+  local clear = not job.cleared
+  job.cleared = true
+  local clearColor = job.clearColor
+  job.canvas:renderTo(function()
+    if clear then
+      love.graphics.clear(clearColor[1], clearColor[2], clearColor[3], 1)
+    end
     love.graphics.setColor(1, 1, 1, 1)
     -- A LOVE canvas does not reset the transform, and this bake is NOT only
     -- reached from the fixed step: World:refreshColorMode runs at the top of
@@ -9360,7 +9397,15 @@ function World:bakeMapImage(map, daytime, flicker)
     end
     love.graphics.pop()
   end)
-  return canvas, bgSet
+  job.nextBlock = last + 1
+  return last + 1 >= total, tiles
+end
+
+function World:bakeMapImage(map, daytime, flicker)
+  local job = self:beginMapBake(map, daytime, flicker)
+  if not job then return nil end
+  while not self:bakeMapChunk(job, math.huge) do end
+  return job.canvas, job.bgSet
 end
 
 -- The functions whose frame strip the extractor already resolved, keyed to the
@@ -9411,44 +9456,47 @@ end
 -- The cells a tileset's anim program repaints, gathered once per bake and
 -- keyed by tile id: the map canvas is baked and never rewritten, so the frames
 -- _AnimateTileset would have written into VRAM are drawn over it instead.
-function World:animCellsFor(map, tileset)
-  local wanted = self:animLayers(tileset)
-  if not wanted then return nil end
+function World:animCellsRange(map, tileset, wanted, out, first, last)
   local blocks = tileset.blocks
   local tilePalettes = tileset.tilePalettes
   local crystal = self:isCrystal()
-  local out = nil
-  for by = 0, map.height - 1 do
-    for bx = 0, map.width - 1 do
-      local blockId = BorderFill.blockFor(
-        map.blocks[by * map.width + bx + 1], map.borderBlock)
-      local block = blocks and blocks[(blockId or 0) + 1]
-      if block then
-        for i = 0, 15 do
-          local tile = block[i + 1] or 0
-          local layer = wanted[tile]
-          if layer then
-            out = out or {}
-            local list = out[tile]
-            if not list then
-              list = {
-                layer = layer,
-                tile = tile,
-                slot = crystal and TileAttrs.paletteSlot(tileset, tile)
-                  or (tilePalettes and tilePalettes[tile + 1] or 1),
-                cells = {},
-              }
-              out[tile] = list
-            end
-            local cells = list.cells
-            cells[#cells + 1] = bx * 32 + (i % 4) * 8
-            cells[#cells + 1] = by * 32 + math.floor(i / 4) * 8
+  local width = map.width
+  for index = first, last do
+    local by, bx = math.floor(index / width), index % width
+    local blockId = BorderFill.blockFor(map.blocks[index + 1], map.borderBlock)
+    local block = blocks and blocks[(blockId or 0) + 1]
+    if block then
+      for i = 0, 15 do
+        local tile = block[i + 1] or 0
+        local layer = wanted[tile]
+        if layer then
+          out = out or {}
+          local list = out[tile]
+          if not list then
+            list = {
+              layer = layer,
+              tile = tile,
+              slot = crystal and TileAttrs.paletteSlot(tileset, tile)
+                or (tilePalettes and tilePalettes[tile + 1] or 1),
+              cells = {},
+            }
+            out[tile] = list
           end
+          local cells = list.cells
+          cells[#cells + 1] = bx * 32 + (i % 4) * 8
+          cells[#cells + 1] = by * 32 + math.floor(i / 4) * 8
         end
       end
     end
   end
   return out
+end
+
+function World:animCellsFor(map, tileset)
+  local wanted = self:animLayers(tileset)
+  if not wanted then return nil end
+  return self:animCellsRange(map, tileset, wanted, nil, 0,
+    map.width * map.height - 1)
 end
 
 -- The key imageFor caches a map's bake under, shared with the anim cell lists
@@ -9509,6 +9557,16 @@ function World:imageFor(mapId)
   if cached then
     World.touchMapImage(self, cacheKey)
     return cached
+  end
+  local job = self.bakeJob
+  if job and job.id == mapId then
+    if job.key == cacheKey and job.mode == GbcPalette.mode
+        and job.ramp == GbcPalette.customRamp then
+      self.bakeJob = nil
+      while not self:bakeMapChunk(job, math.huge) do end
+      return self:publishBake(job)
+    end
+    self:dropBakeJob()
   end
   local def = self.maps[mapId]
   if not def then return nil end
@@ -9589,7 +9647,11 @@ function World:rebuildAttrGrid()
     self.attrGrid = nil
     return
   end
-  self.attrGrid = MapAttrGrid.build(self.map, tileset)
+  if self.maps and self.maps[self.map.id] == self.map.def then
+    self.attrGrid = self:attrGridFor(self.map.id)
+  else
+    self.attrGrid = MapAttrGrid.build(self.map, tileset)
+  end
 end
 
 function World:bgTileAttrAt(map, tileset, mx, my)
@@ -9995,12 +10057,17 @@ end
 -- scan runs once per change of those and the descriptor table is reused:
 -- this is asked every overworld frame.  The table is only read by the bake
 -- the same call makes, so handing out the one copy is safe.
-function World:borderWaterFrame(def, tileset)
+function World:borderWaterFrame(def, tileset, row)
   local anim = tileset and tileset.anim
   if not (anim and anim.frames) then return nil end
   local fill = BorderFill.fillBlock(def)
   if fill == false then return nil end
-  local memo = self._borderWater
+  local memos = self._borderWater
+  if not memos then
+    memos = setmetatable({}, { __mode = "k" })
+    self._borderWater = memos
+  end
+  local memo = memos[def]
   if not (memo and memo.def == def and memo.tileset == tileset
       and memo.fill == fill and memo.frames == anim.frames) then
     local frame = false
@@ -10026,14 +10093,14 @@ function World:borderWaterFrame(def, tileset)
     end
     memo = { def = def, tileset = tileset, fill = fill, frames = anim.frames,
       frame = frame }
-    self._borderWater = memo
+    memos[def] = memo
   end
   local frame = memo.frame
   if not frame then return nil end
   local sheets = self:animSheets()
   if not (sheets and sheets.water) then return nil end
   frame.image = sheets.water
-  frame.row = World.waterFrameFor(self.animTimer)
+  frame.row = row or World.waterFrameFor(self.animTimer)
   return frame
 end
 
@@ -10042,7 +10109,7 @@ end
 -- phase and World:dropMapImages' prefix sweep all reach it.  The palettes are
 -- the map's own, because the border block comes out of the map's tileset and
 -- LoadMapPals colours it with everything else on screen.
-function World:borderImageFor(mapId)
+function World:borderCacheKey(mapId, row)
   local daytime = self.daytime
   local flicker = (daytime == "DARK") and self.flickerPhase or 1
   local def = self.maps and self.maps[mapId]
@@ -10057,8 +10124,8 @@ function World:borderImageFor(mapId)
   -- frame's row joins the key: four bakes per map instead of one.  The VOID
   -- FILL mode is in the key so switching FADE/WATER/TREES does not keep a
   -- stale bake (#1418).
-  local waterFrame = self:borderWaterFrame(def, tileset)
-  local row = waterFrame and waterFrame.row or 0
+  local waterFrame = self:borderWaterFrame(def, tileset, row ~= 0 and row or nil)
+  row = waterFrame and waterFrame.row or 0
   -- Memoized beside mapCacheKey's own memo, which is dropped on any change of
   -- daytime / COLOR mode / ramp / flicker; the fill and block are checked here.
   local memo = mapKeyMemo(self)
@@ -10078,6 +10145,13 @@ function World:borderImageFor(mapId)
       .. "|" .. tostring(row))
     entry.keys[row] = cacheKey
   end
+  return cacheKey, def, tileset, blockId, waterFrame, daytime, flicker
+end
+
+function World:borderImageFor(mapId, row)
+  local cacheKey, def, tileset, blockId, waterFrame, daytime, flicker =
+    World.borderCacheKey(self, mapId, row)
+  if not cacheKey then return nil end
   local cached = self.mapImages[cacheKey]
   if cached ~= nil then
     World.touchMapImage(self, cacheKey)
@@ -10537,6 +10611,118 @@ function World:rebuildNeighbors(opts)
 end
 
 World.MAP_IMAGE_CAP = 48
+World.BORDER_IMAGE_CAP = 40
+World.BAKE_TILES_PER_STEP = 640
+
+local BORDER_SUFFIX = BorderFill.cacheKey("")
+
+function World.isBorderKey(key)
+  return type(key) == "string" and #key >= #BORDER_SUFFIX
+    and key:sub(-#BORDER_SUFFIX) == BORDER_SUFFIX
+end
+
+function World:connectionIds(def)
+  local ids = {}
+  for _, dir in ipairs({ "north", "south", "west", "east" }) do
+    local conn = def and def.connections and def.connections[dir]
+    local nextId = conn and (conn.mapId or conn.map)
+    if type(nextId) == "string" and self.maps[nextId] then ids[#ids + 1] = nextId end
+  end
+  return ids
+end
+
+function World:borderRows(mapId)
+  local def = self.maps and self.maps[mapId]
+  local tileset = def and self.tilesets and self.tilesets[def.tileset]
+  if not tileset or BorderFill.fillBlock(def) == false then return {} end
+  if not self:borderWaterFrame(def, tileset) then return { 0 } end
+  local first = World.waterFrameFor(self.animTimer)
+  local rows = {}
+  for i = 0, 3 do rows[#rows + 1] = (first - 1 + i) % 4 + 1 end
+  return rows
+end
+
+function World:attrGridValid(mapId)
+  local entry = self.attrGrids and self.attrGrids[mapId]
+  local def = self.maps and self.maps[mapId]
+  if not (entry and def) then return false end
+  local blocks = def.blocks
+  if entry.blocks ~= blocks or entry.tileset ~= self.tilesets[def.tileset]
+      or entry.border ~= (def.borderBlock or 0) then
+    return false
+  end
+  local snap = entry.snap
+  if #snap ~= #blocks then return false end
+  for i = 1, #snap do
+    if snap[i] ~= blocks[i] then return false end
+  end
+  return true
+end
+
+function World:beginAttrJob(mapId)
+  local def = self.maps and self.maps[mapId]
+  if not def then return nil end
+  local _, tileset = self:atlasFor(def)
+  if not tileset then return nil end
+  local map = (self.map and self.map.id == mapId and self.map.def == def)
+    and self.map or Map.new(def, tileset)
+  local snap = {}
+  for i = 1, #def.blocks do snap[i] = def.blocks[i] end
+  return { id = mapId, def = def, blocks = def.blocks, snap = snap, map = map,
+    tileset = tileset, border = def.borderBlock or 0, byRaw = {}, nextRow = 0,
+    grid = { cols = map.width * 4, rows = map.height * 4, cells = {} } }
+end
+
+function World:attrJobStep(job, budget)
+  local map, tileset, grid = job.map, job.tileset, job.grid
+  local cols, rows = grid.cols, grid.rows
+  local cells, byRaw = grid.cells, job.byRaw
+  local stop = rows
+  if budget ~= math.huge then
+    stop = math.min(rows, job.nextRow + math.max(1, math.floor(budget / math.max(cols, 1))))
+  end
+  for cy = job.nextRow, stop - 1 do
+    for cx = 0, cols - 1 do
+      local raw = MapAttrGrid.tileAt(map, tileset, cx * 8, cy * 8)
+      if raw ~= nil then
+        local cell = byRaw[raw]
+        if not cell then
+          local tileId, attr = MapAttrGrid.normalizeTile(raw, tileset)
+          cell = { tileId = tileId, rawTileId = raw, attr = attr }
+          byRaw[raw] = cell
+        end
+        cells[cy * cols + cx + 1] = cell
+      end
+    end
+  end
+  job.cells = (job.cells or 0) + (stop - job.nextRow) * cols
+  job.nextRow = stop
+  return stop >= rows
+end
+
+function World:storeAttrGrid(job)
+  self.attrGrids = self.attrGrids or {}
+  self.attrGrids[job.id] = { grid = job.grid, blocks = job.blocks, snap = job.snap,
+    tileset = job.tileset, border = job.border }
+  return job.grid
+end
+
+function World:attrGridFor(mapId)
+  if self:attrGridValid(mapId) then return self.attrGrids[mapId].grid end
+  local job = self:beginAttrJob(mapId)
+  if not job then return nil end
+  if self.attrJob and self.attrJob.id == mapId then self.attrJob = nil end
+  self:attrJobStep(job, math.huge)
+  return self:storeAttrGrid(job)
+end
+
+function World:dropBakeJob(mapId)
+  local job = self.bakeJob
+  if job and (mapId == nil or job.id == mapId) then
+    self.bakeJob = nil
+    safeRelease(job.canvas)
+  end
+end
 
 function World:queueNeighborBakes(first)
   local queue, seen = {}, {}
@@ -10549,6 +10735,7 @@ function World:queueNeighborBakes(first)
   local map = self.map
   local def = map and self.maps and self.maps[map.id]
   local warm = {}
+  local borders, attrs = {}, {}
   if def then
     seen[map.id] = true
     warm[#warm + 1] = map.id
@@ -10556,23 +10743,45 @@ function World:queueNeighborBakes(first)
       seen[nb.id] = true
       warm[#warm + 1] = nb.id
     end
-    for _, dir in ipairs({ "north", "south", "west", "east" }) do
-      local conn = def.connections and def.connections[dir]
-      local nextId = conn and (conn.mapId or conn.map)
-      if type(nextId) == "string" and self.maps[nextId] then
-        for _, n in ipairs(World.computeNeighbors(
-            self.maps, nextId, NEIGHBOR_HOPS, self.viewW, self.viewH)) do
-          if not seen[n.id] then
-            seen[n.id] = true
-            warm[#warm + 1] = n.id
-            if self.mapImages and self.mapImages[self:mapCacheKey(n.id)] == nil then
-              queue[#queue + 1] = n.id
-            end
+    local nextIds = self:connectionIds(def)
+    for _, nextId in ipairs(nextIds) do
+      for _, n in ipairs(World.computeNeighbors(
+          self.maps, nextId, NEIGHBOR_HOPS, self.viewW, self.viewH)) do
+        if not seen[n.id] then
+          seen[n.id] = true
+          warm[#warm + 1] = n.id
+          if self.mapImages and self.mapImages[self:mapCacheKey(n.id)] == nil then
+            queue[#queue + 1] = n.id
           end
         end
       end
     end
+    local near = { map.id }
+    for _, id in ipairs(nextIds) do near[#near + 1] = id end
+    if self.mapImages then
+      for _, id in ipairs(near) do
+        for _, row in ipairs(self:borderRows(id)) do
+          local key = self:borderCacheKey(id, row)
+          if key and self.mapImages[key] == nil then
+            borders[#borders + 1] = { id = id, row = row }
+          end
+        end
+      end
+    end
+    if self:isCrystal() then
+      local keep = {}
+      for _, id in ipairs(near) do keep[id] = true end
+      for id in pairs(self.attrGrids or {}) do
+        if not keep[id] then self.attrGrids[id] = nil end
+      end
+      if self.attrJob and not keep[self.attrJob.id] then self.attrJob = nil end
+      for _, id in ipairs(nextIds) do
+        if not self:attrGridValid(id) then attrs[#attrs + 1] = id end
+      end
+    end
   end
+  local job = self.bakeJob
+  if job and job.key ~= self:mapCacheKey(job.id) then self:dropBakeJob() end
   local grass = {}
   for _, id in ipairs(warm) do
     self:warmMapSprites(id)
@@ -10580,8 +10789,116 @@ function World:queueNeighborBakes(first)
   end
   self.grassWarm = grass
   self.bakeQueue = queue
+  self.borderQueue = borders
+  self.attrQueue = attrs
   self.bakeHold = true
   return queue
+end
+
+function World:beginBakeJob(mapId)
+  local def = self.maps and self.maps[mapId]
+  local tileset = def and self.tilesets and self.tilesets[def.tileset]
+  if not tileset then return nil end
+  local map = Map.new(def, tileset)
+  local daytime = self.daytime
+  local flicker = (daytime == "DARK") and self.flickerPhase or 1
+  local job = self:beginMapBake(map, daytime, flicker)
+  if not job then return nil end
+  job.id = mapId
+  job.key = self:mapCacheKey(mapId)
+  job.wanted = self:animLayers(tileset)
+  return job
+end
+
+function World:publishBake(job)
+  local key = job.key
+  if self.mapImages[key] then
+    safeRelease(job.canvas)
+    return self.mapImages[key]
+  end
+  local img = job.canvas
+  self.mapImages[key] = img
+  World.touchMapImage(self, key)
+  self.animCells[key] = job.anim or false
+  self.bgSets[key] = job.bgSet or false
+  self.bakeDirty = true
+  if img and key == self:mapCacheKey(job.id) then
+    for _, nb in ipairs(self.neighbors or {}) do
+      if nb.id == job.id then nb.image = img end
+    end
+  end
+  return img
+end
+
+function World:pumpMapJob()
+  local job = self.bakeJob
+  if job and (job.mode ~= GbcPalette.mode or job.ramp ~= GbcPalette.customRamp) then
+    self:dropBakeJob()
+    job = nil
+  end
+  local queue = self.bakeQueue
+  while not job and queue and queue[1] do
+    local id = table.remove(queue, 1)
+    if self.mapImages[self:mapCacheKey(id)] == nil then
+      job = self:beginBakeJob(id)
+      if not job then
+        local img = self:imageFor(id)
+        if img then
+          for _, nb in ipairs(self.neighbors or {}) do
+            if nb.id == id then nb.image = img end
+          end
+        end
+        return true
+      end
+      self.bakeJob = job
+    end
+  end
+  if not job then return false end
+  if self:bakeMapChunk(job, World.BAKE_TILES_PER_STEP) then
+    self.bakeJob = nil
+    self:publishBake(job)
+  end
+  return true
+end
+
+function World:pumpBorderJob()
+  local queue = self.borderQueue
+  while queue and queue[1] do
+    local job = table.remove(queue, 1)
+    local key = self:borderCacheKey(job.id, job.row)
+    if key and self.mapImages[key] == nil then
+      self:borderImageFor(job.id, job.row)
+      self.bakeDirty = true
+      return true
+    end
+  end
+  return false
+end
+
+function World:pumpAttrJob()
+  local job = self.attrJob
+  if job and not (self.maps[job.id] == job.def and job.def.blocks == job.blocks
+      and self.tilesets[job.def.tileset] == job.tileset) then
+    self.attrJob = nil
+    job = nil
+  end
+  local queue = self.attrQueue
+  while not job and queue and queue[1] do
+    local id = table.remove(queue, 1)
+    if not self:attrGridValid(id) then
+      job = self:beginAttrJob(id)
+      if job then
+        self.attrJob = job
+        return true
+      end
+    end
+  end
+  if not job then return false end
+  if self:attrJobStep(job, World.BAKE_TILES_PER_STEP) then
+    self.attrJob = nil
+    self:storeAttrGrid(job)
+  end
+  return true
 end
 
 function World:pumpBakes()
@@ -10590,27 +10907,24 @@ function World:pumpBakes()
     self.bakeHold = nil
     return false
   end
-  local queue = self.bakeQueue
-  local baked = false
-  while not baked and queue and queue[1] do
-    local id = table.remove(queue, 1)
-    baked = self.mapImages[self:mapCacheKey(id)] == nil
-    local img = self:imageFor(id)
-    if img then
-      for _, nb in ipairs(self.neighbors or {}) do
-        if nb.id == id then nb.image = img end
-      end
-    end
-  end
+  local worked = self:pumpMapJob() or self:pumpBorderJob() or self:pumpAttrJob()
   SpriteRenderer.pumpWarm(1)
-  local grass = self.grassWarm
-  if grass and grass[1] then self:grassAtlasFor(table.remove(grass, 1)) end
-  local stamp = self.rolloverStamp
-  if stamp and not baked and not (queue and queue[1]) then
-    self.rolloverStamp = nil
-    self:trimMapImages(stamp)
+  if not worked then
+    local grass = self.grassWarm
+    if grass and grass[1] then self:grassAtlasFor(table.remove(grass, 1)) end
   end
-  return baked
+  local queue = self.bakeQueue
+  local drained = not worked and not self.bakeJob and not (queue and queue[1])
+  local stamp = self.rolloverStamp
+  if stamp and drained then
+    self.rolloverStamp = nil
+    self.bakeDirty = nil
+    self:trimMapImages(stamp)
+  elseif drained and self.bakeDirty then
+    self.bakeDirty = nil
+    self:trimMapImages()
+  end
+  return worked
 end
 
 function World:trimMapImages(before)
@@ -10622,22 +10936,41 @@ function World:trimMapImages(before)
   for _, nb in ipairs(self.neighbors or {}) do
     if nb.image then held[nb.image] = true end
   end
-  local keys, count = {}, 0
-  for key, img in pairs(images) do
-    count = count + 1
-    if not held[img] then keys[#keys + 1] = key end
+  if self.map and self.map.id then
+    for _, row in ipairs(self:borderRows(self.map.id)) do
+      local key = self:borderCacheKey(self.map.id, row)
+      local img = key and images[key]
+      if img then held[img] = true end
+    end
   end
-  table.sort(keys, function(a, b) return (use[a] or 0) < (use[b] or 0) end)
+  if self.borderFrom then held[self.borderFrom] = true end
+  if self.borderLast then held[self.borderLast] = true end
+  local groups = {
+    map = { keys = {}, count = 0, cap = World.MAP_IMAGE_CAP },
+    border = { keys = {}, count = 0, cap = World.BORDER_IMAGE_CAP },
+  }
+  for key, img in pairs(images) do
+    local group = World.isBorderKey(key) and groups.border or groups.map
+    group.count = group.count + 1
+    if not held[img] then group.keys[#group.keys + 1] = key end
+  end
   local dropped = 0
-  for _, key in ipairs(keys) do
-    local stale = before and (use[key] or 0) <= before
-    if not stale and count - dropped <= World.MAP_IMAGE_CAP then break end
-    safeRelease(images[key])
-    images[key] = nil
-    use[key] = nil
-    if self.animCells then self.animCells[key] = nil end
-    if self.bgSets then self.bgSets[key] = nil end
-    dropped = dropped + 1
+  for _, name in ipairs({ "map", "border" }) do
+    local group = groups[name]
+    local keys = group.keys
+    table.sort(keys, function(a, b) return (use[a] or 0) < (use[b] or 0) end)
+    local gone = 0
+    for _, key in ipairs(keys) do
+      local stale = before and (use[key] or 0) <= before
+      if not stale and group.count - gone <= group.cap then break end
+      safeRelease(images[key])
+      images[key] = nil
+      use[key] = nil
+      if self.animCells then self.animCells[key] = nil end
+      if self.bgSets then self.bgSets[key] = nil end
+      gone = gone + 1
+    end
+    dropped = dropped + gone
   end
   return dropped
 end
@@ -10787,6 +11120,7 @@ function World:setMap(mapId, cx, cy, facing, opts)
   else
     -- Don't re-trigger the arrival warp until the player steps off.
     self.warpCooldown = { x = cx, y = cy }
+    if self.mapImage then self:borderImageFor(mapId) end
   end
   self:rebuildNeighbors()
   -- LoadMapObjects (engine/overworld/map_setup.asm): MAPCALLBACK_OBJECTS, and
@@ -11809,7 +12143,12 @@ end
 function World:step()
   self:stepBody()
   if not self.map or not self.player then return end
-  if self.rolloverStamp or not self:busy() then self:pumpBakes() end
+  local frame = self.updateFrame
+  if (frame == nil or frame ~= self.pumpFrame)
+      and (self.rolloverStamp or not self:busy()) then
+    self.pumpFrame = frame
+    self:pumpBakes()
+  end
   Follower.update(self.game, self)
   Gen1Facade.worldTick(self, 1 / 60)
 end

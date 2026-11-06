@@ -108,10 +108,12 @@ return function(game)
   local function oneScroller(tag)
     local m = Layout.metrics(1200)
     local rect = imp._tabRegionRect
+    local bar = imp._footerBarRect
     local _, H = love.graphics.getDimensions()
-    verdict((imp._pageScrollMax or 0) == 0 and rect ~= nil
-      and math.abs(rect.y + rect.h - (m.top + m.h)) < 0.5 and rect.y + rect.h <= H + 0.5,
-      tag .. "_one_scroller_to_safe_bottom")
+    verdict((imp._pageScrollMax or 0) == 0 and rect ~= nil and bar ~= nil
+      and math.abs(rect.y + rect.h - bar.y) < 0.5
+      and math.abs(bar.y + bar.h - (m.top + m.h)) < 0.5 and bar.y + bar.h <= H + 0.5,
+      tag .. "_one_scroller_to_footer_bar")
   end
 
   local tid = 0

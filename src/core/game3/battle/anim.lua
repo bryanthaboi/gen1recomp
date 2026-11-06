@@ -682,40 +682,52 @@ local function punch_gba_transparent(imageData)
   return imageData
 end
 
-local function hydrate_tag_images(pack)
-  if not pack or not pack.tags then return end
-  if not (love and love.image and love.graphics) then return end
+local function hydrate_tag(tag, info)
   local ok, Dataset = pcall(require, "src.core.game3.dataset")
   local cache = ok and Dataset.cache and Dataset.cache() or nil
   local root = "data/generated/gba/pokemon/battle_anims/"
-  for tag, info in pairs(pack.tags) do
-    if type(info) == "table" and not info.image and info.file then
-      local bytes = nil
-      local rel = root .. info.file
-      if cache and cache.read then
-        bytes = cache:read(rel)
-        if not bytes and fallback_prefix() then bytes = cache:read(fallback_prefix() .. rel) end
-      end
-      if type(bytes) == "string" and #bytes > 0 then
-        local okFd, fileData = pcall(love.filesystem.newFileData, bytes, info.file)
-        if okFd and fileData then
-          local okId, imageData = pcall(love.image.newImageData, fileData)
-          if okId and imageData then
-            punch_gba_transparent(imageData)
-            local okImg, image = pcall(love.graphics.newImage, imageData)
-            if okImg and image then
-              image:setFilter("nearest", "nearest")
-              info.image = image
-              info.w = image:getWidth()
-              info.h = image:getHeight()
-              AnimPal.hydrateIndex(info, tag, image, function(f)
-                return cache and cache.read and (cache:read(root .. f)
-                  or (fallback_prefix() and cache:read(fallback_prefix() .. root .. f)))
-              end)
-            end
-          end
+  local bytes = nil
+  local rel = root .. info.file
+  if cache and cache.read then
+    bytes = cache:read(rel)
+    if not bytes and fallback_prefix() then bytes = cache:read(fallback_prefix() .. rel) end
+  end
+  if type(bytes) == "string" and #bytes > 0 then
+    local okFd, fileData = pcall(love.filesystem.newFileData, bytes, info.file)
+    if okFd and fileData then
+      local okId, imageData = pcall(love.image.newImageData, fileData)
+      if okId and imageData then
+        punch_gba_transparent(imageData)
+        local okImg, image = pcall(love.graphics.newImage, imageData)
+        if okImg and image then
+          image:setFilter("nearest", "nearest")
+          info.image = image
+          info.w = image:getWidth()
+          info.h = image:getHeight()
+          AnimPal.hydrateIndex(info, tag, image, function(f)
+            return cache and cache.read and (cache:read(root .. f)
+              or (fallback_prefix() and cache:read(fallback_prefix() .. root .. f)))
+          end)
         end
       end
+    end
+  end
+end
+
+local TAG_FIELDS = { image = true, w = true, h = true, idxImage = true, idxData = true }
+
+-- pokeemerald/src/battle_anim.c:334
+local function lazy_tags(pack)
+  if not pack or not pack.tags then return end
+  if not (love and love.image and love.graphics) then return end
+  for tag, info in pairs(pack.tags) do
+    if type(info) == "table" and info.file and not rawget(info, "image") then
+      setmetatable(info, { __index = function(t, k)
+        if not TAG_FIELDS[k] then return nil end
+        setmetatable(t, nil)
+        hydrate_tag(tag, t)
+        return rawget(t, k)
+      end })
     end
   end
 end
@@ -756,11 +768,20 @@ local function load_pack()
     if okR then chunk = mod end
   end
   if chunk then
-    hydrate_tag_images(chunk)
+    lazy_tags(chunk)
   end
   Anim._pack = chunk
   if Anim._vm and chunk then Anim._vm:setPack(chunk) end
   return chunk
+end
+
+function Anim.preloadPack()
+  local ok, pack = pcall(load_pack)
+  if not ok then
+    Anim._packLoaded = false
+    error(pack, 0)
+  end
+  return pack
 end
 
 function Anim.loadPack(pack)

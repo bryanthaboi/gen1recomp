@@ -261,6 +261,16 @@ function GenSave.mainChecksumValid(bytes)
   return checksum(bytes, O.checksumStart, O.checksumEnd) == u8(bytes, O.mainChecksum)
 end
 
+GenSave.MSG_REBUILT = "the cartridge image kept with this save was damaged, so the "
+  .. "cartridge save was rebuilt from this playthrough and anything the port does "
+  .. "not track starts over as in a new game"
+
+-- engine/menus/save.asm:32
+function GenSave.templateIntact(bytes)
+  return type(bytes) == "string" and #bytes == GenSave.SAVE_SIZE
+    and GenSave.mainChecksumValid(bytes) == true
+end
+
 function GenSave.looksLikeJapaneseSave(bytes)
   if type(bytes) ~= "string" or #bytes < 0x3595 then return false end
   if checksum(bytes, O.checksumStart, 0x3594) ~= u8(bytes, 0x3594) then return false end
@@ -1410,7 +1420,12 @@ end
 function GenSave.encode(save, data, template)
   local cw = GenSave.crosswalks(data)
   local src = template or save.rawImport
-  if type(src) ~= "string" or #src ~= GenSave.SAVE_SIZE then src = nil end
+  local note
+  if type(src) ~= "string" then
+    src = nil
+  elseif not GenSave.templateIntact(src) then
+    src, note = nil, GenSave.MSG_REBUILT
+  end
   local buf = {}
   if src then
     for i = 1, GenSave.SAVE_SIZE do buf[i] = src:sub(i, i) end
@@ -1914,7 +1929,7 @@ function GenSave.encode(save, data, template)
     setByte(outBuf, padAt, (outBuf[padAt + 1]:byte() % 255) + 1)
     out = table.concat(outBuf)
   end
-  return out
+  return out, note
 end
 
 return GenSave

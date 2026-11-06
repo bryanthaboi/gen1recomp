@@ -158,6 +158,11 @@ local function showTrainerSpeech(ctx, adapters, text, intro)
   end)
 end
 
+local function stringVar(ctx, adapters, i, text)
+  if adapters and adapters.setStringVar then adapters.setStringVar(i, text) end
+  if ctx and ctx.stringVars then ctx.stringVars[i] = text end
+end
+
 FieldRse.BY_NAME = {
   TryFieldPoisonWhiteOut = tryFieldPoisonWhiteOut,
   -- pokeemerald/src/trainer_see.c:655
@@ -391,12 +396,12 @@ FieldRse.BY_NAME = {
       "MAP_ROUTE127", "MAP_ROUTE127", "MAP_ROUTE129", "MAP_ROUTE129",
     }
     local mapName = maps[location]
-    if mapName and adapters and adapters.setStringVar then
+    if mapName then
       local Constants = require("src.core.game3.constants")
       local C = Constants.of(Constants.versionOf(Rse.session()))
       -- pokeemerald/src/field_specials.c:3493
       local num = tonumber(C:require("map_groups", mapName).num)
-      adapters.setStringVar(1, require("src.ui.game3.rse.region_map").mapName(num))
+      stringVar(ctx, adapters, 1, require("src.ui.game3.rse.region_map").mapName(num))
     end
     return false, location >= 9 and 1 or 0
   end,
@@ -506,11 +511,6 @@ end
 local function playSe(name)
   local SE = require("src.core.game3.se_ids")
   if SE[name] then pcall(function() require("src.core.game3.audio").playSe(SE[name]) end) end
-end
-
-local function stringVar(ctx, adapters, i, text)
-  if adapters and adapters.setStringVar then adapters.setStringVar(i, text) end
-  if ctx and ctx.stringVars then ctx.stringVars[i] = text end
 end
 
 local function boolRet(v)
@@ -1097,7 +1097,13 @@ local STORY = {
   -- pokeemerald/src/field_specials.c:1649
   IsBadEggInParty = delegate("natives_queries", "IsBadEggInParty"),
   -- pokeemerald/src/field_specials.c:1638
-  BufferTMHMMoveName = delegate("natives_queries", "BufferTMHMMoveName"),
+  BufferTMHMMoveName = function(ctx, adapters)
+    local Pokemon = require("src.core.game3.pokemon")
+    local move = Pokemon.moveFromTmItem(Rse.specialVar(ctx, VAR_0x8004))
+    if not move then return boolRet(false) end
+    stringVar(ctx, adapters, 2, Pokemon.moveName(move))
+    return boolRet(true)
+  end,
   -- pokeemerald/src/field_specials.c:1450
   ScriptCheckFreePokemonStorageSpace = delegate("natives_queries", "IsThereRoomInAnyBoxForMorePokemon"),
   -- pokeemerald/src/dodrio_berry_picking.c:2911

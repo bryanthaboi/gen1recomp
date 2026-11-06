@@ -25,8 +25,17 @@ return function(game)
   if not D.check(key and Space.startScript(key, nil, 2), "scientist_cached_script_started") then
     return D.finish()
   end
+  local Message = require("src.ui.game3.message")
+  local pages, shotDrought = {}, false
   for _ = 1, 1200 do
     if not Space.vm:isRunning() then break end
+    if Message.isOpen() and Message.isWaiting() then
+      local page = (tostring(Message.currentPage() or ""):gsub("[\n\f]", " "))
+      if pages[#pages] ~= page then pages[#pages + 1] = page end
+      if not shotDrought and page:find("drought has been recorded", 1, true) then
+        shotDrought = D.shot(game, "3116_scientist_drought_recorded_in_route.png", true)
+      end
+    end
     U.tap(game, "a")
     U.wait(3)
   end
@@ -34,6 +43,19 @@ return function(game)
   local chosen = F.var("VAR_ABNORMAL_WEATHER_LOCATION")
   if not D.check(chosen >= 1 and chosen <= 8, "scientist_selected_terra_location") then return D.finish() end
   print("INFO selected_location=" .. chosen)
+  print("INFO scientist_pages=" .. table.concat(pages, " | "))
+  -- pokeemerald/src/field_specials.c:3472
+  local routeNames = { "ROUTE 114", "ROUTE 114", "ROUTE 115", "ROUTE 115",
+    "ROUTE 116", "ROUTE 116", "ROUTE 118", "ROUTE 118" }
+  local want = routeNames[chosen]
+  local recorded, near = false, false
+  for _, page in ipairs(pages) do
+    if page:find("drought has been recorded in " .. want .. ".", 1, true) then recorded = true end
+    if page:find("somewhere near " .. want, 1, true) then near = true end
+  end
+  D.check(recorded, "scientist_drought_recorded_in_route_name")
+  D.check(near, "scientist_somewhere_near_route_name")
+  D.check(shotDrought, "scientist_drought_text_shot")
 
   local locations = {
     { "EM_ROUTE114", 7, 7 }, { "EM_ROUTE114", 6, 48 },

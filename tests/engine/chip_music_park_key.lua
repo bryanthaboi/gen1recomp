@@ -395,6 +395,51 @@ check(ChipAudio.parkState() == nil,
   "a cue that beats its own park to the worker drops it")
 walkMusic()
 
+local ScriptRunner = require("src.script.ScriptRunner")
+gen1.trainers.OPP_RIVAL1 = { id = "OPP_RIVAL1" }
+Music.stop()
+Music.playMap(gen1, "ROUTE_1")
+walkMusic()
+local marker = #sent
+local runner = ScriptRunner.new({ data = gen1, save = {} }, nil)
+runner:run({
+  { "jump", "skip" },
+  { "rival_battle", "OPP_RIVAL1", 7 },
+  { "label", "skip" },
+})
+local scripted = {}
+for i = marker + 1, #sent do
+  if sent[i].cmd == "park" then scripted[#scripted + 1] = sent[i].header end
+end
+check(scripted[1] == themes.trainer,
+  "a Gen 1 script parks its rival's battle theme when it starts")
+check(scripted[2] == theme,
+  "a script that skips the battle hands the park back to the wild theme")
+walkMusic()
+check(ChipAudio.parkState() ~= nil and ChipAudio.parkState().ready,
+  "the wild park is ready again")
+
+do
+  local Logger = require("src.core.Logger")
+  local realPrepare = OW.prepareTrainerBattleMusic
+  OW.prepareTrainerBattleMusic = function() error("hint boom") end
+  local before = #Logger.history
+  local failing = ScriptRunner.new({ data = gen1, save = {} }, nil)
+  failing:run({
+    { "jump", "skip" },
+    { "rival_battle", "OPP_RIVAL1", 7 },
+    { "label", "skip" },
+  })
+  OW.prepareTrainerBattleMusic = realPrepare
+  local logged = false
+  for i = before + 1, #Logger.history do
+    if Logger.history[i]:find("hint boom", 1, true) then logged = true end
+  end
+  check(logged, "a failing trainer music hint is logged, not dropped")
+  check(not failing:isRunning(), "and the script still runs to its end")
+  walkMusic()
+end
+
 local realWants = Runtime.wantsHook
 Runtime.wantsHook = function(name) return name == "music.select" end
 ChipAudio.invalidate()

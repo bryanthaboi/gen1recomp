@@ -7,6 +7,11 @@ local GenSave = require("src.save_convert.GenSave")
 
 local O = MapContext.OFFSETS
 local SAVE = GenSave.OFFSETS
+local function sealMain(bytes)
+  local sum = 0
+  for i = SAVE.checksumStart + 1, SAVE.checksumEnd do sum = (sum + bytes:byte(i)) % 256 end
+  return bytes:sub(1, SAVE.mainChecksum) .. string.char(255 - sum) .. bytes:sub(SAVE.mainChecksum + 2)
+end
 local stampMapWindow = loadfile("tests/fixture_data/map_window.lua")()
 
 GenSave.setCharmap(loadfile("src/save_convert/data/charmap.lua")())
@@ -94,7 +99,7 @@ do
   for i = 1, #fresh do tpl[i] = fresh:sub(i, i) end
   tpl[SAVE.spriteData + 17] = string.char(0x77)
   tpl[SAVE.mainData + O.grassRate + 1] = string.char(0x44)
-  local template = table.concat(tpl)
+  local template = sealMain(table.concat(tpl))
 
   local same = GenSave.encode(newSave(7, 4), data, template)
   T.eq(same:byte(SAVE.spriteData + 17), 0x77, "an unmoved template keeps its live sprite window")

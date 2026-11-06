@@ -406,6 +406,20 @@ local function useWaterfall()
   return true
 end
 
+local startStrength = fieldMove("FLDEFF_USE_STRENGTH", nil)
+
+-- pokeemerald/src/fldeff_strength.c:36
+local function useStrength()
+  local ctx = vmCtx()
+  local mon = partyMon(FE().fieldEffectArgument(0, 0))
+  if ctx and mon then
+    ctx.stringVars = ctx.stringVars or {}
+    -- pokeemerald/src/fldeff_strength.c:41
+    ctx.stringVars[1] = require("src.core.game3.pokemon").displayName(mon)
+  end
+  return startStrength()
+end
+
 -- pokeemerald/src/field_effect_helpers.c:1417
 local function sparkle()
   local fe = FE()
@@ -422,7 +436,7 @@ FldeffMisc.HANDLERS = {
   -- pokeemerald/src/fldeff_rocksmash.c:161
   FLDEFF_USE_ROCK_SMASH = fieldMove("FLDEFF_USE_ROCK_SMASH", "SE_M_ROCK_THROW"),
   -- pokeemerald/src/fldeff_strength.c:46
-  FLDEFF_USE_STRENGTH = fieldMove("FLDEFF_USE_STRENGTH", nil),
+  FLDEFF_USE_STRENGTH = useStrength,
   FLDEFF_USE_SURF = useSurf,
   FLDEFF_USE_WATERFALL = useWaterfall,
   FLDEFF_USE_DIVE = useDive,

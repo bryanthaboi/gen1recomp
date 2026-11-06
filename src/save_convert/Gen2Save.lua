@@ -34,9 +34,15 @@ Gen2Save.MSG = {
     .. "items cannot be named; import the %s ROM before importing a save for it",
   foreign = "this is a %s save; only English-region Gold, Silver and Crystal "
     .. "saves can be imported",
-  bothCopies = "the cartridge image beside this save fails its checksum in both "
-    .. "the primary and the backup copy, so it cannot be written over",
+  rebuilt = "the cartridge image kept with this save was damaged, so the cartridge "
+    .. "save was rebuilt from this playthrough and anything the port does not "
+    .. "track starts over as in a new game",
 }
+
+function Gen2Save.templateIntact(bytes, gameVersion)
+  local L = Gen2Save.layoutFor(gameVersion)
+  return L ~= nil and Gen2Save.liveImage(bytes, L) ~= nil
+end
 
 function Gen2Save.layoutFor(gameVersion)
   if gameVersion == "crystal" then return Gen2Layout.crystal end
@@ -1945,19 +1951,18 @@ local function encodeImpl(save, gameVersion, template, data)
     template = save.rawImport
   end
   local fresh = type(template) ~= "string"
-  local base, tail
+  local base, tail, note
+  if not fresh then
+    base = Gen2Save.liveImage(template, L)
+    if base then
+      tail = template:sub(Gen2Save.SAVE_SIZE + 1)
+    else
+      fresh, note = true, Gen2Save.MSG.rebuilt
+    end
+  end
   if fresh then
     base = blankImpl(gameVersion, save, data)
     tail = ""
-  else
-    if #template < Gen2Save.SAVE_SIZE then
-      refuse(("the cartridge image beside this save is %d bytes and a Gen 2 "
-        .. "save file is %d; it is truncated or is not a save file")
-        :format(#template, Gen2Save.SAVE_SIZE))
-    end
-    base = Gen2Save.liveImage(template, L)
-    if not base then refuse(Gen2Save.MSG.bothCopies) end
-    tail = template:sub(Gen2Save.SAVE_SIZE + 1)
   end
 
   if type(data) == "table" and redSpecies(data) then
@@ -2258,7 +2263,7 @@ local function encodeImpl(save, gameVersion, template, data)
   -- Whatever followed the 32 KiB of SRAM is the cart's RTC footer. Dropping it
   -- resets the clock, which costs the player daily events and the bug contest
   -- and earns them the clock-adjustment penalty.
-  return pack(t, Gen2Save.SAVE_SIZE) .. tail
+  return pack(t, Gen2Save.SAVE_SIZE) .. tail, note
 end
 
 Gen2Save.util = {

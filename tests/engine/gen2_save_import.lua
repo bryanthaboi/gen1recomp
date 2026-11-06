@@ -522,8 +522,10 @@ for _, version in ipairs({ "gold", "silver", "crystal" }) do
   local both = flip(broken, L.backupSave.checksum)
   local none, why = Gen2Save.decode(both, version)
   eq(none, nil, version .. ": a save failing both copies is refused")
-  local refused, rwhy = Gen2Save.encode(save or {}, version, both)
-  eq(refused, nil, version .. ": and is never written over -- " .. tostring(rwhy))
+  local rebuilt, rwhy = Gen2Save.encode(save or {}, version, both)
+  eq(rebuilt, nil, version .. ": and with no map data to rebuild from, export refuses -- " .. tostring(rwhy))
+  check(type(rwhy) == "string" and rwhy ~= Gen2Save.MSG.rebuilt,
+    version .. ": rather than handing back the damaged template -- " .. tostring(rwhy))
 end
 
 -- ------------------------------------------------------------------

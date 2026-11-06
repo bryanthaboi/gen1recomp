@@ -59,7 +59,6 @@ end
 local ESCAPES = {
   ['"'] = '"', ["\\"] = "\\", ["n"] = "\n", ["r"] = "\r", ["t"] = "\t",
   ["a"] = "\a", ["b"] = "\b", ["f"] = "\f", ["v"] = "\v",
-  ["\n"] = "\n", ["\r"] = "\n",
 }
 
 -- recursion cap: a crafted file nesting thousands of braces must fail
@@ -123,6 +122,11 @@ local function readString(state)
         end
         out[#out + 1] = string.char(code)
         i = i + 1 + #digits
+      elseif nxt == "\n" or nxt == "\r" then
+        out[#out + 1] = "\n"
+        local after = src:sub(i + 2, i + 2)
+        i = i + 2
+        if (after == "\n" or after == "\r") and after ~= nxt then i = i + 1 end
       elseif ESCAPES[nxt] then
         out[#out + 1] = ESCAPES[nxt]
         i = i + 2
