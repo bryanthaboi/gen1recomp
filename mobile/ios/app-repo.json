@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.1",
+          "date": "2026-11-06",
+          "size": 44734536,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.1/gen1recomp++-0.4.1-ios.ipa",
+          "localizedDescription": "squashed some shiz tyvm iykyk\n\n## Issues closed\n\n- #3099 Patch notes aren't working on switch\n- #3112 cartridge failing checksum prevening save exports???\n- #3113 Keep Update button Visible without scroll\n- #3116 bunch of emerald bugs, missing text and battle freeze\n- #3117 Poke flute gen 3 not working in battle\n- #3118 [Feature Request] Keyboard hotkeys to change game in the Launcher menu\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.4.0",
           "date": "2026-11-02",
           "size": 44727368,
