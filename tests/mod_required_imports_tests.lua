@@ -327,4 +327,64 @@ local listed = Manifest.validate({
 check(RequiredImports.importData(listed, "image", "OTHERBYTES",
   { hash = fakeHash }), "a listed md5 does not narrow a mod-verified import")
 
+love.filesystem.write("mods/launcher_opt/manifest.json", [[{
+  "id":"launcher_opt","name":"Launcher Opt","version":"1.0.0",
+  "entry":"main.lua","optional_imports":[{"id":"bonus","name":"Bonus ROM",
+  "file":"bonus.bin","verify":"mod"}]
+}]])
+love.filesystem.write("mods/launcher_opt/main.lua", "return function(mod) end")
+local function optRow()
+  for _, r in ipairs(require("src.mods.LauncherMods").list()) do
+    if r.id == "launcher_opt" then return r end
+  end
+end
+local optBefore = optRow()
+check(optBefore ~= nil, "launcher lists a mod with an optional import")
+eq(optBefore and optBefore.missingOptionalImports, 1,
+  "launcher row counts the missing optional import")
+eq(optBefore and optBefore.missingRequiredImports, 0,
+  "an optional import is not counted as required")
+
+love.graphics.setLineJoin = love.graphics.setLineJoin or function() end
+love.graphics.newShader = love.graphics.newShader or function() return {} end
+love.graphics.polygon = love.graphics.polygon or function() end
+love.graphics.getDimensions = function() return 1280, 720 end
+love.graphics.getPixelDimensions = function() return 1280, 720 end
+love.mouse.getPosition = function() return -100, -100 end
+love.mouse.isDown = function() return false end
+local Kit = require("src.ui.kit.Kit")
+local LauncherView = require("src.import.LauncherView")
+local function importsButton(row)
+  local imp = require("src.import.RomImporter").new(function() end, { launcher = true })
+  local rows = { row }
+  imp.tab = "mods"
+  imp.mods = rows
+  imp._ensureMods = function() return rows end
+  imp._refreshMods = function() end
+  imp._modActions = row.id
+  LauncherView.draw(imp)
+  Kit.audit = {}
+  LauncherView.draw(imp)
+  local audit = Kit.audit
+  Kit.audit = nil
+  for _, r in ipairs(audit) do
+    if r.label:find("Imported files", 1, true) then return r.label end
+  end
+end
+eq(importsButton(optBefore), "Imported files (1 optional)",
+  "the mod's button says an optional import is still missing")
+
+love.filesystem.write("mods/launcher_opt/baseroms/bonus.bin", "BONUS")
+local optAfter = optRow()
+eq(optAfter and optAfter.missingOptionalImports, 0,
+  "storing the optional file clears the count")
+eq(importsButton(optAfter), "Imported files",
+  "and the button goes back to its plain label")
+
+local reqRow = optRow()
+reqRow.missingRequiredImports, reqRow.missingOptionalImports = 2, 1
+eq(importsButton(reqRow), "Imported files (2 required)",
+  "a missing required import outranks the optional count")
+Kit.focusId = nil
+
 S.finish()

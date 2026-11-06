@@ -164,6 +164,37 @@ local function gameName(version)
   return info and (info.displayName or info.label) or tostring(version)
 end
 
+SaveFileIO.DAMAGED_CART_NOTE = "The cartridge image stored in this save no longer "
+  .. "verifies, so it was left out. The playthrough imported; anything the port does "
+  .. "not track starts over as in a new game when you export a cartridge (.sav) save."
+
+local function cartImageDamaged(save, version)
+  local generation = GameVersion.generation(version)
+  if generation == 3 then
+    local md = save.modData
+    if type(md) ~= "table" or md.cartImage == nil or md.cartImage == false then return false end
+    local codec = require("src.save_convert.Gen3Save").forVersion(version)
+    return not codec.templateIntact(md.cartImage)
+  end
+  if type(save.rawImport) ~= "string" then return false end
+  if generation == 2 then
+    return not require("src.save_convert.Gen2Save").templateIntact(save.rawImport, version)
+  end
+  return not require("src.save_convert.GenSave").templateIntact(save.rawImport)
+end
+
+function SaveFileIO.dropDamagedCartImage(save, version)
+  if type(save) ~= "table" then return false end
+  local ok, damaged = pcall(cartImageDamaged, save, version)
+  if ok and not damaged then return false end
+  if GameVersion.generation(version) == 3 then
+    if type(save.modData) == "table" then save.modData.cartImage = nil end
+  else
+    save.rawImport = nil
+  end
+  return true
+end
+
 local function importLuaSlot(bytes, version)
   local save, parseErr = SaveSerializer.decode(bytes, LUA_SLOT_LIMITS)
   if type(save) ~= "table" then
@@ -182,6 +213,7 @@ local function importLuaSlot(bytes, version)
   if type(save.party) ~= "table" then
     return false, "That .lua file is not a save exported from this launcher."
   end
+  local dropped = SaveFileIO.dropDamagedCartImage(save, version)
   local slotId = SaveData.createSlot(version)
   if not slotId then return false, "this game has no save slots to import into" end
   SaveData.claimImportPlaythroughId(version, slotId, save)
@@ -195,7 +227,7 @@ local function importLuaSlot(bytes, version)
     return false, "the imported save did not read back; nothing was imported"
   end
   SaveData.setActiveSlot(version, slotId)
-  return true, slotId
+  return true, slotId, dropped and { note = SaveFileIO.DAMAGED_CART_NOTE } or nil
 end
 
 local function importGen3Cart(bytes, version)

@@ -112,6 +112,9 @@ local function syntheticSave(name)
   local cacheOff = OFF.mainData + 104
   local cacheTemplate = raw:sub(1, cacheOff) .. string.char(0xA5)
     .. raw:sub(cacheOff + 2)
+  cacheTemplate = cacheTemplate:sub(1, OFF.mainChecksum)
+    .. string.char(rawChecksum(cacheTemplate, OFF.checksumStart, OFF.checksumEnd))
+    .. cacheTemplate:sub(OFF.mainChecksum + 2)
   return GenSave.encode(seed, data, cacheTemplate)
 end
 

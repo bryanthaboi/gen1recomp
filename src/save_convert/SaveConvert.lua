@@ -713,9 +713,9 @@ local function exportRaw(saveTable, gameVersion, cartImage)
   local serr
   saveTable, serr = gen1Sealed(saveTable, data, gameVersion)
   if not saveTable then return nil, serr end
-  local ok, bytes = pcall(GenSave.encode, saveTable, data, saveTable.rawImport or cartImage)
+  local ok, bytes, note = pcall(GenSave.encode, saveTable, data, saveTable.rawImport or cartImage)
   if not ok then return nil, "encode failed: " .. tostring(bytes) end
-  return bytes
+  return bytes, note
 end
 
 function SaveConvert.exportSav(saveTable, gameVersion, cartImage)

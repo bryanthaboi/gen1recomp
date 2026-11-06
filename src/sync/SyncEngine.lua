@@ -15,6 +15,26 @@ SyncEngine.MAX_STEPS_PER_UPDATE = 8
 local IDLE_STATUS = "Ready"
 local UNLINKED_STATUS = "Not set up"
 
+SyncEngine.ERROR_TEXT = {
+  unauthorized = "This device's sync account no longer exists on the server, or this device was unlinked. Link again with current codes or create a new sync account.",
+  bad_code = "Those codes do not match a sync account. They may have been replaced on another device, or that account no longer exists.",
+  too_many_devices = "That sync account already has as many devices as it can hold. Unlink one first.",
+  rate_limited = "Too many tries for now. Wait a while and try again.",
+  busy = "The sync server is busy. Try again in a minute.",
+  server_error = "The sync server hit an error. Try again later.",
+  storage_full = "This sync account is out of space. Delete some saves and try again.",
+  too_many_saves = "This sync account holds as many saves as it can. Delete some and try again.",
+  blob_too_large = "This save is too large to sync.",
+  too_large = "That upload is too large for the sync server.",
+  bad_display_name = "Display names are 3 to 16 characters.",
+  already_linked = "This device is already linked. Unlink it first, then link with the new codes.",
+}
+
+function SyncEngine.describeError(err)
+  local text = tostring(err or "sync failed")
+  return SyncEngine.ERROR_TEXT[text] or text
+end
+
 local function unixSeconds(v)
   local n = tonumber(v)
   if not n or n ~= n or n <= 0 or n == math.huge or n == -math.huge then
@@ -475,9 +495,34 @@ function SyncEngine:_fail(message)
   end
   self.phase = "error"
   self.error = tostring(message or "sync failed")
-  self.status = "Sync failed: " .. self.error
+  self.status = "Sync failed: " .. SyncEngine.describeError(self.error)
   self.queue = {}
   self.pending = nil
+end
+
+function SyncEngine.lostLink(res)
+  return type(res) == "table" and tonumber(res.code) == 401 and res.err == "unauthorized"
+end
+
+function SyncEngine:_lostLink()
+  self:_fail("unauthorized")
+  if not self.lostLinkAt then
+    self.lostLinkAt = self.clock
+    self.autoAt = self.clock + SyncEngine.AUTO_INTERVAL
+    return
+  end
+  if self.clock - self.lostLinkAt < SyncEngine.AUTO_INTERVAL then return end
+  self.lostLinkAt = nil
+  self.uploadAt = nil
+  self.modApply = nil
+  local code1, code2 = self.state.code1, self.state.code2
+  self:_forgetLocal()
+  self.state.code1, self.state.code2 = code1, code2
+  self.codes = SyncEngine.formatCodes(self.state)
+  self:_persist()
+  self.phase = "error"
+  self.error = "unauthorized"
+  self.status = SyncEngine.describeError("unauthorized")
 end
 
 function SyncEngine:_finish()
@@ -580,8 +625,12 @@ function SyncEngine:update(dt)
     self.pending = nil
     self.client:release(job.handle)
     if res.status == "ok" then
+      self.lostLinkAt = nil
       local done, ok, err = self:_run(job.onOk, res)
       if done and not ok then self:_fail(err) end
+    elseif SyncEngine.lostLink(res) and self:linked() and not job.unlinking then
+      self:_lostLink()
+      return
     else
       local handled = false
       if job.onErr then
@@ -663,6 +712,15 @@ function SyncEngine:linkDevice(code1, code2, label)
     self:_fail("both codes are 8 digits")
     return false, "both codes are 8 digits"
   end
+  if self:linked() then
+    if a == self.state.code1 and b == self.state.code2 then
+      self.phase, self.error = "idle", nil
+      self.status = "This device is already linked to that sync account."
+      return false, "already linked"
+    end
+    self:_fail("already_linked")
+    return false, "already linked"
+  end
   self.phase = "checking"
   self.status = "Linking this device..."
   self.error = nil
@@ -688,6 +746,7 @@ function SyncEngine:linkDevice(code1, code2, label)
 end
 
 function SyncEngine:_forgetLocal()
+  self.lostLinkAt = nil
   self.state = SyncState.defaults()
   self.client:clearAuth()
   self.codes = nil
@@ -712,12 +771,14 @@ function SyncEngine:unlink()
     self:_forgetLocal()
     return true
   end
-  return self:_request(handle, err, function(eng)
+  local started = self:_request(handle, err, function(eng)
     eng:_forgetLocal()
   end, function(eng)
     eng:_forgetLocal()
     return true
   end)
+  if started then self.pending.unlinking = true end
+  return started
 end
 
 function SyncEngine:unlinkDevice(deviceId)

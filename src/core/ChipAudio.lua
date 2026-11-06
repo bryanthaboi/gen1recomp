@@ -910,14 +910,14 @@ function dropEffects()
   if fxCh then fxCh:clear() end
 end
 
-local function musicHasHeadroom()
+local function musicHasHeadroom(lead)
   local m = currentMusic
   if not (m and m.threaded) or m.finished or musicHeld then return true end
   if not m.started then return false end
   local depth = queuedBuffers(m.source)
   if not depth then return true end
   if outCh then depth = depth + outCh:getCount() end
-  return depth >= MUSIC_PREROLL * 4 * (fxInFlightCount + 1)
+  return depth >= MUSIC_PREROLL * (lead or 4) * (fxInFlightCount + 1)
 end
 
 function pumpPark()
@@ -926,7 +926,7 @@ function pumpPark()
     park = nil
     return
   end
-  if not musicHasHeadroom() then return end
+  if not musicHasHeadroom(2) then return end
   if pcall(cmdCh.push, cmdCh, park.request) then park.pushed = true end
 end
 

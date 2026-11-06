@@ -21,6 +21,11 @@ local GenSave = require("src.save_convert.GenSave")
 
 local O = MapContext.OFFSETS
 local SAVE = GenSave.OFFSETS
+local function sealMain(bytes)
+  local sum = 0
+  for i = SAVE.checksumStart + 1, SAVE.checksumEnd do sum = (sum + bytes:byte(i)) % 256 end
+  return bytes:sub(1, SAVE.mainChecksum) .. string.char(255 - sum) .. bytes:sub(SAVE.mainChecksum + 2)
+end
 
 -- ---------------------------------------------------------------- fixtures
 
@@ -184,7 +189,7 @@ local template = {}
 for i = 1, #fresh do template[i] = fresh:sub(i, i) end
 template[SAVE.mainData + O.curMapHeader + 1] = string.char(0x99)
 template[SAVE.spriteData + 17] = string.char(0x77)
-local sameMap = GenSave.encode(save, data, table.concat(template))
+local sameMap = GenSave.encode(save, data, sealMain(table.concat(template)))
 T.eq(byteAt(sameMap, O.curMapHeader), 0x99,
      "a template saved on this map keeps its map header untouched")
 T.eq(sameMap:byte(SAVE.spriteData + 17), 0x77,
@@ -197,6 +202,6 @@ local other = {}
 for i = 1, #fresh do other[i] = fresh:sub(i, i) end
 other[SAVE.curMap + 1] = string.char(0xFE) -- some map this save is not on
 other[SAVE.mainData + O.curMapHeader + 1] = string.char(0x99)
-local moved = GenSave.encode(save, data, table.concat(other))
+local moved = GenSave.encode(save, data, sealMain(table.concat(other)))
 T.eq(byteAt(moved, O.curMapHeader), HEADER[1],
      "a template saved on another map is rebuilt for the map the save is on")

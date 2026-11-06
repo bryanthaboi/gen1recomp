@@ -244,7 +244,10 @@ for player, rival in pairs(COUNTERPICK) do
 end
 
 local function patch(bytes, off, value)
-  return bytes:sub(1, off) .. string.char(value) .. bytes:sub(off + 2)
+  local out = bytes:sub(1, off) .. string.char(value) .. bytes:sub(off + 2)
+  local sum = 0
+  for i = OFF.checksumStart + 1, OFF.checksumEnd do sum = (sum + out:byte(i)) % 256 end
+  return out:sub(1, OFF.mainChecksum) .. string.char(255 - sum) .. out:sub(OFF.mainChecksum + 2)
 end
 
 local plain = seedSave()

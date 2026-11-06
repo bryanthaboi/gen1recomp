@@ -46,6 +46,11 @@ end
 local function checksumValid(bytes, from, to, storeOff)
   return rawChecksum(bytes, from, to) == bytes:byte(storeOff + 1)
 end
+local function sealMain(bytes)
+  return bytes:sub(1, OFF.mainChecksum)
+    .. string.char(rawChecksum(bytes, OFF.checksumStart, OFF.checksumEnd))
+    .. bytes:sub(OFF.mainChecksum + 2)
+end
 -- A box bank (2 or 3) holds 6 box regions, one one-byte checksum each, plus a
 -- bank aggregate computed over the ENTIRE six-box region (pokered
 -- engine/menus/save.asm: CalcCheckSum over all 6 x 1122 bytes), independently
@@ -357,7 +362,7 @@ check(scNilOut == nil and type(scNilOutErr) == "string",
 -- and confirm it survives on export while a templateless export zero-fills it.
 local spriteOff = OFF.spriteData + 10
 local sentinel = 0xAB
-local templateSrc = bytes2:sub(1, spriteOff) .. string.char(sentinel) .. bytes2:sub(spriteOff + 2)
+local templateSrc = sealMain(bytes2:sub(1, spriteOff) .. string.char(sentinel) .. bytes2:sub(spriteOff + 2))
 local tmplSave = GenSave.decode(templateSrc, data) -- rawImport = templateSrc
 local tmplOut, tmplErr = SaveConvert.exportSav(tmplSave)
 check(tmplOut ~= nil and #tmplOut == GenSave.SAVE_SIZE,
@@ -572,7 +577,7 @@ do
   local tpl = {}
   for i = 1, GenSave.SAVE_SIZE do tpl[i] = string.char(0) end
   tpl[OFF.options + 1] = string.char(0xF1)
-  local ob3 = GenSave.encode(o2, data, table.concat(tpl))
+  local ob3 = GenSave.encode(o2, data, sealMain(table.concat(tpl)))
   check(ob3:byte(OFF.options + 1) == 0x33,
         ("wOptions follows the save's options and keeps the template's sound bits ($%02X)"):format(
           ob3:byte(OFF.options + 1)))
@@ -627,7 +632,7 @@ do
   tpl[OFF.playerName + 5] = string.char(0x00)
   tpl[OFF.playerName + 6] = string.char(0x81)
   tpl[OFF.playerName + 7] = string.char(0x00)
-  local tplBytes = table.concat(tpl)
+  local tplBytes = sealMain(table.concat(tpl))
   local decoded = GenSave.decode(tplBytes, data)
   check(decoded.player.name == "RED",
         "a 0x00/stale tail past the terminator does not leak into the name")

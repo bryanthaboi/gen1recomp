@@ -1805,6 +1805,18 @@ end
 function runList(self, key)
   local list = type(key) == "table" and key or self.scripts[key]
   if not list then return end
+  if self.prepareTrainerFn and self.busy and not self.trainerHinted then
+    for k = 1, math.min(#list, 24) do
+      local row = list[k]
+      if row.op == "loadtrainer" then
+        self.trainerHinted = true
+        self.prepareTrainerFn(row.class or arg1(row),
+          row.member or (row.args and row.args[2]))
+        break
+      end
+      if Opcodes.TERMINATORS[row.op] or row.op == "startbattle" then break end
+    end
+  end
   local i = 1
   while list[i] do
     -- A whiteout replaces the running script rather than returning to it, so
@@ -1976,6 +1988,7 @@ function Vm.new(scripts, text, events, hooks)
     reloadMapFn = hooks.reloadMap,
     badWarpFn = hooks.badWarp,
     encounterMusicFn = hooks.encounterMusic,
+    prepareTrainerFn = hooks.prepareTrainer,
     showEmoteFn = hooks.showEmote,
     trainerApproachFn = hooks.trainerApproach,
     faceObjectFn = hooks.faceObject,
@@ -2589,6 +2602,7 @@ function Vm:start(scriptKey)
   -- wRunningTrainerBattleScript and the win/loss overrides are per-run: the
   -- next script must not see the last one's battle.
   self.justBattled = false
+  self.trainerHinted = nil
   self.battleOutcome = nil
   self.winTextOverride = nil
   self.lossTextOverride = nil
@@ -2653,7 +2667,9 @@ function Vm:runCallback(scriptKey)
   self.co, self.pending = nil, nil
   self.waitLeft, self.waitSfx, self.waitSfxLeft = nil, nil, nil
   local abortedBefore = self.aborted
+  local hintedBefore = self.trainerHinted
   self.aborted = false
+  self.trainerHinted = true
   self.ctx, self.ctxKey, self.ctxKind = nil, scriptKey, "callback"
   if Runtime.wants("script.started") then
     Runtime.emit("script.started", { ctx = self:scriptCtx() })
@@ -2669,6 +2685,7 @@ function Vm:runCallback(scriptKey)
   self.waitLeft = parent.waitLeft
   self.waitSfx, self.waitSfxLeft = parent.waitSfx, parent.waitSfxLeft
   self.aborted = abortedBefore
+  self.trainerHinted = hintedBefore
   self.ctx, self.ctxKey, self.ctxKind = parent.ctx, parent.ctxKey, parent.ctxKind
   if not ok then error(req) end
   if not finished then
@@ -2715,6 +2732,10 @@ function Vm:resume(resumeValue)
     self.busy = false
     self.co = nil
     self.pending = nil
+    if self.trainerHinted and not self.justBattled and self.prepareTrainerFn then
+      self.prepareTrainerFn(nil)
+    end
+    self.trainerHinted = nil
     self:closeStayed()
     -- A whiteout unwound the list rather than running it out, so `aborted` is
     -- exactly the completed = false case.  Emitted BEFORE runDeferred, which

@@ -349,7 +349,10 @@ for _, v in ipairs(VERSIONS) do
     end
     local ok2, out, xwhy = pcall(Gen2Save.encode, assert(Gen2Save.decode(src, v, K.gen2Data)), v, bytes, K.gen2Data)
     check(ok2 and not internalError(xwhy), ("%s size %d: as a template it is answered -- %s"):format(v, size, tostring(xwhy)))
-    if size < 0x8000 then eq(out, nil, ("%s size %d: a short template is refused"):format(v, size)) end
+    if size < 0x8000 then
+      check(out ~= nil, ("%s size %d: a short template is rebuilt from the save"):format(v, size))
+      eq(xwhy, Gen2Save.MSG.rebuilt, ("%s size %d: and the export says so"):format(v, size))
+    end
   end
 end
 

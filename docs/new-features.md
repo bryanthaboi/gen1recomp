@@ -33,6 +33,7 @@ Features intentionally added to the games themselves, beyond what the original c
 * **Button remapping** on every game: OPTION -> CONTROLS (keys, pads, L/R on FireRed/LeafGreen/Emerald, fast-forward buttons)
 * **Full controller support**: both thumbsticks move and navigate menus, and stick directions, triggers, stick clicks and extra SDL buttons can be bound in CONTROLS
 * **Duplicate a save slot** from the launcher, a one-tap independent copy for backups or trimming a save before export
+* **Q / E switch games in the launcher**, a one-press keyboard twin of the controller shoulders, in the GAMES dropdown's order
 * **Bank-style Box migration** from Gen 1 and 2 to Gen 3: nature from EXP, IVs from DVs (Special fills both Sp. Atk and Sp. Def), EVs reset, second ability when there is one
 * **EXP-to-nature helper** in Box migration, showing how much EXP each nature needs before a Gen 1 or 2 Pokémon moves to Gen 3
 * **Box item stash**: store bag items in Box, send them to another game's bag, give or take held items and change a Gen 3 Pokémon's ball

@@ -1256,6 +1256,9 @@ function Game2:load(opts)
   end
   Strings.load(self.data)
   self:prewarmSessionSfx()
+  GbcPalette.shader()
+  GbcPalette.keyedShader()
+  GbcPalette.remapShader()
 
   -- The boot skeleton (Game2.new built it, before any bus existed) announced
   -- here rather than at its construction, which is the same spot in the boot
@@ -1461,6 +1464,7 @@ function Game2:update(dt)
     return
   end
   if not self.world or not self.world.map then return end
+  self.world.updateFrame = (self.world.updateFrame or 0) + 1
   FixedStep.maxAccum = FixedStep.catchupLimit(speed, dt)
   FixedStep:update(dt, speed)
 end

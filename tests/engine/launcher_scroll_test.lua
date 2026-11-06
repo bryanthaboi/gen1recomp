@@ -176,7 +176,8 @@ modImp._wheelY = -1
 LauncherView.draw(modImp)
 check((modImp._tabScroll.mods or 0) > 0,
   "a notch over the region scrolls the list like any other tab")
-eq(reg.y + reg.h, 780, "the region runs to the bottom of the window, so there is no page behind it")
+eq(reg.y + reg.h, modImp._footerBarRect.y, "the region runs down to the pinned footer bar, so there is no page behind it")
+eq(modImp._footerBarRect.y + modImp._footerBarRect.h, 780, "and the bar ends at the window bottom")
 
 modImp._tabScroll.mods = modImp._tabScrollMax.mods
 LauncherView.draw(modImp)
@@ -254,7 +255,7 @@ eq(dragMods._tabScroll.mods, math.min(60, dRegionMax),
 LauncherView.touchmoved(dragMods, 7, dreg.x + 20,
   dreg.y + 30 - 60 - dRegionMax * 2)
 eq(dragMods._tabScroll.mods, dRegionMax, "carrying on saturates the region")
-eq(dreg.y + dreg.h, 780, "and the region it saturates is the only scroller down to the window bottom")
+eq(dreg.y + dreg.h, dragMods._footerBarRect.y, "and the region it saturates is the only scroller down to the footer bar")
 LauncherView.touchreleased(dragMods, 7, dreg.x + 20, dreg.y - 900)
 
 if false then

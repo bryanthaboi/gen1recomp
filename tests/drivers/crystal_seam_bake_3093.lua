@@ -8,6 +8,7 @@ local Palettes = require("src.world.gen2.Palettes")
 local PixelCanvas = require("src.render.PixelCanvas")
 local TileAttrs = require("src.world.gen2.TileAttrs")
 local Assets = require("src.render.Assets")
+local MapAttrGrid = require("src.world.gen2.MapAttrGrid")
 
 local function referenceBake(self, map, daytime, flicker)
   local atlas, tileset = self:atlasFor(map.def)
@@ -124,7 +125,14 @@ return function(game)
   end
   local function top() return game.stack:top() end
   local bake = World.bakeMapImage
-  local bakes = 0
+  local chunk = World.bakeMapChunk
+  local borderBake, attrBuild = BorderFill.bake, MapAttrGrid.build
+  local flipped = TileAttrs.drawFlippedTile
+  local bakes, attrBuilds, borderInDraw = 0, 0, 0
+  local pumpTiles, maxPumpTiles, inPump, inBake = 0, 0, false, false
+  local attrStep = World.attrJobStep
+  local pumpCells, maxPumpCells, pumpReads, pumpMaxMs = 0, 0, 0, 0
+  local canvasIndex, readback
   local stepWrapped
   local draw, imageData = World.draw, Assets.imageData
   local drawing, counting, recolors = false, false, {}
@@ -167,19 +175,106 @@ return function(game)
     label(#mismatched == 0, "3093_bake_identical_to_8_pass",
       #mismatched > 0 and table.concat(mismatched, ",") or (#PARITY .. " maps x3 daytimes + cave + plain"))
 
+    local function chunkedSame(mapId, daytime, flicker, budget)
+      if not world.beginMapBake then return false, "no chunked bake" end
+      local def = world.maps[mapId]
+      local map = Map.new(def, world.tilesets[def.tileset])
+      local a = referenceBake(world, map, daytime, flicker)
+      local job = world:beginMapBake(map, daytime, flicker)
+      if not (a and job) then return false, "no canvas " .. mapId end
+      local steps = 0
+      while not world:bakeMapChunk(job, budget) do steps = steps + 1 end
+      local equal = a:newImageData():getString() == job.canvas:newImageData():getString()
+      a:release()
+      job.canvas:release()
+      return equal and steps > 0, mapId .. "@" .. budget
+    end
+    mismatched = {}
+    if not world.beginMapBake then mismatched[1] = "no chunked bake" end
+    for _, budget in ipairs(world.beginMapBake and { 48, World.BAKE_TILES_PER_STEP } or {}) do
+      for _, id in ipairs(PARITY) do
+        for _, daytime in ipairs({ "MORN", "DAY", "NITE" }) do
+          local ok, why = chunkedSame(id, daytime, 1, budget)
+          if not ok then mismatched[#mismatched + 1] = why .. "/" .. daytime end
+        end
+      end
+      for _, flicker in ipairs({ 1, 2 }) do
+        local ok, why = chunkedSame("DARK_CAVE_VIOLET_ENTRANCE", "DARK", flicker, budget)
+        if not ok then mismatched[#mismatched + 1] = why .. "/DARK" .. flicker end
+      end
+      local ok, why = chunkedSame("ROUTE_29", nil, 1, budget)
+      if not ok then mismatched[#mismatched + 1] = why .. "/plain" end
+    end
+    label(#mismatched == 0, "3093_chunked_bake_identical_to_8_pass",
+      #mismatched > 0 and table.concat(mismatched, ",")
+        or (#PARITY .. " maps x3 daytimes + cave + plain at 48 and "
+          .. tostring(World.BAKE_TILES_PER_STEP) .. " tiles a step"))
+
     World.bakeMapImage = function(...)
       bakes = bakes + 1
-      return bake(...)
+      local was = inBake
+      inBake = true
+      local results = { pcall(bake, ...) }
+      inBake = was
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2)
+    end
+    if chunk then
+      World.bakeMapChunk = function(...)
+        if not inPump and not inBake then bakes = bakes + 1 end
+        return chunk(...)
+      end
+    end
+    BorderFill.bake = function(...)
+      if drawing and counting then borderInDraw = borderInDraw + 1 end
+      return borderBake(...)
+    end
+    MapAttrGrid.build = function(...)
+      attrBuilds = attrBuilds + 1
+      return attrBuild(...)
+    end
+    World.attrJobStep = function(self, job, budget)
+      local before = job.nextRow
+      local done = attrStep(self, job, budget)
+      if budget == math.huge then attrBuilds = attrBuilds + 1 end
+      if inPump then pumpCells = pumpCells + (job.nextRow - before) * job.grid.cols end
+      return done
+    end
+    local probe = love.graphics.newCanvas(1, 1)
+    canvasIndex = getmetatable(probe).__index
+    probe:release()
+    readback = canvasIndex.newImageData
+    canvasIndex.newImageData = function(...)
+      if inPump then pumpReads = pumpReads + 1 end
+      return readback(...)
+    end
+    TileAttrs.drawFlippedTile = function(...)
+      if inPump then pumpTiles = pumpTiles + 1 end
+      return flipped(...)
     end
     local crossings = {}
     local origStep = world.step
+    local origPump = world.pumpBakes
     stepWrapped = true
+    world.pumpBakes = function(w)
+      inPump, pumpTiles, pumpCells = true, 0, 0
+      local t0 = love.timer.getTime()
+      local results = { pcall(origPump, w) }
+      local ms = (love.timer.getTime() - t0) * 1000
+      inPump = false
+      if pumpTiles > maxPumpTiles then maxPumpTiles = pumpTiles end
+      if pumpCells > maxPumpCells then maxPumpCells = pumpCells end
+      if ms > pumpMaxMs then pumpMaxMs = ms end
+      if not results[1] then error(results[2], 0) end
+      return unpack(results, 2)
+    end
     world.step = function(w)
-      local before, from = bakes, w.map and w.map.id
+      local before, attrBefore, from = bakes, attrBuilds, w.map and w.map.id
       origStep(w)
       local to = w.map and w.map.id
       if from and to and from ~= to then
-        crossings[#crossings + 1] = { from = from, to = to, bakes = bakes - before }
+        crossings[#crossings + 1] = { from = from, to = to, bakes = bakes - before,
+          attrs = attrBuilds - attrBefore }
       end
     end
 
@@ -196,10 +291,28 @@ return function(game)
     end
 
     local function drained()
-      return world.bakeQueue == nil or (#world.bakeQueue == 0 and not world.bakeHold)
+      return (world.bakeQueue == nil or (#world.bakeQueue == 0 and not world.bakeHold))
+        and not world.bakeJob
+        and not (world.borderQueue and world.borderQueue[1])
+        and not (world.attrQueue and world.attrQueue[1])
+    end
+    local function seamLabels(hit, fromId, toId, borders)
+      local tag = fromId .. "_to_" .. toId
+      label(borders == 0, "3093_no_border_bake_in_draw_" .. tag, borders)
+      label(hit ~= nil and hit.attrs == 0, "3093_no_attr_build_on_crossing_" .. tag,
+        hit and ("attr builds=" .. hit.attrs) or "no crossing")
+    end
+    local function stand(frames)
+      game.speedOverride = 1
+      for _ = 1, frames do
+        check()
+        world.wildCooldown = 1e9
+        U.wait(1)
+      end
+      game.speedOverride = 200
     end
 
-    local function cross(mapId, x, y, dir, target, shot)
+    local function cross(mapId, x, y, dir, target, shot, standFrames)
       world:warpToMapId(mapId, x, y, dir)
       settle(function()
         return world.map.id == mapId and not world:busy() and not top()
@@ -208,6 +321,7 @@ return function(game)
       label(true, "3093_queue_drained_" .. mapId)
       wait(120)
       local seen = #crossings
+      borderInDraw, counting = 0, true
       game.input.state[dir] = true
       for _ = 1, 600 do
         check()
@@ -221,6 +335,9 @@ return function(game)
         "3093_no_bake_on_crossing_" .. mapId .. "_to_" .. target,
         hit and (hit.from .. "->" .. hit.to .. " bakes=" .. hit.bakes) or "no crossing")
       settle(function() return not world:busy() end, "walk settled")
+      if standFrames then stand(standFrames) end
+      counting = false
+      seamLabels(hit, mapId, target, borderInDraw)
       game.speedOverride = speed
       label(U.still(game, out .. "/" .. shot), "3093_shot_" .. target)
       game.speedOverride = 200
@@ -261,7 +378,10 @@ return function(game)
         world.wildCooldown = 1e9
         U.hold(game, dir, 1)
         if world.map.id ~= id or p.cellX ~= x or p.cellY ~= y then
-          settle(function() return not p.moving and not world:busy() and not top() end, "step")
+          settle(function() return not p.moving and not world:busy() and not top() end,
+            "step on " .. tostring(world.map.id) .. " at " .. p.cellX .. "," .. p.cellY
+              .. " moving=" .. tostring(p.moving) .. " busy=" .. tostring(world:busy())
+              .. " top=" .. tostring(top() and (top().name or top().kind or "state")))
           return true
         end
       end
@@ -285,7 +405,7 @@ return function(game)
       error("walk stuck: " .. what)
     end
 
-    local function walkInto(fromId, sx, sy, dir, toId)
+    local function walkInto(fromId, sx, sy, dir, toId, standFrames)
       local def = world.maps[fromId]
       local fromMap = Map.new(def, world.tilesets[def.tileset])
       local toDef = world.maps[toId]
@@ -317,17 +437,25 @@ return function(game)
         return world.map.id == fromId and not world:busy() and not top()
       end, "warp " .. fromId)
       world.checkTrainerBattle = function() return false end
+      world.tryCoordScript = function() return false end
       require("src.core.gen2.Phone").state(game.save).specialCall = 0
       wait(240)
+      settle(drained, "bake queue drained on " .. fromId)
       recolors = {}
+      borderInDraw = 0
       counting = true
       game.speedOverride = 4
+      local seen = #crossings
       walkTo(edge, fromId .. " edge")
       for _ = 1, 4 do
         if world.map.id == toId then break end
         stepOnce(dir)
       end
       assert(world.map.id == toId, "did not reach " .. toId)
+      local hit
+      for i = seen + 1, #crossings do
+        if crossings[i].to == toId then hit = crossings[i] end
+      end
       local p = world.player
       local entry = d[1] * p.cellX + d[2] * p.cellY
       local far = entry
@@ -338,16 +466,21 @@ return function(game)
       far = math.min(far, entry + 12)
       walkTo(function(x, y) return d[1] * x + d[2] * y >= far end, toId .. " far side")
       wait(30)
+      if standFrames then stand(standFrames) end
       counting = false
       game.speedOverride = 200
       world.checkTrainerBattle = nil
+      world.tryCoordScript = nil
       label(#recolors == 0, "3093_no_sprite_bake_in_draw_walking_into_" .. toId,
         #recolors .. (#recolors > 0 and (": " .. table.concat(recolors, ",")) or ""))
+      seamLabels(hit, fromId, toId, borderInDraw)
     end
     cross("ROUTE_29", 3, 6, "left", "CHERRYGROVE_CITY", "3093_01_cherrygrove_seam.png")
-    cross("CHERRYGROVE_CITY", 16, 3, "up", "ROUTE_30", "3093_02_route30_seam.png")
+    cross("CHERRYGROVE_CITY", 16, 3, "up", "ROUTE_30", "3093_02_route30_seam.png", 120)
     cross("ROUTE_30", 6, 3, "up", "ROUTE_31", "3093_03_route31_seam.png")
     walkInto("OLIVINE_CITY", 20, 6, "up", "ROUTE_39")
+    walkInto("ROUTE_39", 10, 30, "down", "OLIVINE_CITY", 120)
+    walkInto("ROUTE_34", 10, 4, "up", "GOLDENROD_CITY", 120)
 
     for _, id in ipairs(TOUR) do
       world:warpToMapId(id, 4, 4, "down")
@@ -355,15 +488,33 @@ return function(game)
         return world.map.id == id and not world:busy() and not top()
       end, "tour " .. id)
     end
-    local count = 0
-    for _ in pairs(world.mapImages) do count = count + 1 end
+    local count, borderCount = 0, 0
+    for key in pairs(world.mapImages) do
+      if World.isBorderKey(key) then borderCount = borderCount + 1 else count = count + 1 end
+    end
     label(count <= World.MAP_IMAGE_CAP, "3093_map_images_bounded",
       count .. " <= " .. World.MAP_IMAGE_CAP)
+    label(borderCount <= World.BORDER_IMAGE_CAP, "3093_border_images_bounded",
+      borderCount .. " <= " .. World.BORDER_IMAGE_CAP)
+    local budget = World.BAKE_TILES_PER_STEP or 640
+    label(maxPumpTiles <= budget, "3093_pump_tiles_per_step_bounded",
+      maxPumpTiles .. " <= " .. budget)
+    label(maxPumpCells > 0 and maxPumpCells <= budget, "3093_pump_attr_cells_per_step_bounded",
+      maxPumpCells .. " <= " .. budget)
+    label(pumpReads == 0, "3093_pump_no_canvas_readback", pumpReads .. " readbacks")
+    label(pumpMaxMs < 4, "3093_pump_step_max_ms_under_4", string.format("%.2f ms", pumpMaxMs))
   end, debug.traceback)
 
-  World.bakeMapImage = bake
+  World.bakeMapImage, World.bakeMapChunk = bake, chunk
+  BorderFill.bake, MapAttrGrid.build = borderBake, attrBuild
+  World.attrJobStep = attrStep
+  if canvasIndex then canvasIndex.newImageData = readback end
+  TileAttrs.drawFlippedTile = flipped
   World.draw, Assets.imageData = draw, imageData
-  if stepWrapped and game.world then game.world.step = nil end
+  if stepWrapped and game.world then
+    game.world.step = nil
+    game.world.pumpBakes = nil
+  end
   game.speedOverride = speed
   love.audio.setVolume(volume)
   for _, key in ipairs({ "writeSave", "writeOptions", "persistOptions" }) do

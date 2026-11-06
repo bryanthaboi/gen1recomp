@@ -13,7 +13,7 @@ local function build(L)
     japanese = "Japanese FireRed/LeafGreen saves can't be imported.",
     empty = "That save file is empty (no game was ever saved).",
     corrupt = "Both copies of the save in that file are damaged.",
-    damagedTemplate = "Cannot export because the preserved cartridge image is damaged. Reimport the original cartridge save to restore it.",
+    damagedTemplate = "The preserved cartridge image was damaged, so the cartridge save was rebuilt from this playthrough and anything the port does not track starts over as in a new game.",
     olderSlot = "The newest copy of that save was damaged, so the previous save was imported.",
   }
   if L.FAMILY == "emerald" then
@@ -1809,6 +1809,13 @@ local function build(L)
       and c.name == trunc(save.name, L.PLAYER_NAME_LENGTH)
   end
 
+  function Gen3Save.templateIntact(source)
+    local tpl = ImagePack.unpack(source)
+    if type(tpl) ~= "string" then return false end
+    local ok, c = pcall(Gen3Save.decode, tpl)
+    return ok and c ~= nil
+  end
+
   local function mailSpecies(mon)
     local ok, Mail = pcall(require, "src.core.game3.mail")
     local species = num(mon.species or mon.speciesId, 0)
@@ -1840,9 +1847,13 @@ local function build(L)
         end
       end
     end
-    if not c and damaged then return nil, Gen3Save.MSG.damagedTemplate end
+    local rebuilt = not c and damaged
     if not c then c, blocks = freshCart(), nil end
     if not opts.toNational then return nil, Gen3Save.MSG.noData end
+    if rebuilt then
+      c.notes = c.notes or {}
+      c.notes[#c.notes + 1] = Gen3Save.MSG.damagedTemplate
+    end
     local tplTower = c.trainerTowerBest
     local tid, sid = num(save.trainerId, 0) % 65536, num(save.secretId, 0) % 65536
     local function cartMail(r)

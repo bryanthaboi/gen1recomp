@@ -385,14 +385,14 @@ local function fetchError(url, status, noise)
     local extra = (noise or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     if #extra > 160 then extra = extra:sub(1, 157) .. "..." end
     if extra ~= "" then
-      return ("HTTP %d from %s (%s)"):format(status, url, extra)
+      return ("HTTP %d: %s (%s)"):format(status, extra, url)
     end
-    return ("HTTP %d from %s"):format(status, url)
+    return ("HTTP %d (%s)"):format(status, url)
   end
   local why = (noise or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
   if why == "" then why = "no response" end
   if #why > 160 then why = why:sub(1, 157) .. "..." end
-  return ("fetch failed for %s: %s"):format(url, why)
+  return ("fetch failed: %s (%s)"):format(why, url)
 end
 
 function HostShell.isWindows()

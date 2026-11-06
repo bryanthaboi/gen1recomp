@@ -59,9 +59,9 @@ local want = {
 local failed = 0
 for loc = 1, 16 do
   Flags.setVar(session.store, nil, VAR, loc)
-  local got
-  local adapters = { setStringVar = function(i, s) if i == 1 then got = s end end }
-  local ok, _, value = pcall(Natives.special, { store = session.store }, SPECIAL, adapters)
+  local ctx = { store = session.store, stringVars = { "", "", "" } }
+  local ok, _, value = pcall(Natives.special, ctx, SPECIAL, {})
+  local got = ctx.stringVars[1]
   local wantType = loc >= 9 and 1 or 0
   if ok and got == want[loc] and value == wantType then
     print(("[ok] location %d -> %s, type %d"):format(loc, got, value))

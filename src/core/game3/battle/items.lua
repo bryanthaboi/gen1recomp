@@ -302,8 +302,64 @@ local function sync_player_battler(st, battlerId)
   b.status = b.mon.status
 end
 
+local ITEM_POKE_FLUTE = 350
+-- pokefirered/include/constants/abilities.h:47
+local ABILITY_SOUNDPROOF = 43
+
+-- pokefirered/include/constants/party_menu.h:11 AILMENT_FNT
+local function party_mon_asleep(mon)
+  local s = mon.status
+  local n = tonumber(s)
+  if n then return bit.band(n, 7) ~= 0 end
+  if s ~= nil and s ~= "" then return Adapter.normStatus(s) == "SLP" end
+  return (tonumber(mon.sleep) or 0) > 0
+end
+
+local function flute_party(st, side)
+  if side == "player" then return st.playerParty or {} end
+  if st.foeParty then return st.foeParty end
+  local out = {}
+  for _, id in ipairs({ 1, 3 }) do
+    local b = require("src.core.game3.battle.state").battler(st, id)
+    if b and b.mon then out[#out + 1] = b.mon end
+  end
+  return out
+end
+
+-- pokefirered/src/battle_script_commands.c:6157 VARIOUS_CHECK_POKEFLUTE
+function BattleItems.pokeFlute(st, adapter)
+  local State = require("src.core.game3.battle.state")
+  local Policy = require("src.core.game3.battle.party_status_rs")
+  local woke = false
+  for _, side in ipairs({ "player", "enemy" }) do
+    for _, mon in ipairs(flute_party(st, side)) do
+      local species = Pokemon.speciesOf(mon) or 0
+      if species ~= 0 and not (mon.isEgg or mon.egg) and party_mon_asleep(mon)
+          and Policy.benchAbility(mon, species) ~= ABILITY_SOUNDPROOF then
+        mon.status = nil
+        mon.sleep = nil
+        woke = true
+      end
+    end
+  end
+  local present = {}
+  for id = 0, st.double and 3 or 1 do
+    local b = State.battler(st, id)
+    if b and adapter:abilityOf(b) ~= "SOUNDPROOF" then
+      if adapter:status(b) == "SLP" or (tonumber(b.sleepTurns) or 0) > 0 then
+        adapter:clearStatus(b)
+        if b.mon then b.mon.sleep = nil end
+      end
+      b.expNightmare = nil
+    end
+    -- pokefirered/src/battle_script_commands.c:7325
+    if b and not State.isAbsent(st, id) then present[#present + 1] = id end
+  end
+  return woke, present
+end
+
 --- Use a battle item. Returns:
---   result: "catch"|"fail_catch"|"heal"|"xitem"|"doll"|"cancel"|"error"
+--   result: "catch"|"fail_catch"|"heal"|"xitem"|"doll"|"flute"|"cancel"|"error"
 --   msgs: string list
 --   endsTurn: bool (enemy may still move unless endsBattle)
 --   endsBattle: bool
@@ -384,6 +440,22 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     -- pokefirered/src/item_use.c:821
     say(player_used(session, itemId))
     return "doll", msgs, true, true
+  end
+
+  -- pokefirered/src/battle_main.c:4165
+  if num == ITEM_POKE_FLUTE then
+    local woke, present = BattleItems.pokeFlute(st, adapter)
+    local fill = Adapter.fill(st, { lastItem = itemId, playerName = (session and session.name) or st.playerName })
+    if woke then
+      -- pokefirered/data/battle_scripts_2.s:200
+      msgs[1] = BattleText.get("STRINGID_POKEFLUTE", fill)
+      -- pokefirered/data/battle_scripts_2.s:204
+      msgs[2] = BattleText.get("STRINGID_MONHEARINGFLUTEAWOKE", fill)
+    else
+      -- pokefirered/data/battle_scripts_2.s:195
+      msgs[1] = BattleText.get("STRINGID_POKEFLUTECATCHY", fill)
+    end
+    return "flute", msgs, true, false, { woke = woke, battlers = present }
   end
 
   -- Balls

@@ -2275,6 +2275,31 @@ end
 
 local SAFARI_BALL_ITEM = 5
 
+-- pokefirered/data/battle_scripts_2.s:192 BattleScript_UsePokeFlute
+local function push_poke_flute(st, msgs, plan)
+  if not (plan and plan.woke) then return Ui.push(msgs[1]) end
+  local frames, started = 0, false
+  Ui.pushGated(msgs[1], function()
+    frames = frames + 1
+    -- pokefirered/include/constants/battle.h:308 B_WAIT_TIME_LONG
+    if frames < 64 then return true end
+    if not started then
+      started = true
+      -- pokefirered/data/battle_scripts_2.s:202
+      Audio.playFanfare("MUS_POKE_FLUTE")
+      return true
+    end
+    return not Audio.isFanfareFinished()
+  end, 1)
+  Ui.push(msgs[2], function()
+    -- pokefirered/data/battle_scripts_2.s:206
+    for _, id in ipairs(plan.battlers or {}) do
+      local b, p = State.battler(st, id), Anim.present(id)
+      if b and p then p.displayStatus = b.status or (b.mon and b.mon.status) or false end
+    end
+  end)
+end
+
 -- pokefirered/src/battle_main.c:4371
 local function catch_push(text, wait, o)
   if o then
@@ -2617,8 +2642,9 @@ local function step_action()
         end
       else
         local BattleItems = require("src.core.game3.battle.items")
-        local result, _msgs, endsTurn, endsBattle = BattleItems.use(
+        local result, itemMsgs, endsTurn, endsBattle, detail = BattleItems.use(
           st, ad, bag, session, meta.itemId, meta.partySlot, nil, meta.moveSlot)
+        if result == "flute" then push_poke_flute(st, itemMsgs, detail) end
         if endsBattle then
           Battle._actions = {}
           if result == "catch" then
@@ -3639,7 +3665,9 @@ function D.useBag(act)
     Anim.syncDisplayFromState(st)
     return D.afterEach()
   end
-  local result = BattleItems.use(st, ad, bag, session, act.itemId, act.partySlot, act.battler, act.moveSlot)
+  local result, itemMsgs, _, _, detail = BattleItems.use(st, ad, bag, session, act.itemId, act.partySlot,
+    act.battler, act.moveSlot)
+  if result == "flute" then push_poke_flute(st, itemMsgs, detail) end
   if result == "heal" then
     for _, id in ipairs(SEL_ORDER) do
       local b = State.battler(st, id)

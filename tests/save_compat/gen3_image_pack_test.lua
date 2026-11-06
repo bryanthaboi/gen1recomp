@@ -93,9 +93,9 @@ for _, v in ipairs(VERSIONS) do
     local save = assert(K.import(3, v, c.bytes))
     save.modData.cartImage = bad
     local out, err = K.export(3, v, save, nil)
-    check(out == nil, v .. ": a damaged embedded image refuses export")
+    check(out ~= nil, v .. ": a damaged embedded image is rebuilt from the save")
     check(type(err) == "string" and err:find("preserved cartridge image", 1, true) ~= nil,
-      v .. ": a damaged image names the export failure")
+      v .. ": and the export says so")
     local recovered = assert(K.export(3, v, save, c.bytes))
     eq(#K.r1Diff(3, v, c.bytes, recovered), 0, v .. ": a compatible explicit image can recover the embedded image")
   end

@@ -16,6 +16,18 @@ local LauncherView = require("src.import.LauncherView")
 love.mouse.getPosition = function() return -100, -100 end
 love.mouse.isDown = function() return false end
 
+local URL = "https://bois.icu"
+local urlDraws
+local kitText = Kit.text
+Kit.text = function(font, text, x, y, ...)
+  if urlDraws and text == URL then
+    local c = Kit._clipRect
+    urlDraws[#urlDraws + 1] = { x = c and c.x or 0, y = y, w = 2,
+      h = Kit.textHeight(font), clip = c and { x = c.x, y = c.y, w = c.w, h = c.h } or nil }
+  end
+  return kitText(font, text, x, y, ...)
+end
+
 local mods = {}
 for i = 1, 12 do
   mods[i] = {
@@ -102,8 +114,11 @@ for _, size in ipairs(SIZES) do
     check(pageMax == 0, label .. ": no page scroll (page " .. pageMax .. ")")
     check(not (pageMax > 0 and regionMax > 0),
       label .. ": at most one scroller has travel")
-    check(math.abs(rect.y + rect.h - (m.top + m.h)) < 0.5,
-      label .. ": the tab region runs to the bottom of the safe area")
+    local bar = imp._footerBarRect
+    check(bar ~= nil and math.abs(rect.y + rect.h - bar.y) < 0.5,
+      label .. ": the tab region runs down to the pinned footer bar")
+    check(bar ~= nil and math.abs(bar.y + bar.h - (m.top + m.h)) < 0.5,
+      label .. ": the footer bar ends at the bottom of the safe area")
     check(rect.y + rect.h <= H + 0.5, label .. ": the region is never taller than the screen")
 
     local seen, shown = {}, {}
@@ -129,7 +144,14 @@ for _, size in ipairs(SIZES) do
       at = real + step
     end
     local bottom = imp._tabScrollMax[tab] or 0
-    for _ = 1, 3 do auditAt(imp, tab, 1e6) end
+    for _ = 1, 2 do auditAt(imp, tab, 1e6) end
+    urlDraws = {}
+    auditAt(imp, tab, 1e6)
+    local trustShown = false
+    for _, r in ipairs(urlDraws) do
+      if visibleSpan(r, W, H) then trustShown = true end
+    end
+    urlDraws = nil
     check(math.abs((imp._tabScrollMax[tab] or 0) - bottom) < 0.5,
       label .. ": resting at the bottom does not grow the content ("
         .. bottom .. " -> " .. tostring(imp._tabScrollMax[tab]) .. ")")
@@ -140,7 +162,8 @@ for _, size in ipairs(SIZES) do
     table.sort(missing)
     check(#missing == 0, label .. ": every control can be scrolled into reach"
       .. (#missing > 0 and (" (" .. table.concat(missing, ", ") .. ")") or ""))
-    check(footerShown, label .. ": the footer is reachable at the tail of the region")
+    check(footerShown, label .. ": Patch notes is on screen")
+    check(trustShown, label .. ": the trust note link is reachable at the tail of the region")
   end
 end
 
@@ -161,9 +184,23 @@ for _, r in ipairs(Kit.audit) do
   if r.label:find("Patch notes", 1, true) then notes = r end
 end
 Kit.audit = nil
-check(notes ~= nil and visibleSpan(notes, 390, 844)
-  and notes.y + notes.h <= notes.clip.y + notes.clip.h + 0.5,
-  "moving the focus ring to the footer scrolls the region to show it")
+check(notes ~= nil and visibleSpan(notes, 390, 844) and notes.clip == nil,
+  "focusing Patch notes shows it without scrolling the region")
+check((pad._tabScroll.red or 0) == 0, "and the region stays at the top")
+local region = pad._tabRegionRect
+local deep
+for i = 1, Kit._navN or 0 do
+  local slot = Kit._nav[i]
+  if slot.y >= region.y + region.h and (not deep or slot.y > deep.y) then
+    deep = { id = slot.id, y = slot.y }
+  end
+end
+check(deep ~= nil, "a control sits below the fold of the phone game tab")
+Kit.setFocus(deep and deep.id)
+LauncherView.draw(pad)
+LauncherView.draw(pad)
+check((pad._tabScroll.red or 0) > 0,
+  "moving the focus ring below the fold scrolls the region to show it")
 local parked = pad._tabScroll.red
 pad._tabScroll.red = 0
 LauncherView.draw(pad)

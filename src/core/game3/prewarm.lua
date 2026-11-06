@@ -5,7 +5,7 @@ Prewarm.FIELD_SE = { "SE_SELECT", "SE_WIN_OPEN", "SE_WALL_HIT", "SE_EXIT", "SE_D
   "SE_SLIDING_DOOR", "SE_PIN" }
 
 Prewarm.BATTLE_SE = { "SE_BALL_OPEN", "SE_BALL_THROW", "SE_FAINT", "SE_NOT_EFFECTIVE", "SE_EFFECTIVE",
-  "SE_SUPER_EFFECTIVE", "SE_EXP" }
+  "SE_SUPER_EFFECTIVE", "SE_EXP", "SE_SHINY", "SE_BALL_TRAY_ENTER", "SE_BALL_TRAY_BALL", "SE_BALL_TRAY_EXIT" }
 
 Prewarm.MODULES = {
   "src.core.game3.party", "src.core.game3.trainer_sight", "src.core.game3.warp",
@@ -55,6 +55,7 @@ function Prewarm.session(session)
   Warm.add("data:pic_coords", function() require("src.core.game3.battle.pic_coords").active() end, 7)
   Warm.add("data:mon_anim", function() require("src.core.game3.mon_anim_data").get() end, 7)
   Warm.add("data:moves", function() require("src.core.game3.battle.moves").loadRomPack() end, 7)
+  Warm.add("battle:anim_pack", function() require("src.core.game3.battle.anim").preloadPack() end, 7)
   se_list(Prewarm.FIELD_SE, 9)
 end
 
@@ -70,6 +71,7 @@ local function lead_of(party)
 end
 
 function Prewarm.battle(session, foe)
+  Warm.add("battle:anim_pack", function() require("src.core.game3.battle.anim").preloadPack() end, 3)
   local Audio = package.loaded["src.core.game3.audio"]
   if not Audio then return end
   local lead = lead_of(session and session.party)

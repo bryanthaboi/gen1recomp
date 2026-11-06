@@ -162,7 +162,7 @@ return function(game)
   end
   U.tap(game, "a")
   local waitT = now()
-  while now() - waitT < 3 do
+  while now() - waitT < 1 do
     U.wait(1)
     local ps = ChipAudio.parkState()
     if ps and ps.ready then break end
@@ -199,5 +199,73 @@ return function(game)
   result(trainerFrames ~= nil and trainerFrames <= 2,
     ("trainer battle theme first note within 2 frames of the cue (%s)")
       :format(tostring(trainerFrames)))
+
+  local flags = game.save.flags
+  flags.EVENT_GOT_POKEDEX = true
+  flags.EVENT_BEAT_BROCK = nil
+  flags.EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE = nil
+  U.teleport(game, "ROUTE_22", 30, 4, "left")
+  local settleT = now()
+  while now() - settleT < 8 do
+    U.wait(1)
+    local ps = ChipAudio.parkState()
+    if now() - settleT >= 1 and ps and ps.ready then break end
+  end
+  ow = game.overworld
+  local rivalHits = ChipAudio.stats().parkHits
+  local rival = {}
+  Music.playBattle = function(...)
+    if not rival.t then
+      rival.park = ChipAudio.parkState()
+      rival.t = now()
+      rival.frame = 0
+      realBattle(...)
+      rival.depth = ChipAudio.stats().depth
+      return
+    end
+    return realBattle(...)
+  end
+  for _ = 1, 120 do
+    if ow.runner:isRunning() then break end
+    U.hold(game, "left", 1)
+  end
+  result(ow.runner:isRunning(), "the Route 22 rival ambush starts")
+  local wantKey = "|" .. tostring(wantDef) .. "|"
+  local hintT = now()
+  while now() - hintT < 1 do
+    U.wait(1)
+    local ps = ChipAudio.parkState()
+    if ps and ps.ready and ps.key:find(wantKey, 1, true) then break end
+  end
+  for _ = 1, 80 do
+    if rival.t then break end
+    U.tap(game, "a")
+    U.wait(6)
+  end
+  local rivalFrames
+  local rivalWait = now()
+  while rival.t and now() - rivalWait < 3 do
+    U.wait(1)
+    rival.frame = rival.frame + 1
+    if not ChipAudio.awaitingFirstBuffer() then
+      rivalFrames = rival.frame
+      rival.ms = (now() - rival.t) * 1000
+      break
+    end
+  end
+  Music.playBattle = realBattle
+  U.log("rival cue", tostring(Music.current()), "frames",
+    tostring(rivalFrames), ("%.1f ms"):format(rival.ms or -1),
+    "buffers queued on the cue", tostring(rival.depth))
+  result(rival.t ~= nil and Music.current() == wantTheme,
+    "the scripted rival battle cue plays " .. tostring(wantTheme))
+  result(rival.park ~= nil and rival.park.ready
+      and rival.park.key:find(wantKey, 1, true) ~= nil,
+    "the scripted rival battle theme is parked before the cue")
+  result(ChipAudio.stats().parkHits == (rivalHits or 0) + 1,
+    "the scripted rival battle cue takes the park")
+  result(rivalFrames ~= nil and rivalFrames <= 2,
+    ("scripted rival battle theme first note within 2 frames of the cue (%s)")
+      :format(tostring(rivalFrames)))
   love.event.quit(failed and 1 or 0)
 end

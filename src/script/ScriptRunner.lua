@@ -117,6 +117,42 @@ function ScriptRunner:makeContext(extra)
   return ctx
 end
 
+local function trainerAhead(rows, from, depth)
+  for k = from, math.min(#rows, from + 23) do
+    local row = rows[k]
+    if type(row) == "table" then
+      local name = row[1]
+      if name == "rival_battle" and type(row[2]) == "string" then
+        return row[2], row[3]
+      end
+      if name == "start_battle" and row[2] == "trainer" and type(row[3]) == "string" then
+        return row[3], row[4]
+      end
+      if depth < 3 then
+        for j = 2, #row do
+          local v = row[j]
+          if type(v) == "table" and type(v[1]) == "table" then
+            local cls, party = trainerAhead(v, 1, depth + 1)
+            if cls then return cls, party end
+          end
+        end
+      end
+    end
+  end
+end
+
+function ScriptRunner:hintTrainerBattle(script, ctx, startPc)
+  if ctx.trainerHinted or self.parallel or ctx.resumeBattle then return end
+  local data = self.game and self.game.data
+  if not (data and data.trainers and type(script) == "table") then return end
+  local cls, party = trainerAhead(script, startPc or 1, 0)
+  if not (cls and data.trainers[cls]) then return end
+  ctx.trainerHinted = true
+  local ok, err = pcall(require("src.world.OverworldController").prepareTrainerBattleMusic,
+    data, cls, type(party) == "number" and party or nil)
+  if not ok then Logger.warn("trainer battle music hint failed: %s", tostring(err)) end
+end
+
 function ScriptRunner:run(script, extra, startPc)
   assert(not self:isRunning(), "script already running")
   local ctx = self:makeContext(extra)
@@ -126,6 +162,10 @@ function ScriptRunner:run(script, extra, startPc)
   end
   self.co = coroutine.create(function()
     self:exec(script, ctx, startPc)
+    if ctx.trainerHinted and ctx.lastBattleResult == nil then
+      local ok, err = pcall(require("src.core.Music").prepareBattle, self.game.data, "wild")
+      if not ok then Logger.warn("wild battle music re-park failed: %s", tostring(err)) end
+    end
     -- Commands can defer a game action until the script's own dialogue is
     -- done. start_battle uses this for win-path evolutions, which must not
     -- be covered by post-battle trainer text.
@@ -145,6 +185,7 @@ function ScriptRunner:exec(script, ctx, startPc)
   local labels = ScriptRunner.scanLabels(script)
   local data = self.game and self.game.data
   local pc = startPc or 1
+  self:hintTrainerBattle(script, ctx, startPc)
   self.script = script
   while pc <= #script do
     self.pc = pc

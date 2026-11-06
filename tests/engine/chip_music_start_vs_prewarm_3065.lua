@@ -379,6 +379,42 @@ for phase = 0, 5 do preparedStart(phase, 26) end
 check(workerError == nil, "worker ran clean: " .. tostring(workerError))
 
 do
+  local data = { audio = {} }
+  check(ChipAudio.playMusic(data, song(2), true) ~= nil, "a new map song starts")
+  local mapSource = queueables[#queueables]
+  check(ChipAudio.prepareMusic(data, song(6), true),
+    "the battle theme is hinted in the same tick")
+  local t0, readyAt = now, nil
+  for _ = 1, math.floor(10 / FRAME) do
+    step(1)
+    local ps = ChipAudio.parkState()
+    if ps and ps.ready then
+      readyAt = now - t0
+      break
+    end
+  end
+  check(readyAt ~= nil and readyAt <= 2.6,
+    ("a park hinted at a song change is ready within 2.6 s at k=10 (%s s)")
+      :format(readyAt and ("%.2f"):format(readyAt) or "never"))
+  eq(#mapSource.underruns, 0, "the new song never underruns behind the park")
+
+  check(ChipAudio.playMusic(data, song(1), true) ~= nil, "a meet sting starts")
+  local theme = song(7)
+  ChipAudio.prepareMusic(data, theme, true)
+  step(math.floor(3 / FRAME))
+  local hits = ChipAudio.stats().parkHits or 0
+  local cue = now
+  check(ChipAudio.playMusic(data, theme, true) ~= nil, "the battle cue 3 s after the sting")
+  local music = queueables[#queueables]
+  step(math.floor(1 / FRAME))
+  check(music.firstPlay ~= nil and music.firstPlay - cue <= 2 * FRAME + 1e-9,
+    ("a cue 3 s after a hinted sting starts within 2 frames (%s s)"):format(
+      music.firstPlay and ("%.3f"):format(music.firstPlay - cue) or "never"))
+  eq(ChipAudio.stats().parkHits, hits + 1, "the 3 s sting-to-cue takes the park")
+  step(math.floor(5 / FRAME))
+end
+
+do
   musicScale = 12.3
   check(ChipAudio.playMusic({ audio = {} }, song(3), true) ~= nil,
     "route song plays near realtime")

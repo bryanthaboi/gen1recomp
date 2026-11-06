@@ -67,7 +67,7 @@ return function(game)
   local res = FieldMoves.fromMenu("DIVE", { party = session.party, store = Space.store, session = session })
   check(res and not res.ok and res.badge == "DIVE", "DIVE from the party menu is badge-gated before the Mind Badge")
 
-  local function pump(pred, frames, answer)
+  local function pump(pred, frames, answer, shoot)
     local seen = { texts = {} }
     for _ = 1, frames or 600 do
       if pred() then return true, seen end
@@ -78,6 +78,10 @@ return function(game)
       elseif Message.isOpen and Message.isOpen() then
         local page = Message.currentPage()
         if seen.texts[#seen.texts] ~= page then seen.texts[#seen.texts + 1] = page end
+        if shoot and not shoot.done and page:find(shoot.find, 1, true) then
+          for _ = 1, 240 do if not Message.isTyping() then break end U.wait(1) end
+          shoot.done = U.shot(game, shoot.path) ~= false
+        end
         U.tap(game, "a")
         U.wait(3)
       else
@@ -123,7 +127,7 @@ return function(game)
   gone, seen = pump(function() return removed(4) and idle() end, 900)
   check(seen.choice == true, "Stone Badge: Text_WantToCut asks YES/NO (" .. joined(seen) .. ")")
   check(gone, "YES cuts the tree down (lid 4 removed: " .. tostring(removed(4)) .. ")")
-  check(joined(seen):find("used CUT") ~= nil, "Text_MonUsedFieldMove names the move")
+  check(joined(seen):find("SWAMPERT used CUT!", 1, true) ~= nil, "Text_MonUsedFieldMove names the mon and the move")
   U.shot(game, DIR .. "/02_cut_done.png")
 
   local rx, ry = 29, 51
@@ -163,8 +167,12 @@ return function(game)
     badge(4, true)
     U.tap(game, "a")
     local on
-    on, seen = pump(function() return Flags.getFlag(Space.store, nil, strengthFlag) == true and idle() end, 900)
+    on, seen = pump(function() return Flags.getFlag(Space.store, nil, strengthFlag) == true and idle() end, 900, nil,
+      { find = "used STRENGTH!", path = DIR .. "/04_mon_used_strength.png" })
     check(seen.choice and on, "Heat Badge: STRENGTH sets FLAG_SYS_USE_STRENGTH (" .. joined(seen) .. ")")
+    -- pokeemerald/data/scripts/field_move_scripts.inc:170
+    check(joined(seen):find("SWAMPERT used STRENGTH!", 1, true) ~= nil, "Text_MonUsedStrength names the mon (" .. joined(seen) .. ")")
+    check(joined(seen):find("SWAMPERT's STRENGTH", 1, true) ~= nil, "Text_MonUsedStrength second page names the mon")
     local obj = Objects.find(2)
     local ox, oy = obj and obj.cellX, obj and obj.cellY
     U.hold(game, face, 20)
