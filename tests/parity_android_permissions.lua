@@ -76,8 +76,8 @@ if script then
           "the strip list no longer deletes INTERNET (#287)")
     check(tuple:find("RECORD_AUDIO", 1, true) ~= nil,
           "RECORD_AUDIO is still stripped (the game records no audio)")
-    check(tuple:find("WRITE_EXTERNAL_STORAGE", 1, true) ~= nil,
-          "WRITE_EXTERNAL_STORAGE is still stripped (legacy storage)")
+    check(tuple:find("WRITE_EXTERNAL_STORAGE", 1, true) == nil,
+          "the strip list keeps WRITE_EXTERNAL_STORAGE (Storage Folder on Android 10 and older)")
   end
 end
 
@@ -112,8 +112,8 @@ if manifest and script and haveCommand("python3") then
             .. " bind and connect (#287)")
       check(trimmed:find("RECORD_AUDIO", 1, true) == nil,
             "the trim still drops RECORD_AUDIO")
-      check(trimmed:find("WRITE_EXTERNAL_STORAGE", 1, true) == nil,
-            "the trim still drops WRITE_EXTERNAL_STORAGE")
+      check(trimmed:find("WRITE_EXTERNAL_STORAGE", 1, true) ~= nil,
+            "the trim keeps WRITE_EXTERNAL_STORAGE (Storage Folder on Android 10 and older)")
       check(trimmed:find("android.permission.VIBRATE", 1, true) ~= nil,
             "the trim keeps VIBRATE")
       check(trimmed:find("android.permission.BLUETOOTH", 1, true) ~= nil,
