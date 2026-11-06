@@ -708,8 +708,9 @@ function Renderer:drawTiltedWorld(zoneList, sx, sy, wox, woy, target,
     love.graphics.draw(self.worldCanvas, 0, 0)
   end
 
-  -- project onto the tilted plane into the present target (or screen)
-  love.graphics.setCanvas(target)
+  -- project onto the tilted plane into the present target, else the game
+  -- viewport's canvas, else the screen
+  love.graphics.setCanvas(target or GameViewport.target())
   mesh:setTexture(self.tiltCanvas)
   mesh:setVertices(Tilt.meshCorners(wvw, wvh))
   love.graphics.push()

@@ -1043,3 +1043,4 @@ tests/engine/gen3_launcher_export_ability_f9.lua
 tests/engine/options_controls_caption_f3.lua
 tests/engine/shaderfx_docked_ui_grid_phase.lua
 tests/game3_swap_line_f7_test.lua
+tests/engine/tilt_viewport_target_test.lua
