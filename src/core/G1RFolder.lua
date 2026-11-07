@@ -83,14 +83,25 @@ local function writable(dir)
   return ok
 end
 
-local function fileSize(path)
-  local f = io.open(path, "rb")
-  if not f then return nil end
-  local size = f:seek("end")
-  f:close()
-  return size
+-- True when both files hold the same bytes.  Read in chunks so a large ROM
+-- cache file is never held in memory twice.
+local function sameFile(a, b)
+  local fa = io.open(a, "rb")
+  if not fa then return false end
+  local fb = io.open(b, "rb")
+  if not fb then fa:close() return false end
+  local same = true
+  while true do
+    local x, y = fa:read(CHUNK), fb:read(CHUNK)
+    if x ~= y then same = false break end
+    if not x then break end
+  end
+  fa:close()
+  fb:close()
+  return same
 end
 
+-- Copy src to dst, then read both back: true only if the copy is verified.
 local function copyFile(src, dst)
   local fin = io.open(src, "rb")
   if not fin then return false end
@@ -103,35 +114,62 @@ local function copyFile(src, dst)
     if fout:write(block) == nil then ok = false break end
   end
   fin:close()
-  fout:close()
-  return ok and fileSize(src) == fileSize(dst)
+  if not fout:close() then ok = false end
+  return ok and sameFile(src, dst)
+end
+-- The copy step G.move uses; tests swap it to simulate a failed copy.
+G._copyFile = copyFile
+
+local function parentOf(path)
+  return path:match("^(.*)/[^/]+$")
 end
 
 -- Move everything from where the files live now to `target` ("" = the app's
--- own storage).  Returns true, moved, failed  or  false, message.
+-- own storage), in an order that never leaves saves split between folders:
+--   1. copy every file and verify each copy against its original
+--   2. only then switch the storage setting to the new folder
+--   3. only then delete the originals
+-- If any copy or the switch fails, the copies made so far are removed again,
+-- the setting is left alone, and every original is still where it was.
+-- A file already in the new folder is never overwritten: ours goes into
+-- _from_previous_location instead, unless it holds the same bytes (left
+-- there by an earlier attempt), in which case it is reused.
+-- Returns true, moved, leftover  or  false, message.  `leftover` counts
+-- originals that were copied but couldn't be deleted afterwards.
 function G.move(target)
   local SaveData = SD()
   local saveDir = love.filesystem.getSaveDirectory()
   local from = SaveData.portableBaseDir() or saveDir
   local to = (target and target ~= "") and target or saveDir
+  local function where(dir) return G.pretty(dir ~= saveDir and dir or "") end
   if from == to then
     return false, "Your files are already in " .. G.pretty(target) .. "."
   end
   if to:sub(1, #from + 1) == from .. "/" or from:sub(1, #to + 1) == to .. "/" then
     return false, "Pick a folder that isn't inside the current one, or the other way round."
   end
+  local toExisted = SaveData.statNative(to) ~= nil
   SaveData.mkdirNative(to)
   if not writable(to) then
+    if not toExisted then os.remove(to) end
     return false, "Can't write to " .. G.pretty(target) .. ".\n\n" .. ACCESS_HELP
   end
   if SaveData.listNative(from) == nil then
+    if not toExisted then os.remove(to) end
     return false, "Can't read the folder your files are in now."
   end
 
-  local moved, failed, dirs = 0, 0, {}
+  -- What to move, and where each copy goes.  `claimed` keeps two files from
+  -- being planned onto the same destination.
+  local files, srcDirs, claimed = {}, {}, {}
+  local function taken(path)
+    return claimed[path] or SaveData.statNative(path) ~= nil
+  end
+  local planError
   local function walk(rel)
     local abs = rel == "" and from or (from .. "/" .. rel)
     for _, name in ipairs(SaveData.listNative(abs) or {}) do
+      if planError then return end
       local relPath = rel == "" and name or (rel .. "/" .. name)
       local skip = rel == "" and (name == "updates" or name:match("^picked_") ~= nil
         or name == SaveData.STORAGE_POINTER or name == "portable.txt"
@@ -141,47 +179,108 @@ function G.move(target)
         local st = SaveData.statNative(srcPath)
         if st and st.type == "directory" then
           walk(relPath)
-          dirs[#dirs + 1] = srcPath
+          srcDirs[#srcDirs + 1] = srcPath
         elseif st then
           local dst = to .. "/" .. relPath
-          if SaveData.statNative(dst) then
-            dst = to .. "/" .. CONFLICT_DIR .. "/" .. relPath
-          end
-          if SaveData.statNative(dst) then
-            failed = failed + 1
-            log("not moved (already there): " .. relPath)
-          else
-            local parent = dst:match("^(.*)/[^/]+$")
-            if parent then SaveData.mkdirNative(parent) end
-            if copyFile(srcPath, dst) then
-              os.remove(srcPath)
-              moved = moved + 1
+          local reuse = false
+          if taken(dst) then
+            if not claimed[dst] and sameFile(srcPath, dst) then
+              reuse = true
             else
-              os.remove(dst)
-              failed = failed + 1
-              log("not moved (copy failed): " .. relPath)
+              dst = nil
+              for n = 1, 99 do
+                local dir = n == 1 and CONFLICT_DIR or (CONFLICT_DIR .. "_" .. n)
+                local candidate = to .. "/" .. dir .. "/" .. relPath
+                if not taken(candidate) then dst = candidate break end
+              end
+              if not dst then
+                planError = "There's no room for another copy of " .. relPath
+                  .. " in " .. G.pretty(target) .. "."
+                return
+              end
             end
           end
+          claimed[dst] = true
+          files[#files + 1] = { src = srcPath, dst = dst, rel = relPath, reuse = reuse }
         end
       end
     end
   end
   walk("")
-  for i = #dirs, 1, -1 do os.remove(dirs[i]) end -- only empty ones go
+  if planError then
+    if not toExisted then os.remove(to) end
+    return false, planError .. " Nothing was moved."
+  end
 
+  -- Undo a failed move: remove the copies and the folders made for them.
+  local copied, madeDirs = {}, {}
+  local function undo()
+    for i = #copied, 1, -1 do os.remove(copied[i]) end
+    table.sort(madeDirs, function(a, b) return #a > #b end) -- deepest first
+    for _, dir in ipairs(madeDirs) do os.remove(dir) end -- only empty ones go
+    if not toExisted then os.remove(to) end
+  end
+  local function makeParent(path)
+    local parent = parentOf(path)
+    local missing, p = {}, parent
+    while p and p ~= to and #p > #to and not SaveData.statNative(p) do
+      missing[#missing + 1] = p
+      p = parentOf(p)
+    end
+    SaveData.mkdirNative(parent)
+    for _, dir in ipairs(missing) do madeDirs[#madeDirs + 1] = dir end
+  end
+
+  -- 1. Copy and verify.  The originals are not touched.
+  for _, file in ipairs(files) do
+    if not file.reuse then
+      makeParent(file.dst)
+      if G._copyFile(file.src, file.dst) then
+        copied[#copied + 1] = file.dst
+      else
+        os.remove(file.dst)
+        undo()
+        log("move stopped, copy failed: " .. file.rel)
+        return false, "Couldn't copy " .. file.rel .. " to " .. G.pretty(target)
+          .. ", so nothing was moved. Your files are still in " .. where(from) .. "."
+      end
+    end
+  end
+
+  -- 2. Switch the storage setting.  Until this succeeds the game still uses
+  -- the old folder, which still holds everything.
+  local switched
   if to == saveDir then
     pcall(love.filesystem.remove, SaveData.STORAGE_POINTER)
+    local okR, left = pcall(love.filesystem.read, SaveData.STORAGE_POINTER)
+    switched = not (okR and type(left) == "string")
   else
+    local marker = to .. "/portable.txt"
+    local hadMarker = SaveData.statNative(marker) ~= nil
+    local f = hadMarker and true or io.open(marker, "wb")
+    if f and f ~= true then f:close() end
     local okW, wrote = pcall(love.filesystem.write, SaveData.STORAGE_POINTER, to .. "\n")
-    if not (okW and wrote) then
-      return false, "Files were moved to " .. G.pretty(target)
-        .. ", but the setting couldn't be saved. Try Move Files again."
-    end
-    local f = io.open(to .. "/portable.txt", "wb")
-    if f then f:close() end
+    switched = f and okW and wrote and true or false
+    if not switched and not hadMarker then os.remove(marker) end
   end
-  log(("moved %d file(s) from %s to %s, %d not moved"):format(moved, from, to, failed))
-  return true, moved, failed
+  if not switched then
+    undo()
+    return false, "The storage setting couldn't be saved, so nothing was moved. "
+      .. "Your files are still in " .. where(from) .. "."
+  end
+
+  -- 3. Everything is safely in the new folder and in use: delete the originals.
+  local leftover = 0
+  for _, file in ipairs(files) do
+    if not os.remove(file.src) then
+      leftover = leftover + 1
+      log("copied, but the original couldn't be deleted: " .. file.rel)
+    end
+  end
+  for i = #srcDirs, 1, -1 do os.remove(srcDirs[i]) end -- only empty ones go
+  log(("moved %d file(s) from %s to %s, %d original(s) left behind")
+    :format(#files, from, to, leftover))
+  return true, #files, leftover
 end
 
 -- Boot check: a folder is chosen but can't be reached (access turned off).
@@ -284,15 +383,16 @@ function G.settingsRows()
           .. "pick where they should go, then press Move.", "info")
         return false
       end
-      local ok, done, moved, failed = pcall(G.move, pending)
+      local ok, done, moved, leftover = pcall(G.move, pending)
       if not ok then
         messageBox("Storage folder", "Something went wrong: " .. tostring(done), "error")
       elseif not done then
         messageBox("Storage folder", tostring(moved), "warning")
       else
         local msg = ("Moved %d file(s) to %s."):format(moved, G.pretty(pending))
-        if failed > 0 then
-          msg = msg .. ("\n%d file(s) couldn't be moved and were left where they were."):format(failed)
+        if leftover > 0 then
+          msg = msg .. ("\n%d old file(s) couldn't be deleted from the previous folder. "
+            .. "They're extra copies and safe to delete."):format(leftover)
         end
         msg = msg .. "\n\nGen1 Recomp will close now. Open it again to use the new folder."
         messageBox("Storage folder", msg, "info")
