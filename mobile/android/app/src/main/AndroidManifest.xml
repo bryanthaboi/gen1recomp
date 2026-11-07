@@ -17,6 +17,12 @@
        Requested only on the first sync call (the Pokéwalker mod's SYNC
        STEPS option); scripts/build_android.sh must not strip it. -->
   <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+  <!-- Storage Folder (src/core/G1RFolder.lua): the launcher setting that keeps
+       saves, options, mods and the ROM cache in a folder outside the app.
+       scripts/build_android.sh must not strip these. -->
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 <!-- OpenGL ES 2.0 -->
   <uses-feature android:glEsVersion="0x00020000" />
   <!-- Touchscreen support -->
@@ -37,6 +43,7 @@
 
   <application
       android:allowBackup="true"
+      android:requestLegacyExternalStorage="true"
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:label="${NAME}" >

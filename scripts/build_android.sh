@@ -421,14 +421,15 @@ import pathlib, re, sys
 path = pathlib.Path(sys.argv[1])
 text = path.read_text()
 
-# Drop mic / legacy storage, not needed by this game.
+# Drop mic, not needed by this game.
 # Keep VIBRATE (love.system.vibrate), BLUETOOTH (optional gamepads) and
 # INTERNET: link play is not offline-only any more, and stripping INTERNET
 # made every LAN host and every relay connect fail with EPERM (issue #287).
+# Keep WRITE_EXTERNAL_STORAGE (capped at Android 10 in the manifest): the
+# launcher's Storage Folder setting can't write outside the app there without it.
 # Orientation / label come from gradle.properties placeholders.
 for perm in (
     "android.permission.RECORD_AUDIO",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
 ):
     text = re.sub(
         rf'\s*<uses-permission android:name="{re.escape(perm)}"[^/]*/>\s*',

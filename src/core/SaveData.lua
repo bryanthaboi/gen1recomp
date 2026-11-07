@@ -395,6 +395,52 @@ local function makePortableFs(dir)
   }
 end
 
+-- Android Storage Folder (src/core/G1RFolder.lua): the launcher's Storage
+-- Folder setting can move everything to a folder on the phone's storage.
+-- The chosen folder is written to g1r_storage_folder.txt in the app's own
+-- storage; with no such file Android behaves exactly as before.  The folder
+-- then works through the same portable mode desktop uses.
+SaveData.STORAGE_POINTER = "g1r_storage_folder.txt"
+
+function SaveData.isAndroid()
+  return type(love) == "table" and type(love.system) == "table"
+    and type(love.system.getOS) == "function" and love.system.getOS() == "Android"
+end
+
+local androidFolderCache = nil
+function SaveData.androidFolder()
+  if androidFolderCache ~= nil then return androidFolderCache or nil end
+  androidFolderCache = false
+  if not SaveData.isAndroid() then return nil end
+  local ok, body = pcall(love.filesystem.read, SaveData.STORAGE_POINTER)
+  if ok and type(body) == "string" then
+    for line in body:gmatch("[^\r\n]+") do
+      local p = line:match("^%s*(/.-)%s*$")
+      if p then
+        p = p:gsub("/+$", "")
+        if p ~= "" then androidFolderCache = p end
+        break
+      end
+    end
+  end
+  return androidFolderCache or nil
+end
+
+-- Make the chosen folder and its portable.txt if they are missing.  Fails
+-- quietly without storage access; detectPortable then falls back.
+local function prepareAndroidFolder()
+  pcall(function()
+    local dir = SaveData.androidFolder()
+    if not dir then return end
+    nativeMkdirp(dir)
+    local marker = dir .. SEP .. PORTABLE_MARKER
+    if not pathExists(marker) then
+      local f = io.open(marker, "wb")
+      if f then f:close() end
+    end
+  end)
+end
+
 -- Every folder a player might reasonably call "the game folder", best first:
 -- the packaged-app container, the folder holding the executable, then the
 -- source itself.  Portable mode is the case where one of these holds the
@@ -410,6 +456,10 @@ function SaveData.gameFolders()
   local osName
   if type(love.system) == "table" and type(love.system.getOS) == "function" then
     osName = love.system.getOS()
+    if osName == "Android" then
+      local dir = SaveData.androidFolder()
+      return dir and { dir } or {}
+    end
     if osName ~= "Windows" and osName ~= "Linux" and osName ~= "OS X" then
       return {}
     end
@@ -493,6 +543,7 @@ local function detectPortable()
     return portableBase
   end
   portableTried = {}
+  if SaveData.isAndroid() then prepareAndroidFolder() end
   for _, base in ipairs(SaveData.gameFolders()) do
     local markerOk = false
     pcall(function()
