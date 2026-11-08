@@ -1110,7 +1110,10 @@ end
 --- Prefer native mid atlas when ready. Supports cross-pair connection seams
 -- (e.g. Route1 pallet_outdoor → Viridian viridian_outdoor) by batching per pair.
 -- Draws under-layer (BG3/BG1) only; call drawNativeOverTiles after sprites for BG2.
-local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
+-- prepareOnly keeps every batch, flag and cache current and draws nothing: a
+-- frame whose world a render pipeline owns still needs this bookkeeping.
+-- afterPrepare: this frame's prepare pass already ran the per-frame ticks.
+local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH, prepareOnly, afterPrepare)
   if not Versions.NATIVE_RENDER then return false end
   local layout = mapDef.midLayout
   local pair = mapDef.pair or (layout and layout.pair)
@@ -1127,8 +1130,10 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
   local mainTs = nativeAtlas(NativeTileset, pair)
   if not mainTs then return false end
 
-  love.graphics.setColor(0, 0, 0, 1)
-  love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
+  if not prepareOnly then
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
+  end
 
   local cols = math.ceil(canvasW / CELL) + 3
   local rows = math.ceil(canvasH / CELL) + 3
@@ -1358,7 +1363,7 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
     end
   end
 
-  love.graphics.setColor(1, 1, 1, 1)
+  if not prepareOnly then love.graphics.setColor(1, 1, 1, 1) end
   local ox = baseBx * CELL - camX
   local oy = baseBy * CELL - camY
   FieldView._nativeOverOx = ox
@@ -1366,8 +1371,10 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
   FieldView._nativeOverPair = pair
   FieldView._nativeCamX, FieldView._nativeCamY = camX, camY
   local from = FieldView._voidFrom
-  drawLayer(FieldView._nativeBatches, pair, ox, oy, from and from.under, camX, camY)
-  if from then
+  if not prepareOnly then
+    drawLayer(FieldView._nativeBatches, pair, ox, oy, from and from.under, camX, camY)
+  end
+  if from and not afterPrepare then
     from.t = from.t + 1
     if from.t >= FieldView.VOID_FADE_FRAMES then
       releaseVoidFrom(from)
@@ -1702,6 +1709,7 @@ function FieldView.draw(game, canvasW, canvasH, opts)
 
   local SeagallopUi = modSeagallop()
   if SeagallopUi and SeagallopUi.isActive and SeagallopUi.isActive() then
+    if opts.prepareOnly then return end
     love.graphics.setColor(0, 0, 0, 1)
     love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1714,6 +1722,7 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     FieldView.setDefaultFlashLevel(game, mapId)
   end
   if not mapDef or (not mapDef.blocks and not mapDef.midLayout) or not mapDef.width then
+    if opts.prepareOnly then return end
     love.graphics.setColor(0.2, 0.35, 0.55, 1)
     love.graphics.rectangle("fill", 0, 0, canvasW, canvasH)
     love.graphics.print("game3: no layout " .. tostring(mapId), 8, 8)
@@ -1780,9 +1789,27 @@ function FieldView.draw(game, canvasW, canvasH, opts)
     end
   end
 
+  if opts.prepareOnly then
+    -- this frame's camera, set even when the native tiles are not ready
+    FieldView._prepareCamX, FieldView._prepareCamY = camX, camY
+    drawNativeTiles(mapDef, camX, camY, canvasW, canvasH, true)
+    -- The screen-space overlays (heal machine, Sweet Scent, Itemfinder, Flash's
+    -- Renderer.screenVeil) still run, into worldCanvas where the ground pass
+    -- would have put them, so a pipeline that composites worldCanvas keeps them.
+    -- A ground pass drawn after this (a declined claim) fills over them first.
+    local FieldEffects = modFieldEffects()
+    if FieldEffects and FieldEffects.drawOverlay then
+      love.graphics.push()
+      love.graphics.translate(screenOx, screenOy)
+      FieldEffects.drawOverlay(camX, camY)
+      love.graphics.pop()
+    end
+    return
+  end
+
   local usedNative = FieldView._nativeOverPair ~= nil
   if not opts.actorsOnly then
-    usedNative = drawNativeTiles(mapDef, camX, camY, canvasW, canvasH)
+    usedNative = drawNativeTiles(mapDef, camX, camY, canvasW, canvasH, false, opts.afterPrepare)
     if usedNative then
       -- Native batch already covers viewport (+ overscan); wash skipped.
     else
@@ -1957,6 +1984,16 @@ function FieldView.draw(game, canvasW, canvasH, opts)
   drawFlashMask(canvasW, canvasH)
 
   love.graphics.setColor(1, 1, 1, 1)
+end
+
+local PREPARE_ONLY = { prepareOnly = true }
+
+--- Everything the ground pass of FieldView.draw does except drawing: the world
+-- list, the session's position, the camera, and the native batches and their
+-- dirty, animation and eviction state.  A frame whose ground a render pipeline
+-- owns calls this in place of that pass.
+function FieldView.prepareFrame(game, canvasW, canvasH)
+  return FieldView.draw(game, canvasW, canvasH, PREPARE_ONLY)
 end
 
 --- Drop cached atlases/sprites (tileset hot-reload).

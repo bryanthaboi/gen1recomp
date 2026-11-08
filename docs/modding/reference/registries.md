@@ -1498,15 +1498,21 @@ A write here is dropped and reported on a Gen 3 boot.
 
 | field | type | required |
 |---|---|---|
+| `actors` | any value | no |
 | `available` | function | no |
+| `defaultLevel` | number | no |
 | `drawWorld` | function | no |
 | `gate` | function | no |
+| `gen3` | boolean | no |
 | `hotkey` | string | no |
 | `invalidate` | function | no |
+| `keepTilt` | boolean | no |
 | `label` | string | yes |
 | `levels` | list of string | no |
+| `ownsField` | boolean | no |
 | `present` | function | no |
 | `priority` | number | no |
+| `required` | boolean | no |
 | `update` | function | no |
 | `worldPresent` | function | no |
 

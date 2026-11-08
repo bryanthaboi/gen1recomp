@@ -1,0 +1,122 @@
+    private static class FrameView extends View {
+        private android.graphics.Bitmap bitmap;
+        private final android.graphics.Rect dst = new android.graphics.Rect();
+        private final android.graphics.Paint paint = new android.graphics.Paint();
+        private final Object lock = new Object();
+        private int fw, fh;
+        private int backgroundColor = 0xFF000000;
+        private int activePointer = -1;
+        private boolean cover;
+
+        FrameView(Context context) {
+            super(context);
+            paint.setFilterBitmap(false);
+            paint.setAntiAlias(false);
+            setBackgroundColor(0xFF000000);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h) {
+            updateFrame(buf, w, h, false);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, boolean cover) {
+            synchronized (lock) {
+                this.cover = cover;
+                if (bitmap == null || fw != w || fh != h) {
+                    if (bitmap != null) bitmap.recycle();
+                    bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+                    fw = w; fh = h;
+                }
+                buf.rewind();
+                bitmap.copyPixelsFromBuffer(buf);
+            }
+            postInvalidate();
+        }
+
+        void setFrameBackground(int color) {
+            synchronized (lock) {
+                backgroundColor = 0xFF000000 | (color & 0x00FFFFFF);
+            }
+            postInvalidate();
+        }
+
+        private void enqueueTouch(String event) {
+            synchronized (secondaryTouches) {
+                if (secondaryTouches.size() >= MAX_SECONDARY_TOUCHES) {
+                    secondaryTouches.clear();
+                    secondaryTouches.addLast("cancel,0,0");
+                } else {
+                    secondaryTouches.addLast(event);
+                }
+            }
+        }
+
+        private int logicalX(float x) {
+            return Math.min(fw - 1, Math.max(0,
+                (int) ((x - dst.left) * fw / dst.width())));
+        }
+
+        private int logicalY(float y) {
+            return Math.min(fh - 1, Math.max(0,
+                (int) ((y - dst.top) * fh / dst.height())));
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            synchronized (lock) {
+                int action = event.getActionMasked();
+                if (action == android.view.MotionEvent.ACTION_DOWN && fw > 0
+                        && dst.contains((int) event.getX(), (int) event.getY())) {
+                    activePointer = event.getPointerId(0);
+                    enqueueTouch("down," + logicalX(event.getX()) + ","
+                        + logicalY(event.getY()));
+                } else if (action == android.view.MotionEvent.ACTION_MOVE
+                        && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        for (int sample = 0; sample < event.getHistorySize(); sample++) {
+                            enqueueTouch("move," + logicalX(event.getHistoricalX(index, sample))
+                                + "," + logicalY(event.getHistoricalY(index, sample)));
+                        }
+                        enqueueTouch("move," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    } else {
+                        activePointer = -1;
+                        enqueueTouch("cancel,0,0");
+                    }
+                } else if ((action == android.view.MotionEvent.ACTION_UP
+                        || (action == android.view.MotionEvent.ACTION_POINTER_UP
+                            && event.getPointerId(event.getActionIndex()) == activePointer))
+                        && activePointer >= 0) {
+                    int index = event.findPointerIndex(activePointer);
+                    if (index >= 0 && fw > 0) {
+                        enqueueTouch("up," + logicalX(event.getX(index)) + ","
+                            + logicalY(event.getY(index)));
+                    }
+                    activePointer = -1;
+                } else if (action == android.view.MotionEvent.ACTION_CANCEL) {
+                    activePointer = -1;
+                    enqueueTouch("cancel,0,0");
+                }
+            }
+            return true;
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            synchronized (lock) {
+                if (bitmap == null || fw == 0 || fh == 0) return;
+                int vw = getWidth(), vh = getHeight();
+                float fit = Math.min((float) vw / fw, (float) vh / fh);
+                if (fit <= 0) return;
+                float scale = cover
+                    ? Math.max((float) vw / fw, (float) vh / fh)
+                    : fit >= 2f ? (float) Math.floor(fit) : fit;
+                int dw = Math.round(fw * scale), dh = Math.round(fh * scale);
+                int dx = (vw - dw) / 2, dy = (vh - dh) / 2;
+                dst.set(dx, dy, dx + dw, dy + dh);
+                canvas.drawColor(backgroundColor);
+                canvas.drawBitmap(bitmap, null, dst, paint);
+            }
+        }
+    }

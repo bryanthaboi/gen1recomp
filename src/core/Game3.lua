@@ -918,6 +918,10 @@ function Game3:_hotkey(key)
     if self:zoomGateOK() then
       local Tilt = lazyReq("src.render.Tilt")
       Tilt.cycle()
+      -- tilt and a world pipeline are two answers to the same question
+      if Tilt.level > 0 and not lazyReq("src.render.Pipelines").yieldToTilt(self.options) then
+        Tilt.setLevel(0)
+      end
       if type(self.options) == "table" then
         self.options.tilt = Tilt.level
         self:writeOptions()

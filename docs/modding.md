@@ -752,6 +752,67 @@ Three rules worth knowing:
 Returning `nil` from `drawWorld` is a normal answer meaning "not this
 frame"; the engine draws the vanilla world instead.
 
+### Gen 3 field
+
+On Gen 3 a pipeline's `drawWorld` stays inert unless its record says it
+understands Gen 3's `ctx`, with `gen3 = true`. With no such pipeline switched
+on, the engine draws the Gen 3 field exactly as before. More record fields
+matter on Gen 3:
+
+| field | meaning |
+| --- | --- |
+| `gen3` | `drawWorld` may claim the Gen 3 field |
+| `required` | always on: never below level 1, and an optional world pipeline cannot switch on over it. Higher levels stay reachable. A one-label ladder (`levels = { "ON" }`) is fine |
+| `defaultLevel` | level before the player has chosen one (default 0, OFF) |
+| `keepTilt` | being on leaves the engine's Tilt alone, for a pipeline projecting through it. Without it, a world pipeline and Tilt switch each other off, and a `required` one refuses Tilt from the Gen 1 and Gen 3 options menus and the Gen 3 Tilt hotkey |
+| `actors` | `"engine"` (default) or `"mod"`, or `(level) -> string`. See below |
+| `ownsField` | while on, the pipeline owns the field outright: every field frame is its own, battle transitions included, and a frame it does not draw is black, never the engine's own map. See below |
+
+The Gen 3 options menu lists a pipeline only when it has `present`, so a
+world-only pipeline is switched by its `hotkey`, `defaultLevel` or `required`.
+
+The claim is decided before anything draws, so `available` must answer from
+state it already has. On a claimed frame:
+
+- The engine runs `FieldView.prepareFrame` in place of its ground pass: map
+  connections, camera, tile animation and caches stay current, but nothing is
+  drawn as ground.
+- `ctx.worldCanvas` starts transparent and still receives what the engine
+  draws over the ground: the screen-space field effects (heal machine, Sweet
+  Scent, Itemfinder), world-layer sprites and BG, and screen wipes. Draw it
+  over your image to keep them, with `love.graphics.setBlendMode("alpha",
+  "premultiplied")` since it starts transparent. Flash's glow still arrives
+  as `Renderer.screenVeil`.
+- With `actors = "engine"` the engine draws the characters into
+  `ctx.renderer.uprightCanvas`, and your pipeline composites it. With `"mod"`
+  it does not, and your pipeline draws them, for example with
+  `FieldView.draw(ctx.game, ctx.vw, ctx.vh, { actorsOnly = true, billboard = true })`.
+- The returned canvas is the whole world: the engine's compositor blits it
+  and skips `worldCanvas` and `uprightCanvas`. A `render.compose` hook can
+  tell a claimed frame from `ctx.worldOverride`.
+
+On Gen 3, `ctx` carries `claimed = true`, `level`, `actorMode`, `transition`, `game`,
+`vw`/`vh` (the field view in GBA pixels), `cam` (`x`, `y`: the field camera)
+and `generation = 3`, plus the frame metrics `render.compose` gets: `renderer`,
+`rects`, `worldCanvas`, `uiCanvas`, `width`/`height`, `scale`, `Sx`/`Sy`,
+`dpiX`/`dpiY` and `viewX`/`viewY`/`viewWidth`/`viewHeight`.
+
+Returning `nil` from `drawWorld` hands that frame back, and the engine draws
+the vanilla ground (and the characters, when the pipeline owned them). Battle
+transitions, battles, full-screen menus and shop views never reach the claim.
+
+With `ownsField = true` the engine's own map never shows while the pipeline is
+on (a `required` one counts as on from the moment it is registered), including
+the display's error fallback. Battle transitions are claimed too: `ctx.transition`
+is true then, and the engine's transition effect still draws into
+`ctx.worldCanvas` (some effects clear it to black first), so skip that canvas
+or bring your own transition. A frame the pipeline does not draw, because
+`drawWorld` returned `nil`, `available` said no, or it threw and was retired,
+is a black field with no characters, and `Display.blankFrames` counts it. A
+retired pipeline is tried again the next time options are applied; until then
+the field stays black, with its error in the mod manager. Battles, full-screen
+menus and the map behind a shop's lists are unchanged.
+
 ## Variable-size overworld sprites
 
 The `sprites` registry keeps the vanilla 16x16 grounded walker as its default,
@@ -1229,6 +1290,30 @@ On process-capable Windows, Linux and macOS hosts without a native display
 bridge, enabling this facade opens a second resizable app window instead. It
 uses the same `available`, `detected`, `push`, `pollTouch` and `setEnabled`
 contract, so a mod does not need a desktop-specific rendering path.
+
+  Companion sizing can be selected explicitly with a preference of
+  `auto:fit`, `handheld:fit`, `secondary:fit`, or the corresponding `:integer`
+  form. `fit` preserves the complete frame at one proportional physical-pixel
+  scale. `integer` floors enlargements to a whole-number scale; smaller targets
+  still fit the complete frame. The image origin is aligned to physical pixels,
+  and touch coordinates use the same placement, including desktop DPI scaling.
+  Check `secondScreen.scalingAvailable()` before submitting these preferences:
+  updating Lua alone cannot add their native bridge to an older Android APK.
+
+  An optional third component selects companion sampling: `:auto`, `:nearest`,
+  `:bilinear`, or `:sharp`, for example `secondary:integer:auto`. Auto uses
+  nearest sampling at whole-number enlargement, sharp bilinear at fractional
+  enlargement, and bilinear when shrinking. Check
+  `secondScreen.filteringAvailable()` before requesting a filter. Omitting the
+  filter retains nearest sampling. Android creates the on-demand GLES output
+  only after an explicit fit/integer submission; legacy preferences and the
+  original push entry point retain the original Bitmap output. These policies
+  affect the submitted companion frame, independently of game-screen sampling.
+
+  ROM-free checks for the Android placement, filter policy and output routing
+  run with `python3 tests/android_companion_scaling_test.py` (JDK 17). The
+  corresponding Lua bridge, desktop DPI/touch and legacy compatibility suites
+  are included in `luajit tests/run_engine.lua`.
 
 `render.output_enabled` and `render.output` are the later, whole-window seam
 for mods that need the engine's normal composite rather than its separate

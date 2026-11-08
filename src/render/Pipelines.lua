@@ -51,8 +51,14 @@ function Pipelines.install(data)
   Pipelines.reset()
 end
 
+-- Gen 3 has no pipeline world pass unless a record says it knows Gen 3's ctx
+-- (`gen3 = true`): a Gen 1 pipeline's drawWorld stays inert there.
+local function drawsWorld(def)
+  return def.drawWorld ~= nil and (worldPass or def.gen3 == true)
+end
+
 local function inert(def)
-  return not worldPass and def.drawWorld ~= nil and def.present == nil
+  return def.drawWorld ~= nil and not drawsWorld(def) and def.present == nil
     and def.worldPresent == nil
 end
 
@@ -164,7 +170,16 @@ end
 -- highest selectable level: one less than the label count, so a two-label
 -- ladder is a plain OFF/ON toggle
 function Pipelines.maxLevel(id)
-  return #Pipelines.levelLabels(id) - 1
+  local max = #Pipelines.levelLabels(id) - 1
+  -- a required pipeline is never OFF, so even a one-label ladder has a level 1
+  local def = Pipelines.get(id)
+  if def and def.required and max < 1 then max = 1 end
+  return max
+end
+
+-- The lowest level a pipeline may sit at: 1 for a required one, else 0 (OFF).
+local function floorLevel(def)
+  return def.required and 1 or 0
 end
 
 function Pipelines.level(id)
@@ -182,27 +197,62 @@ end
 -- pipelines (post-processes) compose with tilt and are left alone.
 local function excludeTilt(id, level)
   local def = Pipelines.get(id)
-  if not (def and def.drawWorld) or level <= 0 then return end
-  local Tilt = require("src.render.Tilt")
-  if Tilt.level > 0 then Tilt.setLevel(0) end
+  if not (def and drawsWorld(def)) or level <= 0 then return end
+  -- keepTilt: a pipeline that projects through the engine's Tilt state needs it
+  if not def.keepTilt then
+    local Tilt = require("src.render.Tilt")
+    if Tilt.level > 0 then Tilt.setLevel(0) end
+  end
   -- one world pipeline at a time, for the same reason
   for _, entry in ipairs(Pipelines.list()) do
-    if entry.id ~= id and entry.def.drawWorld and Pipelines.level(entry.id) > 0 then
+    if entry.id ~= id and drawsWorld(entry.def) and not entry.def.required
+        and Pipelines.level(entry.id) > 0 then
       levels[entry.id] = 0
     end
   end
 end
 
+-- A required world pipeline that is on: no other world pipeline may displace it.
+local function requiredWorld(except)
+  for _, entry in ipairs(Pipelines.list()) do
+    if entry.id ~= except and entry.def.required and drawsWorld(entry.def)
+        and Pipelines.level(entry.id) > 0 then
+      return entry.id
+    end
+  end
+  return nil
+end
+
 function Pipelines.setLevel(id, level)
-  if not Pipelines.get(id) then return 0 end
+  local def = Pipelines.get(id)
+  if not def then return 0 end
   level = math.floor(tonumber(level) or 0)
-  if level < 0 then level = 0 end
+  local floor = floorLevel(def)
+  if level < floor then level = floor end
   local max = Pipelines.maxLevel(id)
   if level > max then level = max end
-  if inert(Pipelines.get(id)) then level = 0 end
+  if inert(def) then level = 0 end
+  -- a required world pipeline keeps the world: another one cannot switch on
+  if level > 0 and drawsWorld(def) and not def.required and requiredWorld(id) then
+    level = 0
+  end
   levels[id] = level
   excludeTilt(id, level)
   return level
+end
+
+-- The engine's Tilt is being switched on: world pipelines that exclude it
+-- (no keepTilt) switch off, and `opts` is synced.  False when a required one
+-- excludes it, so Tilt has to stay off.
+function Pipelines.yieldToTilt(opts)
+  local allowed = true
+  for _, entry in ipairs(Pipelines.list()) do
+    if drawsWorld(entry.def) and not entry.def.keepTilt and Pipelines.level(entry.id) > 0 then
+      if entry.def.required then allowed = false else levels[entry.id] = 0 end
+    end
+  end
+  Pipelines.syncOptions(opts)
+  return allowed
 end
 
 -- Advance the ladder and wrap to OFF, the shape every display hotkey walks.
@@ -227,7 +277,7 @@ function Pipelines.syncOptions(opts)
   end
   for _, entry in ipairs(Pipelines.list()) do
     bucket[entry.id] = Pipelines.level(entry.id)
-    if worldPass and entry.def.drawWorld and Pipelines.level(entry.id) > 0 then
+    if drawsWorld(entry.def) and not entry.def.keepTilt and Pipelines.level(entry.id) > 0 then
       opts.tilt = 0
     end
   end
@@ -240,25 +290,38 @@ function Pipelines.applyOptions(opts)
   local bucket = type(opts) == "table" and opts.pipelines or nil
   levels = {}
   broken = {}
-  local world = nil
   for _, entry in ipairs(Pipelines.list()) do
-    local stored = type(bucket) == "table" and bucket[entry.id] or 0
+    local stored = type(bucket) == "table" and bucket[entry.id] or nil
+    if stored == nil then stored = entry.def.defaultLevel or 0 end
     local level = math.floor(tonumber(stored) or 0)
-    if level < 0 then level = 0 end
+    local floor = floorLevel(entry.def)
+    if level < floor then level = floor end
     local max = Pipelines.maxLevel(entry.id)
     if level > max then level = max end
     if inert(entry.def) then level = 0 end
-    -- list() is priority order, so the first world pipeline with a stored
-    -- level is the one that wins; the rest restore to OFF rather than
-    -- sitting on a level that can never render
-    if worldPass and entry.def.drawWorld and level > 0 then
-      if world then level = 0 else world = entry.id end
-    end
     levels[entry.id] = level
   end
+  -- One world pipeline at a time.  A required one wins; otherwise list() is
+  -- priority order, so the first with a stored level wins.  The rest restore
+  -- to OFF rather than sitting on a level that can never render.
+  local world = nil
+  for pass = 1, 2 do
+    for _, entry in ipairs(Pipelines.list()) do
+      if not world and drawsWorld(entry.def) and levels[entry.id] > 0
+          and (pass == 2 or entry.def.required) then
+        world = entry
+      end
+    end
+  end
+  for _, entry in ipairs(Pipelines.list()) do
+    if entry ~= world and drawsWorld(entry.def) and not entry.def.required then
+      levels[entry.id] = 0
+    end
+  end
+  local dropTilt = world ~= nil and not world.def.keepTilt
   -- a restored world pipeline and tilt are two answers to the same
   -- question; the pipeline wins, as it does at every place that sets one
-  if world then require("src.render.Tilt").setLevel(0) end
+  if dropTilt then require("src.render.Tilt").setLevel(0) end
 end
 
 function Pipelines.reset()
@@ -311,13 +374,37 @@ end
 -- flat/tilt draw.  Highest priority wins; the exclusion rules above mean
 -- there is normally only one candidate anyway.
 function Pipelines.worldPipeline()
-  if not worldPass then return nil end
   for _, entry in ipairs(Pipelines.list()) do
-    if entry.def.drawWorld and Pipelines.eligible(entry.id) then
+    if drawsWorld(entry.def) and Pipelines.eligible(entry.id) then
       return entry.id, entry.def
     end
   end
   return nil
+end
+
+-- The ownsField pipeline that is switched on, or nil.  Unlike worldPipeline
+-- this ignores `available` and retirement: while it is on, a frame it does
+-- not draw is black rather than the engine's own map.
+function Pipelines.fieldOwner()
+  for _, entry in ipairs(Pipelines.list()) do
+    -- a required one counts from install, before its level is restored
+    if entry.def.ownsField and drawsWorld(entry.def)
+        and (entry.def.required or Pipelines.level(entry.id) > 0) then
+      return entry.id, entry.def
+    end
+  end
+  return nil
+end
+
+-- Who draws the field's actors under a Gen 3 world pipeline: "engine" (the
+-- upright pass still runs, into Renderer.uprightCanvas) or "mod" (it does not;
+-- the pipeline draws them itself, e.g. with FieldView.draw's actorsOnly).
+-- A record's `actors` may be either string or (level) -> string.
+function Pipelines.actorMode(id)
+  local def = Pipelines.get(id)
+  local mode = def and def.actors
+  if type(mode) == "function" then mode = guard(id, mode, Pipelines.level(id)) end
+  return mode == "mod" and "mod" or "engine"
 end
 
 -- Render the world through `id`.  Returns the canvas to composite, or nil
