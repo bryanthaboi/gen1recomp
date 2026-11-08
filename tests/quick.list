@@ -875,6 +875,7 @@ tests/game3_emerald_tmhm_move_name_test.lua
 tests/game3_event_flags_test.lua
 tests/game3_field_forced_movement_test.lua
 tests/game3_field_garbage_test.lua
+tests/game3_field_prepare_frame_test.lua
 tests/game3_flags_extract_preserve_test.lua
 tests/game3_fly_cycling_state_test.lua
 tests/game3_frlg_cry_mapping_3040_test.lua
@@ -906,6 +907,9 @@ tests/game3_object_subpriority_draworder_test.lua
 tests/game3_old_man_tutorial_battle_test.lua
 tests/game3_ow_fishing_pose_test.lua
 tests/game3_pc_party_gap_2494_test.lua
+tests/game3_pipeline_claim_test.lua
+tests/game3_pipeline_owns_field_test.lua
+tests/game3_pipeline_required_test.lua
 tests/game3_pokecenter_heal_test.lua
 tests/game3_printer_clip_test.lua
 tests/game3_quest_log_integration_test.lua
