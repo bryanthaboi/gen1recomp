@@ -385,16 +385,11 @@ local function buildRows(game)
       step = function(g, dir)
         local o = g.save.options
         o.tilt = wrapIndex((o.tilt or 0) + dir, 4)
-        Tilt.setLevel(o.tilt)
         -- tilt and a mod's world pipeline are two answers to the same
         -- question; turning this on switches that off (Pipelines does the
-        -- same in the other direction)
-        if o.tilt > 0 then
-          for _, entry in ipairs(Pipelines.list()) do
-            if entry.def.drawWorld then Pipelines.setLevel(entry.id, 0) end
-          end
-          Pipelines.syncOptions(o)
-        end
+        -- same in the other direction), unless a required one keeps it off
+        if o.tilt > 0 and not Pipelines.yieldToTilt(o) then o.tilt = 0 end
+        Tilt.setLevel(o.tilt)
         return true
       end },
     -- The generalized slang-shader-preset feature: a picker over

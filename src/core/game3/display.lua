@@ -249,6 +249,67 @@ function Display.presentUi(game, winW, winH, kind, drawFn)
   return false
 end
 
+-- Field frames an ownsField pipeline left black (declined, not ready, or
+-- retired), counted for the mod's own diagnostics.
+Display.blankFrames = 0
+
+-- An ownsField pipeline did not draw this frame: the field is black, never the
+-- engine's own map, and no characters stand on it.
+local function blankField(Renderer)
+  Display.blankFrames = Display.blankFrames + 1
+  if Renderer.uprightCanvas then
+    love.graphics.setCanvas(Renderer.uprightCanvas)
+    love.graphics.clear(0, 0, 0, 0)
+  end
+  love.graphics.setCanvas(Renderer.worldCanvas)
+  love.graphics.clear(0, 0, 0, 1)
+end
+
+-- A render pipeline owns this frame's world.  The ground pass is replaced by
+-- its bookkeeping; the actors still draw into the upright canvas unless the
+-- pipeline draws them too.  worldCanvas starts transparent, so what the engine
+-- still draws there (screen overlays, world-layer OAM/BG, wipes) can be laid
+-- over the pipeline's image.  False when the pipeline declined the frame: the
+-- vanilla ground has then been drawn after all (or, for an ownsField
+-- pipeline, a black field), so the caller falls through to the normal composite.
+local function drawClaimedField(game, vw, vh, Renderer, id, exchange, transitioning)
+  local Pipelines = require("src.render.Pipelines")
+  local FieldView = require("src.core.game3.field_view")
+  local actors = Pipelines.actorMode(id)
+  local function uprightPass()
+    Renderer:beginUprightPass()
+    FieldView.draw(game, vw, vh, {
+      actorsOnly = true, billboard = true,
+      endUnderActors = function(drawOverhead) Renderer:occludeUprightActors(drawOverhead) end,
+    })
+    Renderer:endUprightPass()
+  end
+  love.graphics.setCanvas(Renderer.worldCanvas)
+  love.graphics.clear(0, 0, 0, 0)
+  FieldView.prepareFrame(game, vw, vh)
+  if actors == "engine" then uprightPass() end
+  local ctx = Renderer:worldContext()
+  ctx.claimed, ctx.level, ctx.actorMode = true, Pipelines.level(id), actors
+  ctx.vw, ctx.vh, ctx.game = vw, vh, game
+  -- a battle transition runs: the engine's own transition still draws into worldCanvas
+  ctx.transition = transitioning and true or false
+  ctx.cam = { x = FieldView._prepareCamX or 0, y = FieldView._prepareCamY or 0 }
+  local override = Pipelines.drawWorld(id, ctx)
+  if override then override = Pipelines.worldPresent(override, ctx) end
+  if override then Renderer:setWorldOverride(override) end
+  if Renderer.worldOverride then return true end
+  if Pipelines.fieldOwner() then
+    blankField(Renderer)
+    return false
+  end
+  -- declined: the vanilla ground pass, on the canvas as beginWorldPass left it
+  love.graphics.setCanvas(Renderer.worldCanvas)
+  love.graphics.clear(1, 1, 1, 1)
+  FieldView.draw(game, vw, vh, { skipActors = true, afterPrepare = true, exchangeCanvas = exchange })
+  if actors == "mod" then uprightPass() end
+  return false
+end
+
 local function drawFieldPlane(game, vw, vh, Renderer)
   local Bg = require("src.core.game3.bg")
   local Oam = require("src.core.game3.oam")
@@ -261,7 +322,17 @@ local function drawFieldPlane(game, vw, vh, Renderer)
   local function exchange(current, replacement)
     return Renderer and Renderer:exchangeWorldCanvas(current, replacement)
   end
-  if Tilt.active() and not transitioning and Renderer and Renderer.beginUprightPass then
+  local Pipelines = require("src.render.Pipelines")
+  -- An ownsField pipeline that is on keeps every field frame, battle
+  -- transitions included: the engine's own map never shows under it.
+  local owner = Renderer and Pipelines.fieldOwner()
+  local claim = Renderer and (owner or not transitioning) and Pipelines.worldPipeline()
+  if claim then
+    drawClaimedField(game, vw, vh, Renderer, claim, exchange, transitioning)
+  elseif owner then
+    FieldView.prepareFrame(game, vw, vh)
+    blankField(Renderer)
+  elseif Tilt.active() and not transitioning and Renderer and Renderer.beginUprightPass then
     FieldView.draw(game, vw, vh, { skipActors = true, exchangeCanvas = exchange })
     Renderer:beginUprightPass()
     FieldView.draw(game, vw, vh, {
@@ -569,6 +640,10 @@ local function presentFlat(game, winW, winH)
     worldActive = not Battle.isActive()
     if not worldActive then
       Battle.draw(game, Display.W, Display.H)
+    elseif require("src.render.Pipelines").fieldOwner() then
+      -- an ownsField pipeline is on: its field is black here, never the map
+      love.graphics.clear(0, 0, 0, 1)
+      Display.blankFrames = Display.blankFrames + 1
     else
       local FieldView = require("src.core.game3.field_view")
       FieldView.draw(game, Display.W, Display.H)
