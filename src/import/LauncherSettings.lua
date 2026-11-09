@@ -914,7 +914,6 @@ function LauncherSettings.open(hooks, version)
       action = function() hooks.openExtras(); return false end,
     })
   end
-  -- Android: Storage Folder / Custom Folder / Move Files
   local okG, G1RFolder = pcall(require, "src.core.G1RFolder")
   if okG and G1RFolder.supported() then
     for _, row in ipairs(G1RFolder.settingsRows()) do

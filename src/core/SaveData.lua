@@ -395,11 +395,6 @@ local function makePortableFs(dir)
   }
 end
 
--- Android Storage Folder (src/core/G1RFolder.lua): the launcher's Storage
--- Folder setting can move everything to a folder on the phone's storage.
--- The chosen folder is written to g1r_storage_folder.txt in the app's own
--- storage; with no such file Android behaves exactly as before.  The folder
--- then works through the same portable mode desktop uses.
 SaveData.STORAGE_POINTER = "g1r_storage_folder.txt"
 
 function SaveData.isAndroid()
@@ -426,8 +421,6 @@ function SaveData.androidFolder()
   return androidFolderCache or nil
 end
 
--- Make the chosen folder and its portable.txt if they are missing.  Fails
--- quietly without storage access; detectPortable then falls back.
 local function prepareAndroidFolder()
   pcall(function()
     local dir = SaveData.androidFolder()

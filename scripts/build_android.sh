@@ -425,8 +425,6 @@ text = path.read_text()
 # Keep VIBRATE (love.system.vibrate), BLUETOOTH (optional gamepads) and
 # INTERNET: link play is not offline-only any more, and stripping INTERNET
 # made every LAN host and every relay connect fail with EPERM (issue #287).
-# Keep WRITE_EXTERNAL_STORAGE (capped at Android 10 in the manifest): the
-# launcher's Storage Folder setting can't write outside the app there without it.
 # Orientation / label come from gradle.properties placeholders.
 for perm in (
     "android.permission.RECORD_AUDIO",

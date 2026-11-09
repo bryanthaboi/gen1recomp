@@ -902,7 +902,6 @@ function love.load(args)
   -- dev / source checkout no-ops (see src/update/Boot.lua).
   local Boot = require("src.update.Boot")
   if Boot.run(args) then return end
-  -- Android: warn if the chosen storage folder can't be reached.
   if require("src.core.G1RFolder").ensure() then return end
 
   local savePath

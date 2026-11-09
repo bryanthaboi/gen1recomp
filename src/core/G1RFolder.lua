@@ -1,12 +1,4 @@
--- Storage Folder (Android).
---
--- Android starts out in the app's own storage, as before.  The launcher's Settings > Launcher Options gain three rows:
---   Storage Folder  pick App storage or a preset folder (arrows)
---   Custom Folder   type any folder instead ("Internal/..." or a full path)
---   Move Files      move everything to the picked folder, then close
--- The choice is kept in g1r_storage_folder.txt in the app's own storage
--- (SaveData.androidFolder), and the folder works through Recomp's portable
--- mode.  Folders outside the app need "All files access".
+local Strings = require("src.core.Strings")
 
 local G = {}
 
@@ -17,12 +9,21 @@ G.PRESETS = {
   INTERNAL .. "/Documents/G1R",
   INTERNAL .. "/Download/G1R",
 }
+G.ROOTS = {
+  "^(/storage/emulated/%d+)(.*)$",
+  "^(/storage/[^/]+)(.*)$",
+  "^(/sdcard)(.*)$",
+}
+local NOT_VOLUMES = { ["/storage/emulated"] = true, ["/storage/self"] = true }
+local SHARED = {
+  alarms = true, android = true, audiobooks = true, dcim = true, documents = true,
+  download = true, downloads = true, movies = true, music = true, notifications = true,
+  pictures = true, podcasts = true, recordings = true, ringtones = true,
+}
 local CONFLICT_DIR = "_from_previous_location"
+local MARKER = "portable.txt"
+local PROBE = ".g1r_probe.tmp"
 local CHUNK = 1024 * 1024
-local ACCESS_HELP = "Give gen1recomp access to your storage:\n"
-  .. "Android 10 and older: Settings > Apps > gen1recomp > Permissions > Storage > Allow.\n"
-  .. "Android 11 and newer: Settings > Apps > gen1recomp > All files access "
-  .. "(or search Settings for \"all files\") > Allow."
 
 local function SD() return require("src.core.SaveData") end
 
@@ -37,20 +38,35 @@ local function messageBox(title, msg, kind)
   pcall(love.window.showMessageBox, title, msg, kind or "info")
 end
 
+local function accessHelp()
+  return Strings("Give gen1recomp access to your storage:\nAndroid 10 and older: Settings > Apps > gen1recomp > Permissions > Storage > Allow.\nAndroid 11 and newer: Settings > Apps > gen1recomp > All files access (or search Settings for \"all files\") > Allow.")
+end
+
 function G.supported()
   return SD().isAndroid()
 end
 
--- "" / nil = the app's own storage
+function G.canRequestAccess()
+  return type(love.system) == "table" and type(love.system.requestStorageAccess) == "function"
+end
+
+function G.requestAccess()
+  if not G.canRequestAccess() then return "unavailable" end
+  local ok, result = pcall(love.system.requestStorageAccess)
+  if ok and (result == "granted" or result == "settings" or result == "dialog") then
+    return result
+  end
+  return "unavailable"
+end
+
 function G.pretty(path)
-  if not path or path == "" then return "App storage" end
-  if path == INTERNAL then return "Internal storage" end
+  if not path or path == "" then return Strings("App storage") end
+  if path == INTERNAL then return Strings("Internal storage") end
   local rest = path:match("^/storage/emulated/0/(.+)$")
   if rest then return "Internal/" .. rest end
   return path
 end
 
--- What the player typed -> a full path, "" for app storage, nil if unusable.
 function G.normalize(text)
   text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
   text = text:gsub("\\", "/")
@@ -73,8 +89,31 @@ function G.normalize(text)
   return text
 end
 
+function G.unsafeTarget(path)
+  if not path or path == "" then return nil end
+  local volume, rest
+  for _, pattern in ipairs(G.ROOTS) do
+    volume, rest = path:match(pattern)
+    if volume then break end
+  end
+  if not volume or NOT_VOLUMES[volume] then
+    return Strings("%s isn't on the phone's storage. Pick a folder such as Internal/G1R.", G.pretty(path))
+  end
+  local first, count = nil, 0
+  for seg in rest:gmatch("[^/]+") do
+    count = count + 1
+    if count == 1 then first = seg:lower() end
+  end
+  if count == 0 or first == "android" or (count == 1 and SHARED[first]) then
+    local suggestion = (count == 1 and first ~= "android") and (path .. "/G1R") or (volume .. "/G1R")
+    return Strings("%s is shared with other apps. Pick a folder of its own instead, such as %s.",
+      G.pretty(path), G.pretty(suggestion))
+  end
+  return nil
+end
+
 local function writable(dir)
-  local path = dir .. "/.g1r_probe.tmp"
+  local path = dir .. "/" .. PROBE
   local f = io.open(path, "wb")
   if not f then return false end
   local ok = f:write("ok") ~= nil
@@ -83,8 +122,6 @@ local function writable(dir)
   return ok
 end
 
--- True when both files hold the same bytes.  Read in chunks so a large ROM
--- cache file is never held in memory twice.
 local function sameFile(a, b)
   local fa = io.open(a, "rb")
   if not fa then return false end
@@ -101,7 +138,6 @@ local function sameFile(a, b)
   return same
 end
 
--- Copy src to dst, then read both back: true only if the copy is verified.
 local function copyFile(src, dst)
   local fin = io.open(src, "rb")
   if not fin then return false end
@@ -117,25 +153,25 @@ local function copyFile(src, dst)
   if not fout:close() then ok = false end
   return ok and sameFile(src, dst)
 end
--- The copy step G.move uses; tests swap it to simulate a failed copy.
 G._copyFile = copyFile
 
 local function parentOf(path)
   return path:match("^(.*)/[^/]+$")
 end
 
--- Move everything from where the files live now to `target` ("" = the app's
--- own storage), in an order that never leaves saves split between folders:
---   1. copy every file and verify each copy against its original
---   2. only then switch the storage setting to the new folder
---   3. only then delete the originals
--- If any copy or the switch fails, the copies made so far are removed again,
--- the setting is left alone, and every original is still where it was.
--- A file already in the new folder is never overwritten: ours goes into
--- _from_previous_location instead, unless it holds the same bytes (left
--- there by an earlier attempt), in which case it is reused.
--- Returns true, moved, leftover  or  false, message.  `leftover` counts
--- originals that were copied but couldn't be deleted afterwards.
+local function foreignEntry(SaveData, dir, ours)
+  local names = SaveData.listNative(dir) or {}
+  for _, name in ipairs(names) do
+    if name == MARKER then return nil end
+  end
+  for _, name in ipairs(names) do
+    if not ours[name] and name ~= PROBE and name:sub(1, #CONFLICT_DIR) ~= CONFLICT_DIR then
+      return name
+    end
+  end
+  return nil
+end
+
 function G.move(target)
   local SaveData = SD()
   local saveDir = love.filesystem.getSaveDirectory()
@@ -143,25 +179,27 @@ function G.move(target)
   local to = (target and target ~= "") and target or saveDir
   local function where(dir) return G.pretty(dir ~= saveDir and dir or "") end
   if from == to then
-    return false, "Your files are already in " .. G.pretty(target) .. "."
+    return false, Strings("Your files are already in %s.", G.pretty(target))
+  end
+  if to ~= saveDir then
+    local unsafe = G.unsafeTarget(to)
+    if unsafe then return false, unsafe end
   end
   if to:sub(1, #from + 1) == from .. "/" or from:sub(1, #to + 1) == to .. "/" then
-    return false, "Pick a folder that isn't inside the current one, or the other way round."
+    return false, Strings("Pick a folder that isn't inside the current one, or the other way round.")
   end
   local toExisted = SaveData.statNative(to) ~= nil
   SaveData.mkdirNative(to)
   if not writable(to) then
     if not toExisted then os.remove(to) end
-    return false, "Can't write to " .. G.pretty(target) .. ".\n\n" .. ACCESS_HELP
+    return false, Strings("Can't write to %s.", G.pretty(target)) .. "\n\n" .. accessHelp()
   end
   if SaveData.listNative(from) == nil then
     if not toExisted then os.remove(to) end
-    return false, "Can't read the folder your files are in now."
+    return false, Strings("Can't read the folder your files are in now.")
   end
 
-  -- What to move, and where each copy goes.  `claimed` keeps two files from
-  -- being planned onto the same destination.
-  local files, srcDirs, claimed = {}, {}, {}
+  local files, srcDirs, claimed, ours = {}, {}, {}, {}
   local function taken(path)
     return claimed[path] or SaveData.statNative(path) ~= nil
   end
@@ -172,9 +210,10 @@ function G.move(target)
       if planError then return end
       local relPath = rel == "" and name or (rel .. "/" .. name)
       local skip = rel == "" and (name == "updates" or name:match("^picked_") ~= nil
-        or name == SaveData.STORAGE_POINTER or name == "portable.txt"
-        or name:match("^%.write_probe") ~= nil or name == ".g1r_probe.tmp")
+        or name == SaveData.STORAGE_POINTER or name == MARKER
+        or name:match("^%.write_probe") ~= nil or name == PROBE)
       if not skip then
+        if rel == "" then ours[name] = true end
         local srcPath = from .. "/" .. relPath
         local st = SaveData.statNative(srcPath)
         if st and st.type == "directory" then
@@ -194,8 +233,8 @@ function G.move(target)
                 if not taken(candidate) then dst = candidate break end
               end
               if not dst then
-                planError = "There's no room for another copy of " .. relPath
-                  .. " in " .. G.pretty(target) .. "."
+                planError = Strings("There's no room for another copy of %s in %s.",
+                  relPath, G.pretty(target))
                 return
               end
             end
@@ -209,15 +248,21 @@ function G.move(target)
   walk("")
   if planError then
     if not toExisted then os.remove(to) end
-    return false, planError .. " Nothing was moved."
+    return false, planError .. " " .. Strings("Nothing was moved.")
+  end
+  if to ~= saveDir then
+    local foreign = foreignEntry(SaveData, to, ours)
+    if foreign then
+      return false, Strings("%s already has other files in it, such as %s. Pick an empty folder or a new one.",
+        G.pretty(target), foreign)
+    end
   end
 
-  -- Undo a failed move: remove the copies and the folders made for them.
   local copied, madeDirs = {}, {}
   local function undo()
     for i = #copied, 1, -1 do os.remove(copied[i]) end
-    table.sort(madeDirs, function(a, b) return #a > #b end) -- deepest first
-    for _, dir in ipairs(madeDirs) do os.remove(dir) end -- only empty ones go
+    table.sort(madeDirs, function(a, b) return #a > #b end)
+    for _, dir in ipairs(madeDirs) do os.remove(dir) end
     if not toExisted then os.remove(to) end
   end
   local function makeParent(path)
@@ -231,7 +276,6 @@ function G.move(target)
     for _, dir in ipairs(missing) do madeDirs[#madeDirs + 1] = dir end
   end
 
-  -- 1. Copy and verify.  The originals are not touched.
   for _, file in ipairs(files) do
     if not file.reuse then
       makeParent(file.dst)
@@ -241,21 +285,19 @@ function G.move(target)
         os.remove(file.dst)
         undo()
         log("move stopped, copy failed: " .. file.rel)
-        return false, "Couldn't copy " .. file.rel .. " to " .. G.pretty(target)
-          .. ", so nothing was moved. Your files are still in " .. where(from) .. "."
+        return false, Strings("Couldn't copy %s to %s, so nothing was moved. Your files are still in %s.",
+          file.rel, G.pretty(target), where(from))
       end
     end
   end
 
-  -- 2. Switch the storage setting.  Until this succeeds the game still uses
-  -- the old folder, which still holds everything.
   local switched
   if to == saveDir then
     pcall(love.filesystem.remove, SaveData.STORAGE_POINTER)
     local okR, left = pcall(love.filesystem.read, SaveData.STORAGE_POINTER)
     switched = not (okR and type(left) == "string")
   else
-    local marker = to .. "/portable.txt"
+    local marker = to .. "/" .. MARKER
     local hadMarker = SaveData.statNative(marker) ~= nil
     local f = hadMarker and true or io.open(marker, "wb")
     if f and f ~= true then f:close() end
@@ -265,11 +307,10 @@ function G.move(target)
   end
   if not switched then
     undo()
-    return false, "The storage setting couldn't be saved, so nothing was moved. "
-      .. "Your files are still in " .. where(from) .. "."
+    return false, Strings("The storage setting couldn't be saved, so nothing was moved. Your files are still in %s.",
+      where(from))
   end
 
-  -- 3. Everything is safely in the new folder and in use: delete the originals.
   local leftover = 0
   for _, file in ipairs(files) do
     if not os.remove(file.src) then
@@ -277,52 +318,62 @@ function G.move(target)
       log("copied, but the original couldn't be deleted: " .. file.rel)
     end
   end
-  for i = #srcDirs, 1, -1 do os.remove(srcDirs[i]) end -- only empty ones go
+  for i = #srcDirs, 1, -1 do os.remove(srcDirs[i]) end
   log(("moved %d file(s) from %s to %s, %d original(s) left behind")
     :format(#files, from, to, leftover))
   return true, #files, leftover
 end
 
--- Boot check: a folder is chosen but can't be reached (access turned off).
--- Returns true when the player chose Quit.
 function G.ensure()
   if not G.supported() then return false end
   local SaveData = SD()
   local folder = SaveData.androidFolder()
   if not folder or SaveData.isPortable() then return false end
-  local msg = "Your storage folder is set to " .. G.pretty(folder)
-    .. ", but Gen1 Recomp can't reach it right now.\n\n" .. ACCESS_HELP
-    .. " Then open the game again.\n\nContinue uses the app's own storage this time, "
-    .. "so your saves may look missing until access is back."
-  local ok, pressed = pcall(love.window.showMessageBox, "Storage folder", msg,
-    { "Quit", "Continue", escapebutton = 2 }, "warning")
-  if ok and pressed == 1 then
+  local canAsk = G.canRequestAccess()
+  local msg = Strings("Your storage folder is set to %s, but Gen1 Recomp can't reach it right now.", G.pretty(folder))
+    .. "\n\n" .. (canAsk
+      and Strings("Press Allow access and turn storage access back on, then close and open the game again.")
+      or (accessHelp() .. " " .. Strings("Then open the game again.")))
+    .. "\n\n" .. Strings("Continue uses the app's own storage this time, so your saves may look missing until access is back.")
+  local buttons = { Strings("Quit"), Strings("Continue"), escapebutton = 2 }
+  if canAsk then buttons[3] = Strings("Allow access") end
+  local ok, pressed = pcall(love.window.showMessageBox, Strings("Storage folder"), msg, buttons, "warning")
+  if not ok then return false end
+  if pressed == 1 then
     love.event.quit()
     return true
+  end
+  if pressed == 3 then
+    local access = G.requestAccess()
+    if access == "settings" then
+      love.event.quit()
+      return true
+    elseif access == "granted" then
+      messageBox(Strings("Storage folder"), Strings("Storage access is already on, but %s still can't be reached. Check that the folder and the storage it's on are still there.", G.pretty(folder)), "warning")
+    end
   end
   return false
 end
 
--- Rows for the launcher's Launcher Options section.
 function G.settingsRows()
   local SaveData = SD()
   local current = SaveData.androidFolder() or ""
-  -- Start on the first folder that isn't where the files are now, so Move
-  -- does something useful even before the arrows are touched.
   local pending = current ~= "" and current or G.PRESETS[2]
+  local askedDialog = false
   local moveRow
 
   local function refresh()
     if pending == current then
-      moveRow.confirm = nil -- nothing to move: Move explains instead
+      moveRow.confirm = nil
       return
     end
-    moveRow.confirm = { title = "Move files?" }
-    moveRow.confirm.lines = {
-      "Move everything to " .. G.pretty(pending) .. "?",
-      "Files already in that folder are kept. Anything with the same name goes into "
-        .. CONFLICT_DIR .. ".",
-      "This can take a little while. Gen1 Recomp closes when it's done.",
+    moveRow.confirm = {
+      title = Strings("Move files?"),
+      lines = {
+        Strings("Move everything to %s?", G.pretty(pending)),
+        Strings("Files already in that folder are kept. Anything with the same name goes into %s.", CONFLICT_DIR),
+        Strings("This can take a little while. Gen1 Recomp closes when it's done."),
+      },
     }
   end
 
@@ -338,11 +389,11 @@ function G.settingsRows()
 
   local rows = {}
   rows[#rows + 1] = {
-    label = "Storage Folder",
-    note = "Where saves, options, mods and the ROM cache are kept. Pick a folder "
-      .. "(or type one in Custom Folder), then press Move. Now: " .. G.pretty(current) .. ".",
+    label = Strings("Storage Folder"),
+    note = Strings("Where saves, options, mods and the ROM cache are kept. Pick a folder (or type one in Custom Folder), then press Move. Now: %s.", G.pretty(current)),
     value = function()
-      return G.pretty(pending) .. (pending == current and " (now)" or "")
+      if pending == current then return Strings("%s (now)", G.pretty(pending)) end
+      return G.pretty(pending)
     end,
     step = function(dir)
       local list, idx = options(), 1
@@ -356,46 +407,56 @@ function G.settingsRows()
     end,
   }
   rows[#rows + 1] = {
-    label = "Custom Folder",
+    label = Strings("Custom Folder"),
     editText = { maxLen = 120 },
     value = function() return G.pretty(pending) end,
     setText = function(text)
       local p = G.normalize(text)
-      if p then
+      local unsafe = p and p ~= "" and G.unsafeTarget(p)
+      if not p then
+        messageBox(Strings("Storage folder"), Strings("That isn't a folder this can use. Try something like Internal/Games/G1R."), "warning")
+      elseif unsafe then
+        messageBox(Strings("Storage folder"), unsafe, "warning")
+      else
         pending = p
         refresh()
-      else
-        messageBox("Storage folder", "That isn't a folder this can use. Try something like "
-          .. "Internal/Games/G1R.", "warning")
       end
       return false
     end,
   }
   moveRow = {
-    label = "Move Files",
-    actionLabel = "Move",
+    label = Strings("Move Files"),
+    actionLabel = Strings("Move"),
     danger = true,
-    confirm = { title = "Move files?", lines = {} },
+    confirm = { title = Strings("Move files?"), lines = {} },
     action = function()
       if pending == current then
-        messageBox("Storage folder", "Your files are already in " .. G.pretty(current)
-          .. ".\n\nUse the arrows on Storage Folder (or type one in Custom Folder) to "
-          .. "pick where they should go, then press Move.", "info")
+        messageBox(Strings("Storage folder"), Strings("Your files are already in %s.", G.pretty(current))
+          .. "\n\n" .. Strings("Use the arrows on Storage Folder (or type one in Custom Folder) to pick where they should go, then press Move."), "info")
         return false
+      end
+      if pending ~= "" then
+        local access = G.requestAccess()
+        if access == "settings" then
+          messageBox(Strings("Storage folder"), Strings("Turn on storage access for gen1recomp on the screen that just opened, then come back and press Move again."), "info")
+          return false
+        elseif access == "dialog" and not askedDialog then
+          askedDialog = true
+          return false
+        end
       end
       local ok, done, moved, leftover = pcall(G.move, pending)
       if not ok then
-        messageBox("Storage folder", "Something went wrong: " .. tostring(done), "error")
+        messageBox(Strings("Storage folder"), Strings("Something went wrong: %s", tostring(done)), "error")
       elseif not done then
-        messageBox("Storage folder", tostring(moved), "warning")
+        messageBox(Strings("Storage folder"), tostring(moved), "warning")
       else
-        local msg = ("Moved %d file(s) to %s."):format(moved, G.pretty(pending))
+        local msg = Strings("Moved %d file(s) to %s.", moved, G.pretty(pending))
         if leftover > 0 then
-          msg = msg .. ("\n%d old file(s) couldn't be deleted from the previous folder. "
-            .. "They're extra copies and safe to delete."):format(leftover)
+          msg = msg .. "\n" .. Strings("%d old file(s) couldn't be deleted from the previous folder. They're extra copies and safe to delete.", leftover)
         end
-        msg = msg .. "\n\nGen1 Recomp will close now. Open it again to use the new folder."
-        messageBox("Storage folder", msg, "info")
+        msg = msg .. "\n\n" .. Strings("Gen1 Recomp will close now. Open it again to use the new folder.")
+        messageBox(Strings("Storage folder"), msg, "info")
         love.event.quit()
       end
       return false
