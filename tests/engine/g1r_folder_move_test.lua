@@ -231,13 +231,35 @@ do
   checkGone({ dest }, "its folder was removed again")
 end
 
+do
+  local _, G = fresh()
+  for _, name in ipairs({ "saves", "mods", "box", "options.lua", "options.lua.bak", "save.lua",
+    "save_blue.lua.tmp", "red", "emerald", "data", "assets", "rom-cache.complete" }) do
+    eq(G.ownsName(name), true, name .. " is one of ours")
+  end
+  for _, name in ipairs({ "DCIM", "holiday.jpg", "Notes", "saves.zip", "redshift" }) do
+    eq(G.ownsName(name), false, name .. " is not ours")
+  end
+  eq(G.ownsName("cache", { cache = true }), true, "a name the move brought in is ours")
+end
+
 local FIRST = ROOT .. "/phone/First"
 do
   local SaveData, G = fresh()
-  local ok, moved, leftover = G.move(FIRST)
+  local calls, firstTotal, lastDone, lastTotal = 0, nil, nil, nil
+  local ok, moved, leftover = G.move(FIRST, function(done, total)
+    calls = calls + 1
+    if calls == 1 then firstTotal = total end
+    lastDone, lastTotal = done, total
+  end)
   eq(ok, true, "the move succeeds")
   eq(moved, 4, "all four files moved")
   eq(leftover, 0, "no originals left behind")
+  eq(firstTotal, 0, "a progress frame is shown before any work starts")
+  check(calls > 2, "progress is reported while copying")
+  check(lastTotal and lastTotal >= 2 * #BIG and lastDone == lastTotal,
+    "progress ends at 100%: " .. tostring(lastDone) .. "/" .. tostring(lastTotal))
+  check(has(get(FIRST .. "/.g1r_owned.txt"), "cache"), "the moved-in names are recorded")
   originalsIntact(FIRST, "moved")
   for rel in pairs(ORIGINALS) do
     check(get(APP .. "/" .. rel) == nil, rel .. " is gone from the old folder")
@@ -269,23 +291,69 @@ do
   eq(ok, true, "a folder holding only an interrupted move's files is accepted")
   eq(moved, 4, "it still accounts for all four files")
   eq(get(dest .. "/options.lua"), ORIGINALS["options.lua"], "the identical copy is reused")
-  check(get(dest .. "/_from_previous_location/options.lua") == nil,
-    "an identical file is not copied a second time")
-  eq(get(dest .. "/save/red.sav"), "a different red save", "a different file is never overwritten")
-  eq(get(dest .. "/_from_previous_location/save/red.sav"), "red save", "ours goes beside it instead")
+  check(get(dest .. "/_replaced_by_move/options.lua") == nil,
+    "an identical file is not set aside")
+  eq(get(dest .. "/save/red.sav"), "red save", "the file being moved wins a name clash")
+  eq(get(dest .. "/_replaced_by_move/save/red.sav"), "a different red save",
+    "the one that was already there is set aside, not deleted")
   check(get(FIRST .. "/options.lua") == nil, "the originals are gone from the old folder")
   eq(get(POINTER), dest .. "\n", "the setting points at the new folder")
 end
 
 do
+  local dest = ROOT .. "/phone/Retry"
+  put(dest .. "/holiday.jpg", "a photo dropped in later")
+  put(dest .. "/Notes/todo.txt", "the player's notes")
+  put(APP .. "/save/red.sav", "throwaway save from a Continue session")
   local SaveData, G = fresh()
-  eq(SaveData.portableBaseDir(), ROOT .. "/phone/Retry", "starts in the storage folder")
-  local ok = G.move("")
+  local ok, moved, leftover, strays = G.move("")
   eq(ok, true, "moving back succeeds")
-  eq(get(POINTER), nil, "the storage setting is cleared")
+  eq(strays, 2, "two items that aren't ours are counted")
+  eq(get(dest .. "/holiday.jpg"), "a photo dropped in later", "a dropped-in file stays where it was")
+  eq(get(dest .. "/Notes/todo.txt"), "the player's notes", "so does a dropped-in folder")
+  check(get(APP .. "/holiday.jpg") == nil and get(APP .. "/Notes/todo.txt") == nil,
+    "neither is pulled into app storage")
+  eq(get(APP .. "/save/red.sav"), "red save", "the real save wins over the throwaway one")
+  eq(get(APP .. "/_replaced_by_move/save/red.sav"), "throwaway save from a Continue session",
+    "the throwaway save is set aside, not deleted")
   eq(get(APP .. "/cache/rom.bin"), BIG, "the big file came back intact")
+  eq(get(APP .. "/_replaced_by_move/save/blue.sav"), nil, "files without a clash are not set aside")
+  eq(get(POINTER), nil, "the storage setting is cleared")
+  check(isDir(dest), "the old folder stays, since it still holds the player's files")
+  check(get(dest .. "/.g1r_owned.txt") == nil, "its record of our files is removed")
   SaveData = fresh()
   eq(SaveData.portableBaseDir(), nil, "the next launch uses the app's own storage")
+  rmrf(APP .. "/_replaced_by_move")
+end
+
+do
+  local dest = ROOT .. "/phone/Earlier"
+  put(dest .. "/portable.txt", "")
+  put(dest .. "/options.lua", "older options")
+  local _, G = fresh()
+  local ok = G.move(dest)
+  eq(ok, true, "moving into an earlier Recomp folder succeeds")
+  eq(get(dest .. "/options.lua"), ORIGINALS["options.lua"], "the current options go live")
+  eq(get(dest .. "/_replaced_by_move/options.lua"), "older options", "the older ones are set aside")
+  local _, G2 = fresh()
+  eq(G2.move(""), true, "and back again")
+  eq(get(APP .. "/options.lua"), ORIGINALS["options.lua"], "the current options came back")
+  eq(get(APP .. "/_replaced_by_move/options.lua"), nil, "set-aside files are not ours to bring back")
+  eq(get(dest .. "/_replaced_by_move/options.lua"), "older options", "they stay in that folder")
+end
+
+do
+  local _, G = fresh()
+  local calls = failNthCopy(G, 4)
+  local dest = ROOT .. "/phone/Clash"
+  put(dest .. "/portable.txt", "")
+  put(dest .. "/options.lua", "older options")
+  local ok = G.move(dest)
+  eq(calls(), 4, "the last copy is the one that fails")
+  eq(ok, false, "a failed copy after setting a file aside fails")
+  eq(get(dest .. "/options.lua"), "older options", "the set-aside file is put back")
+  check(get(dest .. "/_replaced_by_move/options.lua") == nil, "and nothing is left set aside")
+  originalsIntact(APP, "clash undo")
 end
 
 do
@@ -347,6 +415,58 @@ do
   love.system.requestStorageAccess = nil
   pressButton = 2
   os.remove(POINTER)
+end
+
+do
+  put(POINTER, UNREACHABLE .. "\n")
+  local SaveData, G = fresh()
+  eq(SaveData.portableBaseDir(), nil, "an unreachable folder falls back to app storage")
+  local ok, moved = G.move("")
+  eq(ok, true, "picking App storage while the folder is unreachable succeeds")
+  eq(moved, 0, "nothing needs moving")
+  eq(get(POINTER), nil, "the storage setting is cleared")
+  originalsIntact(APP, "unreachable folder")
+  _, G = fresh()
+  boxes = {}
+  eq(G.ensure(), false, "the next launch starts normally")
+  eq(#boxes, 0, "without the startup warning")
+
+  put(POINTER, UNREACHABLE .. "\n")
+  _, G = fresh()
+  local rows = G.settingsRows()
+  rows[1].step(1)
+  eq(rows[1].value(), "App storage", "App storage can be picked from the folder row")
+  boxes = {}
+  local quitsBefore = quits
+  rows[3].action()
+  check(has(boxes[1] and boxes[1].msg, "uses App storage again"), "and Move says so: "
+    .. tostring(boxes[1] and boxes[1].msg))
+  eq(get(POINTER), nil, "the storage setting is cleared from the settings screen too")
+  eq(quits, quitsBefore + 1, "the game closes so it starts fresh")
+end
+
+do
+  local realGraphics, presents, printed = love.graphics, 0, {}
+  local font = { getHeight = function() return 20 end }
+  love.graphics = {
+    getDimensions = function() return 800, 400 end,
+    newFont = function() return font end,
+    clear = function() end, setFont = function() end, setColor = function() end,
+    rectangle = function() end, origin = function() end,
+    push = function() end, pop = function() end,
+    printf = function(text) printed[#printed + 1] = text end,
+    present = function() presents = presents + 1 end,
+  }
+  local _, G = fresh()
+  local draw = G.progressScreen()
+  draw(0, 0)
+  draw(500, 1000)
+  draw(504, 1000)
+  draw(1000, 1000)
+  love.graphics = realGraphics
+  eq(presents, 3, "a frame is drawn only when the percentage changes")
+  eq(printed[1], "Moving files... 0%", "the first frame says files are moving")
+  eq(printed[#printed], "Moving files... 100%", "and the last one is at 100%")
 end
 
 if skippedDirChecks > 0 then

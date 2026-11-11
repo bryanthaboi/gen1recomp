@@ -20,10 +20,55 @@ local SHARED = {
   download = true, downloads = true, movies = true, music = true, notifications = true,
   pictures = true, podcasts = true, recordings = true, ringtones = true,
 }
-local CONFLICT_DIR = "_from_previous_location"
+local CONFLICT_DIR = "_replaced_by_move"
 local MARKER = "portable.txt"
+local OWNED = ".g1r_owned.txt"
 local PROBE = ".g1r_probe.tmp"
 local CHUNK = 1024 * 1024
+local OWN_NAMES = {
+  saves = true, box = true, mods = true, exports = true, prints = true,
+  data = true, assets = true, ["rom-cache.complete"] = true,
+  ["pending_export.sav"] = true, ["export_done.flag"] = true,
+  ["pick_error.flag"] = true, ["pick_error.txt"] = true,
+}
+local OWN_PATTERNS = { "^options%.lua", "^save[%w_]*%.lua" }
+
+function G.ownsName(name, owned)
+  if OWN_NAMES[name] or (owned and owned[name]) then return true end
+  for _, pattern in ipairs(OWN_PATTERNS) do
+    if name:match(pattern) then return true end
+  end
+  local ok, GameVersion = pcall(require, "src.core.GameVersion")
+  if ok and type(GameVersion.VERSIONS) == "table" then
+    for _, info in pairs(GameVersion.VERSIONS) do
+      local prefix = type(info) == "table" and info.cachePrefix
+      if type(prefix) == "string" and prefix:gsub("/+$", "") == name then return true end
+    end
+  end
+  return false
+end
+
+local function readOwned(dir)
+  local owned = {}
+  local f = io.open(dir .. "/" .. OWNED, "rb")
+  if not f then return owned end
+  for line in f:lines() do
+    local name = line:match("^%s*(.-)%s*$")
+    if name ~= "" and not name:find("/", 1, true) then owned[name] = true end
+  end
+  f:close()
+  return owned
+end
+
+local function writeOwned(dir, owned)
+  local names = {}
+  for name in pairs(owned) do names[#names + 1] = name end
+  table.sort(names)
+  local f = io.open(dir .. "/" .. OWNED, "wb")
+  if not f then return false end
+  local ok = f:write(table.concat(names, "\n"), "\n") ~= nil
+  return f:close() and ok
+end
 
 local function SD() return require("src.core.SaveData") end
 
@@ -122,7 +167,7 @@ local function writable(dir)
   return ok
 end
 
-local function sameFile(a, b)
+local function sameFile(a, b, onBytes)
   local fa = io.open(a, "rb")
   if not fa then return false end
   local fb = io.open(b, "rb")
@@ -132,13 +177,14 @@ local function sameFile(a, b)
     local x, y = fa:read(CHUNK), fb:read(CHUNK)
     if x ~= y then same = false break end
     if not x then break end
+    if onBytes then onBytes(#x) end
   end
   fa:close()
   fb:close()
   return same
 end
 
-local function copyFile(src, dst)
+local function copyFile(src, dst, onBytes)
   local fin = io.open(src, "rb")
   if not fin then return false end
   local fout = io.open(dst, "wb")
@@ -148,10 +194,11 @@ local function copyFile(src, dst)
     local block = fin:read(CHUNK)
     if not block then break end
     if fout:write(block) == nil then ok = false break end
+    if onBytes then onBytes(#block) end
   end
   fin:close()
   if not fout:close() then ok = false end
-  return ok and sameFile(src, dst)
+  return ok and sameFile(src, dst, onBytes)
 end
 G._copyFile = copyFile
 
@@ -162,7 +209,7 @@ end
 local function foreignEntry(SaveData, dir, ours)
   local names = SaveData.listNative(dir) or {}
   for _, name in ipairs(names) do
-    if name == MARKER then return nil end
+    if name == MARKER or name == OWNED then return nil end
   end
   for _, name in ipairs(names) do
     if not ours[name] and name ~= PROBE and name:sub(1, #CONFLICT_DIR) ~= CONFLICT_DIR then
@@ -172,13 +219,26 @@ local function foreignEntry(SaveData, dir, ours)
   return nil
 end
 
-function G.move(target)
+local function clearPointer(SaveData)
+  pcall(love.filesystem.remove, SaveData.STORAGE_POINTER)
+  local okR, left = pcall(love.filesystem.read, SaveData.STORAGE_POINTER)
+  return not (okR and type(left) == "string")
+end
+
+function G.move(target, progress)
   local SaveData = SD()
   local saveDir = love.filesystem.getSaveDirectory()
   local from = SaveData.portableBaseDir() or saveDir
   local to = (target and target ~= "") and target or saveDir
   local function where(dir) return G.pretty(dir ~= saveDir and dir or "") end
   if from == to then
+    if to == saveDir and SaveData.androidFolder() then
+      if not clearPointer(SaveData) then
+        return false, Strings("The storage setting couldn't be saved.")
+      end
+      log("storage setting cleared, folder was unreachable: " .. tostring(SaveData.androidFolder()))
+      return true, 0, 0, 0
+    end
     return false, Strings("Your files are already in %s.", G.pretty(target))
   end
   if to ~= saveDir then
@@ -188,6 +248,7 @@ function G.move(target)
   if to:sub(1, #from + 1) == from .. "/" or from:sub(1, #to + 1) == to .. "/" then
     return false, Strings("Pick a folder that isn't inside the current one, or the other way round.")
   end
+  if progress then pcall(progress, 0, 0) end
   local toExisted = SaveData.statNative(to) ~= nil
   SaveData.mkdirNative(to)
   if not writable(to) then
@@ -199,7 +260,9 @@ function G.move(target)
     return false, Strings("Can't read the folder your files are in now.")
   end
 
-  local files, srcDirs, claimed, ours = {}, {}, {}, {}
+  local fromOwned = from ~= saveDir and readOwned(from) or nil
+  local files, srcDirs, claimed, ours, strays, keptAside = {}, {}, {}, {}, 0, false
+  local total = 0
   local function taken(path)
     return claimed[path] or SaveData.statNative(path) ~= nil
   end
@@ -210,8 +273,17 @@ function G.move(target)
       if planError then return end
       local relPath = rel == "" and name or (rel .. "/" .. name)
       local skip = rel == "" and (name == "updates" or name:match("^picked_") ~= nil
-        or name == SaveData.STORAGE_POINTER or name == MARKER
+        or name == SaveData.STORAGE_POINTER or name == MARKER or name == OWNED
         or name:match("^%.write_probe") ~= nil or name == PROBE)
+      if not skip and rel == "" and fromOwned then
+        if name:sub(1, #CONFLICT_DIR) == CONFLICT_DIR then
+          keptAside = true
+          skip = true
+        elseif not G.ownsName(name, fromOwned) then
+          strays = strays + 1
+          skip = true
+        end
+      end
       if not skip then
         if rel == "" then ours[name] = true end
         local srcPath = from .. "/" .. relPath
@@ -221,26 +293,26 @@ function G.move(target)
           srcDirs[#srcDirs + 1] = srcPath
         elseif st then
           local dst = to .. "/" .. relPath
-          local reuse = false
-          if taken(dst) then
-            if not claimed[dst] and sameFile(srcPath, dst) then
+          local reuse, shelf = false, nil
+          if SaveData.statNative(dst) ~= nil then
+            if sameFile(srcPath, dst) then
               reuse = true
             else
-              dst = nil
               for n = 1, 99 do
                 local dir = n == 1 and CONFLICT_DIR or (CONFLICT_DIR .. "_" .. n)
                 local candidate = to .. "/" .. dir .. "/" .. relPath
-                if not taken(candidate) then dst = candidate break end
+                if not taken(candidate) then shelf = candidate break end
               end
-              if not dst then
-                planError = Strings("There's no room for another copy of %s in %s.",
+              if not shelf then
+                planError = Strings("There's no room to set aside the old copy of %s in %s.",
                   relPath, G.pretty(target))
                 return
               end
+              claimed[shelf] = true
             end
           end
-          claimed[dst] = true
-          files[#files + 1] = { src = srcPath, dst = dst, rel = relPath, reuse = reuse }
+          if not reuse then total = total + 2 * ((st.size and st.size > 0) and st.size or 0) end
+          files[#files + 1] = { src = srcPath, dst = dst, rel = relPath, reuse = reuse, shelf = shelf }
         end
       end
     end
@@ -253,14 +325,23 @@ function G.move(target)
   if to ~= saveDir then
     local foreign = foreignEntry(SaveData, to, ours)
     if foreign then
+      if not toExisted then os.remove(to) end
       return false, Strings("%s already has other files in it, such as %s. Pick an empty folder or a new one.",
         G.pretty(target), foreign)
     end
   end
 
-  local copied, madeDirs = {}, {}
+  local done = 0
+  local function onBytes(n)
+    done = done + n
+    if progress then pcall(progress, done, total) end
+  end
+  if progress then pcall(progress, 0, total) end
+
+  local copied, shelved, madeDirs = {}, {}, {}
   local function undo()
     for i = #copied, 1, -1 do os.remove(copied[i]) end
+    for i = #shelved, 1, -1 do os.rename(shelved[i].shelf, shelved[i].dst) end
     table.sort(madeDirs, function(a, b) return #a > #b end)
     for _, dir in ipairs(madeDirs) do os.remove(dir) end
     if not toExisted then os.remove(to) end
@@ -278,8 +359,18 @@ function G.move(target)
 
   for _, file in ipairs(files) do
     if not file.reuse then
+      if file.shelf then
+        makeParent(file.shelf)
+        if not os.rename(file.dst, file.shelf) then
+          undo()
+          log("move stopped, couldn't set aside: " .. file.rel)
+          return false, Strings("Couldn't set aside the old copy of %s in %s, so nothing was moved. Your files are still in %s.",
+            file.rel, G.pretty(target), where(from))
+        end
+        shelved[#shelved + 1] = file
+      end
       makeParent(file.dst)
-      if G._copyFile(file.src, file.dst) then
+      if G._copyFile(file.src, file.dst, onBytes) then
         copied[#copied + 1] = file.dst
       else
         os.remove(file.dst)
@@ -293,16 +384,17 @@ function G.move(target)
 
   local switched
   if to == saveDir then
-    pcall(love.filesystem.remove, SaveData.STORAGE_POINTER)
-    local okR, left = pcall(love.filesystem.read, SaveData.STORAGE_POINTER)
-    switched = not (okR and type(left) == "string")
+    switched = clearPointer(SaveData)
   else
     local marker = to .. "/" .. MARKER
     local hadMarker = SaveData.statNative(marker) ~= nil
     local f = hadMarker and true or io.open(marker, "wb")
     if f and f ~= true then f:close() end
+    local owned = readOwned(to)
+    for name in pairs(ours) do owned[name] = true end
+    local wroteOwned = writeOwned(to, owned)
     local okW, wrote = pcall(love.filesystem.write, SaveData.STORAGE_POINTER, to .. "\n")
-    switched = f and okW and wrote and true or false
+    switched = f and wroteOwned and okW and wrote and true or false
     if not switched and not hadMarker then os.remove(marker) end
   end
   if not switched then
@@ -319,9 +411,51 @@ function G.move(target)
     end
   end
   for i = #srcDirs, 1, -1 do os.remove(srcDirs[i]) end
-  log(("moved %d file(s) from %s to %s, %d original(s) left behind")
-    :format(#files, from, to, leftover))
-  return true, #files, leftover
+  if from ~= saveDir then
+    os.remove(from .. "/" .. OWNED)
+    if strays == 0 and leftover == 0 and not keptAside then
+      os.remove(from .. "/" .. MARKER)
+      os.remove(from)
+    end
+  end
+  log(("moved %d file(s) from %s to %s, %d original(s) left behind, %d other item(s) left alone")
+    :format(#files, from, to, leftover, strays))
+  return true, #files, leftover, strays
+end
+
+function G.progressScreen()
+  local gfx = love.graphics
+  if type(gfx) ~= "table" or type(gfx.present) ~= "function" or type(gfx.clear) ~= "function" then
+    return nil
+  end
+  local font, last = nil, -1
+  local function draw(done, total)
+    local pct = (total and total > 0) and math.min(100, math.floor(done * 100 / total)) or 0
+    if pct == last then return end
+    last = pct
+    local w, h = gfx.getDimensions()
+    if not font and gfx.newFont then
+      local okF, f = pcall(gfx.newFont, math.max(14, math.floor(h / 18)))
+      font = okF and f or nil
+    end
+    if gfx.isActive and not gfx.isActive() then return end
+    if gfx.push then gfx.push("all") end
+    if gfx.origin then gfx.origin() end
+    gfx.clear(0, 0, 0, 1)
+    if font then gfx.setFont(font) end
+    gfx.setColor(1, 1, 1, 1)
+    local label = Strings("Moving files... %d%%", pct)
+    local lh = font and font:getHeight() or 16
+    gfx.printf(label, 0, h / 2 - lh * 1.5, w, "center")
+    local bw, bh = math.floor(w * 0.6), math.max(6, math.floor(lh / 2))
+    local bx, by = math.floor((w - bw) / 2), math.floor(h / 2)
+    gfx.rectangle("line", bx, by, bw, bh)
+    gfx.rectangle("fill", bx, by, math.floor(bw * pct / 100), bh)
+    if gfx.pop then gfx.pop() end
+    gfx.present()
+    if love.event and love.event.pump then pcall(love.event.pump) end
+  end
+  return function(done, total) pcall(draw, done, total) end
 end
 
 function G.ensure()
@@ -371,7 +505,7 @@ function G.settingsRows()
       title = Strings("Move files?"),
       lines = {
         Strings("Move everything to %s?", G.pretty(pending)),
-        Strings("Files already in that folder are kept. Anything with the same name goes into %s.", CONFLICT_DIR),
+        Strings("Your files replace any with the same name already there. Those are kept in %s.", CONFLICT_DIR),
         Strings("This can take a little while. Gen1 Recomp closes when it's done."),
       },
     }
@@ -445,15 +579,24 @@ function G.settingsRows()
           return false
         end
       end
-      local ok, done, moved, leftover = pcall(G.move, pending)
+      local reachable = SaveData.portableBaseDir() ~= nil or current == ""
+      local ok, done, moved, leftover, strays = pcall(G.move, pending, G.progressScreen())
       if not ok then
         messageBox(Strings("Storage folder"), Strings("Something went wrong: %s", tostring(done)), "error")
       elseif not done then
         messageBox(Strings("Storage folder"), tostring(moved), "warning")
       else
-        local msg = Strings("Moved %d file(s) to %s.", moved, G.pretty(pending))
+        local msg
+        if not reachable and pending == "" then
+          msg = Strings("Gen1 Recomp uses App storage again. Nothing in %s was touched.", G.pretty(current))
+        else
+          msg = Strings("Moved %d file(s) to %s.", moved, G.pretty(pending))
+        end
         if leftover > 0 then
           msg = msg .. "\n" .. Strings("%d old file(s) couldn't be deleted from the previous folder. They're extra copies and safe to delete.", leftover)
+        end
+        if (strays or 0) > 0 then
+          msg = msg .. "\n" .. Strings("%d item(s) in %s weren't made by Gen1 Recomp, so they were left there.", strays, G.pretty(current))
         end
         msg = msg .. "\n\n" .. Strings("Gen1 Recomp will close now. Open it again to use the new folder.")
         messageBox(Strings("Storage folder"), msg, "info")
