@@ -3250,6 +3250,24 @@ R.render_pipelines = {
     present = f.opt(f.fn),
     -- drop GPU objects (window resize, hot reload, mode switch)
     invalidate = f.opt(f.fn),
+    -- true: drawWorld understands Gen 3's ctx and runs on the Gen 3 field.
+    -- Without it the world half stays inert there.
+    gen3 = f.opt(f.bool),
+    -- level before the player has chosen one (default 0, OFF)
+    defaultLevel = f.opt(f.num),
+    -- true: always on, with no OFF level (for a mod whose look depends on it)
+    required = f.opt(f.bool),
+    -- true: being on leaves the engine's Tilt alone, for a pipeline that
+    -- projects through it
+    keepTilt = f.opt(f.bool),
+    -- Gen 3: who draws the field's actors, "engine" or "mod", or
+    -- (level) -> either.  See Pipelines.actorMode.
+    actors = f.opt(f.any),
+    -- Gen 3, true: while on, this pipeline owns the field outright.  Every
+    -- field frame is its own, battle transitions included, and a frame it
+    -- does not draw (declined, not available, retired) is black: the
+    -- engine's own map never shows.
+    ownsField = f.opt(f.bool),
   },
   -- a pipeline that does neither half is dead weight and would silently
   -- occupy an options row and a hotkey

@@ -172,6 +172,23 @@ end
 -- Integer framebuffer pixels per GB pixel that fit the window.  Zoom /
 -- ShaderFX / callers treat this as the crisp scale; endFrame converts to
 -- LOVE units via / dpiX and / dpiY when drawing.
+-- The frame metrics a Gen 3 world pipeline renders against, the same values
+-- render.compose hands its hook.  Callable during the world pass: nothing here
+-- depends on what the UI pass has drawn.
+function Renderer:worldContext()
+  local R = self:frameRects()
+  return {
+    renderer = self, rects = R,
+    worldCanvas = self.worldCanvas, uiCanvas = self.canvas, worldActive = true,
+    ww = R.ww, wh = R.wh, pw = R.pw, ph = R.ph, ox = R.ox, oy = R.oy,
+    vpw = R.vpw, vph = R.vph, uiw = R.uiw, uih = R.uih,
+    width = R.pw, height = R.ph,
+    scale = R.Sp, Sx = R.Sx, Sy = R.Sy, dpiX = R.dpiX, dpiY = R.dpiY,
+    viewX = R.vux, viewY = R.vuy, viewWidth = R.vuw, viewHeight = R.vuh,
+    generation = 3,
+  }
+end
+
 function Renderer:fitScale()
   local _, _, pw, ph = displayMetrics()
   local w, h = self:uiSize()

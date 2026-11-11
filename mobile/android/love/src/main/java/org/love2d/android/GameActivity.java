@@ -2563,7 +2563,9 @@ public class GameActivity extends SDLActivity {
     private static volatile int secondaryFrameWidth;
     private static volatile int secondaryFrameHeight;
     private static volatile int secondaryBackground;
-    private static volatile boolean secondaryFrameCover;
+    private static volatile int secondaryFrameScaling;
+    private static int secondaryFrameFilter = FrameFilter.NEAREST;
+    private static boolean secondaryFrameExplicit;
     private static final Object secondaryFrameLock = new Object();
     private static volatile long secondaryDetectionAt;
     private static volatile boolean secondaryDetected;
@@ -2713,8 +2715,13 @@ public class GameActivity extends SDLActivity {
             synchronized (secondaryFrameLock) {
                 if (secondaryFrame != null) {
                     p.setBackground(secondaryBackground);
-                    p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+                    if (secondaryFrameExplicit) {
+                        p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    } else {
+                        p.updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling == FramePlacement.COVER);
+                    }
                 }
             }
             Log.d("GameActivity", "secondary display presentation started on id=" + chosen.getDisplayId());
@@ -2851,6 +2858,28 @@ public class GameActivity extends SDLActivity {
     public static boolean presentSecondaryFrame(
             java.nio.ByteBuffer rgba, int width, int height,
             int backgroundColor, boolean cover) {
+        return submitSecondaryFrame(rgba, width, height, backgroundColor,
+            cover ? FramePlacement.COVER : FramePlacement.LEGACY, FrameFilter.NEAREST, false);
+    }
+
+    @Keep
+    public static boolean presentSecondaryFrameScaled(
+            java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling) {
+        return presentSecondaryFrameFiltered(rgba, width, height, backgroundColor, scaling, FrameFilter.NEAREST);
+    }
+
+    @Keep
+    public static boolean presentSecondaryFrameFiltered(
+            java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling, int filtering) {
+        return submitSecondaryFrame(rgba, width, height, backgroundColor, scaling, filtering, true);
+    }
+
+    private static boolean submitSecondaryFrame(java.nio.ByteBuffer rgba, int width, int height,
+            int backgroundColor, int scaling, int filtering, boolean explicit) {
+        if (scaling < FramePlacement.LEGACY || scaling > FramePlacement.COVER
+                || filtering < FrameFilter.AUTO || filtering > FrameFilter.SHARP) return false;
         long bytes = (long) width * height * 4;
         if (rgba == null || width <= 0 || height <= 0
                 || bytes <= 0 || bytes > Integer.MAX_VALUE
@@ -2865,17 +2894,21 @@ public class GameActivity extends SDLActivity {
             secondaryFrameWidth = width;
             secondaryFrameHeight = height;
             secondaryBackground = backgroundColor;
-            secondaryFrameCover = cover;
+            secondaryFrameScaling = scaling;
+            secondaryFrameFilter = filtering;
+            secondaryFrameExplicit = explicit;
             SecondaryPresentation p = secondaryPresentation;
             SecondaryActivity a = secondaryActivity;
             if (p == null && a == null) return false;
             try {
                 if (p != null) {
                     p.setBackground(backgroundColor);
-                    p.updateFrame(rgba, width, height, cover);
+                    if (explicit) p.updateFrame(rgba, width, height, scaling, filtering);
+                    else p.updateFrame(rgba, width, height, scaling == FramePlacement.COVER);
                 } else {
                     a.setBackground(backgroundColor);
-                    a.updateFrame(rgba, width, height, cover);
+                    if (explicit) a.updateFrame(rgba, width, height, scaling, filtering);
+                    else a.updateFrame(rgba, width, height, scaling == FramePlacement.COVER);
                 }
                 return true;
             } catch (Throwable t) {
@@ -2894,6 +2927,14 @@ public class GameActivity extends SDLActivity {
         SecondaryPresentation p = secondaryPresentation;
         SecondaryActivity a = secondaryActivity;
         if ((p != null || a != null) && buf != null && w > 0 && h > 0) {
+            synchronized (secondaryFrameLock) {
+                // A raw legacy producer owns no retained frame in the old API.
+                // Do not replay a previous explicit producer after recreation.
+                if (secondaryFrameExplicit) {
+                    secondaryFrame = null;
+                    secondaryFrameExplicit = false;
+                }
+            }
             if (p != null) p.updateFrame(buf, w, h);
             else a.updateFrame(buf, w, h);
         }
@@ -2928,7 +2969,7 @@ public class GameActivity extends SDLActivity {
     }
 
     public static class SecondaryActivity extends android.app.Activity {
-        private FrameView frameView;
+        private CompanionFrameView frameView;
 
         @Override
         protected void onCreate(Bundle savedInstanceState) {
@@ -2942,7 +2983,7 @@ public class GameActivity extends SDLActivity {
                 finish();
                 return;
             }
-            frameView = new FrameView(this);
+            frameView = new CompanionFrameView(this);
             android.view.Window w = getWindow();
             w.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -2956,8 +2997,13 @@ public class GameActivity extends SDLActivity {
             synchronized (secondaryFrameLock) {
                 if (secondaryFrame != null) {
                     setBackground(secondaryBackground);
-                    updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame),
-                        secondaryFrameWidth, secondaryFrameHeight, secondaryFrameCover);
+                    if (secondaryFrameExplicit) {
+                        updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling, secondaryFrameFilter);
+                    } else {
+                        updateFrame(java.nio.ByteBuffer.wrap(secondaryFrame), secondaryFrameWidth,
+                            secondaryFrameHeight, secondaryFrameScaling == FramePlacement.COVER);
+                    }
                 }
             }
         }
@@ -2997,17 +3043,25 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h, cover);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
+            frameView.updateFrame(buf, w, h, scaling);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling, int filtering) {
+            frameView.updateFrame(buf, w, h, scaling, filtering);
+        }
+
         void setBackground(int color) {
             frameView.setFrameBackground(color);
         }
     }
 
     private static class SecondaryPresentation extends android.app.Presentation {
-        private final FrameView frameView;
+        private final CompanionFrameView frameView;
 
         SecondaryPresentation(Context context, Display display) {
             super(context, display);
-            frameView = new FrameView(context);
+            frameView = new CompanionFrameView(context);
         }
 
         @Override
@@ -3068,8 +3122,66 @@ public class GameActivity extends SDLActivity {
             frameView.updateFrame(buf, w, h, cover);
         }
 
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling) {
+            frameView.updateFrame(buf, w, h, scaling);
+        }
+
+        void updateFrame(java.nio.ByteBuffer buf, int w, int h, int scaling, int filtering) {
+            frameView.updateFrame(buf, w, h, scaling, filtering);
+        }
+
         void setBackground(int color) {
             frameView.setFrameBackground(color);
+        }
+    }
+
+    /** Legacy output is created immediately; GLES exists only after explicit opt-in. */
+    private static class CompanionFrameView extends android.widget.FrameLayout {
+        private final SecondaryFrameRouter router;
+
+        CompanionFrameView(Context context) {
+            super(context);
+            final FrameView legacy = new FrameView(context);
+            addView(legacy, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            router = new SecondaryFrameRouter(new SecondaryFrameRouter.Output() {
+                @Override public void background(int color) { legacy.setFrameBackground(color); }
+                @Override public void frame(java.nio.ByteBuffer b, int w, int h, int mode, int filter) {
+                    legacy.updateFrame(b, w, h, mode == FramePlacement.COVER);
+                }
+                @Override public void visible(boolean value) { legacy.setVisibility(value ? VISIBLE : GONE); }
+            }, new SecondaryFrameRouter.Factory() {
+                @Override public SecondaryFrameRouter.Output create() {
+                    final SecondaryFrameView gpu = new SecondaryFrameView(getContext(),
+                        new SecondaryFrameView.TouchSink() {
+                            @Override public void enqueue(String event) { legacy.enqueueTouch(event); }
+                        });
+                    addView(gpu, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                    return new SecondaryFrameRouter.Output() {
+                        @Override public void background(int color) { gpu.setFrameBackground(color); }
+                        @Override public void frame(java.nio.ByteBuffer b, int w, int h, int mode, int filter) {
+                            gpu.updateFrame(b, w, h, mode, filter);
+                        }
+                        @Override public void visible(boolean value) { gpu.setVisibility(value ? VISIBLE : GONE); }
+                    };
+                }
+            }, new SecondaryFrameRouter.Dispatcher() {
+                @Override public void post(Runnable action) { CompanionFrameView.this.post(action); }
+            });
+        }
+
+        void updateFrame(java.nio.ByteBuffer b, int w, int h) { router.legacy(b, w, h, false); }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, boolean cover) { router.legacy(b, w, h, cover); }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, int scaling) {
+            router.explicit(b, w, h, scaling, FrameFilter.NEAREST);
+        }
+        void updateFrame(java.nio.ByteBuffer b, int w, int h, int scaling, int filter) {
+            router.explicit(b, w, h, scaling, filter);
+        }
+        void setFrameBackground(int color) { router.background(color); }
+
+        @Override protected void onDetachedFromWindow() {
+            router.close();
+            super.onDetachedFromWindow();
         }
     }
 

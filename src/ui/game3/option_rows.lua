@@ -359,6 +359,10 @@ local function buildRows(ctx, skip)
       local n = #Tilt.ANGLE_LABELS
       local v = ((tonumber(c.options.tilt) or 0) + (dir < 0 and -1 or 1)) % n
       c.options.tilt = (v + n) % n
+      -- tilt and a world pipeline are two answers to the same question
+      if c.options.tilt > 0 and not require("src.render.Pipelines").yieldToTilt(c.options) then
+        c.options.tilt = 0
+      end
       Tilt.setLevel(c.options.tilt)
       return true
     end,
