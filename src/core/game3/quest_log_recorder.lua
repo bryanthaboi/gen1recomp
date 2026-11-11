@@ -19,6 +19,8 @@ function R.capture(game,session)
       y=f.y+(P.spriteYOffset or (P.jumpSpriteY and P.jumpSpriteY()) or 0),
       graphicsId=Ow.playerGraphicsId(game),facing=P.facing or 'down',
       walkPhase=P.walkPhase(),stepFlip=P.drawFlip(),fieldMove=(P.fieldMoveAnim or 0)>0}
+    local bx,by=require('src.core.game3.field_effects').surfBlobWorldPos()
+    if bx then f.actors[#f.actors].surf={x=bx,y=by} end
   end
   for _,o in ipairs(O.forDraw()) do
     local gid=Space and Space.resolveObjectGraphicsId and o.def and Space.resolveObjectGraphicsId(o.def)
@@ -72,6 +74,7 @@ function R.update(game)
   local session=game.session;if not session then return end
   local Battle=require('src.core.game3.battle')
   if Battle.isActive() then return end
+  if require('src.core.game3.field_effects').flyActive() then return end
   local map=session.map
   if session._questMap~=map then
     session._questMap=map

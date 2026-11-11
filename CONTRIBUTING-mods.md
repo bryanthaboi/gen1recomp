@@ -426,6 +426,50 @@ mod.content.maps:register("MY_ROUTE", {
 })
 ```
 
+**Gen 3 maps.** FireRed, LeafGreen, Ruby, Sapphire and Emerald maps take
+metatile grids instead of a tileset:
+
+- `blocks` is the whole grid, row-major, `width * height` entries. Each
+  entry is a pret `map.bin` word (`metatile | collision << 10 | elevation
+  << 12`, what porymap saves) or `{ metatile, collision?, elevation? }`.
+  A register or override with `blocks` also needs `width`, `height` and
+  `pair`. A `blocks` patch on an existing map keeps that map's width,
+  height, pair and border unless the patch gives them.
+- A map registered without `blocks` gets no grid from the mod. It draws
+  only when the cache already holds a layout for that id, and the loader
+  checks neither a grid nor the id prefix for it.
+- `pair` is the tileset pair the metatile ids index into. Copy it from a
+  map that already uses the tiles you want:
+  `pair = mod.content.maps:get("FR_VIRIDIAN_FOREST").pair`.
+- `cells` repaints single cells of an existing map:
+  `{ x, y, metatile, collision?, elevation? }`, map coordinates as
+  `setmetatile` takes them. An omitted `collision` is passable and an
+  omitted `elevation` keeps the cell's own, so always emit `collision = 1`
+  for a cell the player must not walk onto. Patches from several mods stack;
+  a later write to the same cell wins. `cells`, `blocks` and `border` must
+  be plain lists; anything else is a load error.
+- `border` lists metatile ids: 1x1 by default on FireRed and LeafGreen
+  (`borderWidth`/`borderHeight` change it), always 2x2 on Ruby, Sapphire
+  and Emerald. Border cells are always impassable.
+- A patch changes one map id. Pokemon Centers and Marts share one cartridge
+  layout across many maps; repaint each id you want changed.
+- A new map id registered with `blocks` must keep the game's prefix (`FR_`
+  or `SEVII_` on FireRed and LeafGreen, `EM_` on Emerald, the
+  Ruby/Sapphire prefix there).
+- Patching an id no map has is a load error naming the mod and the id.
+- Every metatile must be one the pair defines. The loader names the mod,
+  map and entry of anything off the grid or undefined, and drops that mod's
+  `blocks`, `cells` and `border` writes to that map. Other mods' edits to
+  the same map still land.
+- `mod:supports("content", "maps.cells")` tells an editor whether the
+  running engine takes cell patches; `"maps.blocks"` whether it takes grids.
+
+```lua
+mod.content.maps:patch("FR_ROUTE_1", { cells = {
+  { x = 10, y = 5, metatile = 0x00D, collision = 1 },
+} })
+```
+
 ### 5. What a mod's code can reach
 
 Your code runs in a sandbox (`src/mods/Sandbox.lua`), not against the

@@ -220,10 +220,6 @@ end
 -- really knows it.  The chain is (moveId, ctx) -> mon, the Gen 1 signature; the
 -- second return (the party slot) survives an empty chain but a wrapper that
 -- returns one value drops it, which is why every caller here reads only `mon`.
---
--- ctx keeps Gen 1's `save` and `data` keys and adds the two this arm has that
--- Gen 1's does not: `party` (this module is love-free and takes its state as
--- arguments, so the list is not reachable from a Game) and `moveId`.
 local function findMoveUser(party, moveId)
   for index, mon in ipairs(party or {}) do
     if not mon.egg then

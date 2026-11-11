@@ -487,7 +487,7 @@ function Extract.run(imports, cache, progressCb, opts)
     end
     local midLists = {}
     for _, pairName in ipairs(pairNames) do
-      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
+      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids, bundles[pairName])
     end
     local AnimPack = require("src.import.gba.tileset_anim_pack")
     AnimPack.writeExtract(rom2, cache, Extract.CACHE_ROOT, bundles, midLists, version)
@@ -1736,7 +1736,7 @@ local function _dormant_quantize_run(imports, cache, progressCb)
     local midLists = {}
     local NativePack = require("src.import.gba.native_pack")
     for _, pairName in ipairs(pairNames) do
-      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName)
+      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, nil, bundles[pairName])
     end
     local AnimPack = require("src.import.gba.tileset_anim_pack")
     AnimPack.writeExtract(rom2, cache, Extract.CACHE_ROOT, bundles, midLists, version)
@@ -2045,7 +2045,7 @@ function Extract.runNativeOnly(imports, cache, progressCb)
     require("src.import.gba.object_interactions_extract").writeExtract(rom2, cache, Extract.CACHE_ROOT, version)
     local midLists = {}
     for _, pairName in ipairs(pairNames) do
-      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
+      midLists[pairName] = NativePack.collectMidsForPair(grids, borders, pairName, scriptMids, bundles[pairName])
     end
     local AnimPack = require("src.import.gba.tileset_anim_pack")
     AnimPack.writeExtract(rom2, cache, Extract.CACHE_ROOT, bundles, midLists, version)

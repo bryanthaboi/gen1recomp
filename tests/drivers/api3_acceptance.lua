@@ -146,7 +146,7 @@ return function(game)
   check(out.patchedAttack == 190, "mod:content.pokemon:get sees the patched attack", out.patchedAttack)
 
   local want = {
-    phone = GEN == 2, radio = GEN == 2, shiny = GEN >= 2, nickname = GEN == 1, style = GEN == 1,
+    phone = GEN == 2, radio = GEN == 2, shiny = GEN >= 2, nickname = true, style = GEN == 1,
     speed = true, level = true, stepped = true, pokemon = true,
   }
   for key, expected in pairs(want) do

@@ -118,6 +118,25 @@ local function winH(v)
   return l, r
 end
 
+local function winHSpans(v, out)
+  v = u16(v or 0)
+  local l, r = rshift(v, 8), band(v, 0xFF)
+  if l > DW and l > r then l = 0 end
+  if r > DW then
+    r = DW
+    if l > DW then l = DW end
+  end
+  if r < l then
+    local n = 0
+    if r > 0 then n = n + 1; out[1], out[2] = 0, r end
+    if l < DW then n = n + 1; out[2 * n - 1], out[2 * n] = l, DW end
+    return n
+  end
+  if l >= r then return 0 end
+  out[1], out[2] = l, r
+  return 1
+end
+
 local function winV(v)
   v = u16(v or 0)
   local t, b = rshift(v, 8), band(v, 0xFF)
@@ -634,10 +653,7 @@ DEF[ID.CLOCKWISE_WIPE] = {
     if fx.T.vblankDma then copyBuf(fx.buf1, fx.buf0, DH) end
   end,
   winSpans = function(fx, y, out)
-    local l, r = winH(fx.buf1[y])
-    if not l then return 0 end
-    out[1], out[2] = l, r
-    return 1
+    return winHSpans(fx.buf1[y], out)
   end,
 }
 
@@ -1394,7 +1410,7 @@ BattleTransition.RSE_MODULES = {
 BattleTransition.H = {
   DW = DW, DH = DH, Pal = Pal, Audio = Audio,
   s16 = s16, u16 = u16, u8 = u8, Sin = Sin, Cos = Cos,
-  WIN_RANGE = WIN_RANGE, winH = winH, winV = winV,
+  WIN_RANGE = WIN_RANGE, winH = winH, winHSpans = winHSpans, winV = winV,
   initBlackWipe = initBlackWipe, updateBlackWipe = updateBlackWipe,
   setCircularMask = setCircularMask, fadeScreenBlack = fadeScreenBlack, copyBuf = copyBuf,
   getChrome = getChrome, getTrainerPic = getTrainerPic,

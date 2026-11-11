@@ -42,7 +42,11 @@ function Q.restore(value)
             and type(f.actors)=='table' then
           local frame=copy(f);frame.actors={}
           for _,a in ipairs(f.actors) do
-            if type(a)=='table' and type(a.id)=='number' then frame.actors[#frame.actors+1]=copy(a) end
+            if type(a)=='table' and type(a.id)=='number' then
+              local row=copy(a)
+              if type(row.surf)~='table' or type(row.surf.x)~='number' or type(row.surf.y)~='number' then row.surf=nil end
+              frame.actors[#frame.actors+1]=row
+            end
           end
           row.frames[#row.frames+1]=Q.trimActors(frame)
         end
@@ -144,6 +148,10 @@ function Playback:frame()
       local b=byId[a.id]
       if b and math.abs(a.x-b.x)<=32 and math.abs(a.y-b.y)<=32 then
         a.x=a.x+(b.x-a.x)*t;a.y=a.y+(b.y-a.y)*t
+      end
+      local s,e=a.surf,b and b.surf
+      if type(s)=='table' and type(e)=='table' and math.abs(s.x-e.x)<=32 and math.abs(s.y-e.y)<=32 then
+        s.x=s.x+(e.x-s.x)*t;s.y=s.y+(e.y-s.y)*t
       end
     end
   end

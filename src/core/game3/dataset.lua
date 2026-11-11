@@ -221,33 +221,30 @@ function Dataset.buildMaps(warps)
       kind, environment = Dataset.kindOfMapType(mapType)
     end
 
-    maps[mapId] = {
-      id = mapId,
+    maps[mapId] = Dataset.newMapDef(mapId, {
       name = mapId,
-      width = (info and info.width) or spec.width or 20,
-      height = (info and info.height) or spec.height or 18,
+      width = (info and info.width) or spec.width,
+      height = (info and info.height) or spec.height,
       kind = kind or "town",
       environment = environment or "TOWN",
       pair = pair,
       tileset = tileset,
-      warps = warps[mapId] or {},
-      connections = connections[mapId] or {},
+      warps = warps[mapId],
+      connections = connections[mapId],
       regionMapSectionId = regionMapSectionId,
-      showMapName = (showMapName == 1 or showMapName == true) and 1 or 0,
-      floorNum = tonumber(floorNum) or 0,
-      weather = weather or 0,
-      mapType = mapType or 0,
-      cave = tonumber(cave),
-      allowEscaping = tonumber(allowEscaping),
-      allowRunning = tonumber(allowRunning),
-      bikingAllowed = tonumber(bikingAllowed),
-      battleType = tonumber(battleType),
-      music = tonumber(music),
-      borderWidth = tonumber(borderWidth),
-      borderHeight = tonumber(borderHeight),
-      native = true,
-    }
-    Dataset.bindUnderwater(maps[mapId])
+      showMapName = showMapName,
+      floorNum = floorNum,
+      weather = weather,
+      mapType = mapType,
+      cave = cave,
+      allowEscaping = allowEscaping,
+      allowRunning = allowRunning,
+      bikingAllowed = bikingAllowed,
+      battleType = battleType,
+      music = music,
+      borderWidth = borderWidth,
+      borderHeight = borderHeight,
+    })
   end
 
   if manifest.layouts then
@@ -336,6 +333,39 @@ function Dataset.bindUnderwater(def)
   return def
 end
 
+function Dataset.newMapDef(mapId, h)
+  local kind, environment = h.kind, h.environment
+  if kind == nil then kind, environment = Dataset.kindOfMapType(h.mapType) end
+  local tileset = h.tileset
+  if tileset == nil and h.pair and Versions.PAIR_TILESET then tileset = Versions.PAIR_TILESET[h.pair] end
+  return Dataset.bindUnderwater({
+    id = mapId,
+    name = h.name or mapId,
+    width = h.width or 20,
+    height = h.height or 18,
+    kind = kind,
+    environment = environment or "TOWN",
+    pair = h.pair,
+    tileset = tileset,
+    warps = h.warps or {},
+    connections = h.connections or {},
+    regionMapSectionId = h.regionMapSectionId,
+    showMapName = (h.showMapName == 1 or h.showMapName == true) and 1 or 0,
+    floorNum = tonumber(h.floorNum) or 0,
+    weather = h.weather or 0,
+    mapType = h.mapType or 0,
+    cave = tonumber(h.cave),
+    allowEscaping = tonumber(h.allowEscaping),
+    allowRunning = tonumber(h.allowRunning),
+    bikingAllowed = tonumber(h.bikingAllowed),
+    battleType = tonumber(h.battleType),
+    music = tonumber(h.music),
+    borderWidth = tonumber(h.borderWidth),
+    borderHeight = tonumber(h.borderHeight),
+    native = true,
+  })
+end
+
 --- Point extract roots at the engine firered cache and install native tilesets.
 function Dataset.mountExtractRoots()
   local root = Dataset.cacheRootOverride
@@ -357,6 +387,14 @@ end
 
 lazyLayouts = setmetatable({}, { __mode = "k" })
 
+local function layoutFor(def, decoded, mapId, pair, blob)
+  local LayoutNative = require("src.core.game3.layout_native")
+  if rawget(def, "modLayout") then
+    return LayoutNative.fromDecoded(require("src.core.game3.mod_layout").apply(decoded, def), mapId, pair)
+  end
+  return LayoutNative.fromDecoded(decoded, mapId, pair, blob)
+end
+
 LazyDef = {
   __index = function(def, k)
     if k ~= "midLayout" then return nil end
@@ -366,7 +404,7 @@ LazyDef = {
     local blob = src.cache:read(src.rel)
     local decoded = blob and require("src.import.gba.native_pack").decodeMidLayout(blob)
     if not decoded then return nil end
-    local layout = require("src.core.game3.layout_native").fromDecoded(decoded, src.mapId, src.pair, blob)
+    local layout = layoutFor(def, decoded, src.mapId, src.pair, blob)
     rawset(def, "midLayout", layout)
     return layout
   end,
@@ -388,7 +426,11 @@ function Dataset.attachMidLayouts(maps, cache)
   end
   local attached = 0
   for mapId, def in pairs(maps) do
-    if def and not rawget(def, "midLayout") and not lazyLayouts[def] then
+    local modLayout = def and rawget(def, "modLayout")
+    if def and not rawget(def, "midLayout") and modLayout and modLayout.blocks then
+      def.midLayout = LayoutNative.fromDecoded(require("src.core.game3.mod_layout").build(def), mapId, def.pair)
+      attached = attached + 1
+    elseif def and not rawget(def, "midLayout") and not lazyLayouts[def] then
       local info = layouts[mapId]
       local rel = nativeRoot .. "/"
         .. ((info and info.file) or ("layouts/" .. mapId .. ".mid"))
@@ -405,7 +447,7 @@ function Dataset.attachMidLayouts(maps, cache)
           setmetatable(def, LazyDef)
         else
           local decoded = NativePack.decodeMidLayout(blob)
-          if decoded then def.midLayout = LayoutNative.fromDecoded(decoded, mapId, pair, blob) end
+          if decoded then def.midLayout = layoutFor(def, decoded, mapId, pair, blob) end
         end
         attached = attached + 1
       end

@@ -224,17 +224,18 @@ return {
         checkpointOnDone = "release_npc" })
     end,
 
+    -- pokeyellow scripts/OaksLab.asm:750-767
     TEXT_OAKSLAB_RIVAL = {
       { "face_player" },
-      { "check_flag", "EVENT_GOT_STARTER" },
-      { "jump_if_false", "pre_starter" },
-      { "show_text", "_OaksLabRivalMyPokemonLooksStrongerText" },
-      { "jump", "end" },
-
-      { "label", "pre_starter" },
       { "check_flag", "EVENT_FOLLOWED_OAK_INTO_LAB_2" },
       { "jump_if_false", "gramps_gone" },
+      { "check_flag", "EVENT_GOT_STARTER" },
+      { "jump_if_true", "after_choose" },
       { "show_text", "_OaksLabRivalIllGetABetterPokemonThanYou" },
+      { "jump", "end" },
+
+      { "label", "after_choose" },
+      { "show_text", "_OaksLabRivalMyPokemonLooksStrongerText" },
       { "jump", "end" },
 
       { "label", "gramps_gone" },
@@ -251,11 +252,38 @@ return {
         rival.px, rival.py = 7 * 16, 4 * 16
       end
     end
-    if not flags.EVENT_GOT_POKEDEX then return end
     local Commands = require("src.script.Commands")
     local ctx = { save = game.save, game = game, overworld = ow }
-    Commands.hide_object(ctx, "OAKS_LAB", "OAKSLAB_POKEDEX1")
-    Commands.hide_object(ctx, "OAKS_LAB", "OAKSLAB_POKEDEX2")
+    local function setVisible(name, visible)
+      local t = game.save.objectToggles and game.save.objectToggles.OAKS_LAB
+      if t and t[name] == visible then return end
+      if visible then
+        Commands.show_object(ctx, "OAKS_LAB", name)
+      else
+        Commands.hide_object(ctx, "OAKS_LAB", name)
+      end
+    end
+    if flags.EVENT_FOLLOWED_OAK_INTO_LAB then
+      -- pokeyellow scripts/OaksLab.asm:77
+      setVisible("OAKSLAB_OAK2", false)
+      -- pokeyellow scripts/OaksLab.asm:80
+      setVisible("OAKSLAB_OAK1", true)
+    end
+    if flags.EVENT_GOT_STARTER then
+      -- pokeyellow scripts/OaksLab.asm:224
+      setVisible("OAKSLAB_EEVEE_POKE_BALL", false)
+    end
+    local scripted = ow and ow.runner and ow.runner:isRunning()
+    if (flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB or flags.EVENT_GOT_POKEDEX)
+       and not scripted then
+      -- pokeyellow scripts/OaksLab.asm:446, :622
+      setVisible("OAKSLAB_RIVAL", false)
+    end
+    if flags.EVENT_GOT_POKEDEX then
+      -- pokeyellow scripts/OaksLab.asm:570-573
+      setVisible("OAKSLAB_POKEDEX1", false)
+      setVisible("OAKSLAB_POKEDEX2", false)
+    end
   end,
 
   onStep = function(game, ow, x, y)

@@ -1921,6 +1921,65 @@ end
 
 -- ---------------------------------------------------------------- Drawing
 
+function FieldEffects.flyActive()
+  local F = package.loaded["src.core.game3.field"]
+  if F and F._flyLanding then return true end
+  for _, anim in ipairs(FieldEffects._anims) do
+    if anim.kind == "fly_out" or anim.kind == "fly_in" then return true end
+  end
+  return false
+end
+
+function FieldEffects.surfBlobWorldPos()
+  local P = package.loaded["src.core.game3.player"]
+  if not (P and (P.surfing or P.surfHopping or P.dismounting)) then return nil end
+  local bob = FieldEffects.surfBlobY2()
+  if P.surfHopping then
+    return (P.targetX or P.cellX) * CELL - 8, (P.targetY or P.cellY) * CELL - 8 + bob
+  elseif P.dismounting then
+    return P.cellX * CELL - 8, P.cellY * CELL - 8 + bob
+  end
+  -- pokeemerald/src/field_effect_helpers.c:1131
+  return P.px - 8, P.py - 8 + bob
+end
+
+function FieldEffects.drawSurfBlob(sx, sy, facing, step)
+  local surfSheet = load_sheet("surf_blob", 32, 32, 6)
+  if not surfSheet then return false end
+  facing = facing or "down"
+  step = step or 0
+  local frameIdx = 0
+  local flip = false
+
+  local blob = surfSheet.frames < 6 and FieldEffects.manifestObject("surf_blob")
+  if blob and blob.anims then
+    -- pokeemerald/src/data/field_effects/field_effect_objects.h:203
+    local seq = blob.anims[({ down = 1, up = 2, left = 3, right = 4 })[facing] or 1]
+    local cmd = seq and seq[1]
+    frameIdx = cmd and cmd[2] or 0
+    flip = cmd and cmd[4] == true or false
+  elseif facing == "down" then
+    frameIdx = 0 + step
+  elseif facing == "up" then
+    frameIdx = 2 + step
+  elseif facing == "left" then
+    frameIdx = 4 + step
+  elseif facing == "right" then
+    frameIdx = 4 + step
+    flip = true
+  end
+
+  local q = surfSheet.quads[frameIdx]
+  if not q then return false end
+  love.graphics.setColor(1, 1, 1, 1)
+  if flip then
+    love.graphics.draw(surfSheet.image, q, sx + 32, sy, 0, -1, 1)
+  else
+    love.graphics.draw(surfSheet.image, q, sx, sy)
+  end
+  return true
+end
+
 --- Draw behind player (Surf blob, tall grass bottom, etc.)
 function FieldEffects.drawBehind(camX, camY)
   camX, camY = camX or 0, camY or 0
@@ -1929,58 +1988,12 @@ function FieldEffects.drawBehind(camX, camY)
   if not R then drawFrlgReflections(camX, camY) end
 
   -- 1) Surfing water mount (pret FLDEFF_SURF_BLOB)
-  local P = package.loaded["src.core.game3.player"]
-  if P and (P.surfing or P.surfHopping or P.dismounting) then
-    local surfSheet = load_sheet("surf_blob", 32, 32, 6)
-    if surfSheet then
-      local facing = P.facing or "down"
-      local b = FieldEffects._surfBob
-      local step = b and lazyReq("src.core.game3.surf_bob").animCmdIndex(b) or 0
-      local bob = b and b.y2 or 0
-      local frameIdx = 0
-      local flip = false
-
-      local blob = surfSheet.frames < 6 and FieldEffects.manifestObject("surf_blob")
-      if blob and blob.anims then
-        -- pokeemerald/src/data/field_effects/field_effect_objects.h:203
-        local seq = blob.anims[({ down = 1, up = 2, left = 3, right = 4 })[facing] or 1]
-        local cmd = seq and seq[1]
-        frameIdx = cmd and cmd[2] or 0
-        flip = cmd and cmd[4] == true or false
-      elseif facing == "down" then
-        frameIdx = 0 + step
-      elseif facing == "up" then
-        frameIdx = 2 + step
-      elseif facing == "left" then
-        frameIdx = 4 + step
-      elseif facing == "right" then
-        frameIdx = 4 + step
-        flip = true
-      end
-
-      local q = surfSheet.quads[frameIdx]
-      if q then
-        local sx, sy
-        if P.surfHopping then
-          sx = (P.targetX or P.cellX) * CELL - camX - 8
-          sy = (P.targetY or P.cellY) * CELL - camY - 8 + bob
-        elseif P.dismounting then
-          sx = P.cellX * CELL - camX - 8
-          sy = P.cellY * CELL - camY - 8 + bob
-        else
-          -- pokeemerald/src/field_effect_helpers.c:1131
-          sx = P.px - camX - 8
-          sy = P.py - camY - 8 + bob
-        end
-
-        love.graphics.setColor(1, 1, 1, 1)
-        if flip then
-          love.graphics.draw(surfSheet.image, q, sx + 32, sy, 0, -1, 1)
-        else
-          love.graphics.draw(surfSheet.image, q, sx, sy)
-        end
-      end
-    end
+  local bx, by = FieldEffects.surfBlobWorldPos()
+  if bx then
+    local P = package.loaded["src.core.game3.player"]
+    local b = FieldEffects._surfBob
+    local step = b and lazyReq("src.core.game3.surf_bob").animCmdIndex(b) or 0
+    FieldEffects.drawSurfBlob(bx - camX, by - camY, P.facing, step)
   end
 
   -- 2) Tall grass base pad
