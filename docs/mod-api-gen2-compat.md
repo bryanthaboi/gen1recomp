@@ -622,7 +622,7 @@ gains a field instead of the name gaining a prefix.
   `battle.crit`, `battle.accuracy`, `battle.charge_required`,
   `battle.turn_order`,
   `battle.enemy_action`, `battle.run`, `battle.exp_award`, `exp.gain`,
-  `catch.rate`, `trainer.party`, `battle.overlay`, `battle.low_health_alarm`,
+  `catch.rate`, `catch.nickname`, `trainer.party`, `battle.overlay`, `battle.low_health_alarm`,
   `battle.catch_exp`, `battle.bottom_ui_visible`,
   `battle.status_hud_visible`, `battle.move_grid_navigation`,
   `battle.caught_marker_visible`, `battle.field_residual` and

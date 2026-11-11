@@ -18,6 +18,13 @@
 
 -- ball objects: CHARMANDER (6,3), SQUIRTLE (7,3), BULBASAUR (8,3);
 -- rival = object 1 at (4,3).  rivalBallX is the counter-pick's column.
+-- scripts/OaksLab.asm:801, :811, :821
+local RIVAL_BALL = {
+  CHARMANDER = "OAKSLAB_SQUIRTLE_POKE_BALL",
+  SQUIRTLE = "OAKSLAB_BULBASAUR_POKE_BALL",
+  BULBASAUR = "OAKSLAB_CHARMANDER_POKE_BALL",
+}
+
 local function starterBall(askText, species, choseFlag, ownBall,
                            rivalBallX, rivalBall)
   return {
@@ -209,49 +216,26 @@ return {
 
     TEXT_OAKSLAB_CHARMANDER_POKE_BALL =
       starterBall("_OaksLabYouWantCharmanderText", "CHARMANDER", "EVENT_CHOSE_CHARMANDER",
-                  "OAKSLAB_CHARMANDER_POKE_BALL", 7, "OAKSLAB_SQUIRTLE_POKE_BALL"),
+                  "OAKSLAB_CHARMANDER_POKE_BALL", 7, RIVAL_BALL.CHARMANDER),
     TEXT_OAKSLAB_SQUIRTLE_POKE_BALL =
       starterBall("_OaksLabYouWantSquirtleText", "SQUIRTLE", "EVENT_CHOSE_SQUIRTLE",
-                  "OAKSLAB_SQUIRTLE_POKE_BALL", 8, "OAKSLAB_BULBASAUR_POKE_BALL"),
+                  "OAKSLAB_SQUIRTLE_POKE_BALL", 8, RIVAL_BALL.SQUIRTLE),
     TEXT_OAKSLAB_BULBASAUR_POKE_BALL =
       starterBall("_OaksLabYouWantBulbasaurText", "BULBASAUR", "EVENT_CHOSE_BULBASAUR",
-                  "OAKSLAB_BULBASAUR_POKE_BALL", 6, "OAKSLAB_CHARMANDER_POKE_BALL"),
+                  "OAKSLAB_BULBASAUR_POKE_BALL", 6, RIVAL_BALL.BULBASAUR),
 
-    -- Talking to the rival only ever prints a line: the lab battle is a
-    -- coordinate trigger (OaksLabRivalChallengesPlayerScript, wYCoord == 6;
-    -- see onStep below), never a talk action.  The handler used to fall
-    -- through from the "looks stronger" taunt straight into start_battle,
-    -- so talking to Blue at the table launched the rival fight before the
-    -- player ever stepped onto the trigger (#219).  scripts/OaksLab.asm
-    -- OaksLabText8 branches text only:
-    --   * got starter, not yet battled -> _OaksLabRivalMyPokemonLooksStronger
-    --   * already battled -> _OaksLabRivalFedUpWithWaitingText (a Route 22
-    --     line; normally unreachable since the rival is hidden after the
-    --     lab battle in OaksLabRivalEndBattleScript)
-    --   * no starter yet -> the FOLLOWED_OAK pre-starter fork (#218)
+    -- scripts/OaksLab.asm:766-783
     TEXT_OAKSLAB_RIVAL = {
       { "face_player" },
-      { "check_flag", "EVENT_GOT_STARTER" },
-      { "jump_if_false", "pre_starter" },
-      { "check_flag", "EVENT_BATTLED_RIVAL_IN_OAKS_LAB" },
-      { "jump_if_true", "after_battle" },
-      -- has a starter, has not fought yet: just the taunt.  The battle is
-      -- the coordinate trigger in onStep, not this talk (#219)
-      { "show_text", "_OaksLabRivalMyPokemonLooksStrongerText" },
-      { "jump", "end" },
-
-      { "label", "after_battle" },
-      { "show_text", "_OaksLabRivalFedUpWithWaitingText" },
-      { "jump", "end" },
-
-      -- pre-starter fork (scripts/OaksLab.asm OaksLabText8 rival handler):
-      -- Oak has already escorted you in (three balls on the table) -> he
-      -- waves you on to choose; not yet escorted (very early game) -> the
-      -- "Gramps isn't around" line.  #218
-      { "label", "pre_starter" },
-      { "check_flag", "EVENT_FOLLOWED_OAK_INTO_LAB" },
+      { "check_flag", "EVENT_FOLLOWED_OAK_INTO_LAB_2" },
       { "jump_if_false", "gramps_gone" },
+      { "check_flag", "EVENT_GOT_STARTER" },
+      { "jump_if_true", "after_choose" },
       { "show_text", "_OaksLabRivalGoAheadAndChooseText" },
+      { "jump", "end" },
+
+      { "label", "after_choose" },
+      { "show_text", "_OaksLabRivalMyPokemonLooksStrongerText" },
       { "jump", "end" },
 
       { "label", "gramps_gone" },
@@ -259,9 +243,6 @@ return {
     },
   },
 
-  -- Saves that got the Pokédex before #106 never wrote objectToggles for
-  -- the table sprites; re-entering the lab applies the same HideObject
-  -- the gift script now does (OaksLab.asm OakGivesPokedex).
   onEnter = function(game, ow)
     local flags = game.save.flags or {}
     if flags.EVENT_GOT_STARTER and not flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB then
@@ -273,11 +254,46 @@ return {
         rival.px, rival.py = rival.cellX * 16, rival.cellY * 16
       end
     end
-    if not flags.EVENT_GOT_POKEDEX then return end
     local Commands = require("src.script.Commands")
     local ctx = { save = game.save, game = game, overworld = ow }
-    Commands.hide_object(ctx, "OAKS_LAB", "OAKSLAB_POKEDEX1")
-    Commands.hide_object(ctx, "OAKS_LAB", "OAKSLAB_POKEDEX2")
+    local function setVisible(name, visible)
+      local t = game.save.objectToggles and game.save.objectToggles.OAKS_LAB
+      if t and t[name] == visible then return end
+      if visible then
+        Commands.show_object(ctx, "OAKS_LAB", name)
+      else
+        Commands.hide_object(ctx, "OAKS_LAB", name)
+      end
+    end
+    if flags.EVENT_FOLLOWED_OAK_INTO_LAB then
+      -- scripts/OaksLab.asm:72
+      setVisible("OAKSLAB_OAK2", false)
+      -- scripts/OaksLab.asm:75
+      setVisible("OAKSLAB_OAK1", true)
+    end
+    for _, species in ipairs({ "CHARMANDER", "SQUIRTLE", "BULBASAUR" }) do
+      if flags["EVENT_CHOSE_" .. species] then
+        -- scripts/OaksLab.asm:918
+        setVisible("OAKSLAB_" .. species .. "_POKE_BALL", false)
+        -- scripts/OaksLab.asm:320
+        setVisible(RIVAL_BALL[species], false)
+        local third = RIVAL_BALL[RIVAL_BALL[species]:match("^OAKSLAB_(%u+)_POKE_BALL$")]
+        local t = game.save.objectToggles and game.save.objectToggles.OAKS_LAB
+        if t and t[third] == false then setVisible(third, true) end
+        break
+      end
+    end
+    local scripted = ow and ow.runner and ow.runner:isRunning()
+    if (flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB or flags.EVENT_GOT_POKEDEX)
+       and not scripted then
+      -- scripts/OaksLab.asm:480, :635
+      setVisible("OAKSLAB_RIVAL", false)
+    end
+    if flags.EVENT_GOT_POKEDEX then
+      -- scripts/OaksLab.asm:583-586
+      setVisible("OAKSLAB_POKEDEX1", false)
+      setVisible("OAKSLAB_POKEDEX2", false)
+    end
   end,
 
   -- Oak stops you leaving without a starter; the rival stops you on

@@ -32,6 +32,7 @@ return function(game)
     local flags = game.save.flags or {}
     game.save.flags = flags
     flags.EVENT_FOLLOWED_OAK_INTO_LAB = followed or nil
+    flags.EVENT_FOLLOWED_OAK_INTO_LAB_2 = followed or nil
     flags.EVENT_GOT_STARTER = nil
     flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = nil
     U.wait(6)

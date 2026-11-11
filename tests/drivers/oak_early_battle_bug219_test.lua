@@ -57,6 +57,7 @@ return function(game)
     local flags = game.save.flags or {}
     game.save.flags = flags
     flags.EVENT_FOLLOWED_OAK_INTO_LAB = true
+    flags.EVENT_FOLLOWED_OAK_INTO_LAB_2 = true
     flags.EVENT_GOT_STARTER = true
     flags.EVENT_CHOSE_SQUIRTLE = true
     flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = nil

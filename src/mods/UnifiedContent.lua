@@ -107,7 +107,13 @@ local function canonicalName(name)
   return Schemas.ALIASES[name] or name
 end
 
+local fieldsFor
+
 function UnifiedContent.supports(name, generation, version)
+  local field
+  if type(name) == "string" and name:find(".", 1, true) then
+    name, field = name:match("^([^.]*)%.(.*)$")
+  end
   name = canonicalName(name)
   local spec = Schemas.REGISTRIES[name]
   if not spec then return false, UNSUPPORTED .. "unknown registry" end
@@ -125,6 +131,9 @@ function UnifiedContent.supports(name, generation, version)
     if not PASSTHROUGH[name] then
       return false, UNSUPPORTED .. name .. " has no canonical record adapter"
     end
+  end
+  if field ~= nil and not fieldsFor(name, generation)[field] then
+    return false, UNSUPPORTED .. name .. "." .. field
   end
   return true
 end
@@ -162,6 +171,14 @@ local function coreFields(name, allowed, generation)
     if key ~= "_modEffectId" then out[key] = true end
   end
   return out
+end
+
+local CORE_FIELDS = { pokemon = MON_FIELDS, moves = MOVE_FIELDS, items = ITEM_FIELDS,
+  trainers = TRAINER_FIELDS, encounters = ENCOUNTER_FIELDS }
+
+fieldsFor = function(name, generation)
+  if CORE_FIELDS[name] then return coreFields(name, CORE_FIELDS[name], generation) end
+  return Schemas.shapeFor(name, Schemas.REGISTRIES[name], generation).fields or {}
 end
 
 local function project(value, allowed)

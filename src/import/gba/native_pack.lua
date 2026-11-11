@@ -470,9 +470,12 @@ local function addVoidFillMids(seen, borders, pairName)
   end
 end
 
---- Collect unique mids used by grids + borders for a pair.
-function NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
+--- Collect the unique mids a pair atlas packs.
+function NativePack.collectMidsForPair(grids, borders, pairName, scriptMids, bundle)
   local seen = {}
+  for _, mid in ipairs(bundle and NativePack.fullMidsForPair(bundle) or {}) do
+    seen[mid] = true
+  end
   for mid in pairs(scriptMids and scriptMids[pairName] or {}) do
     seen[mid] = true
   end
@@ -525,7 +528,7 @@ function NativePack.writeExtract(cache, root, bundles, grids, borders, pairNames
     local bundle = bundles[pairName]
     if bundle then
       local midList = midLists and midLists[pairName]
-        or NativePack.collectMidsForPair(grids, borders, pairName, scriptMids)
+        or NativePack.collectMidsForPair(grids, borders, pairName, scriptMids, bundle)
       local underTbl, overTbl, middleTbl = NativePack.buildLayeredIdx(bundle, midList)
       local palBlob = NativePack.encodePalettes(bundle.mapPals)
       local pairDir = NativeRoot .. "/" .. pairName

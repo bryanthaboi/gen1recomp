@@ -416,7 +416,7 @@ local GEN2_HOOKS = {
   "battle.damage", "battle.crit", "battle.accuracy",
   "battle.charge_required", "battle.turn_order",
   "battle.enemy_action", "battle.run", "battle.exp_award", "exp.gain",
-  "catch.rate", "trainer.party",
+  "catch.rate", "catch.nickname", "trainer.party",
   -- one wrap cancels or forces an evolution in either game: Gold passes `data`
   -- where Gen 1 passes `game`, and positions 2-4 (mon, row, trigger) match
   "evolution.check",

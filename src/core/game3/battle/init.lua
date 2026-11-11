@@ -3752,6 +3752,43 @@ local function finish_catch_flow(catchRes, ename, nicknamed)
   Battle._phase = "ending"
 end
 
+local CAUGHT_NICK_LENGTH = 10
+
+local function clip_name(name, limit)
+  local out, n = {}, 0
+  for ch in name:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    if n >= limit then break end
+    out[#out + 1] = ch
+    n = n + 1
+  end
+  return table.concat(out)
+end
+
+-- pokefirered/src/battle_script_commands.c:9852
+local function apply_caught_nick(mon, nick, ename)
+  if mon and nick and nick ~= "" and nick ~= ename then
+    mon.nickname = nick
+    return true
+  end
+  return false
+end
+
+-- pokefirered/src/battle_script_commands.c:9789
+-- pokeemerald/src/battle_script_commands.c:10220
+local function catch_nickname_verdict(mon, ename, sp)
+  if not ModRuntime.wantsHook("catch.nickname") then return nil end
+  local G3 = require("src.mods.Gen3Compat")
+  local R = package.loaded["src.core.game3.runtime"]
+  local verdict = ModRuntime.call("catch.nickname", function() return true end, mon, {
+    battle = Battle._st, name = ename, game = R and R._game or nil,
+    species = G3.speciesName(sp), speciesId = tonumber(sp),
+  })
+  if verdict == false then return ename end
+  if type(verdict) ~= "string" then return nil end
+  local nick = clip_name(verdict, CAUGHT_NICK_LENGTH)
+  return apply_caught_nick(mon, nick, ename) and nick or ename
+end
+
 local function start_post_catch_flow(catchRes)
   if award_catch_exp(catchRes, function() start_post_catch_flow(catchRes) end) then return end
   Ui.clearCaughtDexScene()
@@ -3783,6 +3820,9 @@ local function start_post_catch_flow(catchRes)
   local caughtState = Battle._st
 
   local function prompt_nickname()
+    local shown = catch_nickname_verdict(mon, ename, sp)
+    -- pokefirered/src/battle_script_commands.c:9856
+    if shown then return finish_catch_flow(catchRes, shown) end
     Battle._phase = "catch_nickname_prompt"
     -- pokefirered/src/battle_message.c:477
     Ui.askYesNo(BattleText.get("STRINGID_GIVENICKNAMECAPTURED", { opponentMon1 = ename }), function(yes)
@@ -3794,7 +3834,7 @@ local function start_post_catch_flow(catchRes)
           Battle._phase = "catch_naming"
           Naming.open({
             template = "CAUGHT_MON",
-            maxLen = 10,
+            maxLen = CAUGHT_NICK_LENGTH,
             species = sp,
             gender = gender,
             personality = personality,
@@ -3807,9 +3847,7 @@ local function start_post_catch_flow(catchRes)
             title = Naming.monTitle(Pokemon.name(sp)),
             onDone = function(nick)
               if not Battle._active or Battle._st ~= caughtState or Battle._phase ~= "catch_naming" then return end
-              if nick and nick ~= "" and nick ~= ename then
-                if mon then mon.nickname = nick end
-              end
+              apply_caught_nick(mon, nick, ename)
               -- pokefirered/src/battle_script_commands.c:9853
               finish_catch_flow(catchRes, ename, true)
             end,

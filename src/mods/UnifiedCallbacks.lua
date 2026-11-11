@@ -144,7 +144,7 @@ sites("hooks", "123", [[
   battle.damage battle.enemy_action battle.exp_award
   battle.field_residual battle.low_health_alarm battle.menu_auxiliary
   battle.move_grid_navigation battle.overlay battle.run
-  battle.status_hud_visible battle.turn_order catch.rate
+  battle.status_hud_visible battle.turn_order catch.nickname catch.rate
   core.logic_speed core.quit_to_launcher core.update encounter.fishing
   encounter.roll encounter.species encounter.table evolution.check
   exp.gain fieldmove.eligibility input.gamepad input.key input.pointer
@@ -170,7 +170,7 @@ sites("hooks", "23", [[
   held_item.trigger shiny.roll
 ]])
 sites("hooks", "1", [[
-  battle.style catch.nickname catch.party_full
+  battle.style catch.party_full
 ]])
 sites("hooks", "2", [[
   phone.contact_list
@@ -575,7 +575,7 @@ local function boundary(loader, name, fishing)
     if name == "fieldmove.eligibility" then return { "moveId", "context" } end
     if name == "encounter.fishing" then return { false, false, "candidates" } end
     if name == "encounter.species" then return { "encounter", "context" } end
-    if name == "pokemon.level_visible" then return { "mon", "context" } end
+    if name == "pokemon.level_visible" or name == "catch.nickname" then return { "mon", "context" } end
     if name == "evolution.check" then return { false, "mon", "context", "context" } end
     if name == "item.use" then return { false, "mon", "itemId", false } end
     if name == "ui.party.submenu" then return { false, false, "mon", "context" } end

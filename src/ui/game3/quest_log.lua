@@ -70,6 +70,11 @@ function UI.draw(playback,session)
   table.sort(actors,actorOrder)
   local Ow=owSprites()
   local cx=math.floor(frame.x+8-120);local cy=math.floor(frame.y+8-80)
+  local blobStep=math.floor(playback.ticks/require('src.core.game3.surf_bob').FRLG_FRAME_DURATION)%2
+  for _,a in ipairs(actors) do
+    -- pokefirered/src/quest_log_player.c:152
+    if a.surf then require('src.core.game3.field_effects').drawSurfBlob(a.surf.x-cx,a.surf.y-cy,a.facing,blobStep) end
+  end
   for _,a in ipairs(actors) do
     if a.graphicsId then Ow.draw(a.graphicsId,a.x,a.y,cx,cy,a.facing,a.walkPhase,a.stepFlip,{frame=a.frame,bow=a.bow,fieldMove=a.fieldMove}) end
   end

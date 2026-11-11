@@ -79,7 +79,7 @@ native Gen 3 call site.
   `battle.menu_auxiliary`, `battle.caught_marker_visible`,
   `battle.bottom_ui_visible`, `battle.status_hud_visible`,
   `battle.move_grid_navigation`, `held_item.trigger`, `exp.gain`,
-  `catch.rate`, `trainer.party`, `evolution.check`.
+  `catch.rate`, `catch.nickname`, `trainer.party`, `evolution.check`.
   `battle.field_residual` returns data-only damage rows from
   `src/core/game3/battle/residuals.lua`; the native faint and experience paths
   keep authority over HP, replacements and battle end.

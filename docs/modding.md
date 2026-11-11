@@ -310,6 +310,17 @@ An edited vanilla map becomes a `mod.content.maps:patch` carrying only the
 fields that moved; a new map becomes a `:register`. See
 `docs/new-features.md` and the extension's own README.
 
+On Gen 3 the same registry takes metatile grids: `blocks` (a full grid of
+pret `map.bin` words; a register or override with it also needs `width`,
+`height` and a `pair` copied from an existing map, while a patch keeps the
+map's own size, pair and border), and `cells`
+(`{ x, y, metatile, collision?, elevation? }`) to repaint single cells of a
+vanilla map. A map registered without `blocks` draws only when the cache
+already holds a layout for its id. An editor feature-detects both
+with `mod:supports("content", "maps.blocks")` and
+`mod:supports("content", "maps.cells")`; an engine without them answers
+`false`. The rules are in `CONTRIBUTING-mods.md` section 4c.
+
 ## Read-only map overviews
 
 `mod.world:mapOverview()` returns collision `rows` at map-cell resolution,
@@ -635,6 +646,17 @@ end)
 `false` keeps the species name with no prompt. A string is the nickname with
 no prompt, clipped to the naming grid's ten characters (an empty string names
 nothing). Anything else queues the prompt.
+
+The hook fires on wild captures in every generation, after the mon is stored
+and at the moment the cart would ask. In Gold, Silver and Crystal ctx is the
+same `{ battle, name, game }`, `mon` is the native Gen 2 mon, and the hook
+runs before `pokemon.caught`. In FireRed, LeafGreen, Ruby, Sapphire and
+Emerald it runs after the new-dex page, `mon.species` is the numeric species,
+and ctx adds `species` (name) and `speciesId` (number); the party
+`pokemon.caught` has already fired, the PC one fires after the hook. Under API
+3, `mon` is the portable mon record on every game. A skipped question on a
+full party still prints the sent-to-PC line, naming the mon by the nickname
+the hook gave it.
 
 ## Party-full custody at a catch
 
@@ -1813,7 +1835,7 @@ local hasEvent = mod:supports("events", "world.stepped")
 
 Surfaces are `content`, `world`, `hooks` and `events`. Every content handle also has `supports()` and an `available` boolean. Content and world answers describe implemented interfaces; game state may still refuse a call.
 
-For `hooks` and `events` the answer is **native per version**: a name returns true only on the versions that have a call site. Names with a call site in every generation (`pokemon.level_visible`, `battle.field_residual`, `core.logic_speed`, `trainer.before_battle`) are true on every game, and a name raised in only some generations answers true for those generations alone (`battle.style`, `catch.nickname` and `catch.party_full` are Gen 1 only; `transition.style` is Gen 1 and Gen 2; `mod.options_changed` is true everywhere); Gen 2 additions follow the cart (`phone.call_received`, `radio.channel`, `phone.contact_list` and the intro cinema are Gold, Silver and Crystal only; `shiny.roll`, `gender.roll`, `held_item.trigger`, `breeding.compatibility`, `egg.hatched`, `happiness.changed`, `pokerus.infected` and the roamer events are true on Gen 2 and Gen 3). Custom `mod.<id>.*` events are always true.
+For `hooks` and `events` the answer is **native per version**: a name returns true only on the versions that have a call site. Names with a call site in every generation (`pokemon.level_visible`, `battle.field_residual`, `core.logic_speed`, `trainer.before_battle`, `catch.nickname`) are true on every game, and a name raised in only some generations answers true for those generations alone (`battle.style` and `catch.party_full` are Gen 1 only; `transition.style` is Gen 1 and Gen 2; `mod.options_changed` is true everywhere); Gen 2 additions follow the cart (`phone.call_received`, `radio.channel`, `phone.contact_list` and the intro cinema are Gold, Silver and Crystal only; `shiny.roll`, `gender.roll`, `held_item.trigger`, `breeding.compatibility`, `egg.hatched`, `happiness.changed`, `pokerus.infected` and the roamer events are true on Gen 2 and Gen 3). Custom `mod.<id>.*` events are always true.
 
 `hooks:wrap`, `events:on` and `events:once` accept any catalogued name on any game, so one source file loads everywhere; a subscription to a name the game does not raise simply never fires. Unknown names raise. Check `mod:supports` before relying on a callback.
 

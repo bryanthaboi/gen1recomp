@@ -1947,7 +1947,7 @@ COVERAGE["src.battle.BattleState"] = {
   kind = "facade", target = "src.ui.gen2.BattleState",
   backed = "update draw __index isOpaque openParty swapMoves "
     .. "lowHealthAlarmActive playVictoryMusic say sayAuto openItems "
-    .. "openReplacementMenu finish askNicknameUI playEntranceCry stampOT "
+    .. "openReplacementMenu finish askNicknameUI offerNickname playEntranceCry stampOT "
     .. "tryRun wantsFillScale bgMode BG_WORLD_DIM "
     .. "isWideBattleLayout wideLayout "
     .. "extendedHUD extendedWorldHUD extendedBlackHUD",

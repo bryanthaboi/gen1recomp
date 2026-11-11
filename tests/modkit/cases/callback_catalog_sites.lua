@@ -35,5 +35,11 @@ for _, version in ipairs(GameVersion.ORDER) do
   end
   local ok = UnifiedCallbacks.supports("hooks", "battle.style", generation, version)
   T.eq(ok, generation == 1, version .. " battle.style support follows its Gen 1 only site")
+  T.eq(UnifiedCallbacks.supports("hooks", "catch.nickname", generation, version), true,
+    version .. " catch.nickname has a call site")
+end
+for gen = 1, 3 do
+  T.eq(found.hooks["catch.nickname"] and found.hooks["catch.nickname"][gen], true,
+    "catch.nickname is called in Gen " .. gen)
 end
 T.finish("callback catalog sites")

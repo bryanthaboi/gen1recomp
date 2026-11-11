@@ -191,6 +191,58 @@ check(even[1] == -120 and even[2] > -120, "even rows grow from the left window e
 check(odd[2] == 360 and odd[1] < 360, "odd rows grow from the right window edge")
 BattleTransition.abort()
 
+print("[test] 10. CLOCKWISE_WIPE sweeps the top-left quarter")
+local H = BattleTransition.H
+local hs = {}
+local hn = H.winHSpans(H.WIN_RANGE(120, 40), hs)
+check(hn == 2 and hs[1] == 0 and hs[2] == 40 and hs[3] == 120 and hs[4] == 240,
+  "WIN0H with left > right wraps to [0, right) + [left, 240)")
+check(H.winHSpans(H.WIN_RANGE(243, 244), hs) == 0, "WIN0H past the screen edge is empty")
+hn = H.winHSpans(H.WIN_RANGE(80, 120), hs)
+check(hn == 1 and hs[1] == 80 and hs[2] == 120, "WIN0H with left < right is one span")
+
+local function clockwise(label)
+  local cw = BattleTransition.ID.CLOCKWISE_WIPE
+  local finished = false
+  BattleTransition.start(cw, { skipIntro = true }, function() finished = true end)
+  local halfRow = (240 / 2) / (240 * 160)
+  local prev, shrank, lastBefore = -1, false, nil
+  local topLeftFromEdge, stalled = false, false
+  local guard = 0
+  while not finished and guard < 600 do
+    BattleTransition.tick(1 / 60)
+    local fx = BattleTransition._fx
+    if fx then
+      local c = BattleTransition.screenCoverage()
+      if c < prev - halfRow - 1e-9 then shrank = true end
+      if fx.state == 5 and c <= prev then stalled = true end
+      prev = c
+      if fx.state < 6 then lastBefore = c end
+      if fx.state == 5 then
+        local s = BattleTransition.blackSpans(40)
+        if s[1] == 0 and s[2] > 0 then topLeftFromEdge = true end
+      end
+    end
+    guard = guard + 1
+  end
+  BattleTransition.abort()
+  check(finished, label .. " CLOCKWISE_WIPE finishes")
+  check(not shrank, label .. " CLOCKWISE_WIPE coverage never shrinks past the one-row seam")
+  check(not stalled, label .. " CLOCKWISE_WIPE coverage grows every TopLeft frame")
+  check(lastBefore and lastBefore > 0.95,
+    string.format("%s CLOCKWISE_WIPE covers %.3f before the end fade", label, lastBefore or -1))
+  check(topLeftFromEdge, label .. " CLOCKWISE_WIPE top-left rows fill from the left edge")
+end
+
+clockwise("FRLG")
+local GameVersion = require("src.core.GameVersion")
+local Profile = require("src.core.game3.profile")
+Profile.reset()
+GameVersion.set("emerald")
+clockwise("RSE")
+Profile.reset()
+GameVersion.set("firered")
+
 if failed > 0 then
   print(string.format("[FAIL] %d test(s) failed", failed))
   os.exit(1)

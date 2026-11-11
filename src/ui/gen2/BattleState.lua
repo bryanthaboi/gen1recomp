@@ -2228,6 +2228,10 @@ function BattleState:advanceQueue()
   if event.kind == "ask-nickname" then
     return self:askNickname(event.mon)
   end
+  if event.kind == "set-nickname" then
+    self:applyQueuedNickname(event)
+    return self:advanceQueue()
+  end
   if event.kind == "choose-switch" then
     -- engine/battle/core.asm:2590
     if self.battle and self.battle.wild then
@@ -3721,17 +3725,18 @@ function BattleState:pushCaught(enemy, itemId)
   -- the box or the Unown dex sees the settled state.  A tutorial catch and a
   -- contest catch both returned above without ever owning the mon, which is
   -- why neither reaches this line.
-  Runtime.emit("pokemon.caught", {
+  local caught = {
     battle = self.battle, mon = enemy, species = enemy.species,
     isNew = not knew, ball = itemId,
     destination = toPc and "box" or "party", game = self.game,
-  })
-  self:push({ kind = "ask-nickname", mon = enemy })
+  }
+  local _, pendingName = self:offerNickname(enemy, nil, caught)
+  if not pendingName then Runtime.emit("pokemon.caught", caught) end
   if toPc then
     -- BallSentToPCText, which .SendToPC prints AFTER the nickname prompt
     -- (item_effects.asm:672).
     self:push({ kind = "message",
-      text = Strings("%s was sent to BILL's PC.", self:name(enemy)) })
+      text = Strings("%s was sent to BILL's PC.", pendingName or self:name(enemy)) })
   end
   self:pushPayDay()
 end
@@ -3856,6 +3861,50 @@ function BattleState:refuseShift(source, ...)
   self.messageTimer = MESSAGE_FRAMES
 end
 
+local NICKNAME_LENGTH = 10
+
+local function alwaysAsk() return true end
+
+local function clipName(name, limit)
+  local out, n = {}, 0
+  for ch in name:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+    if n >= limit then break end
+    out[#out + 1] = ch
+    n = n + 1
+  end
+  return table.concat(out)
+end
+
+local function applyNickname(mon, name)
+  if name and #name > 0 then mon.nickname = name end
+end
+
+-- engine/items/item_effects.asm:574
+-- engine/items/item_effects.asm:634
+function BattleState:offerNickname(mon, displayName, caught)
+  displayName = displayName or self:name(mon)
+  if Runtime.wantsHook("catch.nickname") then
+    local verdict = Runtime.call("catch.nickname", alwaysAsk, mon,
+      { battle = self, name = displayName, game = self.game })
+    if verdict == false then return false end
+    if type(verdict) == "string" then
+      local name = clipName(verdict, NICKNAME_LENGTH)
+      if #name == 0 then return false end
+      self:push({ kind = "set-nickname", mon = mon, name = name, caught = caught })
+      return false, name
+    end
+  end
+  self:push({ kind = "ask-nickname", mon = mon })
+  return true
+end
+
+-- engine/items/item_effects.asm:605
+-- engine/items/item_effects.asm:658
+function BattleState:applyQueuedNickname(event)
+  applyNickname(event.mon, event.name)
+  if event.caught then Runtime.emit("pokemon.caught", event.caught) end
+end
+
 -- AskGiveNicknameText + YesNoBox (item_effects.asm:566-578).  B is the NO arm
 -- (`jp c, .return_from_capture`), which leaves the species name standing.
 function BattleState:askNickname(mon)
@@ -3960,7 +4009,7 @@ function BattleState:answerNickname(yes)
     stack:pop()
     -- InitName: an empty entry keeps whatever was already in the buffer, which
     -- for a fresh capture is the species name.
-    if name and #name > 0 then mon.nickname = name end
+    applyNickname(mon, name)
     self.phase = "resolving"
     self:advanceQueue()
   end

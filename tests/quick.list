@@ -266,6 +266,7 @@ tests/engine/gate_fingerprint.lua
 tests/engine/gate_gen2_mod_facade.lua
 tests/engine/gate_gen3_mod_api.lua
 tests/engine/gate_gen3_mod_facade.lua
+tests/engine/gba_pair_atlas_defined_mids.lua
 tests/engine/gen1_field_fx_palette_h13.lua
 tests/engine/gen2_always_hit_bug1272.lua
 tests/engine/gen2_anim_bake_scissor_bug1895.lua
@@ -584,6 +585,7 @@ tests/engine/oaks_aide_requirement_bug1006.lua
 tests/engine/oaks_lab_dex_rating_bug600.lua
 tests/engine/oaks_lab_last_ball_bug601.lua
 tests/engine/oaks_lab_posters_email_bug1331_1333.lua
+tests/engine/oaks_lab_postgame_toggles_3124.lua
 tests/engine/oaks_lab_rival_faces_down_bug1279.lua
 tests/engine/oaks_lab_rival_paths_bug1989_bug1987.lua
 tests/engine/oaks_lab_starter_ball_hide_2686.lua
@@ -850,6 +852,7 @@ tests/game3_battle_evolution_rename_test.lua
 tests/game3_battle_pokeflute_test.lua
 tests/game3_battle_rendering_test.lua
 tests/game3_battle_shiny_test.lua
+tests/game3_battle_transition_test.lua
 tests/game3_battle_translated_text_test.lua
 tests/game3_battle_yesno_frame_test.lua
 tests/game3_boat_subpriority_test.lua
@@ -906,6 +909,7 @@ tests/game3_object_interactions_test.lua
 tests/game3_object_subpriority_draworder_test.lua
 tests/game3_old_man_tutorial_battle_test.lua
 tests/game3_ow_fishing_pose_test.lua
+tests/game3_pair_atlas_full_test.lua
 tests/game3_pc_party_gap_2494_test.lua
 tests/game3_pipeline_claim_test.lua
 tests/game3_pipeline_owns_field_test.lua
@@ -913,6 +917,7 @@ tests/game3_pipeline_required_test.lua
 tests/game3_pokecenter_heal_test.lua
 tests/game3_printer_clip_test.lua
 tests/game3_quest_log_integration_test.lua
+tests/game3_quest_log_surf_fly_3126_test.lua
 tests/game3_reflection_neighbor_test.lua
 tests/game3_renewable_hidden_items_test.lua
 tests/game3_resident_caches_2695_test.lua
@@ -969,6 +974,9 @@ tests/mod_link_tests.lua
 tests/mod_required_imports_tests.lua
 tests/mod_world_tests.lua
 tests/modkit/cases/bag_capacity.lua
+tests/modkit/cases/callback_catalog_sites.lua
+tests/modkit/cases/catch_nickname_gen2.lua
+tests/modkit/cases/catch_nickname_gen3.lua
 tests/modkit/cases/dataset_views_gen2_emotes.lua
 tests/modkit/cases/dataset_views_gen2_metadata.lua
 tests/modkit/cases/encounter_table.lua
@@ -978,9 +986,11 @@ tests/modkit/cases/gen2_marts_registry.lua
 tests/modkit/cases/gen2_native_index_range.lua
 tests/modkit/cases/gen2_phone_contacts.lua
 tests/modkit/cases/gen2_script_ctx_map_label.lua
+tests/modkit/cases/gen3_map_layout.lua
 tests/modkit/cases/link_desync.lua
 tests/modkit/cases/mod_map_outdoor_encounters.lua
 tests/modkit/cases/unified_effects.lua
+tests/modkit/cases/unified_gen1_field_eligibility.lua
 tests/modkit/cases/unified_gen2_battle_scale.lua
 tests/modkit/dataset_view_fixture.lua
 tests/modkit_tests.lua

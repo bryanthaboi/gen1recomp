@@ -2423,7 +2423,7 @@ function OverworldState:partyKnows(moveId)
   -- vanilla answers winning
   if Runtime.wantsHook("fieldmove.eligibility") then
     return Runtime.call("fieldmove.eligibility", partyKnowsVanilla, moveId,
-      { save = Game.save, data = Game.data })
+      { save = Game.save, data = Game.data, party = Game.save.party, moveId = moveId })
   end
   return partyKnowsVanilla(moveId)
 end

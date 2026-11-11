@@ -6,6 +6,7 @@ Features intentionally added to the games themselves, beyond what the original c
 * **Gen 2 mod shop stock**, regular shelves and bargain prices
 * **Gen 2 mod phone contacts**, caller scripts and rematch events
 * **Gen 2 mod Fly destinations**, new or moved fly points and Pokemon Center spawns
+* **Gen 3 mod map layouts**, repaint metatiles on vanilla maps and give new maps their own grid
 * **Survey zoom** with connected-map rendering and configurable void fill
 * **UI LAYOUT DYNAMIC** on Gen 1 and Gen 2, docking the START menu and save panel to the window's right edge while the text box stays centered
 * **Perspective tilt mode** for an HD-2D-style overworld
