@@ -99,6 +99,7 @@ then
   cp "$ICON_SRC" "$IN_DIR/icon.png"
 fi
 cp "$GAME_LOVE" "$IN_DIR/game.love"
+cp "$ROOT/recomplauncher.json" "$IN_DIR/recomplauncher.json"
 
 BRIDGE_LIB="liblibrashader_bridge.so"
 BRIDGE_SRC="${SHADERFX_BRIDGE_LINUX_ARM64:-}"
