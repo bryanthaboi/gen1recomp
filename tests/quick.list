@@ -487,6 +487,7 @@ tests/engine/lance_victory_music_bug2659.lua
 tests/engine/lance_walk_in_bug2665.lua
 tests/engine/launch_options_flags_bug1657.lua
 tests/engine/launch_prelaunch_bug1657.lua
+tests/engine/launch_rom_arg_test.lua
 tests/engine/launch_update_mods_bug2037.lua
 tests/engine/launch_uri_args_test.lua
 tests/engine/launcher_cart_ring_bug2003.lua

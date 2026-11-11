@@ -6,6 +6,9 @@
 --   love . --game=firered           -- boot FireRed (src/core/game3.lua)
 --   love . --game=red --launcher    -- open the launcher anyway (a shortcut
 --                                      the player wants to edit)
+--   love . --game=red --rom=/x/red.gb -- import that ROM first if Red is not
+--                                      imported yet; ignored once it is (for a
+--                                      launcher that holds the player's copy)
 --   POKEPORT_GAME=blue love .       -- same, for launchers that only pass env
 --
 -- The "--flag value" spelling parses here (argValue reads argv[i + 1]), but it
@@ -236,6 +239,7 @@ local function request(argv, rawArgv, uri)
     cart = uri.cart
     cartSpecified = true
   end
+  local rom = trim(argValue(argv, "rom"))
   local launcher
   if argFlag(argv, "launcher") or argFlag(rawArgv, "launcher") then
     launcher = true
@@ -247,6 +251,7 @@ local function request(argv, rawArgv, uri)
   return {
     game = game,
     cart = cart,
+    rom = rom,
     slot = slot,
     cartSpecified = cartSpecified,
     launcher = launcher,
