@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.4",
+          "date": "2026-11-12",
+          "size": 44750328,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.4/gen1recomp++-0.4.4-ios.ipa",
+          "localizedDescription": "Bingo\n\n## Issues closed\n\n- #3132 [GB audio] Emulation bugs\n- #3133 A nickname on a trainer.party row shows in Gold, Silver and Crystal but is dropped in Red, Blue, Yellow and the Gen 3 games\n- #3134 Opponent held items fail\n\n## Contributors\n\n- @bryanthaboi\n- @Nexhas28"
+        },
+        {
           "version": "0.4.3",
           "date": "2026-11-11",
           "size": 44747096,
