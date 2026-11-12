@@ -863,6 +863,7 @@ tests/game3_camera_object_view_test.lua
 tests/game3_carried_actor_ghost_test.lua
 tests/game3_cart_cache.lua
 tests/game3_compat_connections_view_test.lua
+tests/game3_continue_scene_vars_test.lua
 tests/game3_controls_menu_test.lua
 tests/game3_corner_screen_test.lua
 tests/game3_cry_modes_test.lua
