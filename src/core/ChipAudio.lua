@@ -1225,7 +1225,9 @@ function ChipAudio._traceFirstMusicSampleForTest(data, header)
   local engine = ChipSynth.newEngine(data, header, { allowLoops = true })
   local result = {}
   for _, channel in ipairs(engine.channels) do
-    local value = channel:sample()
+    -- the level across the first sample, before the output smoothing
+    -- spreads the onset
+    local value = (channel:sampleMoments())
     local event = channel.event or {}
     result[#result + 1] = {
       number = channel.number,
@@ -1251,7 +1253,9 @@ function ChipAudio._traceFirstSfxSampleForTest(data, header)
   })
   local result = {}
   for _, channel in ipairs(engine.channels) do
-    local value = channel:sample()
+    -- the level across the first sample, before the output smoothing
+    -- spreads the onset
+    local value = (channel:sampleMoments())
     local event = channel.event or {}
     result[#result + 1] = {
       number = channel.number,

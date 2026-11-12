@@ -80,6 +80,47 @@ if ok then
   local snare = engine:drumInstrumentGen2(5, 1)
   check(snare[#snare].endSample > frame * 2,
     "kit 5 snare rings past its script (" .. snare[#snare].endSample .. " samples)")
+  -- HandleNoise reads the next noise_note row on the frame after its delay
+  -- reaches zero, so no row is shorter than two frames (#3132)
+  local rows, shortest = 0, math.huge
+  for kit = 0, 5 do
+    for pitch = 1, 12 do
+      local okDrum, drum = pcall(engine.drumInstrumentGen2, engine, kit, pitch)
+      for index = 1, (okDrum and #drum or 0) - 1 do
+        rows = rows + 1
+        shortest = math.min(shortest, drum[index + 1].startSample - drum[index].startSample)
+      end
+    end
+  end
+  check(rows > 0 and shortest >= frame * 2 - 1,
+    "a drum row sounds for (length & $f) + 2 frames (shortest " .. shortest .. " samples)")
+end
+
+-- Music_HealPokemon channel 1 issues no octave command and opens every note
+-- with a pitch_slide: it depends on ChannelInit's octave 8 and on the slide
+-- being stepped a frame at a time (#3132).
+local heal = audio.songs.Music_HealPokemon
+if heal then
+  local healOk, healEngine = pcall(ChipSynth.newEngine, data, heal, { allowLoops = false })
+  check(healOk, "HealPokemon engine builds" .. (healOk and "" or (": " .. tostring(healEngine))))
+  if healOk then
+    local lead = healEngine.channels[1]
+    local rest, note = lead:nextEvent(), lead:nextEvent()
+    check(rest and rest.silence, "HealPokemon channel 1 opens on a rest")
+    check(note and note.register and note.register > 1800,
+      "its first note starts up in octave 8 (register " .. tostring(note and note.register) .. ")")
+    local steps = note and note.registerSteps
+    local falling = steps ~= nil and #steps >= 20
+    for index = 4, falling and 20 or 0, 2 do
+      if steps[index] >= steps[index - 2] then falling = false end
+    end
+    check(falling, "and slides down a step on every frame")
+    -- the slide target is pitch 0, so it runs under zero on the last frame and
+    -- the $ff it writes to NR14 turns the length counter on
+    check(note and note.cutFrame ~= nil, "until it wraps and the channel drops out")
+  end
+else
+  check(true, "Music_HealPokemon absent : SKIP")
 end
 
 local bark = audio.songs.Music_NewBarkTown

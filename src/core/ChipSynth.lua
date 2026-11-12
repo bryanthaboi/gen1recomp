@@ -312,7 +312,10 @@ function Channel.new(engine, spec, options)
     volume = 12,
     fade = 0,
     duty = 2,
-    octave = 4,
+    -- Gen 2 ChannelInit zeroes the whole struct, and a stored octave of 0 is
+    -- `octave 8` (audio/engine.asm ChannelInit, GetFrequency).  Music_HealPokemon
+    -- channel 1 never issues an octave command and relies on it.
+    octave = engine.generation == 2 and 0 or 4,
     transposition = 0, -- Gen 2: hi=octaves, lo=pitches
     pitchOffset = 0, -- Gen 2 pitch_offset (signed word add to freq)
     noiseKit = 0,
@@ -327,6 +330,14 @@ function Channel.new(engine, spec, options)
     waveLevel = 1,
     perfectPitch = false,
     vibrato = nil,
+    -- Gen 2 vibrato / duty-loop counters.  They live on the channel, not the
+    -- note: only the delay is reloaded per note (audio/engine.asm _UpdateSound
+    -- .noteover), the rate counter and direction carry across notes and rests.
+    vib = nil,
+    vibDelayCount = 0,
+    vibCount = 0,
+    vibDir = false,
+    dutyFrame = 0,
     pendingSlide = nil,
     sweep = nil,
     callStack = {},
@@ -336,6 +347,7 @@ function Channel.new(engine, spec, options)
     phase = 0,
     noiseLfsr = 0x7FFF,
     noiseClock = 0,
+    momentTail = 0, -- the last sample's first moment (Channel:sample)
     drumTail = nil,
     timeTicks = 0,
   }, Channel)
@@ -362,7 +374,8 @@ function Channel:frequency(note, octave)
 end
 
 -- pokegold GetFrequency: FrequencyTable[pitch+transpose] with asr while
--- CHANNEL_OCTAVE (+ transpose hi) < 7, then optional pitch_offset.
+-- CHANNEL_OCTAVE (+ transpose hi) < 7.  This is CHANNEL_FREQUENCY; the pitch
+-- offset is added per frame (toneGen2), as HandleTrackVibrato does.
 function Channel:frequencyGen2(note, octave)
   local trans = self.transposition or 0
   local pitch = note + bit.band(trans, 0x0F)
@@ -374,9 +387,126 @@ function Channel:frequencyGen2(note, octave)
     shifts = shifts + 1
     oct = oct + 1
   end
-  local register = bit.band(bit.arshift(signed, shifts), 0x7FF)
-  register = bit.band(register + (self.pitchOffset or 0), 0x7FF)
-  return bit.band(register + self.frequencyOffset, 0x7FF)
+  return bit.band(bit.arshift(signed, shifts), 0x7FF)
+end
+
+-- One frame of HandleTrackVibrato's vibrato half (audio/engine.asm).  `low` is
+-- the low frequency byte this frame; returns the byte to write on a toggle
+-- frame, nil otherwise.
+function Channel:stepVibratoGen2(first, low)
+  local vib = self.vib
+  if not vib then return nil end
+  if first then self.vibDelayCount = vib.delay end
+  if self.vibDelayCount > 0 then
+    self.vibDelayCount = self.vibDelayCount - 1
+    return nil
+  end
+  if vib.above == 0 and vib.below == 0 then return nil end
+  if self.vibCount > 0 then
+    self.vibCount = self.vibCount - 1
+    return nil
+  end
+  self.vibCount = vib.rate
+  if self.vibDir then
+    self.vibDir = false
+    return math.max(0, low - vib.below)
+  end
+  self.vibDir = true
+  return math.min(0xFF, low + vib.above)
+end
+
+-- SOUND_DUTY_LOOP rotates once a frame whether or not a note is sounding.
+function Channel:advanceDutyGen2(event, frames)
+  if type(self.duty) ~= "table" then return end
+  if event then event.dutyStart = self.dutyFrame end
+  self.dutyFrame = (self.dutyFrame + frames) % 4
+end
+
+-- a rest, drum or noise row: nothing to pitch, but the per-frame counters run
+function Channel:idleGen2(event, ticks)
+  local frames = math.floor(ticks / FRAME_TICKS)
+  for frame = 0, frames - 1 do self:stepVibratoGen2(frame == 0, 0) end
+  self:advanceDutyGen2(nil, frames)
+  if event and event.silence then self.pendingSlide = nil end
+  return event
+end
+
+-- A Gen 2 pitched note, run a frame at a time the way _UpdateSound does:
+-- ApplyPitchSlide, then pitch offset, then vibrato, then UpdateChannels'
+-- register writes.  `raw` is CHANNEL_FREQUENCY before any offset.
+--
+--   * LoadNote stores quotient + 1 as the slide amount, and the falling
+--     branch of ApplyPitchSlide doubles the fraction instead of summing it.
+--   * a finished slide stops writing; it does not land on the target.
+--   * only channels 1/5 act on NOTE_FREQ_OVERRIDE (.ch2_frequency_override
+--     and .ch3_frequency_override are unreferenced), so a slide is inaudible
+--     on the other tone channels.
+--   * a vibrato toggle writes the low byte only.
+function Channel:toneGen2(ticks, raw, volume, fade)
+  local frames = math.floor(ticks / FRAME_TICKS)
+  local offset = (self.pitchOffset or 0) + self.frequencyOffset
+  local slide = self.pendingSlide
+  self.pendingSlide = nil
+  local freq = raw
+  local amount, fraction, rising, target, carry = 0, 0, false, 0, 0
+  if slide then
+    local span = math.max(1, frames - slide.length)
+    target = slide.target
+    rising = target > freq
+    local distance = math.abs(freq - target)
+    amount = bit.band(math.floor(distance / span) + 1, 0xFF)
+    fraction = distance % span
+  end
+  local sliding = slide ~= nil
+  local register, first, steps, cut
+  for frame = 0, frames - 1 do
+    local override = false
+    if sliding then
+      local moved
+      if rising then
+        moved = freq + amount
+        carry = carry + fraction
+        if carry > 0xFF then carry, moved = carry - 0x100, moved + 1 end
+        moved = bit.band(moved, 0xFFFF)
+        if target < moved then sliding = false end
+      else
+        moved = freq - amount
+        fraction = fraction * 2
+        if fraction > 0xFF then fraction, moved = fraction - 0x100, moved - 1 end
+        moved = bit.band(moved, 0xFFFF)
+        if moved < target then sliding = false end
+      end
+      if sliding then freq, override = moved, true end
+    end
+    local current = bit.band(freq + offset, 0xFFFF)
+    local toggled = self:stepVibratoGen2(frame == 0, bit.band(current, 0xFF))
+    if toggled then current = bit.band(current, 0xFF00) + toggled end
+    local written
+    if frame == 0 then
+      written = bit.band(current, 0x7FF)
+      first = written
+    elseif override and self.hardware == 1 then
+      written = bit.band(current, 0x7FF)
+      -- a slide that runs under zero writes $ff to NRx4: length enable with
+      -- a one-tick length counter, so the channel drops out
+      if bit.band(current, 0x4000) ~= 0 and not cut then cut = frame end
+    elseif toggled then
+      written = bit.band(register, 0x700) + toggled
+    end
+    if written and written ~= register then
+      register = written
+      if frame > 0 then
+        steps = steps or {}
+        steps[#steps + 1] = frame
+        steps[#steps + 1] = written
+      end
+    end
+  end
+  local event = self:tone(ticks, first or bit.band(freq + offset, 0x7FF), volume, fade)
+  event.registerSteps = steps
+  event.cutFrame = cut
+  self:advanceDutyGen2(event, frames)
+  return event
 end
 
 function Channel:durationTicks(length, plain)
@@ -694,28 +824,27 @@ function Channel:nextEventGen2()
       local fade = fadeValue(bit.band(packed, 0x0F))
       if self.noise then
         local parameter = bit.band(self:byte() + self.frequencyOffset, 0xFF)
-        return self:noiseEvent(ticks, volume, fade, parameter)
+        return self:idleGen2(self:noiseEvent(ticks, volume, fade, parameter), ticks)
       end
       -- CHANNEL_PITCH_OFFSET is wCryPitch for a cry and the SFX pitch
       -- modifier otherwise; both land in frequencyOffset.  The add is 16-bit
       -- on hardware and only 11 bits reach the register, so a negative pitch
       -- stored as its unsigned word still comes out right.
-      local register = bit.band(self:word() + self.frequencyOffset, 0x7FF)
-      return self:tone(ticks, register, volume, fade)
+      return self:toneGen2(ticks, bit.band(self:word(), 0x7FF), volume, fade)
     elseif command < 0xD0 then
       local note = bit.rshift(command, 4)
       local length = bit.band(command, 0x0F)
       local ticks = self:durationTicksGen2(length)
       if note == 0 then
-        return self:silenceEvent(ticks)
+        return self:idleGen2(self:silenceEvent(ticks), ticks)
       end
       if self.noise and self.noiseSampling then
-        return self:drumEvent(ticks, note)
+        return self:idleGen2(self:drumEvent(ticks, note), ticks)
       end
       if self.noise then
-        return self:silenceEvent(ticks)
+        return self:idleGen2(self:silenceEvent(ticks), ticks)
       end
-      return self:tone(ticks, self:frequencyGen2(note))
+      return self:toneGen2(ticks, self:frequencyGen2(note))
     elseif command >= 0xD0 and command <= 0xD7 then
       -- octave 8 → $d0 (stored 0); octave 1 → $d7 (stored 7)
       self.octave = bit.band(command, 7)
@@ -740,7 +869,11 @@ function Channel:nextEventGen2()
       end
       self.durationModifier = 0
     elseif command == 0xDB then -- duty_cycle
-      self.duty = bit.band(self:byte(), 3)
+      -- nothing clears SOUND_DUTY_LOOP once duty_cycle_pattern has set it, and
+      -- HandleTrackVibrato rewrites the duty from the pattern every frame, so
+      -- a duty_cycle after a pattern is never heard
+      local duty = bit.band(self:byte(), 3)
+      if type(self.duty) ~= "table" then self.duty = duty end
     elseif command == 0xDC then -- volume_envelope
       local packed = self:byte()
       if self.wave then
@@ -765,6 +898,7 @@ function Channel:nextEventGen2()
         bit.band(bit.rshift(packed, 2), 3),
         bit.band(packed, 3),
       }
+      self.dutyFrame = 0
     elseif command == 0xDF then -- toggle_sfx
       self.executeMusic = not self.executeMusic
     elseif command == 0xE0 then -- pitch_slide
@@ -777,16 +911,17 @@ function Channel:nextEventGen2()
     elseif command == 0xE1 then -- vibrato
       local delay, packed = self:byte(), self:byte()
       local depth = bit.rshift(packed, 4)
-      if depth == 0 then
-        self.vibrato = nil
-      else
-        self.vibrato = {
-          delay = delay,
-          above = bit.rshift(depth, 1) + bit.band(depth, 1),
-          below = bit.rshift(depth, 1),
-          rate = bit.band(packed, 0x0F),
-        }
-      end
+      -- Music_Vibrato: the command reloads the delay and rate counters and
+      -- clears the direction; a note does not (see stepVibratoGen2)
+      self.vib = {
+        delay = delay,
+        above = bit.rshift(depth, 1) + bit.band(depth, 1),
+        below = bit.rshift(depth, 1),
+        rate = bit.band(packed, 0x0F),
+      }
+      self.vibDelayCount = delay
+      self.vibCount = self.vib.rate
+      self.vibDir = false
     elseif command == 0xE2 then -- unknownmusic0xe2
       self:byte()
     elseif command == 0xE3 then -- toggle_noise
@@ -945,19 +1080,86 @@ function Channel:sampleNoise(parameter)
     local pitch = channelPitch[self.hardware] or 1
     local cycles = GB_CLOCK / divisor / (2 ^ shift) / SAMPLE_RATE * pitch
     local width7 = bit.band(parameter, 8) ~= 0
-    local remaining = cycles
+    -- the level across this output sample, not the level at its end: a
+    -- fast LFSR clocks many times per sample, and point-sampling it folds all
+    -- of that back into the audible band at full strength.  Returns the mean
+    -- and first moment (see areaMoments).
+    local remaining, mean, moment = cycles, 0, 0
+    local from = 0
     while remaining > 0 do
       local untilClock = 1 - self.noiseClock
       local span = math.min(remaining, untilClock)
-      self.noiseClock = self.noiseClock + span
       remaining = remaining - span
+      if bit.band(self.noiseLfsr, 1) == 0 then
+        local to = 1 - remaining / cycles
+        mean = mean + (to - from)
+        moment = moment + (to * to - from * from) * 0.5
+      end
+      from = 1 - remaining / cycles
+      self.noiseClock = self.noiseClock + span
       if self.noiseClock >= 1 - 1e-12 then
         self.noiseClock = 0
         self:clockNoise(width7)
       end
     end
+    if cycles > 0 then return mean, moment end
   end
-  return bit.band(self.noiseLfsr, 1) == 0 and 1 or 0
+  if bit.band(self.noiseLfsr, 1) == 0 then return 1, 0.5 end
+  return 0, 0
+end
+
+-- A stepped waveform across one output sample: `phase` to `phase + delta`
+-- cycles of a `count`-step table.  Returns its mean over the sample and its
+-- first moment (the integral of level * position, position running 0 to 1).
+--
+-- Channel:sample turns the pair into the waveform weighted by a triangle two
+-- samples wide: this sample's falling half (mean - moment) plus the last
+-- sample's rising half (its moment).  That is the same smoothing a two-point
+-- PolyBLEP applies to an edge, done exactly, for any number of edges in a
+-- sample and for the wave and noise channels as well as the pulses.  A level
+-- that holds across both samples comes out unchanged; an edge is spread over
+-- the two samples it falls between instead of snapping to one of them, which
+-- is what stops its harmonics folding back into the audible band.
+local function areaMoments(pattern, count, phase, delta)
+  local start = phase * count
+  local index = math.floor(start)
+  local stop = start + delta * count
+  local value = pattern[index % count + 1]
+  if stop <= index + 1 then return value, value * 0.5 end
+  local scale = 1 / (stop - start)
+  local from, mean, moment = 0, 0, 0
+  while true do
+    local edge = index + 1
+    local to = edge < stop and (edge - start) * scale or 1
+    mean = mean + value * (to - from)
+    moment = moment + value * (to * to - from * from) * 0.5
+    if edge >= stop then break end
+    from, index = to, edge
+    value = pattern[index % count + 1]
+  end
+  return mean, moment
+end
+
+-- NR32 shifts the 4-bit wave sample right (0, 1 or 2 bits); it does not scale
+-- it.  One 32-step level table per (instrument, level), built on first use.
+local WAVE_SHIFT = { [1] = 1, [0.5] = 2, [0.25] = 4 }
+
+local function waveLevels(engine, instrument, level)
+  local divisor = WAVE_SHIFT[level]
+  local wave = engine.waves[math.min(instrument + 1, #engine.waves)]
+  if not wave or not divisor then return nil end
+  engine.waveLevels = engine.waveLevels or {}
+  local key = instrument * 8 + divisor
+  local levels = engine.waveLevels[key]
+  if levels and levels.source == wave then return levels end
+  levels = { source = wave }
+  for index = 1, 32 do
+    local nibble = math.max(0, math.min(15, (wave[index] or 0) * 8 + 8))
+    -- an authored wave may sit between nibbles; only a shift truncates
+    levels[index] = (divisor == 1 and nibble or math.floor(nibble / divisor)) / 15
+  end
+  engine.waveLevels[key] = levels
+  return levels
 end
 
 local function sweepCalculation(register, sweep)
@@ -995,10 +1197,13 @@ function Channel:sampleDrum(event, sampleIndex)
   end
   local elapsed = (sampleIndex - segment.startSample) / SAMPLE_RATE
   local volume = envelopeVolume(segment.volume, segment.fade, elapsed)
-  return self:sampleNoise(segment.parameter) * volume / 15
+  local mean, moment = self:sampleNoise(segment.parameter)
+  return mean * volume / 15, moment * volume / 15
 end
 
-function Channel:sample()
+-- one output sample as (mean, first moment); a nil moment means the level
+-- held for the whole sample
+function Channel:sampleMoments()
   while not self.ended
       and (not self.event or self.event.sample >= self.event.samples) do
     local prev = self.event
@@ -1026,7 +1231,8 @@ function Channel:sample()
       self.drumTail = nil
       return 0
     end
-    return self:sampleDrum(tail, sampleIndex) * gain
+    local mean, moment = self:sampleDrum(tail, sampleIndex)
+    return mean * gain, moment and moment * gain
   end
   local sampleIndex = event.sample
   event.elapsed = sampleIndex / SAMPLE_RATE
@@ -1040,21 +1246,34 @@ function Channel:sample()
       self.drumTail = nil
       return 0
     end
-    return self:sampleDrum(tail, tailIndex) * gain
+    local mean, moment = self:sampleDrum(tail, tailIndex)
+    return mean * gain, moment and moment * gain
   end
   if event.drum then
-    return self:sampleDrum(event, sampleIndex) * gain
+    local mean, moment = self:sampleDrum(event, sampleIndex)
+    return mean * gain, moment and moment * gain
   end
   self.drumTail = nil
   local volume = envelopeVolume(
     event.volume or 0, event.fade or 0, event.elapsed)
   if event.noise then
-    return self:sampleNoise(event.noiseParameter) * volume / 15 * gain
+    local scale = volume / 15 * gain
+    local mean, moment = self:sampleNoise(event.noiseParameter)
+    return mean * scale, moment * scale
   end
 
   local register = event.register
   local frame = math.floor(event.elapsed * 60)
-  if event.sweep then
+  if event.cutFrame and frame >= event.cutFrame then return 0 end
+  local steps = event.registerSteps
+  if steps and not event.sweep then
+    local taken = event.registerIndex or 0
+    while steps[taken * 2 + 1] and frame >= steps[taken * 2 + 1] do
+      taken = taken + 1
+    end
+    event.registerIndex = taken
+    if taken > 0 then register = steps[taken * 2] end
+  elseif event.sweep then
     register = sweptRegister(register, event.sweep, event.elapsed)
     if not register then return 0 end
   elseif event.slide then
@@ -1078,27 +1297,36 @@ function Channel:sample()
   local frequency = 131072 / (2048 - math.min(register, 2047)) * pitch
   if event.wave then frequency = frequency * 0.5 end
   local phase = self.phase
-  self.phase = (phase + frequency / SAMPLE_RATE) % 1
+  local delta = frequency / SAMPLE_RATE
+  self.phase = (phase + delta) % 1
   if event.wave then
-    local wave = self.engine.waves[
-      math.min(event.waveInstrument + 1, #self.engine.waves)]
-    -- a def-local program may omit its wave table entirely
-    if not wave then return 0 end
-    local index = math.min(32, math.floor(phase * 32) + 1)
-    local nibble = math.max(0, math.min(15, wave[index] * 8 + 8))
-    return (nibble / 15) * event.waveLevel * gain
+    -- a def-local program may omit its wave table entirely; level 0 is mute
+    local levels = waveLevels(self.engine, event.waveInstrument, event.waveLevel)
+    if not levels then return 0 end
+    local mean, moment = areaMoments(levels, 32, phase, delta)
+    return mean * gain, moment * gain
   end
   local duty = event.duty
   if type(duty) == "table" then
-    duty = duty[frame % 4 + 1]
+    duty = duty[(frame + (event.dutyStart or 0)) % 4 + 1]
   end
   local pattern = WAVE_PATTERN_TABLES[duty or 2] or WAVE_PATTERN_TABLES[2]
-  local step = math.floor(phase * 8) % 8
-  if pattern[step + 1] == 0 then
+  local mean, moment = areaMoments(pattern, 8, phase, delta)
+  if mean == 0 then
     return 0
   end
-  return volume / 15 * gain
+  local scale = volume / 15 * gain
+  return mean * scale, moment * scale
 end
+
+function Channel:sample()
+  local mean, moment = self:sampleMoments()
+  moment = moment or mean * 0.5
+  local out = self.momentTail + mean - moment
+  self.momentTail = moment
+  return out
+end
+
 
 local Engine = {}
 Engine.__index = Engine
@@ -1163,8 +1391,10 @@ function Engine:drumInstrumentGen2(kit, pitch)
       local packed = romByte(self.banks, spec.bank, address)
       local parameter = romByte(self.banks, spec.bank, address + 1)
       address = address + 2
-      -- ReadNoiseSample: delay = (length & $f) + 1 frames
-      local duration = (bit.band(command, 0x0F) + 1) * FRAME_TICKS
+      -- ReadNoiseSample stores (length & $f) + 1 in wNoiseSampleDelay, and
+      -- HandleNoise only reads the next row on the frame AFTER the delay has
+      -- counted down to zero, so a row sounds for (length & $f) + 2 frames.
+      local duration = (bit.band(command, 0x0F) + 2) * FRAME_TICKS
       segments[#segments + 1] = {
         startSample = snapTicks(ticks),
         endSample = snapTicks(ticks + duration),
