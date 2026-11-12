@@ -237,7 +237,7 @@ local function link_mon_from(foe)
   return Damage.ensureStats(mon, mon.level)
 end
 
-local function foe_mon_from(foe, link, trainerPolicy)
+local function foe_mon_from(foe, link, trainerPolicy, wild)
   if link then return link_mon_from(foe) end
   if type(foe) ~= "table" then
     return Damage.ensureStats({
@@ -273,8 +273,11 @@ local function foe_mon_from(foe, link, trainerPolicy)
       spd = math.floor(iv2 / 1024) % 32,
     }
   end
+  -- pokeemerald/src/battle_main.c:2046
   local item = foe.item
-  if item == nil and BattleProfile.get(nil).family ~= "rse" then
+  if item == nil then item = foe.heldItem end
+  -- pokefirered/src/pokemon.c:6034
+  if item == nil and wild and BattleProfile.get(nil).family ~= "rse" then
     local meta = Pokemon.speciesMeta and Pokemon.speciesMeta(species)
     if meta then
       local common = tonumber(meta.itemCommon) or 0
@@ -578,12 +581,12 @@ function Battle.start(opts)
       and BattleProfile.get(opts.session).trainerParty
     local nativeTrainer = trainerPolicy
       and opts.foe and opts.foe.nativeNpcTrainer and opts.foe.party and not opts.foeParty
-    if not nativeTrainer then foeMon = foe_mon_from(opts.foe, nil, trainerPolicy) end
+    if not nativeTrainer then foeMon = foe_mon_from(opts.foe, nil, trainerPolicy, opts.wild) end
     foeParty = opts.foeParty
     if not foeParty and opts.foe and opts.foe.party then
       foeParty = {}
       for _, fm in ipairs(opts.foe.party) do
-        foeParty[#foeParty + 1] = foe_mon_from(fm, nil, trainerPolicy)
+        foeParty[#foeParty + 1] = foe_mon_from(fm, nil, trainerPolicy, opts.wild)
       end
     end
     if foeParty and foeParty[1] and (nativeTrainer
@@ -2084,8 +2087,8 @@ local function handle_enemy_faint(opts)
       else
         local nextMon = st.foeParty[nextEnemyIdx]
         local nextSp = nextMon and (nextMon.species or nextMon.speciesId)
-        local Pokemon = require("src.core.game3.pokemon")
-        local nextName = Pokemon.name(nextSp)
+        -- pokefirered/src/battle_script_commands.c:4953
+        local nextName = State.displayName({ mon = nextMon, species = nextSp })
         -- pokefirered/data/battle_scripts_1.s:2846
         Ui.push(BattleText.get("STRINGID_ENEMYABOUTTOSWITCHPKMN", Adapter.fill(st, { buff2 = nextName })))
         Battle._shiftEnemyIdx = nextEnemyIdx

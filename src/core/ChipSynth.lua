@@ -151,6 +151,55 @@ local HPF_CHARGE = 0.999958 ^ (GB_CLOCK / SAMPLE_RATE)
 local LPF_ALPHA = 0.8
 local MIX_SCALE = 0.5
 
+local function buildShape(levels, count)
+  local level, first, second = {}, { 0 }, { 0 }
+  for k = 1, count do
+    level[k] = levels[k]
+    first[k + 1] = first[k] + levels[k] / count
+    second[k + 1] = second[k] + (first[k] + levels[k] / (2 * count)) / count
+  end
+  return {
+    n = count, level = level, first = first, second = second,
+    mean = first[count + 1], turn = second[count + 1],
+  }
+end
+
+local PULSE_SHAPES = {}
+for duty = 0, 3 do
+  PULSE_SHAPES[duty] = buildShape(WAVE_PATTERN_TABLES[duty], 8)
+end
+
+local function shapeIntegrals(shape, x)
+  local whole = math.floor(x)
+  local frac = x - whole
+  local n = shape.n
+  local scaled = frac * n
+  local k = math.min(math.floor(scaled), n - 1)
+  local u = (scaled - k) / n
+  local level, first = shape.level[k + 1], shape.first[k + 1]
+  local mean = shape.mean
+  return whole * mean + first + level * u,
+    mean * whole * (whole - 1) * 0.5 + whole * (shape.turn + mean * frac)
+      + shape.second[k + 1] + first * u + level * u * u * 0.5
+end
+
+local function shapeMoments(shape, phase, delta)
+  local n = shape.n
+  local scaled = phase * n
+  local k = math.min(math.floor(scaled), n - 1)
+  local level = shape.level[k + 1]
+  if delta < 1e-5 or scaled + delta * n < k + 1 then
+    return level * 0.5, level * 0.5
+  end
+  local u = (scaled - k) / n
+  local first = shape.first[k + 1]
+  local h0 = first + level * u
+  local g0 = shape.second[k + 1] + first * u + level * u * u * 0.5
+  local h1, g1 = shapeIntegrals(shape, phase + delta)
+  local lead = (g1 - g0) / (delta * delta) - h0 / delta
+  return lead, (h1 - h0) / delta - lead
+end
+
 local function snapTicks(ticks)
   -- ticks -> samples at the configured rate.  The original baked 44100/15360
   -- in as the integer rational 1470/512; this form is identical at 44100
@@ -312,7 +361,8 @@ function Channel.new(engine, spec, options)
     volume = 12,
     fade = 0,
     duty = 2,
-    octave = 4,
+    -- ../pokecrystal/audio/engine.asm:2727
+    octave = engine.generation == 2 and 0 or 4,
     transposition = 0, -- Gen 2: hi=octaves, lo=pitches
     pitchOffset = 0, -- Gen 2 pitch_offset (signed word add to freq)
     noiseKit = 0,
@@ -327,6 +377,9 @@ function Channel.new(engine, spec, options)
     waveLevel = 1,
     perfectPitch = false,
     vibrato = nil,
+    vibratoDelayCount = 0,
+    vibratoCounter = 0,
+    vibratoUp = false,
     pendingSlide = nil,
     sweep = nil,
     callStack = {},
@@ -336,6 +389,7 @@ function Channel.new(engine, spec, options)
     phase = 0,
     noiseLfsr = 0x7FFF,
     noiseClock = 0,
+    lag = 0,
     drumTail = nil,
     timeTicks = 0,
   }, Channel)
@@ -353,30 +407,98 @@ function Channel:word()
   return value
 end
 
-function Channel:frequency(note, octave)
+-- ../pokered/audio/engine_1.asm:1306
+function Channel:noteFrequency(note, octave)
   local signed = PITCHES[note + 1] - 0x10000
-  local register = bit.band(
+  return bit.band(
     bit.arshift(signed, math.max(0, (octave or self.octave) - 1)), 0x7FF)
+end
+
+function Channel:frequency(note, octave)
+  local register = self:noteFrequency(note, octave)
   if self.perfectPitch then register = bit.band(register + 1, 0x7FF) end
   return bit.band(register + self.frequencyOffset, 0x7FF)
 end
 
--- pokegold GetFrequency: FrequencyTable[pitch+transpose] with asr while
--- CHANNEL_OCTAVE (+ transpose hi) < 7, then optional pitch_offset.
-function Channel:frequencyGen2(note, octave)
+-- ../pokecrystal/audio/engine.asm:2138
+function Channel:noteFrequencyGen2(note, octave)
   local trans = self.transposition or 0
   local pitch = note + bit.band(trans, 0x0F)
   local oct = (octave or self.octave) + bit.rshift(trans, 4)
-  local tableVal = GEN2_FREQUENCY[pitch + 1] or 0
-  local signed = tableVal - 0x10000
-  local shifts = 0
-  while oct < 7 do
-    shifts = shifts + 1
-    oct = oct + 1
-  end
-  local register = bit.band(bit.arshift(signed, shifts), 0x7FF)
+  local signed = GEN2_FREQUENCY[pitch + 1] or 0
+  if signed >= 0x8000 then signed = signed - 0x10000 end
+  -- ../pokecrystal/audio/engine.asm:2174
+  local shifts = math.max(0, 7 - oct)
+  return bit.band(bit.arshift(signed, shifts), 0x7FF)
+end
+
+-- ../pokecrystal/audio/engine.asm:856
+function Channel:frequencyGen2(note, octave)
+  local register = self:noteFrequencyGen2(note, octave)
   register = bit.band(register + (self.pitchOffset or 0), 0x7FF)
   return bit.band(register + self.frequencyOffset, 0x7FF)
+end
+
+local function pitchSlide(frequency, target, frames, length, first)
+  -- ../pokecrystal/audio/engine.asm:722
+  local duration = frames - length
+  if duration < 1 then duration = 1 end
+  local frequencyLow, frequencyHigh = bit.band(frequency, 0xFF), bit.rshift(frequency, 8)
+  local targetLow, targetHigh = bit.band(target, 0xFF), bit.rshift(target, 8)
+  -- ../pokecrystal/audio/engine.asm:740
+  local low = frequencyLow - targetLow
+  local high = bit.band(frequencyHigh - (low < 0 and 1 or 0), 0xFF)
+  local rising = high < targetHigh
+  local distance
+  if rising then
+    -- ../pokecrystal/audio/engine.asm:762
+    low = targetLow - frequencyLow
+    high = bit.band(frequencyHigh - (low < 0 and 1 or 0), 0xFF)
+    distance = bit.band(targetHigh - high, 0xFF) * 0x100 + bit.band(low, 0xFF)
+  else
+    -- ../pokecrystal/audio/engine.asm:788
+    distance = bit.band(high - targetHigh, 0xFF) * 0x100 + bit.band(low, 0xFF)
+  end
+  -- ../pokecrystal/audio/engine.asm:805
+  local amount = bit.band(math.floor(distance / duration) + 1, 0xFF)
+  local fraction = distance % duration
+  local accumulator = 0
+  local registers = {}
+  local value = frequency
+  local sliding = true
+  local start, stop = 1, nil
+  if first then
+    -- ../pokered/audio/engine_1.asm:1224
+    registers[1] = bit.band(amount, 7) * 0x100
+      + bit.band(fraction - duration + first, 0xFF)
+    -- ../pokered/audio/engine_1.asm:1236
+    accumulator = fraction
+    start = 2
+  end
+  for frame = start, frames do
+    if sliding then
+      local stepped
+      if rising then
+        -- ../pokecrystal/audio/engine.asm:969
+        accumulator = accumulator + fraction
+        stepped = value + amount + (accumulator > 0xFF and 1 or 0)
+        accumulator = bit.band(accumulator, 0xFF)
+        stepped = bit.band(stepped, 0xFFFF)
+        -- ../pokecrystal/audio/engine.asm:995
+        if stepped > target then sliding = false else value = stepped end
+      else
+        -- ../pokecrystal/audio/engine.asm:1010
+        stepped = value - amount - (fraction > 0x7F and 1 or 0)
+        fraction = bit.band(fraction * 2, 0xFF)
+        stepped = bit.band(stepped, 0xFFFF)
+        -- ../pokecrystal/audio/engine.asm:1036
+        if stepped < target then sliding = false else value = stepped end
+      end
+      if not sliding then stop = frame - 1 end
+    end
+    registers[frame] = value
+  end
+  return registers, stop
 end
 
 function Channel:durationTicks(length, plain)
@@ -418,12 +540,55 @@ end
 
 function Channel:timedEvent(event, ticks)
   local first = snapTicks(self.timeTicks)
+  local firstFrame = math.floor(self.timeTicks / FRAME_TICKS)
+  event.frameTicks = self.timeTicks - firstFrame * FRAME_TICKS
   self.timeTicks = self.timeTicks + ticks
+  event.frames = math.floor(self.timeTicks / FRAME_TICKS) - firstFrame
+  event.vibratoFrame = -1
+  event.vibratoSample = self.vibrato and 0 or math.huge
   event.duration = ticks / TICKS_PER_SECOND
   event.samples = snapTicks(self.timeTicks) - first
   event.sample = 0
   event.elapsed = 0
   return event
+end
+
+function Channel:stepVibrato(event, frame)
+  local vibrato = self.vibrato
+  if self.engine.generation ~= 2 then
+    -- ../pokered/audio/engine_1.asm:45
+    if frame == 0 then return end
+    -- ../pokered/audio/engine_1.asm:78
+    local slide = event.slide
+    if slide and not (slide.stop and frame > slide.stop) then return end
+  end
+  -- ../pokecrystal/audio/engine.asm:880
+  if self.vibratoDelayCount > 0 then
+    self.vibratoDelayCount = self.vibratoDelayCount - 1
+    return
+  end
+  -- ../pokecrystal/audio/engine.asm:886
+  if vibrato.above == 0 then return end
+  -- ../pokecrystal/audio/engine.asm:894
+  if self.vibratoCounter > 0 then
+    self.vibratoCounter = self.vibratoCounter - 1
+    return
+  end
+  -- ../pokecrystal/audio/engine.asm:905
+  self.vibratoCounter = vibrato.rate
+  local low = bit.band(event.register or 0, 0xFF)
+  -- ../pokecrystal/audio/engine.asm:915
+  if self.vibratoUp then
+    self.vibratoUp = false
+    low = math.max(0, low - vibrato.below)
+  else
+    self.vibratoUp = true
+    low = math.min(0xFF, low + vibrato.above)
+  end
+  if event.register then
+    -- ../pokecrystal/audio/engine.asm:394
+    event.vibratoRegister = bit.band(event.register, 0x700) + low
+  end
 end
 
 function Channel:pan()
@@ -455,14 +620,18 @@ function Channel:tone(ticks, register, volume, fade)
   if register >= 0x800 then
     return self:timedEvent({ silence = true }, ticks)
   end
-  local duration = ticks / TICKS_PER_SECOND
   local panLeft, panRight = self:pan()
   local slide
-  if self.pendingSlide then
-    slide = {
-      target = self.pendingSlide.target,
-      frames = math.max(1, duration * 60 - self.pendingSlide.length),
-    }
+  local pending = self.pendingSlide
+  if pending then
+    if pending.registers then
+      slide = {
+        registers = pending.registers,
+        stop = pending.stop,
+        offset = self.engine.generation == 2
+          and (self.pitchOffset or 0) + self.frequencyOffset or 0,
+      }
+    end
     self.pendingSlide = nil
   end
   return self:timedEvent({
@@ -473,7 +642,7 @@ function Channel:tone(ticks, register, volume, fade)
     wave = self.wave,
     waveInstrument = self.waveInstrument,
     waveLevel = self.waveLevel,
-    vibrato = slide and nil or self.vibrato,
+    vibratoRegister = false,
     slide = slide,
     sweep = self.sfx and self.hardware == 1 and self.sweep or nil,
     panLeft = panLeft,
@@ -529,9 +698,20 @@ function Channel:nextEvent()
         if command >= 0xB0 then instrument = self:byte() end
         return self:drumEvent(self:durationTicks(length), instrument)
       end
-      return self:tone(self:durationTicks(length), self:frequency(note))
+      local ticks = self:durationTicks(length)
+      if self.pendingSlide then
+        local frames = math.floor((self.timeTicks + ticks) / FRAME_TICKS)
+          - math.floor(self.timeTicks / FRAME_TICKS)
+        -- ../pokered/audio/engine_1.asm:799
+        self.pendingSlide.registers, self.pendingSlide.stop = pitchSlide(
+          self:noteFrequency(note), self.pendingSlide.target, frames,
+          self.pendingSlide.length, self.perfectPitch and 1 or 0)
+      end
+      return self:tone(ticks, self:frequency(note))
     elseif command >= 0xC0 and command < 0xD0 then
       local length = bit.band(command, 0x0F) + 1
+      -- ../pokered/audio/engine_1.asm:158
+      self.pendingSlide = nil
       return self:silenceEvent(self:durationTicks(length))
     elseif command >= 0xD0 and command < 0xE0 then
       self.speed = bit.band(command, 0x0F)
@@ -554,22 +734,22 @@ function Channel:nextEvent()
     elseif command == 0xEA then
       local delay, packed = self:byte(), self:byte()
       local depth = bit.rshift(packed, 4)
-      if depth == 0 then
-        self.vibrato = nil
-      else
-        self.vibrato = {
-          delay = delay,
-          above = bit.rshift(depth, 1) + bit.band(depth, 1),
-          below = bit.rshift(depth, 1),
-          rate = bit.band(packed, 0x0F),
-        }
-      end
+      -- ../pokered/audio/engine_1.asm:384
+      self.vibrato = {
+        delay = delay,
+        above = bit.rshift(depth, 1) + bit.band(depth, 1),
+        below = bit.rshift(depth, 1),
+        rate = bit.band(packed, 0x0F),
+      }
+      self.vibratoDelayCount = delay
+      self.vibratoCounter = self.vibrato.rate
     elseif command == 0xEB then
       local length, packed = self:byte(), self:byte()
       local octave = 8 - bit.rshift(packed, 4)
       self.pendingSlide = {
         length = length,
-        target = self:frequency(bit.band(packed, 0x0F), octave),
+        -- ../pokered/audio/engine_1.asm:447
+        target = self:noteFrequency(bit.band(packed, 0x0F), octave),
       }
     elseif command == 0xEC then
       self.duty = bit.band(self:byte(), 3)
@@ -701,19 +881,39 @@ function Channel:nextEventGen2()
       -- on hardware and only 11 bits reach the register, so a negative pitch
       -- stored as its unsigned word still comes out right.
       local register = bit.band(self:word() + self.frequencyOffset, 0x7FF)
+      if self.wave then
+        -- ../pokecrystal/audio/engine.asm:424
+        self.waveInstrument = bit.band(packed, 0x0F)
+        -- ../pokecrystal/audio/engine.asm:470
+        self.waveLevel = WAVE_LEVEL[bit.band(volume, 3)]
+      end
       return self:tone(ticks, register, volume, fade)
     elseif command < 0xD0 then
       local note = bit.rshift(command, 4)
       local length = bit.band(command, 0x0F)
       local ticks = self:durationTicksGen2(length)
       if note == 0 then
+        -- ../pokecrystal/audio/engine.asm:121
+        self.pendingSlide = nil
         return self:silenceEvent(ticks)
       end
       if self.noise and self.noiseSampling then
+        -- ../pokecrystal/audio/engine.asm:1116
+        if #self.engine:drumInstrumentGen2(self.noiseKit or 0, note) == 0 then
+          local event = self:silenceEvent(ticks)
+          event.dropDrumRows = true
+          return event
+        end
         return self:drumEvent(ticks, note)
       end
       if self.noise then
         return self:silenceEvent(ticks)
+      end
+      if self.pendingSlide then
+        -- ../pokecrystal/audio/engine.asm:1197
+        self.pendingSlide.registers = pitchSlide(
+          self:noteFrequencyGen2(note), self.pendingSlide.target,
+          ticks / FRAME_TICKS, self.pendingSlide.length)
       end
       return self:tone(ticks, self:frequencyGen2(note))
     elseif command >= 0xD0 and command <= 0xD7 then
@@ -772,21 +972,22 @@ function Channel:nextEventGen2()
       local octave = bit.rshift(packed, 4)
       self.pendingSlide = {
         length = length,
-        target = self:frequencyGen2(bit.band(packed, 0x0F), octave),
+        -- ../pokecrystal/audio/engine.asm:1771
+        target = self:noteFrequencyGen2(bit.band(packed, 0x0F), octave),
       }
     elseif command == 0xE1 then -- vibrato
       local delay, packed = self:byte(), self:byte()
       local depth = bit.rshift(packed, 4)
-      if depth == 0 then
-        self.vibrato = nil
-      else
-        self.vibrato = {
-          delay = delay,
-          above = bit.rshift(depth, 1) + bit.band(depth, 1),
-          below = bit.rshift(depth, 1),
-          rate = bit.band(packed, 0x0F),
-        }
-      end
+      -- ../pokecrystal/audio/engine.asm:1697
+      self.vibrato = {
+        delay = delay,
+        above = bit.rshift(depth, 1) + bit.band(depth, 1),
+        below = bit.rshift(depth, 1),
+        rate = bit.band(packed, 0x0F),
+      }
+      self.vibratoDelayCount = delay
+      self.vibratoCounter = self.vibrato.rate
+      self.vibratoUp = false
     elseif command == 0xE2 then -- unknownmusic0xe2
       self:byte()
     elseif command == 0xE3 then -- toggle_noise
@@ -918,46 +1119,61 @@ local function drumAudioEnd(drum)
   return last and last.endSample or 0
 end
 
+-- ../pokecrystal/audio/engine.asm:1348
+local function ringingRow(tail)
+  local current = tail.drum[1]
+  for _, segment in ipairs(tail.drum) do
+    if tail.sample > segment.startSample then current = segment end
+  end
+  if not current then return nil end
+  return {
+    drum = extendDrumEnvelope({ {
+      startSample = current.startSample,
+      endSample = current.endSample,
+      volume = current.volume,
+      fade = current.fade,
+      parameter = current.parameter,
+    } }),
+    sample = tail.sample,
+    drumSegmentIndex = 1,
+  }
+end
+
 function Channel:resetNoise()
   self.noiseLfsr = 0x7FFF
   self.noiseClock = 0
 end
 
-function Channel:clockNoise(width7)
-  local feedback = bit.bxor(
-    bit.band(self.noiseLfsr, 1),
-    bit.band(bit.rshift(self.noiseLfsr, 1), 1))
-  self.noiseLfsr = bit.bor(
-    bit.rshift(self.noiseLfsr, 1),
-    bit.lshift(feedback, 14))
-  if width7 then
-    self.noiseLfsr = bit.bor(
-      bit.band(self.noiseLfsr, bit.bnot(0x40)),
-      bit.lshift(feedback, 6))
-  end
-end
-
-function Channel:sampleNoise(parameter)
+function Channel:noiseMoments(parameter)
   parameter = parameter or 0
-  local divisor = NOISE_DIVISORS[bit.band(parameter, 7)]
+  local lfsr = self.noiseLfsr
+  local level = 1 - bit.band(lfsr, 1)
   local shift = bit.rshift(parameter, 4)
-  if shift < 14 then
-    local pitch = channelPitch[self.hardware] or 1
-    local cycles = GB_CLOCK / divisor / (2 ^ shift) / SAMPLE_RATE * pitch
-    local width7 = bit.band(parameter, 8) ~= 0
-    local remaining = cycles
-    while remaining > 0 do
-      local untilClock = 1 - self.noiseClock
-      local span = math.min(remaining, untilClock)
-      self.noiseClock = self.noiseClock + span
-      remaining = remaining - span
-      if self.noiseClock >= 1 - 1e-12 then
-        self.noiseClock = 0
-        self:clockNoise(width7)
-      end
-    end
+  local pitch = channelPitch[self.hardware] or 1
+  local cycles = GB_CLOCK / NOISE_DIVISORS[bit.band(parameter, 7)]
+    / (2 ^ shift) / SAMPLE_RATE * pitch
+  if shift >= 14 or cycles <= 0 then return level * 0.5, level * 0.5 end
+  local keep, inject = 0x3FFF, 0x4000
+  if bit.band(parameter, 8) ~= 0 then keep, inject = 0x3FBF, 0x4040 end
+  local step = 1 / cycles
+  local at = 0
+  local nextAt = (1 - self.noiseClock) * step
+  local mean, moment = 0, 0
+  while nextAt <= 1 do
+    mean = mean + level * (nextAt - at)
+    moment = moment + level * (nextAt * nextAt - at * at)
+    local feedback = bit.band(bit.bxor(lfsr, bit.rshift(lfsr, 1)), 1)
+    lfsr = bit.bor(bit.band(bit.rshift(lfsr, 1), keep),
+      bit.band(-feedback, inject))
+    level = 1 - bit.band(lfsr, 1)
+    at = nextAt
+    nextAt = nextAt + step
   end
-  return bit.band(self.noiseLfsr, 1) == 0 and 1 or 0
+  mean = mean + level * (1 - at)
+  moment = (moment + level * (1 - at * at)) * 0.5
+  self.noiseClock = 1 - (nextAt - 1) * cycles
+  self.noiseLfsr = lfsr
+  return mean - moment, moment
 end
 
 local function sweepCalculation(register, sweep)
@@ -981,27 +1197,30 @@ local function sweptRegister(register, sweep, elapsed)
   return register
 end
 
-function Channel:sampleDrum(event, sampleIndex)
+function Channel:drumMoments(event, sampleIndex)
   local index = event.drumSegmentIndex or 1
   local segment = event.drum[index]
   while segment and sampleIndex >= segment.endSample do
     index = index + 1
     segment = event.drum[index]
   end
-  if not segment or sampleIndex < segment.startSample then return 0 end
+  if not segment or sampleIndex < segment.startSample then return 0, 0 end
   if event.drumSegmentIndex ~= index then
     event.drumSegmentIndex = index
     self:resetNoise()
   end
   local elapsed = (sampleIndex - segment.startSample) / SAMPLE_RATE
-  local volume = envelopeVolume(segment.volume, segment.fade, elapsed)
-  return self:sampleNoise(segment.parameter) * volume / 15
+  local scale = envelopeVolume(segment.volume, segment.fade, elapsed) / 15
+  local lead, lag = self:noiseMoments(segment.parameter)
+  return lead * scale, lag * scale
 end
 
-function Channel:sample()
+function Channel:moments()
   while not self.ended
       and (not self.event or self.event.sample >= self.event.samples) do
     local prev = self.event
+    -- ../pokecrystal/audio/engine.asm:112
+    if self.vibrato then self.vibratoDelayCount = self.vibrato.delay end
     self.event = self:nextEvent()
     self.phase = 0
     if self.event and self.event.drum then
@@ -1014,94 +1233,130 @@ function Channel:sample()
       self.drumTail = nil
       self:resetNoise()
     end
+    if self.drumTail and self.event and self.event.dropDrumRows then
+      self.drumTail = ringingRow(self.drumTail)
+    end
   end
   local event = self.event
   local gain = channelVolume[self.hardware] or 1
   if not event then
     local tail = self.drumTail
-    if not tail then return 0 end
+    if not tail then return 0, 0 end
     local sampleIndex = tail.sample
     tail.sample = sampleIndex + 1
     if sampleIndex >= drumAudioEnd(tail.drum) then
       self.drumTail = nil
-      return 0
+      return 0, 0
     end
-    return self:sampleDrum(tail, sampleIndex) * gain
+    local lead, lag = self:drumMoments(tail, sampleIndex)
+    return lead * gain, lag * gain
   end
   local sampleIndex = event.sample
   event.elapsed = sampleIndex / SAMPLE_RATE
   event.sample = sampleIndex + 1
+  if sampleIndex >= event.vibratoSample then
+    local frame = event.vibratoFrame
+    if frame < event.frames - 1 and frame < math.floor((event.frameTicks
+        + sampleIndex * TICKS_PER_SECOND / SAMPLE_RATE) / FRAME_TICKS) then
+      frame = frame + 1
+      event.vibratoFrame = frame
+      self:stepVibrato(event, frame)
+    end
+    event.vibratoSample = math.floor(((frame + 1) * FRAME_TICKS
+      - event.frameTicks) * SAMPLE_RATE / TICKS_PER_SECOND)
+  end
   if event.silence then
     local tail = self.drumTail
-    if not tail then return 0 end
+    if not tail then return 0, 0 end
     local tailIndex = tail.sample
     tail.sample = tailIndex + 1
     if tailIndex >= drumAudioEnd(tail.drum) then
       self.drumTail = nil
-      return 0
+      return 0, 0
     end
-    return self:sampleDrum(tail, tailIndex) * gain
+    local lead, lag = self:drumMoments(tail, tailIndex)
+    return lead * gain, lag * gain
   end
   if event.drum then
-    return self:sampleDrum(event, sampleIndex) * gain
+    local lead, lag = self:drumMoments(event, sampleIndex)
+    return lead * gain, lag * gain
   end
   self.drumTail = nil
   local volume = envelopeVolume(
     event.volume or 0, event.fade or 0, event.elapsed)
   if event.noise then
-    return self:sampleNoise(event.noiseParameter) * volume / 15 * gain
+    local scale = volume / 15 * gain
+    local lead, lag = self:noiseMoments(event.noiseParameter)
+    return lead * scale, lag * scale
   end
 
   local register = event.register
   local frame = math.floor(event.elapsed * 60)
   if event.sweep then
     register = sweptRegister(register, event.sweep, event.elapsed)
-    if not register then return 0 end
+    if not register then return 0, 0 end
   elseif event.slide then
-    local amount = math.min(1, frame / event.slide.frames)
-    register = register + (event.slide.target - register) * amount
-  elseif event.vibrato and frame >= event.vibrato.delay then
-    local vibrato = event.vibrato
-    local toggles = math.floor(
-      (frame - vibrato.delay + 1) / (vibrato.rate + 1))
-    if toggles > 0 then
-      local low = bit.band(register, 0xFF)
-      local high = bit.band(register, 0x700)
-      if bit.band(toggles, 1) ~= 0 then
-        register = high + math.min(0xFF, low + vibrato.above)
-      else
-        register = high + math.max(0, low - vibrato.below)
-      end
-    end
+    local slide = event.slide
+    local value = slide.registers[math.min(frame + 1, #slide.registers)]
+    value = bit.band(value + slide.offset, 0xFFFF)
+    -- ../pokecrystal/audio/engine.asm:270
+    if value > 0x7FFF then return 0, 0 end
+    register = bit.band(value, 0x7FF)
+  elseif event.vibratoRegister then
+    register = event.vibratoRegister
   end
   local pitch = channelPitch[self.hardware] or 1
   local frequency = 131072 / (2048 - math.min(register, 2047)) * pitch
   if event.wave then frequency = frequency * 0.5 end
+  local delta = frequency / SAMPLE_RATE
   local phase = self.phase
-  self.phase = (phase + frequency / SAMPLE_RATE) % 1
+  self.phase = (phase + delta) % 1
+  local shape, scale
   if event.wave then
-    local wave = self.engine.waves[
-      math.min(event.waveInstrument + 1, #self.engine.waves)]
+    shape = self.engine:waveShape(event.waveInstrument)
     -- a def-local program may omit its wave table entirely
-    if not wave then return 0 end
-    local index = math.min(32, math.floor(phase * 32) + 1)
-    local nibble = math.max(0, math.min(15, wave[index] * 8 + 8))
-    return (nibble / 15) * event.waveLevel * gain
+    if not shape then return 0, 0 end
+    scale = event.waveLevel * gain
+  else
+    local duty = event.duty
+    if type(duty) == "table" then
+      duty = duty[frame % 4 + 1]
+    end
+    shape = PULSE_SHAPES[duty or 2] or PULSE_SHAPES[2]
+    scale = volume / 15 * gain
   end
-  local duty = event.duty
-  if type(duty) == "table" then
-    duty = duty[frame % 4 + 1]
-  end
-  local pattern = WAVE_PATTERN_TABLES[duty or 2] or WAVE_PATTERN_TABLES[2]
-  local step = math.floor(phase * 8) % 8
-  if pattern[step + 1] == 0 then
-    return 0
-  end
-  return volume / 15 * gain
+  local lead, lag = shapeMoments(shape, phase, delta)
+  return lead * scale, lag * scale
+end
+
+function Channel:sample()
+  local lead, lag = self:moments()
+  local value = self.lag + lead
+  self.lag = lag
+  return value
 end
 
 local Engine = {}
 Engine.__index = Engine
+
+function Engine:waveShape(instrument)
+  local index = math.min(instrument + 1, #self.waves)
+  local shape = self.waveShapes[index]
+  if shape == nil then
+    local wave = self.waves[index]
+    if wave then
+      local levels = {}
+      for position = 1, 32 do
+        levels[position] = math.max(0, math.min(15, wave[position] * 8 + 8)) / 15
+      end
+      shape = buildShape(levels, 32)
+    else
+      shape = false
+    end
+    self.waveShapes[index] = shape
+  end
+  return shape
+end
 
 function Engine:noiseInstrument(number)
   -- a def-local drum wins over the ROM engine's table for that id
@@ -1163,8 +1418,8 @@ function Engine:drumInstrumentGen2(kit, pitch)
       local packed = romByte(self.banks, spec.bank, address)
       local parameter = romByte(self.banks, spec.bank, address + 1)
       address = address + 2
-      -- ReadNoiseSample: delay = (length & $f) + 1 frames
-      local duration = (bit.band(command, 0x0F) + 1) * FRAME_TICKS
+      -- ../pokecrystal/audio/engine.asm:1087
+      local duration = (bit.band(command, 0x0F) + 2) * FRAME_TICKS
       segments[#segments + 1] = {
         startSample = snapTicks(ticks),
         endSample = snapTicks(ticks + duration),
@@ -1277,6 +1532,7 @@ function Engine.new(data, header, options)
     drumkits = audio.drumkits,
     customDrums = chip and chip.drums or nil,
     noiseInstruments = {},
+    waveShapes = {},
     channels = {},
     hpfCap = 0, hpfCapLeft = 0, hpfCapRight = 0,
     lpf = 0, lpfLeft = 0, lpfRight = 0,
