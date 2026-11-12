@@ -169,7 +169,7 @@ function BattleBridge.installWhiteoutIntercept(mod, game)
 end
 
 local LEAD_FIELDS = { "species", "level", "rawIv", "iv", "ivs", "evs", "heldItem",
-  "moves", "personality" }
+  "moves", "personality", "nickname" }
 
 -- pokefirered/src/battle_main.c:1539
 local function hooked_trainer_party(foe, trainerId)

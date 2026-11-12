@@ -252,8 +252,10 @@ local waveSong = ChipAsm.song{
   } } },
   waves = { flatWave },
 }
-local waveTrace = ChipAudio._traceFirstMusicSampleForTest(blobData, waveSong)
-check(math.abs(waveTrace[1].value - 1) < 1e-9,
+local waveEngine = require("src.core.ChipSynth").newEngine(
+  blobData, waveSong, { allowLoops = true })
+waveEngine.channels[1]:sample()
+check(math.abs(waveEngine.channels[1]:sample() - 1) < 1e-9,
   "def-local waves drive the wave channel")
 
 -- def-local drums are honored over the ROM's noise headers

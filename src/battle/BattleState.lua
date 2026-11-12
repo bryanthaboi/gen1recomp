@@ -998,6 +998,10 @@ function BattleState.newTrainer(game, oppClass, partyIndex, opts)
   self.enemyParty = {}
   for _, slot in ipairs(partyDef) do
     local mon = Pokemon.new(game.data, slot.species, slot.level)
+    if type(slot.nickname) == "string" and slot.nickname ~= "" then
+      local tenth = Font.split(slot.nickname)[10]
+      mon.nickname = tenth and slot.nickname:sub(1, tenth.to) or slot.nickname
+    end
     -- fixed trainer DVs, recomputed stats
     mon.dvs = trainerDvs
     mon.stats = require("src.pokemon.Stats").calc(game.data.pokemon[slot.species],

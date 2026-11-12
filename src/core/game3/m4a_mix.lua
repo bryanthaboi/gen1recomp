@@ -25,7 +25,7 @@ end
 
 local ChipSynth = load_chip_synth()
 
--- Never fall back to a random rate (old 32768) — that desyncs QueueableSource vs SoundData.
+-- Never fall back to a random rate (old 32768): that desyncs QueueableSource vs SoundData.
 Mix.SAMPLE_RATE = (ChipSynth and ChipSynth.SAMPLE_RATE) or 44100
 
 function Mix.setSampleRate(rate)
@@ -547,8 +547,61 @@ local function tick_sweep_sample(v)
   end
 end
 
+local floor = math.floor
+
+local function pulse_moments(phase, inc, thresh)
+  local half = thresh * thresh * 0.5
+  local h0, g0 = thresh, thresh * phase - half
+  if phase < thresh then h0, g0 = phase, phase * phase * 0.5 end
+  local stop = phase + inc
+  local whole = floor(stop)
+  local frac = stop - whole
+  local h1, g1 = thresh, thresh * frac - half
+  if frac < thresh then h1, g1 = frac, frac * frac * 0.5 end
+  h1 = h1 + whole * thresh
+  g1 = g1 + thresh * whole * (whole - 1) * 0.5
+    + whole * (thresh - half + thresh * frac)
+  local lead = (g1 - g0) / (inc * inc) - h0 / inc
+  return lead, (h1 - h0) / inc - lead
+end
+
+local WAVE_SHAPES = setmetatable({}, { __mode = "k" })
+
+local function wave_shape(wave, level)
+  -- pokefirered/src/m4a_tables.c:168
+  local volume = 0
+  if level >= 14 then volume = 4
+  elseif level >= 10 then volume = 3
+  elseif level >= 6 then volume = 2
+  elseif level >= 2 then volume = 1 end
+  local shapes = WAVE_SHAPES[wave]
+  if not shapes then
+    shapes = {}
+    WAVE_SHAPES[wave] = shapes
+  end
+  local shape = shapes[volume]
+  if shape then return shape end
+  local levels, first, second = {}, { 0 }, { 0 }
+  for k = 1, 32 do
+    local nibble = wave[k] or 8
+    local sample = 0
+    if volume == 4 then sample = nibble
+    elseif volume == 3 then sample = floor(nibble * 3 / 4)
+    elseif volume == 2 then sample = floor(nibble / 2)
+    elseif volume == 1 then sample = floor(nibble / 4) end
+    sample = sample / 32
+    levels[k] = sample
+    first[k + 1] = first[k] + sample
+    second[k + 1] = second[k] + first[k] + sample * 0.5
+  end
+  shape = { levels = levels, first = first, second = second }
+  shapes[volume] = shape
+  return shape
+end
+
 local function render_voice(v, n, outL, outR)
   if not v or not v.alive then return end
+  local room = n
   if v.lengthRemaining then
     n = math.min(n, math.max(0, math.ceil(v.lengthRemaining)))
     v.lengthRemaining = v.lengthRemaining - n
@@ -582,57 +635,151 @@ local function render_voice(v, n, outL, outR)
     v.pos = pos
   elseif v.kind == "cgb_pulse" then
     local duty = DUTY[v.duty] or DUTY[2]
-    local thresh, hi, lo = duty[1], duty[2], duty[3]
+    local thresh = duty[1]
+    -- SOUNDCNT_L=0x77, PSG ratio=100%: one envelope unit is 16/512.
+    local unit = (v.envVol or 15) / 64
+    local halfTop = (duty[2] + 1) * unit * 0.5
+    local halfBottom = (duty[3] + 1) * unit * 0.5
+    local span = (halfTop - halfBottom) * 2
+    local rate = Mix.SAMPLE_RATE
+    local routeL, routeR = v.routeL ~= false, v.routeR ~= false
+    local sweep = v.sweepEnabled
+    local inc = v.freq / rate
+    local phase, carry = v.phase % 1, v.lag or 0
     for i = 1, n do
-      tick_sweep_sample(v)
-      if not v.alive then break end
-      local inc = v.freq / Mix.SAMPLE_RATE
-      local s = (v.phase < thresh) and hi or lo
-      -- SOUNDCNT_L=0x77, PSG ratio=100%: one envelope unit is 16/512.
-      s = (s + 1) * (v.envVol or 15) / 64
-      if v.routeL ~= false then outL[i] = outL[i] + s end
-      if v.routeR ~= false then outR[i] = outR[i] + s end
-      v.phase = v.phase + inc
-      v.phase = v.phase % 1
-    end
-  elseif v.kind == "cgb_wave" then
-    local wave = v.wave
-    local inc = v.freq / Mix.SAMPLE_RATE
-    for i = 1, n do
-      local idx = math.floor(v.phase * 32) % 32
-      local nibble = wave[idx + 1] or 8
-      -- gCgb3Vol: mute, 25%, 50%, 75%, 100% (hardware truncates nibbles).
-      local level = v.envVol or 15
-      local sample = 0
-      if level >= 14 then sample = nibble
-      elseif level >= 10 then sample = math.floor(nibble * 3 / 4)
-      elseif level >= 6 then sample = math.floor(nibble / 2)
-      elseif level >= 2 then sample = math.floor(nibble / 4) end
-      local s = sample / 32
-      if v.routeL ~= false then outL[i] = outL[i] + s end
-      if v.routeR ~= false then outR[i] = outR[i] + s end
-      v.phase = v.phase + inc
-      v.phase = v.phase % 1
-    end
-  elseif v.kind == "cgb_noise" then
-    for i = 1, n do
-      v.clock = v.clock + 1
-      while v.clock >= v.period do
-        v.clock = v.clock - v.period
-        local lo = v.lfsr % 2
-        local hi = math.floor(v.lfsr / 2) % 2
-        local bit = (lo == hi) and 0 or 1
-        v.lfsr = math.floor(v.lfsr / 2) + bit * 0x4000
-        if v.shortNoise then
-          v.lfsr = v.lfsr - (math.floor(v.lfsr / 64) % 2) * 64 + bit * 64
+      if sweep then
+        tick_sweep_sample(v)
+        if not v.alive then
+          n = i - 1
+          break
         end
+        inc = v.freq / rate
       end
-      local s = ((v.lfsr % 2) == 0) and (v.envVol or 15) / 32 or 0
-      if v.routeL ~= false then outL[i] = outL[i] + s end
-      if v.routeR ~= false then outR[i] = outR[i] + s end
+      local stop = phase + inc
+      local level, edge = halfBottom, 1
+      if phase < thresh then level, edge = halfTop, thresh end
+      local lead, lag = level, level
+      if stop >= edge and inc >= 1e-5 then
+        lead, lag = pulse_moments(phase, inc, thresh)
+        lead = halfBottom + span * lead
+        lag = halfBottom + span * lag
+      end
+      local s = carry + lead
+      carry = lag
+      if routeL then outL[i] = outL[i] + s end
+      if routeR then outR[i] = outR[i] + s end
+      phase = stop % 1
     end
+    v.phase = phase
+    v.lag = carry
+  elseif v.kind == "cgb_wave" then
+    local shape = wave_shape(v.wave, v.envVol or 15)
+    local levels, first, second = shape.levels, shape.first, shape.second
+    local total, turn = first[33], second[33]
+    local delta = v.freq / Mix.SAMPLE_RATE * 32
+    if not (delta > 0) then delta = 0 end
+    local inverse = delta >= 1e-4 and 1 / delta or 0
+    local routeL, routeR = v.routeL ~= false, v.routeR ~= false
+    local at, carry = v.phase * 32 % 32, v.lag or 0
+    for i = 1, n do
+      local k = floor(at)
+      local level = levels[k + 1]
+      local stop = at + delta
+      local lead, lag
+      if stop < k + 1 then
+        lead = level * 0.5
+        lag = lead
+        at = stop
+      elseif inverse == 0 then
+        lead = level * 0.5
+        lag = lead
+        at = stop % 32
+      else
+        local u = at - k
+        local base = first[k + 1]
+        local h0 = base + level * u
+        local g0 = second[k + 1] + (base + level * u * 0.5) * u
+        local whole = floor(stop * 0.03125)
+        local rest = stop - whole * 32
+        local j = floor(rest)
+        local w = rest - j
+        local after = levels[j + 1]
+        base = first[j + 1]
+        local h1 = whole * total + base + after * w
+        local g1 = total * 16 * whole * (whole - 1)
+          + whole * (turn + total * rest)
+          + second[j + 1] + (base + after * w * 0.5) * w
+        lead = ((g1 - g0) * inverse - h0) * inverse
+        lag = (h1 - h0) * inverse - lead
+        at = rest
+      end
+      local s = carry + lead
+      carry = lag
+      if routeL then outL[i] = outL[i] + s end
+      if routeR then outR[i] = outR[i] + s end
+    end
+    v.phase = at * 0.03125
+    v.lag = carry
+  elseif v.kind == "cgb_noise" then
+    local scale = (v.envVol or 15) / 32
+    local half = scale * 0.5
+    local period = v.period
+    if not (period > 0) then period = math.huge end
+    local short = v.shortNoise
+    local routeL, routeR = v.routeL ~= false, v.routeR ~= false
+    local lfsr, clock, carry = v.lfsr, v.clock, v.lag or 0
+    local low = lfsr % 2
+    for i = 1, n do
+      local lead, lag
+      local nextAt = period - clock
+      if nextAt > 1 then
+        clock = clock + 1
+        lead = low == 0 and half or 0
+        lag = lead
+      else
+        if nextAt < 0 then nextAt = 0 end
+        local at, mean, moment = 0, 0, 0
+        repeat
+          if low == 0 then
+            mean = mean + nextAt - at
+            moment = moment + nextAt * nextAt - at * at
+          end
+          lfsr = (lfsr - low) * 0.5
+          local high = lfsr % 2
+          if high ~= low then
+            lfsr = lfsr + 0x4000
+            if short and lfsr % 128 < 64 then lfsr = lfsr + 64 end
+          elseif short and lfsr % 128 >= 64 then
+            lfsr = lfsr - 64
+          end
+          low = high
+          at = nextAt
+          nextAt = nextAt + period
+        until nextAt > 1
+        if low == 0 then
+          mean = mean + 1 - at
+          moment = moment + 1 - at * at
+        end
+        clock = 1 - at
+        lag = moment * half
+        lead = mean * scale - lag
+      end
+      local s = carry + lead
+      carry = lag
+      if routeL then outL[i] = outL[i] + s end
+      if routeR then outR[i] = outR[i] + s end
+    end
+    v.lfsr = lfsr
+    v.clock = clock
+    v.lag = carry
   end
   if v.lengthRemaining and v.lengthRemaining <= 0 then v.alive = false end
+  if not v.alive and v.lag and n < room then
+    local s = v.lag
+    v.lag = 0
+    if v.routeL ~= false then outL[n + 1] = outL[n + 1] + s end
+    if v.routeR ~= false then outR[n + 1] = outR[n + 1] + s end
+  end
 end
 
 -- SoundMainRAM feeds the sum of both PCM sides, from six and seven frames
@@ -730,7 +877,7 @@ function Mix.render(voices, n, opts)
   local rate = opts.sampleRate or Mix.SAMPLE_RATE
   local sd = love.sound.newSoundData(n, rate, 16, ch)
   -- Hard clip only. Soft clip (tanh) ducks every other voice whenever
-  -- a loud hit (noise / stacked CGB) pushes the bus — sounds like channel dimming.
+  -- a loud hit (noise / stacked CGB) pushes the bus, which sounds like channel dimming.
   for i = 1, n do
     local l = clip1(outL[i])
     local r = clip1(outR[i])
