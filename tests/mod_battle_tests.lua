@@ -799,6 +799,29 @@ do
   check(rollBattle.enemy.mon.status == nil and rollBattle.aiUses == rollUses - 1,
         "with no hook the class item roll still fires at the enemy's slot")
 
+  -- trainer.party: a row's nickname rides onto the battle mon
+  local nickGame = makeGame({ Pokemon.new(Data, "BULBASAUR", 20) })
+  local plainBattle = BattleState.newTrainer(nickGame, "OPP_BROCK", 1)
+  check(plainBattle.enemyParty[1].nickname == nil,
+        "with no hook a trainer's mon has no nickname")
+  unsub = hooks:wrap("trainer.party", function(nextFn, class, index, party)
+    local out = {}
+    for i, row in ipairs(nextFn(class, index, party)) do
+      local copy = {}
+      for k, v in pairs(row) do copy[k] = v end
+      copy.nickname = i == 1 and "ROCKY" or ""
+      out[i] = copy
+    end
+    return out
+  end)
+  local nickBattle = BattleState.newTrainer(nickGame, "OPP_BROCK", 1)
+  unsub()
+  check(nickBattle.enemyParty[1].nickname == "ROCKY"
+        and nickBattle.enemy.name == "ROCKY",
+        "a trainer.party row's nickname names the battle mon")
+  check(nickBattle.enemyParty[2] == nil or nickBattle.enemyParty[2].nickname == nil,
+        "an empty row nickname keeps the species name")
+
   -- battle.catch_exp: vanilla catches never grant exp; a mod can flip that
   unsub = hooks:wrap("battle.catch_exp", function() return true end)
   local catchExpParty = { Pokemon.new(Data, "BULBASAUR", 10) }

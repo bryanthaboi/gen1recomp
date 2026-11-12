@@ -954,6 +954,7 @@ tests/game3_tm_able_desc_2520_test.lua
 tests/game3_tm_case_disc_cache_3061_test.lua
 tests/game3_trainer_card_stats_test.lua
 tests/game3_trainer_dialogs_test.lua
+tests/game3_trainer_party_row_test.lua
 tests/game3_trainer_rewards_dialogs_test.lua
 tests/game3_u12_healthbox_hp_text_test.lua
 tests/game3_ui_braille_test.lua

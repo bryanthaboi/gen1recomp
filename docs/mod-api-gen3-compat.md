@@ -80,6 +80,9 @@ native Gen 3 call site.
   `battle.bottom_ui_visible`, `battle.status_hud_visible`,
   `battle.move_grid_navigation`, `held_item.trigger`, `exp.gain`,
   `catch.rate`, `catch.nickname`, `trainer.party`, `evolution.check`.
+  A `trainer.party` row may carry `heldItem` and `nickname`: the battle
+  Pokémon built from the row holds that item and goes by that name, the
+  first one sent out included. No cart row has a nickname.
   `battle.field_residual` returns data-only damage rows from
   `src/core/game3/battle/residuals.lua`; the native faint and experience paths
   keep authority over HP, replacements and battle end.

@@ -1003,6 +1003,10 @@ function BattleState.newTrainer(game, oppClass, partyIndex, opts)
     mon.stats = require("src.pokemon.Stats").calc(game.data.pokemon[slot.species],
                                                   slot.level, trainerDvs)
     mon.hp = mon.stats.hp
+    -- a trainer.party row may name its mon; no cart row does
+    if type(slot.nickname) == "string" and slot.nickname ~= "" then
+      mon.nickname = slot.nickname
+    end
     table.insert(self.enemyParty, mon)
   end
   applySpecialMoves(game.data, oppClass, partyIndex or 1, self.enemyParty)
