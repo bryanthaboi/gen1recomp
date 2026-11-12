@@ -487,6 +487,15 @@ local function applyPerm(eo, mapId)
   end
 end
 
+-- A continued save's first map load runs before the script store exists, so
+-- these scenes are read from the session.  A save table loaded from disk keys
+-- its vars by string ("16496"); a session started in this run keys them by number.
+local function sessionVar(session, id)
+  local vars = session and session.vars
+  if type(vars) ~= "table" then return 0 end
+  return tonumber(vars[id] or vars[tostring(id)]) or 0
+end
+
 local function resolveContextualMapObjects(mapId)
   if mapId == "FR_OAKS_LAB" or mapId == "PalletTown_ProfessorOaksLab" then
     local Sp = Space()
@@ -498,15 +507,15 @@ local function resolveContextualMapObjects(mapId)
     local oakScene = 0
     if Flags and Flags.getVar and store then
       oakScene = Flags.getVar(store, nil, 0x4055)
-    elseif session and session.vars then
-      oakScene = tonumber(session.vars[0x4055]) or 0
+    else
+      oakScene = sessionVar(session, 0x4055)
     end
 
     local starter = 0
     if Flags and Flags.getVar and store then
       starter = Flags.getVar(store, nil, 0x4031)
-    elseif session and session.vars then
-      starter = tonumber(session.vars[0x4031]) or 0
+    else
+      starter = sessionVar(session, 0x4031)
     end
 
     if starter == 0 and session and session.party and session.party[1] then
@@ -543,8 +552,8 @@ local function resolveContextualMapObjects(mapId)
     local signLadyScene = 0
     if Flags and Flags.getVar and store then
       signLadyScene = Flags.getVar(store, nil, 0x4070)
-    elseif session and session.vars then
-      signLadyScene = tonumber(session.vars[0x4070]) or 0
+    else
+      signLadyScene = sessionVar(session, 0x4070)
     end
 
     local hasStarter = false
