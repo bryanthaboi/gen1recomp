@@ -80,13 +80,26 @@ function BattleItems.isBattleUsable(id)
   return pocket == "POKE_BALLS" or pocket == "BERRY_POUCH"
 end
 
+-- pokeemerald/src/data/items.h:1018
+local ITEM_POKE_DOLL = 80
+
+-- pokeemerald/src/item_use.c:1035
+function BattleItems.isEscapeItem(id)
+  local num = ItemsData.toNumericId(id) or tonumber(id)
+  if num == ITEM_POKE_DOLL then return true end
+  local info = ItemsData.info(id)
+  local doll = ItemsData.info(ITEM_POKE_DOLL)
+  local fn = info and tonumber(info.battleUseFunc) or 0
+  return fn ~= 0 and doll ~= nil and fn == tonumber(doll.battleUseFunc)
+end
+
 function BattleItems.needsPartySelect(id)
   if not id then return false end
   if Catching.isBall(id) then return false end
   local modRecord = ItemUse.modEffect(id)
   if modRecord then return modRecord.needsTarget == true end
   local num = ItemsData.toNumericId(id) or tonumber(id)
-  if num == 80 then return false end -- POKE_DOLL
+  if BattleItems.isEscapeItem(id) then return false end
   if BattleItems.isStatBooster(id) then return false end
   local use = ItemUse.fieldUseKind(id, nil, true)
   local info = ItemsData.info(id)
@@ -430,8 +443,7 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     return "heal", msgs, true, false, text
   end
 
-  -- Poké Doll → flee wild
-  if num == 80 then
+  if BattleItems.isEscapeItem(itemId) then
     if not st.wild then
       say(Strings("This can't be used right now."))
       return "error", msgs, false, false

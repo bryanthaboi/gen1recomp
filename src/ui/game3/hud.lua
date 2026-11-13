@@ -258,7 +258,8 @@ function Hud.update(game, _dt, inputTop)
   if Stack.busy() then
     local top = Stack.top()
     local evoTop = top and top.id == "evolution_scene" and (inputTop == nil or top == inputTop)
-    local pyramidBagTop = top and top.id == "rse_pyramid_bag"
+    local PyramidBag = package.loaded["src.ui.game3.rse.pyramid_bag"]
+    local pyramidBagTop = PyramidBag and PyramidBag.isOpen and PyramidBag.isOpen()
     local safariCaseTop = top and top.id == "rse_pokeblock_case"
       and Battle._phase == "safari_pokeblock" and (inputTop == nil or top == inputTop)
     if (not inBattle) or evoTop or pyramidBagTop or safariCaseTop or (top and top.id == "naming") then

@@ -153,6 +153,9 @@ function Input:applyBindings(overlay)
   self.keyBindings, self.padBindings, self.joyBindings = keys, pads, joys
   self.padActions, self.explicitPadActions, self.joyActions = acts, explicit, joyActs
   self.padPoll = poll
+  local pollSet = {}
+  for i = 1, #poll do pollSet[poll[i].button] = true end
+  self.padPollSet = pollSet
 
   local effectiveSticks = {}
   for k, v in pairs(STICK_DEFAULT_BINDINGS) do effectiveSticks[k] = v end
@@ -191,6 +194,8 @@ function Input:applyBindings(overlay)
   end
   self.stickDir = nil
   self.rightStickDir = nil
+  self.stickOwner = nil
+  self.rightStickOwner = nil
 end
 
 function Input.hotkeyKey(key)
@@ -235,6 +240,8 @@ function Input:reset()
   self.stickDir = nil
   self.rightStickAxis = { x = 0, y = 0 }
   self.rightStickDir = nil
+  self.stickOwner = nil
+  self.rightStickOwner = nil
   self.hatDirs = {}
   self.triggerHeld = {}
   self.captureArmed = false
@@ -315,8 +322,9 @@ press = function(self, btn, source)
     self.sources[btn] = sources
   end
   if not sources[source] then
+    local held = next(sources) ~= nil
     sources[source] = true
-    table.insert(self.pressQueue, btn)
+    if not held then table.insert(self.pressQueue, btn) end
   end
   self.state[btn] = true
 end
@@ -576,6 +584,11 @@ end
 function Input:gamepadreleased(joystick, button)
   button = GamepadMap.normalizePad and GamepadMap.normalizePad(button) or GamepadMap.TRIGGER_AXES[button] or button
   noteCapture(self, "pad", "released", button)
+  local pads = self._pollPads
+  if joystick and pads and #pads > 1 and self.padPollSet and self.padPollSet[button]
+      and anyPadDown(pads, button) then
+    return
+  end
   local source = "pad:" .. button
   for btn, sources in pairs(self.sources) do
     if sources[source] then release(self, btn, source) end
@@ -626,7 +639,7 @@ function Input:triggerAxis(axis, value)
   return name
 end
 
-function Input:stickAxisEvents(axis, value)
+function Input:stickAxisEvents(axis, value, joystick)
   local isLeft = (axis == "leftx" or axis == "lefty")
   local isRight = (axis == "rightx" or axis == "righty")
   if not isLeft and not isRight then return nil end
@@ -634,6 +647,9 @@ function Input:stickAxisEvents(axis, value)
   local prefix = isLeft and "leftstick" or "rightstick"
   local stateKey = isLeft and "stickAxis" or "rightStickAxis"
   local dirKey = isLeft and "stickDir" or "rightStickDir"
+  local ownerKey = isLeft and "stickOwner" or "rightStickOwner"
+  local owner = self[ownerKey]
+  if self[dirKey] and owner ~= nil and joystick ~= nil and owner ~= joystick then return nil end
 
   self[stateKey] = self[stateKey] or { x = 0, y = 0 }
   if axis:sub(-1) == "x" then
@@ -660,6 +676,7 @@ function Input:stickAxisEvents(axis, value)
   if newDir == currentDir then return nil end
 
   self[dirKey] = newDir
+  self[ownerKey] = newDir and joystick or nil
   local events = {}
   if currentDir then
     events[#events + 1] = { phase = "released", button = prefix .. "_" .. currentDir }
@@ -680,7 +697,7 @@ function Input:gamepadaxis(joystick, axis, value)
     end
     return
   end
-  local events = self:stickAxisEvents(axis, value)
+  local events = self:stickAxisEvents(axis, value, joystick)
   if events then
     for i = 1, #events do
       local ev = events[i]

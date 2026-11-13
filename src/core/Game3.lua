@@ -1224,7 +1224,7 @@ function Game3:gamepadaxis(joystick, axis, value)
         return
       end
     end
-    local stickEvents = self.input and self.input.stickAxisEvents and self.input:stickAxisEvents(axis, value)
+    local stickEvents = self.input and self.input.stickAxisEvents and self.input:stickAxisEvents(axis, value, joystick)
     if stickEvents then
       for i = 1, #stickEvents do
         local ev = stickEvents[i]

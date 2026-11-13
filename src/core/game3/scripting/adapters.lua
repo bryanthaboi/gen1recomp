@@ -617,12 +617,13 @@ function Adapters.host(mod, game, world)
       return Party.giveMon(session, species, level, nickname)
     end,
     -- pokefirered/src/script_pokemon_util.c:48
-    giveMonToPlayer = function(species, level, _, nickname)
+    giveMonToPlayer = function(species, level, item, nickname)
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = Runtime and Runtime.getSession and Runtime.getSession()
       if not session then return nil end
       local Party = require("src.core.game3.party")
-      return Party.giveMonToPlayer(session, species, level, nickname)
+      local held = require("src.core.game3.items_data").toNumericId(item) or tonumber(item)
+      return Party.giveMonToPlayer(session, species, level, nickname, held)
     end,
     -- pokefirered/src/script_pokemon_util.c:75
     giveEggToPlayer = function(species)

@@ -176,6 +176,34 @@ end
 local vm7c, st7c = run(giveEgg)
 eq(result(vm7c, st7c), 2, "a full party and a full PC refuse the egg")
 
+print("[test] 8. givemon's item operand is the gift's held item")
+-- pokeemerald/data/maps/Route119_WeatherInstitute_2F/scripts.inc:81
+local ITEM_MYSTIC_WATER = 209
+local s8 = newSession()
+run({
+  { op = "givemon", [1] = SPECIES_MAGIKARP, [2] = 25, [3] = ITEM_MYSTIC_WATER, [4] = 0, [5] = 0 },
+  { op = "end" },
+})
+eq(s8.party[1] and s8.party[1].heldItem, ITEM_MYSTIC_WATER, "the gift holds the item")
+eq(s8.party[1] and s8.party[1].item, ITEM_MYSTIC_WATER, "under both field names")
+-- pokeemerald/src/scrcmd.c:1686
+local st8 = Flags.newStore()
+Flags.setVar(st8, nil, VAR_TEMP_1, ITEM_MYSTIC_WATER)
+run({
+  { op = "givemon", [1] = SPECIES_MAGIKARP, [2] = 25, [3] = VAR_TEMP_1, [4] = 0, [5] = 0 },
+  { op = "end" },
+}, st8)
+eq(s8.party[2] and s8.party[2].heldItem, ITEM_MYSTIC_WATER, "an item passed by variable resolves")
+run(giveMagikarp)
+eq(s8.party[3] and s8.party[3].heldItem, nil, "ITEM_NONE leaves the gift empty-handed")
+for _ = 4, 6 do run(giveMagikarp) end
+run({
+  { op = "givemon", [1] = SPECIES_MAGIKARP, [2] = 25, [3] = ITEM_MYSTIC_WATER, [4] = 0, [5] = 0 },
+  { op = "end" },
+})
+local boxed8 = s8.storage.boxes[1].mons[1]
+eq(boxed8 and boxed8.heldItem, ITEM_MYSTIC_WATER, "a gift sent to the PC keeps its item")
+
 Runtime.session = prevSession
 
 if failed > 0 then

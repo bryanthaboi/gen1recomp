@@ -261,6 +261,9 @@ function Party.giveMon(session, species, level, nickname, opts)
     otGender = Party.otGender(session),
     pokeball = 4, -- Poké Ball
   }
+  -- pokeemerald/src/script_pokemon_util.c:71
+  local held = opts and tonumber(opts.heldItem) or 0
+  if held ~= 0 then mon.item, mon.heldItem = held, held end
   Pokemon.applyStats(mon)
 
   local code, boxId, slotIdx
@@ -304,9 +307,9 @@ function Party.giveEgg(session, species, opts)
 end
 
 -- pokefirered/src/script_pokemon_util.c:48
-function Party.giveMonToPlayer(session, species, level, nickname)
+function Party.giveMonToPlayer(session, species, level, nickname, heldItem)
   local _, code, mon, boxId, slotIdx =
-    Party.giveMon(session, species, level, nickname, { toPC = true })
+    Party.giveMon(session, species, level, nickname, { toPC = true, heldItem = heldItem })
   return code or Party.MON_CANT_GIVE, mon, boxId, slotIdx
 end
 

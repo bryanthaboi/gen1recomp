@@ -251,6 +251,58 @@ local function give(item, qty)
   openParty("give", item, qty)
 end
 
+local function battleDone(item, partySlot, moveSlot, usedInMenu)
+  local cb = st.onUse
+  PBag.close(function() if cb then cb(item, partySlot, moveSlot, usedInMenu) end end)
+end
+
+-- pokeemerald/src/battle_pyramid_bag.c:1299
+local function useInBattle(item)
+  local BattleItems = require("src.core.game3.battle.items")
+  local Battle = package.loaded["src.core.game3.battle"]
+  local bst = Battle and Battle._st
+  local sess = session()
+  if BattleItems.needsPartySelect(item) then
+    -- pokeemerald/src/item_use.c:1001
+    local PartyMenu = require("src.ui.game3.party_menu")
+    local BagMenu = require("src.ui.game3.bag_menu")
+    local liveParty = require("src.core.game3.battle.party_view").live(sess)
+    st.suspended = true
+    PartyMenu.show(liveParty, sess.moveOverlay, {
+      session = sess, bag = sess.bag, item = item, mode = "use", battle = true,
+      battleOrder = bst and bst.playerParty and PartyMenu.battleOrder(bst) or nil,
+      layout = (bst and bst.double) and "double" or nil,
+      onSelect = function(slot)
+        if not slot or slot == 7 then
+          PartyMenu.close()
+          return
+        end
+        BagMenu.commitBattlePartyUse(bst, item, slot, liveParty and liveParty[slot], nil, {
+          bag = sess.bag, session = sess,
+          done = function(realSlot, moveSlot) battleDone(item, realSlot, moveSlot, true) end,
+        })
+      end,
+      onClose = function()
+        st.suspended = false
+        PBag.refresh()
+        if st.mode ~= "closing" then st.mode = "list" end
+      end,
+    })
+  elseif BattleItems.isStatBooster(item) then
+    local Ui = package.loaded["src.core.game3.battle.ui"]
+    local battlerId = (bst and bst.double and Ui and Ui._active) or 0
+    -- pokeemerald/src/item_use.c:983
+    if not (bst and BattleItems.statBoosterHasEffect(bst, item, battlerId)) then
+      return message(RomText.plain("gText_WontHaveEffect"), function() st.mode = "list" end)
+    end
+    st.statBoost = { frames = 0, bst = bst, item = item, battlerId = battlerId }
+    st.mode = "stat_boost"
+  else
+    -- pokeemerald/src/item_use.c:1035
+    battleDone(item)
+  end
+end
+
 local function runAction(name)
   local item, qty = selectedItem()
   if not item then st.mode = "list" return end
@@ -264,8 +316,7 @@ local function runAction(name)
     st.tossNum, st.tossMax = 1, qty
     if qty == 1 then st.mode = "toss_confirm" st.yesNo = 1 else st.mode = "toss" end
   elseif name == "USE_BATTLE" then
-    local cb = st.onUse
-    PBag.close(function() if cb then cb(item) end end)
+    useInBattle(item)
   end
 end
 
@@ -422,6 +473,19 @@ local function step(inp)
       if moveCursor(-1) then se("SE_SELECT") startShake() end
     elseif inp.rep.down then
       if moveCursor(1) then se("SE_SELECT") startShake() end
+    end
+  elseif m == "stat_boost" then
+    -- pokeemerald/src/item_use.c:969
+    local sb = st.statBoost
+    sb.frames = sb.frames + 1
+    if sb.frames > 7 then
+      st.statBoost = nil
+      se("SE_USE_ITEM")
+      local sess = session()
+      local _, _, _, _, text = require("src.core.game3.battle.items").use(
+        sb.bst, { say = function() end }, sess.bag, sess, sb.item, nil, sb.battlerId)
+      PBag.refresh()
+      message(text or "", function() battleDone(sb.item, nil, nil, true) end)
     end
   elseif m == "message" then
     if inp.new.a or inp.new.b then
