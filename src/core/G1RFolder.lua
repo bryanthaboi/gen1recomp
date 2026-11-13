@@ -390,12 +390,18 @@ function G.move(target, progress)
     local hadMarker = SaveData.statNative(marker) ~= nil
     local f = hadMarker and true or io.open(marker, "wb")
     if f and f ~= true then f:close() end
-    local owned = readOwned(to)
+    local hadOwned = SaveData.statNative(to .. "/" .. OWNED) ~= nil
+    local before = readOwned(to)
+    local owned = {}
+    for name in pairs(before) do owned[name] = true end
     for name in pairs(ours) do owned[name] = true end
     local wroteOwned = writeOwned(to, owned)
     local okW, wrote = pcall(love.filesystem.write, SaveData.STORAGE_POINTER, to .. "\n")
     switched = f and wroteOwned and okW and wrote and true or false
-    if not switched and not hadMarker then os.remove(marker) end
+    if not switched then
+      if not hadMarker then os.remove(marker) end
+      if hadOwned then writeOwned(to, before) else os.remove(to .. "/" .. OWNED) end
+    end
   end
   if not switched then
     undo()
@@ -439,20 +445,23 @@ function G.progressScreen()
       font = okF and f or nil
     end
     if gfx.isActive and not gfx.isActive() then return end
-    if gfx.push then gfx.push("all") end
-    if gfx.origin then gfx.origin() end
-    gfx.clear(0, 0, 0, 1)
-    if font then gfx.setFont(font) end
-    gfx.setColor(1, 1, 1, 1)
     local label = Strings("Moving files... %d%%", pct)
-    local lh = font and font:getHeight() or 16
-    gfx.printf(label, 0, h / 2 - lh * 1.5, w, "center")
+    local okH, lh = pcall(function() return font:getHeight() end)
+    lh = (okH and type(lh) == "number") and lh or 16
     local bw, bh = math.floor(w * 0.6), math.max(6, math.floor(lh / 2))
     local bx, by = math.floor((w - bw) / 2), math.floor(h / 2)
-    gfx.rectangle("line", bx, by, bw, bh)
-    gfx.rectangle("fill", bx, by, math.floor(bw * pct / 100), bh)
+    if gfx.push then gfx.push("all") end
+    local okD = pcall(function()
+      if gfx.origin then gfx.origin() end
+      gfx.clear(0, 0, 0, 1)
+      if font then gfx.setFont(font) end
+      gfx.setColor(1, 1, 1, 1)
+      gfx.printf(label, 0, h / 2 - lh * 1.5, w, "center")
+      gfx.rectangle("line", bx, by, bw, bh)
+      gfx.rectangle("fill", bx, by, math.floor(bw * pct / 100), bh)
+    end)
     if gfx.pop then gfx.pop() end
-    gfx.present()
+    if okD then gfx.present() end
     if love.event and love.event.pump then pcall(love.event.pump) end
   end
   return function(done, total) pcall(draw, done, total) end

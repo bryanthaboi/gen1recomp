@@ -228,6 +228,7 @@ do
   originalsIntact(APP, "setting not saved")
   noCopies(dest, "setting not saved")
   check(get(dest .. "/portable.txt") == nil, "no portable.txt was left behind")
+  check(get(dest .. "/.g1r_owned.txt") == nil, "no record of our files was left behind")
   checkGone({ dest }, "its folder was removed again")
 end
 
