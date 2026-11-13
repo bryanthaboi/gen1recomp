@@ -702,7 +702,8 @@ local function dispatch(vm, row)
     -- pokefirered/src/script_pokemon_util.c:48
     local code
     if a.giveMonToPlayer then
-      local item = ctx.rsRamSession and var_get(store, ctx, row[3] or 0) or row[3]
+      -- pokeemerald/src/scrcmd.c:1686
+      local item = var_get(store, ctx, row[3] or 0)
       code = tonumber((a.giveMonToPlayer(species, level, item, nickname)))
     elseif a.giveMon then
       local ok, c = a.giveMon(species, level, row[3], row[4], row[5], nickname)
@@ -712,7 +713,8 @@ local function dispatch(vm, row)
       local Runtime = package.loaded["src.core.game3.runtime"]
       local session = Runtime and Runtime.getSession and Runtime.getSession()
       if session then
-        code = tonumber((Party.giveMonToPlayer(session, species, level, nickname)))
+        code = tonumber((Party.giveMonToPlayer(session, species, level, nickname,
+          var_get(store, ctx, row[3] or 0))))
       end
     end
     Flags.setVar(store, ctx, Ctx.VAR_RESULT, code or 2)

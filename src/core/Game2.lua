@@ -2713,7 +2713,7 @@ function Game2:gamepadaxis(joystick, axis, value)
       end
       return
     end
-    local stickEvents = Input.stickAxisEvents and Input:stickAxisEvents(axis, value)
+    local stickEvents = Input.stickAxisEvents and Input:stickAxisEvents(axis, value, joystick)
     if stickEvents then
       for i = 1, #stickEvents do
         local ev = stickEvents[i]

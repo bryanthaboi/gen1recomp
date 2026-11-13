@@ -573,8 +573,15 @@ local function open_battle_bag()
     require("src.ui.game3.rse.pyramid_bag").show({
       session = session,
       location = "battle",
-      onUse = function(itemId)
-        Ui._pendingCommand = { kind = "bag", user = "player", itemId = itemId, usedInMenu = true }
+      onUse = function(itemId, partySlot, moveSlot, usedInMenu)
+        if usedInMenu and Ui._st then
+          -- pokefirered/src/reshow_battle_screen.c:299
+          require("src.core.game3.battle.anim").syncDisplayFromState(Ui._st)
+        end
+        Ui._pendingCommand = {
+          kind = "bag", user = "player", itemId = itemId,
+          partySlot = partySlot, moveSlot = moveSlot, usedInMenu = usedInMenu or nil,
+        }
         if is_double() then Ui._pendingCommand.battler = Ui._active or 0 end
         Ui._mode = "none"
       end,

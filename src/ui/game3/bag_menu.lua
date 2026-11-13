@@ -1,4 +1,4 @@
--- FRLG Bag menu (item_menu.c field) — pockets, cursor, USE/TOSS/GIVE/REGISTER.
+-- FRLG Bag menu (item_menu.c field): pockets, cursor, USE/TOSS/GIVE/REGISTER.
 -- Layout matching pret GBA layout: left pocket & bag art + bottom icon/desc, right item list.
 
 local Stack = require("src.ui.game3.stack")
@@ -298,10 +298,12 @@ end
 local QUIET_ADAPTER = { say = function() end }
 
 -- pokefirered/src/party_menu.c:4464 ItemUseCB_MedicineStep
-function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse)
+function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse, owner)
   local PartyMenu = require("src.ui.game3.party_menu")
   local BattleItems = require("src.core.game3.battle.items")
-  local isPp = ItemUse.fieldUseKind(itemId, BagMenu._session, true) == "pp"
+  local bag = owner and owner.bag or BagMenu._bag
+  local session = owner and owner.session or BagMenu._session
+  local isPp = ItemUse.fieldUseKind(itemId, session, true) == "pp"
   local function wont_have_effect(err)
     se(SE.SE_SELECT) -- pokefirered/src/party_menu.c:4490
     PartyMenu.showMessage(err or RomText.box("gText_WontHaveEffect"), function()
@@ -313,12 +315,13 @@ function BagMenu.commitBattlePartyUse(st, itemId, realSlot, mon, beforeUse)
     if not canUse then return wont_have_effect(err) end
     local displaySlot = PartyMenu.cursor
     local startHp = tonumber(mon and mon.hp) or 0
-    local result, _, _, _, text = BattleItems.use(st, QUIET_ADAPTER, BagMenu._bag, BagMenu._session,
+    local result, _, _, _, text = BattleItems.use(st, QUIET_ADAPTER, bag, session,
       itemId, realSlot, nil, moveSlot)
     if result ~= "heal" then return wont_have_effect() end
     local function go()
       PartyMenu.close()
       if beforeUse then beforeUse() end
+      if owner then return owner.done(realSlot, moveSlot) end
       BagMenu.battleUse(itemId, realSlot, moveSlot, true)
     end
     -- pokefirered/src/party_menu.c:4498
