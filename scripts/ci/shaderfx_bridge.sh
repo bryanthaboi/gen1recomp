@@ -53,9 +53,9 @@ cmd_build() {
       ;;
     linux-x64|linux-arm64)
       pipx install 'cargo-zigbuild==0.23.4'
-      pipx inject cargo-zigbuild 'ziglang==0.16.0'
+      pipx inject --force cargo-zigbuild 'ziglang==0.16.0'
       zigpy="$(pipx environment --value PIPX_LOCAL_VENVS)/cargo-zigbuild/bin/python"
-      "$zigpy" -m ziglang version
+      test "$("$zigpy" -m ziglang version)" = 0.16.0
       export CARGO_ZIGBUILD_PYTHON_PATH="$zigpy"
       triple="$GLIBC_TRIPLE"
       rustup target add "${triple%%.*}"
