@@ -902,6 +902,7 @@ function love.load(args)
   -- dev / source checkout no-ops (see src/update/Boot.lua).
   local Boot = require("src.update.Boot")
   if Boot.run(args) then return end
+  if require("src.core.G1RFolder").ensure() then return end
 
   local savePath
   for i, a in ipairs(args or {}) do

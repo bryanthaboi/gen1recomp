@@ -150,6 +150,8 @@ public:
 	 **/
 	virtual bool restartApp() const;
 
+	virtual int requestStorageAccess() const;
+
 	/** Starts Android's user-confirmed install flow for a verified APK. */
 	virtual bool installApk(const char *path) const;
 
