@@ -953,6 +953,9 @@ function love.load(args)
     or resolvedLaunch.game
     or "red"
   local ready = RomImporter.isReady(scriptedVersion)
+  -- --rom=PATH only matters for a game that is not imported yet.  Once it is,
+  -- the normal launch path (sync, update, launcher fallback) runs unchanged.
+  if not importPath and not ready then importPath = resolvedLaunch.rom end
   -- Scripted / headless runs have to reach the game with no human pressing
   -- Play: an autopilot, a frame driver, an import-only build step, or an
   -- explicit ROM path all bypass the interactive launcher and keep today's
