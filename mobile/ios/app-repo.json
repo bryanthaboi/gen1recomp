@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.5",
+          "date": "2026-11-14",
+          "size": 44742127,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.5/gen1recomp++-0.4.5-ios.ipa",
+          "localizedDescription": "Download the right version for your device below.\n\n## Issues closed\n\n- #3138 Battle Bag in Battle Pyramid doesn't work in Battle\n- #3139 when using a controller and navigating though menus and such, sometimes when navigating through them, one dpad click or joystick move move through two options instead of one and skip one of them, and its very annoying.\n- #3140 Gift Castform in Gen 3 isn't holding the Mystic Water like it should\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.4.4",
           "date": "2026-11-12",
           "size": 44750328,
