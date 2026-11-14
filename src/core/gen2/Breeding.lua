@@ -1055,6 +1055,10 @@ function Breeding.collectEgg(data, save, opts)
   end
   local egg = dc.egg
   if not egg then return false, Breeding.REFUSE_NO_MON end
+  opts = opts or {}
+  -- ../pokecrystal/engine/events/daycare.asm:446
+  egg = require("src.core.gen2.Gift").giveEgg(data,
+    { game = opts.game, save = save }, save, egg)
   save.party[#save.party + 1] = egg
   dc.egg = nil
   dc.hasEgg = false

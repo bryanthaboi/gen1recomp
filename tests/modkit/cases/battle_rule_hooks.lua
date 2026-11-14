@@ -113,6 +113,20 @@ local clipped = { species = "RATTATA" }
 fixtureBattle("shift"):offerNickname(clipped, "RATTATA")
 T.eq(clipped.nickname, "TOOLONGFOR", "a long string is clipped to the grid's ten")
 
+local E, MALE = "\195\169", "\226\153\130"
+local function caughtAs(nickname)
+  probe.nickname = nickname
+  local mon = { species = "RATTATA" }
+  fixtureBattle("shift"):offerNickname(mon, "RATTATA")
+  return mon.nickname
+end
+T.eq(caughtAs(E:rep(10)), E:rep(10), "ten multibyte characters all fit the grid")
+T.eq(caughtAs("A" .. E:rep(12)), "A" .. E:rep(9), "the clip counts characters, not bytes")
+T.eq(caughtAs(MALE:rep(4)), MALE:rep(4), "four signs are under the limit")
+T.eq(caughtAs("NIDO" .. MALE .. "KING" .. MALE .. "X"), "NIDO" .. MALE .. "KING" .. MALE,
+  "a grid-legal ten with two signs")
+T.eq(caughtAs("SPI\nKE"), "SPIKE", "control characters never reach the name")
+
 probe.nickname = ""
 local blank = { species = "RATTATA" }
 T.eq(fixtureBattle("shift"):offerNickname(blank, "RATTATA"), false,
@@ -124,6 +138,11 @@ local asked = fixtureBattle("shift")
 T.eq(asked:offerNickname({ species = "RATTATA" }, "RATTATA"), true,
   "falling through asks as usual")
 T.eq(promptQueued(asked), true, "with the real prompt")
+
+require("src.render.Font").load({ font = { charmap = {
+  { seq = "<PK>", code = 0xE1 }, { seq = "<MN>", code = 0xE2 },
+} } })
+T.eq(caughtAs(("<PK><MN>"):rep(6)), ("<PK><MN>"):rep(5), "a charmap token is one glyph")
 
 run.release()
 T.finish("battle rule hooks")

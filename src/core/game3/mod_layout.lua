@@ -42,6 +42,16 @@ function ModLayout.behaviors(pair)
   return pair and Interaction.behaviors and Interaction.behaviors[pair] or nil
 end
 
+function ModLayout.checkMetatile(pair, mid)
+  local behaviors = ModLayout.behaviors(pair)
+  if not behaviors then return nil, ('unknown tileset pair "%s"'):format(tostring(pair)) end
+  if type(mid) ~= "number" or behaviors[mid] == nil then
+    return nil, ("unknown block id: metatile %s is not defined by tileset pair %s")
+      :format(tostring(mid), tostring(pair))
+  end
+  return true
+end
+
 -- pokefirered/src/scrcmd.c:2103
 function ModLayout.cellColl(def, pair, mid, collision, warps, x, y)
   local behaviors = ModLayout.behaviors(pair)

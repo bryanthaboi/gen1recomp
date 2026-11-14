@@ -11,6 +11,9 @@ end
 local PATH_GENERATIONS = {
   ["src/ui/LevelDisplay.lua"] = { [1] = true, [2] = true, [3] = true },
   ["src/pokemon/Sprites.lua"] = { [1] = true, [2] = true },
+  ["src/core/Game.lua"] = { [1] = true },
+  ["src/link/LinkState.lua"] = { [1] = true },
+  ["src/link/Protocol.lua"] = { [1] = true },
 }
 
 function Sites.generations(path)

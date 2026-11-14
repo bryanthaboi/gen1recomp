@@ -13,6 +13,7 @@ local DATA = {
       levelMoves = {}, evolutions = {} },
   },
   moves = {}, items = {}, type_chart = { types = {}, matchups = {} },
+  text = { _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}" },
 }
 
 local function newState(opts)
@@ -156,6 +157,23 @@ do
   local state, enemy = catch()
   settle(state)
   T.eq(enemy.nickname, ("\195\137"):rep(10), "the clip counts characters, not bytes")
+end
+
+probe.nickname = "SPI\nKE\0"
+do
+  local state, enemy = catch()
+  settle(state)
+  T.eq(enemy.nickname, "SPIKE", "control characters never reach the name")
+end
+
+require("src.render.Font").load({ font = { charmap = {
+  { seq = "<PK>", code = 0xE1 }, { seq = "<MN>", code = 0xE2 },
+} } })
+probe.nickname = ("<PK><MN>"):rep(6)
+do
+  local state, enemy = catch()
+  settle(state)
+  T.eq(enemy.nickname, ("<PK><MN>"):rep(5), "a charmap token is one glyph")
 end
 
 probe.nickname = ""

@@ -809,7 +809,7 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
   -- Native mods can transform a gift before the Pokémon object is created.
   -- This is intentionally an event rather than a special-case starter hook:
   -- mods can use the same seam for story gifts, fossils, or custom scripts.
-  local gift = { ctx = ctx, species = species, level = level }
+  local gift = { ctx = ctx, species = species, level = level, isEgg = false }
   if ctx.game.mods then
     ctx.game.mods.events:emit("pokemon.before_give", gift)
     species, level = gift.species, gift.level
@@ -818,7 +818,11 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
   local Party = require("src.pokemon.Party")
   local Boxes = require("src.pokemon.Boxes")
   local mon = Pokemon.new(ctx.game.data, species, level)
-  if gift.nickname then mon.nickname = gift.nickname end
+  if gift.nickname then
+    local nick = require("src.core.TextClip").clip(gift.nickname, 10,
+      require("src.render.Font").split)
+    if nick ~= "" then mon.nickname = nick end
+  end
   ctx.game.stringBuffer = ctx.game.data.pokemon[species].name or species
   ctx.pendingPokemonName = species
   require("src.battle.BattleState").stampOT(ctx.save, mon)

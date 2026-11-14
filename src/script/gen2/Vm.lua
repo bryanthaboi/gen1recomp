@@ -623,9 +623,9 @@ local function runCmd(self, cmd, op)
       -- script's own nickname and OT name in instead of asking for one.
       local named = trainer ~= 0
         and { nickname = cmd.name, otName = cmd.otName } or nil
-      local mon = self.givePokeFn(species, level, item, named)
+      local mon, modNamed = self.givePokeFn(species, level, item, named)
       -- engine/pokemon/move_mon.asm:1753-1757
-      if mon and trainer == 0 then
+      if mon and trainer == 0 and not modNamed then
         Specials.askNickname(self, mon)
       end
     end

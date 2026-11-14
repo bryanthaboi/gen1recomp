@@ -37,12 +37,32 @@ check(ID.SPIRAL == 17, "SPIRAL = 17")
 
 print("[test] 2. Map Terrain Classification (battle_setup.c)")
 local TERRAIN = BattleTransition.TERRAIN
-check(BattleTransition.getTerrainByMap({ flashLevel = 1 }) == TERRAIN.FLASH, "flash terrain")
-check(BattleTransition.getTerrainByMap({ surfing = true }) == TERRAIN.WATER, "water terrain (surfing)")
-check(BattleTransition.getTerrainByMap({ mapKind = "water" }) == TERRAIN.WATER, "water terrain (mapKind)")
-check(BattleTransition.getTerrainByMap({ isCave = true }) == TERRAIN.CAVE, "cave terrain (isCave)")
-check(BattleTransition.getTerrainByMap({ mapKind = "dungeon" }) == TERRAIN.CAVE, "cave terrain (dungeon)")
-check(BattleTransition.getTerrainByMap({}) == TERRAIN.NORMAL, "normal terrain default")
+local function terrainCases(label)
+  local T = BattleTransition.getTerrainByMap
+  check(T({ flashLevel = 4, mapType = 4, mapBehavior = 0 }) == TERRAIN.FLASH, label .. " dark cave -> FLASH")
+  check(T({ flashLevel = 4, mapType = 3, mapBehavior = 0x15 }) == TERRAIN.FLASH, label .. " flash beats surfable")
+  check(T({ flashLevel = 0, mapType = 3, mapBehavior = 0x15 }) == TERRAIN.WATER,
+    label .. " surfable cell on a ROUTE map -> WATER")
+  check(T({ flashLevel = 0, mapType = 4, mapBehavior = 0x13 }) == TERRAIN.WATER,
+    label .. " surfable cell in an UNDERGROUND map -> WATER")
+  check(T({ flashLevel = 0, mapType = 4, mapBehavior = 0 }) == TERRAIN.CAVE, label .. " MAP_TYPE_UNDERGROUND -> CAVE")
+  check(T({ flashLevel = 0, mapType = 5, mapBehavior = 0 }) == TERRAIN.WATER, label .. " MAP_TYPE_UNDERWATER -> WATER")
+  check(T({ flashLevel = 0, mapType = 3, mapBehavior = 0 }) == TERRAIN.NORMAL, label .. " MAP_TYPE_ROUTE -> NORMAL")
+  check(T({ flashLevel = 0, mapType = 1, mapBehavior = 0 }) == TERRAIN.NORMAL, label .. " MAP_TYPE_TOWN -> NORMAL")
+  check(T({ flashLevel = 0, mapType = 8, mapBehavior = 0 }) == TERRAIN.NORMAL, label .. " MAP_TYPE_INDOOR -> NORMAL")
+end
+terrainCases("FRLG")
+
+local BattleBridge = require("src.core.game3.battle_bridge")
+local levelSum = BattleBridge._playerPartyLevelSum
+local fainted = { species = 25, level = 50, hp = 0 }
+local egg = { species = 412, level = 5, hp = 10, isEgg = true }
+local second = { species = 19, level = 5, hp = 12 }
+local third = { species = 16, level = 7, hp = 9 }
+check(levelSum({ fainted, second }, 1) == 5, "lead level skips a fainted first mon")
+check(levelSum({ egg, second }, 1) == 5, "lead level skips an egg")
+check(levelSum({ second, third }, 1) == 5, "lead level is the first healthy mon")
+check(levelSum({ fainted, second, egg, third }, 2) == 12, "two-mon sum skips fainted and egg slots")
 
 print("[test] 3. Wild Battle Transition Selection (battle_setup.c sBattleTransitionTable_Wild)")
 -- Normal
@@ -240,6 +260,100 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 clockwise("RSE")
+
+print("[test] 11. SHRED_SPLIT decodes WIN0H like the hardware window")
+local function shred(cameraX, frames)
+  local seen = { right = 0, left = 0, row0 = 0, margin = 0, strip = 0 }
+  local bad = { right = 0, left = 0, row0 = 0, margin = 0, strip = 0 }
+  local function edgeBlack(s1, e)
+    local v = s1[e]
+    local win
+    if e % 2 == 0 then
+      local p4 = (cameraX - v) % 0x10000
+      win = (p4 * 256 + 241) % 0x10000
+    else
+      local p4 = (v - cameraX) % 0x10000
+      win = (240 - p4) % 0x10000
+    end
+    local ws = {}
+    local k = H.winHSpans(win, ws)
+    local out, x = {}, 0
+    for i = 1, k do
+      if ws[2 * i - 1] > x then out[#out + 1] = x; out[#out + 1] = ws[2 * i - 1] end
+      x = ws[2 * i]
+    end
+    if x < 240 then out[#out + 1] = x; out[#out + 1] = 240 end
+    return out
+  end
+  local function same(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do if a[i] ~= b[i] then return false end end
+    return true
+  end
+  local row0Want = { 0, 240 }
+  local hn0 = H.winHSpans(cameraX - 240, hs)
+  if hn0 == 1 and hs[1] == 0 then row0Want = { hs[2], 240 } end
+  local finished = false
+  BattleTransition.start(BattleTransition.ids().ID.SHRED_SPLIT, { skipIntro = true, cameraX = cameraX },
+    function() finished = true end)
+  for _ = 1, frames do
+    BattleTransition.tick(1 / 60)
+    local fx = BattleTransition._fx
+    if finished or not fx or fx.state > 2 then break end
+    local s1 = fx.shred1
+    for y = 0, 159 do
+      local v = s1 and s1[160 + y]
+      local s = BattleTransition.blackSpans(y, 0, 240)
+      if y == 0 and v == (cameraX - 240) % 0x10000 then
+        seen.row0 = seen.row0 + 1
+        if not (#s == 2 and s[1] == row0Want[1] and s[2] == row0Want[2]) then bad.row0 = bad.row0 + 1 end
+      elseif v == 0xFFFA then
+        seen.right = seen.right + 1
+        if #s ~= 0 then bad.right = bad.right + 1 end
+      elseif v == 0xF6F1 then
+        seen.left = seen.left + 1
+        if #s ~= 0 then bad.left = bad.left + 1 end
+      end
+    end
+    if s1 then
+      local alias = s1[160] == (cameraX - 240) % 0x10000
+      local top, bottom = edgeBlack(s1, 0), edgeBlack(s1, 159)
+      for d = 1, 16 do
+        local up = BattleTransition.blackSpans(-d, 0, 240)
+        local down = BattleTransition.blackSpans(159 + d, 0, 240)
+        seen.margin = seen.margin + 2
+        if not same(up, top) then bad.margin = bad.margin + 1 end
+        if not same(down, bottom) then bad.margin = bad.margin + 1 end
+        if alias then
+          seen.strip = seen.strip + 1
+          if same(up, row0Want) then bad.strip = bad.strip + 1 end
+        end
+      end
+    end
+  end
+  BattleTransition.abort()
+  return seen, bad, row0Want
+end
+local seen, bad, want0 = shred(0, 400)
+check(seen.right > 0 and bad.right == 0,
+  string.format("SHRED_SPLIT right-row overshoot 0xFFFA shows the whole row (%d of %d black)", bad.right, seen.right))
+check(seen.left > 0 and bad.left == 0,
+  string.format("SHRED_SPLIT left-row overshoot 0xF6F1 shows the whole row (%d of %d black)", bad.left, seen.left))
+check(want0[1] == 16 and seen.row0 > 0 and bad.row0 == 0,
+  string.format("SHRED_SPLIT row 0 alias 0xFF10 shows x 0..15 (%d of %d wrong)", bad.row0, seen.row0))
+local function marginChecks(label)
+  check(seen.margin > 0 and bad.margin == 0,
+    string.format("SHRED_SPLIT %s margin rows take the edge row's own window (%d of %d wrong)", label, bad.margin,
+      seen.margin))
+  check(seen.strip > 0 and bad.strip == 0,
+    string.format("SHRED_SPLIT %s row 0 alias strip stays one row tall (%d of %d margin rows show it)", label,
+      bad.strip, seen.strip))
+end
+marginChecks("cameraX 0")
+seen, bad, want0 = shred(208, 400)
+check(want0[1] == 224 and seen.row0 > 0 and bad.row0 == 0,
+  string.format("SHRED_SPLIT panned camera row 0 alias 0xFFE0 shows x 0..223 (%d of %d wrong)", bad.row0, seen.row0))
+marginChecks("cameraX 208")
 Profile.reset()
 GameVersion.set("firered")
 

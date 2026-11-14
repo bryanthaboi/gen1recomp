@@ -329,6 +329,11 @@ function UnifiedScripts.new(env)
         local location = api:current()
         local def = map or location and env.mapDef(game, location.mapId)
         local layout = generation == 3 and def and def.midLayout or def
+        if generation == 3 then
+          local pair = def and (def.pair or (def.midLayout and def.midLayout.pair))
+          local ok, err = g3("mod_layout").checkMetatile(pair, c)
+          expect(ok, err)
+        end
         expect(layout and (not layout.width or a < layout.width)
           and (not layout.height or b < layout.height), "script block coordinates out of bounds")
       elseif verb == "fade_music" then
@@ -902,7 +907,7 @@ function UnifiedScripts.new(env)
       if generation == 1 then
         return ownUI(req("src.script.Commands").give_pokemon, ctx, p.species, level, skipNickname, gotText)
       end
-      local giftData = { ctx = ctx, species = p.species, level = level }
+      local giftData = { ctx = ctx, species = p.species, level = level, isEgg = false }
       if game.mods and game.mods.events then game.mods.events:emit("pokemon.before_give", giftData)
       else runtime.emit("pokemon.before_give", giftData) end
       if giftData.cancelled or giftData.cancel or giftData.veto or giftData.species == false then
@@ -1288,7 +1293,11 @@ function UnifiedScripts.new(env)
       elseif verb == "show_object" or verb == "hide_object" then
         local ok, err = native:toggleObject(a, b, verb == "show_object"); expect(ok, err)
       elseif verb == "replace_block" then
-        if generation == 3 then g3("field").setMetatile(a, b, c)
+        if generation == 3 then
+          local Field = g3("field")
+          local ok, err = g3("mod_layout").checkMetatile(Field.currentPair(), c)
+          expect(ok, err)
+          Field.setMetatile(a, b, c)
         else local ok, err = native:replaceBlock(a, b, c); expect(ok, err) end
       elseif verb == "play_sound" or verb == "play_music" or verb == "stop_music" or verb == "play_cry"
           or verb == "play_once" or verb == "text_sound" or verb == "wait_sound"

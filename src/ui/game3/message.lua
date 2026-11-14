@@ -167,6 +167,7 @@ function Message.show(text, opts)
   Message._stay = opts.stay and true or false
   Message._hold = opts.hold and true or false
   Message._autoScroll = false
+  Message._noArrow = opts.autoScroll and true or false
   Message._held = false
   Message._done = opts.done
   Message._choice = nil
@@ -340,6 +341,7 @@ function Message.close()
   Message._hold = false
   Message._held = false
   Message._autoScroll = false
+  Message._noArrow = false
   Message._choice = nil
   Message._revealed = 0
   Message._total = 0
@@ -492,7 +494,7 @@ function Message.drawText()
   local rse = Chrome.arrowSpec()
   if rse then
     -- pokeemerald/src/text.c:792
-    if Message._waiting and not Message._held and not Message._autoScroll
+    if Message._waiting and not Message._held and not Message._autoScroll and not Message._noArrow
         and (rse.lastPage or Message._page < #Message._pages
           -- pokeemerald/src/text.c:1171
           or (Message._frame == "battle" and not Message._stay)) then
@@ -501,7 +503,9 @@ function Message.drawText()
     end
     return
   end
-  if Message._waiting and not Message._stay and not Message._held then
+  -- pokefirered/src/text.c:864
+  if Message._waiting and not Message._held and not Message._noArrow
+      and (not Message._stay or (Message._page or 1) < #(Message._pages or {})) then
     local t = love and love.timer and love.timer.getTime and love.timer.getTime() or 0
     -- Red arrow has 4 vertical bounce frames (0..3) in down_arrows.png
     local bounceSeq = { 0, 1, 2, 3, 2, 1 }

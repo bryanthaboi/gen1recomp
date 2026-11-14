@@ -64,17 +64,20 @@ Ids.MUGSHOT_COORDS = {
 Ids.MUGSHOT_DEFAULT_PIC = 125
 Ids.MUGSHOT_PLAYER_PIC = { male = 135, female = 136 }
 
+-- pokefirered/include/constants/map_types.h:8
+local MAP_TYPE_UNDERGROUND = 4
+local MAP_TYPE_UNDERWATER = 5
+
+-- pokefirered/src/battle_setup.c:517
 function Ids.getTerrainByMap(opts)
   opts = opts or {}
-  if opts.flash or opts.flashLevel and opts.flashLevel > 0 then
-    return TERRAIN.FLASH
-  end
-  if opts.surfing or opts.isWater or opts.mapKind == "water" or opts.mapType == 4 or opts.mapType == 5 then
+  if (tonumber(opts.flashLevel) or 0) > 0 then return TERRAIN.FLASH end
+  if opts.mapBehavior ~= nil and require("src.core.game3.collision").isSurfable(opts.mapBehavior) then
     return TERRAIN.WATER
   end
-  if opts.isCave or opts.mapKind == "cave" or opts.mapKind == "dungeon" or opts.mapType == 3 then
-    return TERRAIN.CAVE
-  end
+  local mapType = tonumber(opts.mapType)
+  if mapType == MAP_TYPE_UNDERGROUND then return TERRAIN.CAVE end
+  if mapType == MAP_TYPE_UNDERWATER then return TERRAIN.WATER end
   return TERRAIN.NORMAL
 end
 

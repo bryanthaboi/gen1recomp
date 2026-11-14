@@ -140,6 +140,13 @@ function Field.metatileOverrideAt(mapId, x, y)
   return bucket and bucket[y * 1024 + x] or nil
 end
 
+function Field.currentPair()
+  local mapId = Field._session and Field._session.map
+  local maps = Field._game and Field._game.data and Field._game.data.maps
+  local def = mapId and maps and maps[mapId]
+  return def and (def.pair or (def.midLayout and def.midLayout.pair)) or nil
+end
+
 Field._holdInput = false
 
 function Field.holdInput(on)
@@ -2397,8 +2404,24 @@ local function passableColl(mapDef, pair, mid)
   return row and row.coll or 0x00
 end
 
+local undefinedMidSeen = {}
+
+local function noteUndefinedMid(pair, mid, mapId, x, y)
+  local Interaction = lazyReq("src.core.game3.scripting.interaction_scripts")
+  local behaviors = pair and Interaction.behaviors and Interaction.behaviors[pair]
+  if not behaviors or behaviors[mid] ~= nil then return end
+  local key = tostring(pair) .. ":" .. mid
+  if undefinedMidSeen[key] then return end
+  undefinedMidSeen[key] = true
+  lazyReq("src.core.Logger").warn("[gen3] metatile %d is not defined by tileset pair %s (written at %s %d,%d)",
+    mid, tostring(pair), tostring(mapId), x, y)
+end
+
 -- pokefirered/src/scrcmd.c:2103
 function Field.setMetatile(x, y, metatile, isImpassable)
+  if type(metatile) ~= "number" or metatile % 1 ~= 0 then
+    return nil, ("invalid metatile id %s"):format(tostring(metatile))
+  end
   x, y = tonumber(x) or 0, tonumber(y) or 0
   isImpassable = isImpassable == true or (tonumber(isImpassable) or 0) ~= 0
   local session = Field._session
@@ -2419,10 +2442,11 @@ function Field.setMetatile(x, y, metatile, isImpassable)
   local game = Field._game
   local data = game and game.data and game.data.maps
   local mapDef = mapId and data and data[mapId]
-  local mid = tonumber(metatile) or 0
+  local mid = metatile
   if mapDef and mapDef.midLayout then
     local layout = mapDef.midLayout
     local pair = mapDef.pair or layout.pair
+    noteUndefinedMid(pair, mid, mapId, x, y)
     local coll = isImpassable and 0x07 or passableColl(mapDef, pair, mid)
     -- pokefirered/src/fieldmap.c:407
     layout:applyOverride(x, y, mid, coll, layout:elevAt(x, y))
@@ -2445,6 +2469,7 @@ function Field.setMetatile(x, y, metatile, isImpassable)
       world.map:setBlock(x, y, metatile)
     end)
   end
+  return true
 end
 
 return Field

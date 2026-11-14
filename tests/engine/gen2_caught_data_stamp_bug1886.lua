@@ -44,6 +44,7 @@ local DATA = {
     type = "NORMAL", accuracy = 100, pp = 35, effect = "EFFECT_NORMAL_HIT" } },
   type_chart = { types = {}, matchups = {} },
   items = {},
+  text = { _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}" },
 }
 
 local function newSave(version, gender)

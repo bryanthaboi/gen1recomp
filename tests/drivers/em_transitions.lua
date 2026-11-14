@@ -71,6 +71,7 @@ return function(game)
         { species = C.species.byName.SPECIES_ODDISH, level = 14 }, { transitionId = tid })
       result(okS == true, name .. " battle started " .. tostring(serr or ""))
       local frames, mainAt, trace = 0, nil, {}
+      local aliasFrames, stripRows = 0, 0
       local limit = HANGS[name] or 900
       while frames < limit do
         U.wait(1)
@@ -79,6 +80,14 @@ return function(game)
         local fx = BattleTransition._fx
         if phase == "main" and not mainAt then mainAt = frames end
         trace[#trace + 1] = string.format("%s%s", phase:sub(1, 1), fx and tostring(fx.state) or "-")
+        if name == "SHRED_SPLIT" and fx and fx.shred1 and fx.shred1[160] == (fx.t.cameraX - 240) % 0x10000 then
+          aliasFrames = aliasFrames + 1
+          local row0 = BattleTransition.blackSpans(0, 0, 240)
+          for d = 1, 16 do
+            local up = BattleTransition.blackSpans(-d, 0, 240)
+            if #up == #row0 and up[1] == row0[1] and up[2] == row0[2] then stripRows = stripRows + 1 end
+          end
+        end
         if every then
           U.still(game, string.format("%s/%s/f%04d.png", DIR, name:lower(), frames))
         elseif mainAt and (frames - mainAt) % 12 == 0 and frames - mainAt <= 144 then
@@ -94,6 +103,8 @@ return function(game)
       if HANGS[name] then
         result(not active and BattleTransition._fx and BattleTransition._fx.state == 2,
           name .. " stays in ShredSplit_BrokenCheck like the cart")
+        result(aliasFrames > 0 and stripRows == 0, string.format(
+          "%s row 0 alias strip stays on row 0 (%d margin rows copy it over %d frames)", name, stripRows, aliasFrames))
         BattleTransition.abort()
         local Field = package.loaded["src.core.game3.field"]
         if Field and Field.unlock then Field.unlock() end

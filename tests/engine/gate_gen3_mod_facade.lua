@@ -43,8 +43,10 @@ local metatiles = {}
 package.loaded["src.core.game3.field"] = {
   running = true, locked = false,
   setMetatile = function(x, y, m) metatiles[#metatiles + 1] = { x, y, m } end,
+  currentPair = function() return "lab_pair" end,
   respawnAtHeal = function() end,
 }
+require("src.core.game3.scripting.interaction_scripts").behaviors = { lab_pair = { [0x2A] = 0 } }
 
 local warps = {}
 package.loaded["src.core.game3.warp"] = {

@@ -20,7 +20,7 @@ local NIGHT_SHADE_BGP = 0x1b
 do
   local boxes = {}
   local clearBgp = "unset"
-  Chrome.box = function(tx, ty)
+  Chrome.paletteBox = function(tx, ty)
     boxes[#boxes + 1] = { ty = ty, bgp = GbcPalette.bgp }
   end
   Chrome.clear = function() clearBgp = GbcPalette.bgp end
@@ -29,6 +29,9 @@ do
   local state = setmetatable({
     battle = { player = { species = 1 }, enemy = { species = 2 } },
     phase = "message",
+    palettes = { battleText = {
+      { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+    } },
     drawHud = function() hudBgp = GbcPalette.bgp end,
     printMessage = function() end,
   }, { __index = BattleState })

@@ -1429,12 +1429,34 @@ do
   eq(cb.result, "caught", "catch resolves the battle")
   eq(#Game.save.party, 2, "caught mon joined the party")
 
+  local function drainCatch(b, typed)
+    local texts, sawUi = {}, false
+    local pumps = 0
+    while #b.queue > 0 and pumps < 64 do
+      pumps = pumps + 1
+      local item = table.remove(b.queue, 1)
+      if item.fn then
+        b.nextInsert = 0
+        item.fn()
+      elseif item.ui then
+        sawUi = true
+        if typed then b.enemy.mon.nickname = typed end
+      elseif item.text then
+        texts[#texts + 1] = { text = item.text, afterUi = sawUi }
+      end
+    end
+    return texts
+  end
+  local function drainedLine(texts, s)
+    for _, t in ipairs(texts) do
+      if t.text:find(s, 1, true) then return t end
+    end
+  end
+
   Game.save.party = {}
   for _ = 1, 6 do table.insert(Game.save.party, Pokemon.new(Data, "RATTATA", 5)) end
   local cb2 = BattleState.newWild(Game, "EKANS", 5)
   cb2:storeCaughtMon()
-  check(hasText(cb2, "EKANS was\ntransferred to\vsomeone's PC!"),
-        "_ItemUseBallText08 before meeting Bill")
   check(not hasText(cb2, "New POKéDEX data"),
         "no dex page for an already-owned species")
   -- #172: SendNewMonToBox still runs AskName before the PC text
@@ -1454,11 +1476,21 @@ do
     end
   end
   check(hasNickUi, "full-party catch still asks for a nickname (#172)")
+  local cb2Line = drainedLine(drainCatch(cb2), "EKANS was\ntransferred to\vsomeone's PC!")
+  check(cb2Line ~= nil, "_ItemUseBallText08 before meeting Bill")
+  check(cb2Line and cb2Line.afterUi, "the PC text follows AskName")
   Game.save.flags.EVENT_MET_BILL = true
   local cb3 = BattleState.newWild(Game, "EKANS", 5)
   cb3:storeCaughtMon()
-  check(hasText(cb3, "EKANS was\ntransferred to\vBILL's PC!"),
+  check(drainedLine(drainCatch(cb3), "EKANS was\ntransferred to\vBILL's PC!") ~= nil,
         "_ItemUseBallText07 after meeting Bill")
+  local cb4 = BattleState.newWild(Game, "EKANS", 5)
+  cb4:storeCaughtMon()
+  local cb4Texts = drainCatch(cb4, "SPARKY")
+  check(drainedLine(cb4Texts, "SPARKY was\ntransferred to\vBILL's PC!") ~= nil,
+        "_ItemUseBallText07 names the typed nickname from wBoxMonNicks")
+  check(drainedLine(cb4Texts, "EKANS was") == nil,
+        "a named catch's PC text drops the species")
   Game.save.flags.EVENT_MET_BILL = nil
 
   -- trainer defeat wording (_TrainerDefeatedText)

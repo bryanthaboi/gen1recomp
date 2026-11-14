@@ -47,8 +47,7 @@ local Sprites = require("src.pokemon.Sprites")
 local Strings = require("src.core.Strings")
 local SummaryMenu = require("src.ui.gen2.SummaryMenu")
 local TypeChart = require("src.battle.TypeChart")
--- Only for TextBox.substitute: the {PLAYER} / {RIVAL} markers a map text
--- carries into the battle box (PrintWinLossText, home/trainers.asm:230).
+local RomText = require("src.core.RomText")
 local TextBox = require("src.render.TextBox")
 local Typer = require("src.ui.gen2.Typer")
 local Unown = require("src.core.gen2.Unown")
@@ -1536,7 +1535,7 @@ function BattleState:drawHpBar(mon, side, tx, ty)
   local hp = self:hudHp(mon, side)
   local pixels = self:hudHpPixels(mon, side)
   if self.hud:available() then
-    return self.hud:drawHpBar(hp, maxHp, tx, ty, nil, pixels)
+    return self:attrHud():drawHpBar(hp, maxHp, tx, ty, nil, pixels)
   end
   return HpBar.drawWithLabel(self.palettes, hp, maxHp, tx, ty, Font, pixels)
 end
@@ -2232,6 +2231,20 @@ function BattleState:advanceQueue()
     self:applyQueuedNickname(event)
     return self:advanceQueue()
   end
+  if event.kind == "capture-clear" then
+    if event.fade or self.captureScreen == "naming" then
+      self.captureFade = 0
+      return
+    end
+    return self:clearCaptureScreen()
+  end
+  if event.kind == "clear-sprites" then
+    if self.anim and self.anim.keepSprites and self.anim:done() then self.anim = nil end
+    return self:advanceQueue()
+  end
+  if event.sentToPc then
+    event.text = self:sentToPcText(self:name(event.sentToPc))
+  end
   if event.kind == "choose-switch" then
     -- engine/battle/core.asm:2590
     if self.battle and self.battle.wild then
@@ -2593,7 +2606,32 @@ function BattleState:stepExitFade()
   self:completeBattle()
 end
 
+-- ../pokecrystal/engine/items/item_effects.asm:704-709
+-- ../pokecrystal/engine/battle/core.asm:5049-5058
+function BattleState:clearCaptureScreen()
+  self.captureFade = nil
+  self.captureScreen = "cleared"
+  self.namingBackdrop = nil
+  self.message = nil
+  self.messagePages = nil
+  return self:advanceQueue()
+end
+
+-- ../pokecrystal/home/fade.asm:35-62
+function BattleState:stepCaptureFade()
+  self.captureFade = self.captureFade + 1
+  if self.captureFade < BattleState.EXIT_FADE_FRAMES * #BattleState.EXIT_FADE_ROWS then
+    return
+  end
+  return self:clearCaptureScreen()
+end
+
 function BattleState:exitFadeBgp()
+  if self.captureFade then
+    local rows = BattleState.EXIT_FADE_ROWS
+    local index = math.floor(self.captureFade / BattleState.EXIT_FADE_FRAMES) + 1
+    return rows[math.min(#rows, index)]
+  end
   if self.phase ~= "fadeout" then return nil end
   local fade = self.exitFade
   local rows = fade and fade.rows or BattleState.EXIT_FADE_ROWS
@@ -2822,6 +2860,7 @@ function BattleState:update(_dt)
   -- this state is only still here because ExitBattle has not cleaned up yet.
   if self.phase == "evolving" or self.phase == "done" then return end
   if self.phase == "fadeout" then return self:stepExitFade() end
+  if self.captureFade then return self:stepCaptureFade() end
   self:updateAlarm()
   self:stepFrontAnim()
   -- ../pokecrystal/home/joypad.asm:428
@@ -3641,11 +3680,16 @@ function BattleState:pushCaught(enemy, itemId)
   if itemId == "FRIEND_BALL" then
     enemy.happiness = Catching.FRIEND_BALL_HAPPINESS
   end
+  -- ../pokecrystal/engine/battle/core.asm:6400-6404
+  self.enemyHudLatch = { mon = enemy, name = self:name(enemy) }
   -- Text_BallCaught ends in `sound_caught_mon` (data/text/common_3.asm:260-266),
   -- and TX_SOUND holds the text engine until the jingle is done
   -- (home/text.asm:834-835), so the line is not dismissable under it.
   self:push({ kind = "message", sfx = SFX_CAUGHT_MON, waitSfx = true,
     text = Strings("Gotcha! %s was caught!", self:name(enemy)) })
+  -- ../pokecrystal/engine/items/item_effects.asm:511
+  -- ../pokecrystal/engine/items/item_effects.asm:693
+  self:push({ kind = "clear-sprites" })
   -- BATTLETYPE_TUTORIAL returns before every one of the steps below
   -- (`.FinishTutorial`, and `.return_from_capture: ret z`).
   if self.tutorial or not save then return end
@@ -3681,6 +3725,15 @@ function BattleState:pushCaught(enemy, itemId)
   -- item_effects.asm:556-558, :612-614
   self:stampCaughtData(enemy)
   local toPc = #save.party >= Boxes.PARTY_SIZE
+  -- ../pokecrystal/engine/items/item_effects.asm:550
+  if toPc and self:partyFullDestination(enemy) == "mod" then
+    Runtime.emit("pokemon.caught", {
+      battle = self.battle, mon = enemy, species = enemy.species,
+      isNew = not knew, ball = itemId, destination = "mod", game = self.game,
+    })
+    self:push({ kind = "capture-clear" })
+    return self:pushPayDay()
+  end
   if toPc then
     -- `.SendToPC` / `predef SendMonIntoBox` (item_effects.asm:548-550, 604):
     -- a full party sends the catch to the current box.  Not Boxes.deposit,
@@ -3730,15 +3783,30 @@ function BattleState:pushCaught(enemy, itemId)
     isNew = not knew, ball = itemId,
     destination = toPc and "box" or "party", game = self.game,
   }
-  local _, pendingName = self:offerNickname(enemy, nil, caught)
-  if not pendingName then Runtime.emit("pokemon.caught", caught) end
+  local _, hooked = self:offerNickname(enemy, nil, caught)
+  if not hooked then Runtime.emit("pokemon.caught", caught) end
   if toPc then
-    -- BallSentToPCText, which .SendToPC prints AFTER the nickname prompt
-    -- (item_effects.asm:672).
-    self:push({ kind = "message",
-      text = Strings("%s was sent to BILL's PC.", pendingName or self:name(enemy)) })
+    -- ../pokecrystal/engine/items/item_effects.asm:666-678
+    self:push({ kind = "message", sentToPc = enemy,
+      text = self:sentToPcText(hooked or self:name(enemy)) })
+    -- ../pokecrystal/engine/items/item_effects.asm:680
+    self:push({ kind = "capture-clear", fade = true })
+  else
+    -- ../pokecrystal/engine/items/item_effects.asm:582
+    -- ../pokecrystal/engine/items/item_effects.asm:599
+    self:push({ kind = "capture-clear" })
   end
   self:pushPayDay()
+end
+
+local function neverClaim() return false end
+
+function BattleState:partyFullDestination(mon)
+  if not Runtime.wantsHook("catch.party_full") then return "box" end
+  local claimed = Runtime.call("catch.party_full", neverClaim,
+    { battle = self, mon = mon, name = self:name(mon), game = self.game })
+  if claimed then return "mod" end
+  return "box"
 end
 
 -- CheckPayDay runs on a capture too: `and $f` keeps the win arm
@@ -3764,8 +3832,20 @@ function BattleState:shiftOfferAllowed()
   if (battle.player.hp or 0) <= 0 then return false end
   -- engine/events/battle_tower/battle_tower.asm:218
   if battle.inBattleTowerBattle then return false end
-  local options = self.game and self.game.options
-  return (options and options.battleStyle or "SHIFT") == "SHIFT"
+  return self:battleStyle() == "shift"
+end
+
+local function styleFromOptions(state)
+  local options = state.game and state.game.options
+  return (options and options.battleStyle or "SHIFT") == "SHIFT" and "shift" or "set"
+end
+
+-- ../pokecrystal/engine/battle/core.asm:3473
+function BattleState:battleStyle()
+  if not Runtime.wantsHook("battle.style") then return styleFromOptions(self) end
+  local style = Runtime.call("battle.style", styleFromOptions, self)
+  if style == "set" or style == "shift" then return style end
+  return styleFromOptions(self)
 end
 
 -- OfferSwitch: Battle_GetTrainerName, the prompt, then PlaceYesNoBox
@@ -3865,16 +3945,6 @@ local NICKNAME_LENGTH = 10
 
 local function alwaysAsk() return true end
 
-local function clipName(name, limit)
-  local out, n = {}, 0
-  for ch in name:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-    if n >= limit then break end
-    out[#out + 1] = ch
-    n = n + 1
-  end
-  return table.concat(out)
-end
-
 local function applyNickname(mon, name)
   if name and #name > 0 then mon.nickname = name end
 end
@@ -3888,7 +3958,7 @@ function BattleState:offerNickname(mon, displayName, caught)
       { battle = self, name = displayName, game = self.game })
     if verdict == false then return false end
     if type(verdict) == "string" then
-      local name = clipName(verdict, NICKNAME_LENGTH)
+      local name = require("src.core.TextClip").clip(verdict, NICKNAME_LENGTH, Font.split)
       if #name == 0 then return false end
       self:push({ kind = "set-nickname", mon = mon, name = name, caught = caught })
       return false, name
@@ -4005,15 +4075,26 @@ function BattleState:answerNickname(yes)
   if not (yes and mon and stack) then return self:advanceQueue() end
   self.phase = "submenu"
   local data = (self.game and self.game.data) or {}
+  local screen
   local done = function(name)
     stack:pop()
     -- InitName: an empty entry keeps whatever was already in the buffer, which
     -- for a fresh capture is the species name.
     applyNickname(mon, name)
+    -- ../pokecrystal/engine/menus/naming_screen.asm:336-343
+    if screen and type(screen.drawPanel) == "function" then
+      screen.iconImage = nil
+      screen.drawCursorBox = function() end
+      self.namingBackdrop = screen
+    end
+    local diploma = data.gen2Diploma
+    self.diplomaTextPalette = diploma and diploma.palettes and diploma.palettes[8]
+    self.captureScreen = "naming"
+    self.message = nil
     self.phase = "resolving"
     self:advanceQueue()
   end
-  Screens.push(self.game, "Gen2NamingScreen", {
+  screen = Screens.push(self.game, "Gen2NamingScreen", {
     type = "nickname",
     mon = mon,
     monName = mon.name or mon.species,
@@ -4481,11 +4562,93 @@ function BattleState:drawHud()
 end
 
 function BattleState:drawPics()
+  if self.captureScreen then return end
   self:drawPic(self:activeMon("enemy"), false)
   self:drawPic(self:activeMon("player"), true)
 end
 
+-- ../pokecrystal/data/text/common_3.asm:1233-1237
+function BattleState:sentToPcText(name)
+  local data = self.game and self.game.data
+  return TextBox.strip(RomText(data, "_BallSentToPCText", nil, { STRBUF = name }))
+end
+
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:510-515
+-- ../pokecrystal/home/text.asm:108
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:154-164
+-- ../pokegold/engine/gfx/cgb_layouts.asm:118-120
+function BattleState:textboxPalette()
+  return self.diplomaTextPalette or self.palettes.battleText
+end
+
+local EXP_REGION = {}
+
+function BattleState:hudRegionColors(key)
+  local hud = self.hud
+  if not hud then return nil end
+  local memo = colorMemo(self)
+  local bucket = memo.hud
+  if not bucket or bucket.owner ~= hud then
+    bucket = { owner = hud }
+    memo.hud = bucket
+  end
+  local colors = bucket[key]
+  if colors == nil then
+    if key == EXP_REGION then
+      colors = hud:expColors() or false
+    else
+      colors = hud:barColors(key) or false
+    end
+    bucket[key] = colors
+  end
+  return colors or nil
+end
+
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:116-145
+function BattleState:bgAttrColors(tx, ty)
+  if ty >= 12 then return self:textboxPalette() end
+  local side, pic
+  if tx <= 9 then
+    if ty <= 3 then side = "enemy" else side, pic = "player", true end
+  elseif ty <= 6 then
+    side, pic = "enemy", true
+  elseif ty == 11 and tx <= 18 then
+    return self:hudRegionColors(EXP_REGION)
+  else
+    side = "player"
+  end
+  local mon = self:activeMon(side)
+  if not mon then return nil end
+  if pic then return self:cachedMonColors(mon.species, mon.shiny) end
+  return self:hudRegionColors(HpBar.palette(self:hudHpPixels(mon, side)))
+end
+
+-- ../pokecrystal/home/fade.asm:51
+function BattleState:attrHud()
+  local hud = self.hud
+  local proxy = self.attrHudProxy
+  if proxy and proxy.base == hud then return proxy end
+  local screen = self
+  proxy = setmetatable({
+    base = hud,
+    drawTile = function(this, key, first, tile, tx, ty, colors, mirror)
+      return hud.drawTile(this, key, first, tile, tx, ty,
+        screen:bgAttrColors(tx, ty) or colors, mirror)
+    end,
+  }, { __index = hud })
+  self.attrHudProxy = proxy
+  return proxy
+end
+
+-- ../pokecrystal/engine/battle/core.asm:4744-4747
+function BattleState:enemyHudName(enemy)
+  local latched = self.enemyHudLatch
+  if latched and latched.mon == enemy then return latched.name end
+  return self:name(enemy)
+end
+
 function BattleState:drawEnemyHud()
+  if self.captureScreen then return end
   local wasBattle = Font.useBattleExtra(true)
   local enemy = self:activeMon("enemy")
   local showStatus = self:statusHUDVisible()
@@ -4498,7 +4661,8 @@ function BattleState:drawEnemyHud()
   -- And nothing at all before UpdateEnemyHUD has ever run: the intro bands
   -- slide in over a blanked tilemap (core.asm:8554/8564).
   if showStatus and self.showEnemyHud and not self:hudCleared("enemy") then
-  Chrome.printThrough(self:name(enemy), 1, 0, Chrome.DEFAULT_BOX_PALETTE)
+  local ink = self:bgAttrColors(1, 0)
+  Chrome.printThrough(self:enemyHudName(enemy), 1, 0, ink)
   -- PrintLevel writes <LV> at the coordinate it is given and then LEFT-aligns
   -- the digits after it, so the glyph is pinned to column 6 whether the level
   -- is 5 or 100; only a three-digit level moves, and it does so by eating the
@@ -4508,25 +4672,24 @@ function BattleState:drawEnemyHud()
   -- the level entirely while one is up.
   local enemyStatus = self:statusTag(enemy, "enemy")
   if enemyStatus then
-    Chrome.printThrough(enemyStatus, 6, 1, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(enemyStatus, 6, 1, ink)
   elseif LevelDisplay.visible(enemy, "battle.enemy", self.game) then
-    Chrome.printThrough("<LV>" .. tostring(enemy.level or 1), 6, 1,
-      Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough("<LV>" .. tostring(enemy.level or 1), 6, 1, ink)
   end
   local enemyGender = self:genderSymbol(enemy)
   if enemyGender then
-    Chrome.printThrough(enemyGender, 9, 1, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(enemyGender, 9, 1, ink)
   end
   -- `ld a, [wBattleMode] / dec a / ret nz`, then CheckCaughtMon puts $5d at
   -- (1,1) (engine/battle/trainer_huds.asm:140-152).
   if self:caughtMarkerVisible() then
-    self.hud:drawCaughtIcon(1, 1, self:hudHp(enemy, "enemy"),
+    self:attrHud():drawCaughtIcon(1, 1, self:hudHp(enemy, "enemy"),
       enemy.maxHp or (enemy.stats and enemy.stats.hp))
   end
   self:drawHpBar(enemy, "enemy", 2, 2)
   -- Stub on the LEFT (tile $6d), rule on the row under the bar.
   if self.hud:available() then
-    self.hud:drawEnemyFrame()
+    self:attrHud():drawEnemyFrame()
   else
     self:drawFrame(1, 3, 10, false)
   end
@@ -4543,6 +4706,7 @@ function BattleState:drawEnemyHud()
 end
 
 function BattleState:drawPlayerHud()
+  if self.captureScreen then return end
   local wasBattle = Font.useBattleExtra(true)
   local player = self:activeMon("player")
   local showStatus = self:statusHUDVisible()
@@ -4564,24 +4728,25 @@ function BattleState:drawPlayerHud()
     Font.useBattleExtra(wasBattle)
     return
   end
-  Chrome.printThrough(self:name(player), 10, 7, Chrome.DEFAULT_BOX_PALETTE)
+  local ink = self:bgAttrColors(10, 7)
+  Chrome.printThrough(self:name(player), 10, 7, ink)
   -- PrintPlayerHUD places the same status tag at (14,8) and skips the level
   -- while it is up.
   local playerStatus = self:statusTag(player, "player")
   if playerStatus then
-    Chrome.printThrough(playerStatus, 14, 8, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(playerStatus, 14, 8, ink)
   elseif LevelDisplay.visible(player, "battle.player", self.game) then
     Chrome.printThrough("<LV>" .. tostring(self.shownLevel or player.level or 1),
-      14, 8, Chrome.DEFAULT_BOX_PALETTE)
+      14, 8, ink)
   end
   local playerGender = self:genderSymbol(player)
   if playerGender then
-    Chrome.printThrough(playerGender, 17, 8, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(playerGender, 17, 8, ink)
   end
   self:drawHpBar(player, "player", 10, 9)
   local maxHp = player.maxHp or (player.stats and player.stats.hp) or 0
   Chrome.printRightThrough(("%d/%d"):format(self:hudHp(player, "player"), maxHp),
-    18, 10, Chrome.DEFAULT_BOX_PALETTE)
+    18, 10, ink)
   -- Stub on the RIGHT (tile $73), border from (18,10) laid leftward, exp bar
   -- at (10,11).
   -- The chased fill, not the mon's: AnimateExpBar crawls it, and reading the
@@ -4589,7 +4754,7 @@ function BattleState:drawPlayerHud()
   -- Points!" line was even on screen.
   local expFraction = (self.shownExp or 0) / BattleHud.EXP_LENGTH_PX
   if self.hud:available() then
-    self.hud:drawPlayerFrame()
+    self:attrHud():drawPlayerFrame()
     -- Eight tiles at (10,11); FillInExpBar's own span.
     self.hud:drawExpBar(expFraction, 10, 11)
   else
@@ -4695,11 +4860,11 @@ function BattleState:printMessage(ox)
   local lines = self:messageLines()
   for i = 1, math.min(#lines, TEXT_ROWS) do
     Chrome.printThrough(lines[i], TEXT_INNER_X,
-      TEXT_INNER_Y + (i - 1) * TEXT_ROW_STEP, Chrome.DEFAULT_BOX_PALETTE)
+      TEXT_INNER_Y + (i - 1) * TEXT_ROW_STEP, self:textboxPalette())
   end
   if self:messageArrowVisible() then
     Chrome.printThrough(DOWN_ARROW, ARROW_X + ox, ARROW_Y,
-      Chrome.DEFAULT_BOX_PALETTE)
+      self:textboxPalette())
   end
 end
 
@@ -4780,13 +4945,16 @@ function BattleState:drawPanel()
       Chrome.DEFAULT_BOX_PALETTE)
     return
   end
+  if self.captureScreen == "naming" and self.namingBackdrop then
+    self.namingBackdrop:drawPanel()
+  end
   self:drawHud()
   self:drawBottom(0)
 end
 
 function BattleState:drawBottom(ox)
   ox = ox or 0
-  if not self:bottomUIVisible() then
+  if not self:bottomUIVisible() or (self.captureScreen and not self.message) then
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
@@ -4802,7 +4970,7 @@ function BattleState:drawBottom(ox)
   local moveMenu = self.phase == "moves"
   local forgetting = self.phase == "choose-forget"
     and (self.messageTimer or 0) <= 0
-  Chrome.box(0, 12, 20 + ox, 6)
+  Chrome.paletteBox(0, 12, 20 + ox, 6, self:textboxPalette())
   if moveMenu then
     -- List box first (core.asm:5074-5084), MoveInfoBox on top (:5157).
     Chrome.box(4, 12, 16 + ox, 6)
@@ -5011,7 +5179,25 @@ function BattleState:draw()
   Chrome.withClip(function() self:drawScene() end)
 end
 
+function BattleState:drawNamingBackdrop(winW, winH)
+  local G = love.graphics
+  local previousBgp = GbcPalette.setBgp(self:exitFadeBgp() or GbcPalette.bgp)
+  self.namingBackdrop:drawWidescreen(winW, winH)
+  local scale = Chrome.fitScale(winW, winH)
+  local ox, oy = Chrome.fitOrigin(winW, winH, scale)
+  G.push()
+  G.translate(ox, oy)
+  G.scale(scale, scale)
+  self:drawBottom(0)
+  G.pop()
+  GbcPalette.setBgp(previousBgp)
+end
+
 function BattleState:drawWidescreen(winW, winH)
+  if self.captureScreen == "naming" and self.namingBackdrop
+      and type(self.namingBackdrop.drawWidescreen) == "function" then
+    return self:drawNamingBackdrop(winW, winH)
+  end
   if self:wideLayout() then
     return require("src.ui.gen2.WideBattle").draw(self, winW, winH)
   end

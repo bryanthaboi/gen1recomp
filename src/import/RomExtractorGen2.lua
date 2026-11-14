@@ -41,6 +41,8 @@ local PAL_BG_NAMES = {
 }
 local PAL_BG_ROOF = 6 -- 0-based slot index
 local PAL_BG_WATER, PAL_BG_YELLOW = 3, 4
+-- ../pokegold/constants/battle_anim_constants.asm:847
+local PAL_BATTLE_BG_TEXT = 7
 -- Time-of-day palette sets, in wTimeOfDayPal order (MORN_F..DARKNESS_F).
 local DAYTIMES = { "MORN", "DAY", "NITE", "DARK" }
 -- gfx/tilesets/bg_tiles.pal: morn/day/nite/dark/indoor (8 each) plus the two
@@ -615,6 +617,18 @@ function RomExtractorGen2:battleObjectPals()
   return out
 end
 
+function RomExtractorGen2:battleTextPalette()
+  if self.edition == "crystal" then
+    -- ../pokecrystal/engine/gfx/cgb_layouts.asm:117
+    -- ../pokecrystal/engine/gfx/cgb_layouts.asm:157
+    local s = self:symbol("PartyMenuBGPalette")
+    return self:colors(s.bank, s.address, 4)
+  end
+  -- ../pokegold/engine/gfx/cgb_layouts.asm:118
+  local s = self:symbol("TilesetBGPalette")
+  return self:colors(s.bank, s.address + PAL_BATTLE_BG_TEXT * 8, 4)
+end
+
 -- GBC BG attribute bits (constants/hardware.inc B_BG_*).
 local BG_BANK1_BIT = 0x08
 local BG_XFLIP_BIT = 0x20
@@ -869,6 +883,7 @@ function RomExtractorGen2:extractPalettes()
       blue = self:colors(hpSymbol.bank, hpSymbol.address + 12, 2),
     },
     expBar = self:colors(expSymbol.bank, expSymbol.address, 2),
+    battleText = self:battleTextPalette(),
     partyMenu = {
       self:colors(partySymbol.bank, partySymbol.address, 4),
       self:colors(partySymbol.bank, partySymbol.address + 8, 4),

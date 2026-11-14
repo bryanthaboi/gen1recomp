@@ -1018,9 +1018,9 @@ local function drawPlacing()
             local mid = (d.tiles[j * m.w + i + 1] or 0) + Decor.PRIMARY
             local slot = NativeTileset.slotFor(ts, mid)
             local px, py = cx + i * 16, cy - (m.h - 1 - j) * 16 - 2
-            local q = NativeTileset.quad(ts, slot)
+            local q = slot and NativeTileset.quad(ts, slot)
             if q and ts.image then love.graphics.draw(ts.image, q, px, py) end
-            local oq = ts.layered and NativeTileset.overQuad(ts, slot)
+            local oq = slot and ts.layered and NativeTileset.overQuad(ts, slot)
             if oq and ts.overImage then love.graphics.draw(ts.overImage, oq, px, py) end
           end
         end

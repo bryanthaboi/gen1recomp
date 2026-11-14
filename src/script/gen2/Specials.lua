@@ -1374,8 +1374,14 @@ H.GiveShuckle = function(vm)
     answer(vm, FALSE)
     return
   end
-  local mon = Mon.new(data(vm), SHUCKLE, Specials.SHUCKIE_LEVEL, {
-    nickname = Specials.SHUCKIE_NICKNAME,
+  local h = hooks(vm)
+  local world = h.world
+  -- ../pokecrystal/engine/events/shuckle.asm:14
+  local species, level, nickname = require("src.core.gen2.Gift").beforeGive(data(vm),
+    { game = world and world.game, save = save(vm), world = world, runner = vm },
+    SHUCKLE, Specials.SHUCKIE_LEVEL, { nickname = Specials.SHUCKIE_NICKNAME })
+  local mon = Mon.new(data(vm), species, level, {
+    nickname = nickname,
     item = "BERRY",
   })
   if not mon then

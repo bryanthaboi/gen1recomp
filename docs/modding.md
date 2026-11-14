@@ -630,6 +630,15 @@ end)
 
 Return `"set"` or `"shift"`; anything else reads as the vanilla answer.
 
+The hook runs in every generation. Red, Blue and Yellow ask it on every
+trainer replacement; the other games ask at the point the cart reads the option
+bit, after its own link, party-size and fainted-mon gates, so a battle that
+would never offer the switch never calls it there. `battle` is the generation's battle
+state (the Gen 2 battle screen in Gold, Silver and Crystal, the Gen 3 battle
+state in FireRed, LeafGreen, Ruby, Sapphire and Emerald), and `next(battle)`
+answers in lowercase everywhere even though Gen 2 stores the option as
+`"SHIFT"`/`"SET"` and Gen 3 as a number.
+
 `catch.nickname` wraps the `AskName` prompt after a capture (party or box),
 the same question `pokemon.before_give`'s `gift.nickname` already answers for
 script gifts:
@@ -680,6 +689,54 @@ A truthy return skips the box entirely -- the mon is neither in the party nor
 in any box, and `pokemon.caught` reports `destination = "mod"` so the mode can
 find its own custody again. Anything falsy deposits as always, "But every BOX
 is full!" included.
+
+The hook runs in every generation, only when the party is full. A claimed
+catch is still marked in the #DEX, but nothing asks for a nickname and no
+sent-to-PC line prints. In Gold, Silver and Crystal ctx
+is the same `{ battle, mon, name, game }` with `battle` the Gen 2 battle
+screen; the cart still refuses to throw a ball when the party and the current
+box are both full, whatever a mod would answer. In FireRed, LeafGreen, Ruby,
+Sapphire and Emerald `mon.species` is the numeric species and ctx adds
+`species` (name) and `speciesId` (number), as `catch.nickname` does. Under API
+3, `ctx.mon` is the portable mon record.
+
+## Gifts
+
+`pokemon.before_give` fires just before a scripted gift is built, and a
+listener may rewrite it:
+
+```lua
+mod.events:on("pokemon.before_give", function(gift)
+  -- gift = { ctx = <script ctx>, species = <species>, level = <n>,
+  --          isEgg = <bool>, nickname = <string or nil> }
+  if gift.isEgg then return end
+  gift.species, gift.level = "MEW", 5
+  gift.nickname = "LUCKY"   -- names it and skips the nickname prompt
+end)
+```
+
+`species`, `level` and `nickname` are read back; an unknown species or a
+non-number level keeps the script's value, and the nickname is clipped to ten
+characters. On Gen 1 and Gen 2 any string in `nickname` skips the nickname
+prompt. Eggs fire too with
+`isEgg = true`; their nickname stays `EGG` and only the species (and on Gen 2
+the level) is read back.
+
+- Red, Blue and Yellow: every `give_pokemon` script row. `ctx` is the script
+  ctx and `species` the Gen 1 species id. There are no eggs.
+- Gold, Silver and Crystal: `givepoke` (starters, Eevee, Tyrogue, Dratini,
+  Spearow and the Game Corner prizes), Shuckie, and the eggs (`giveegg`, the
+  Odd Egg and the Day-Care egg). `ctx` is `{ game, save, world }` (plus
+  `runner` from a special); the Day-Care egg sends `{ game, save }` with no
+  `world`. `species` is the Gen 2 species id, and a trainer
+  gift (Kenya, Shuckie) arrives with its own `nickname` already set.
+- FireRed, LeafGreen, Ruby, Sapphire and Emerald: `givemon`, `giveegg` and the
+  Day-Care egg. `species` is the species name, `speciesId` the number, and an
+  egg's `level` is always 5.
+
+Under API 3, `species` is the portable id on every game. The script's own
+"received X" line prints before the gift is built, so it names the species
+the script asked for.
 
 ## Effective wild-encounter distribution
 
@@ -1835,7 +1892,7 @@ local hasEvent = mod:supports("events", "world.stepped")
 
 Surfaces are `content`, `world`, `hooks` and `events`. Every content handle also has `supports()` and an `available` boolean. Content and world answers describe implemented interfaces; game state may still refuse a call.
 
-For `hooks` and `events` the answer is **native per version**: a name returns true only on the versions that have a call site. Names with a call site in every generation (`pokemon.level_visible`, `battle.field_residual`, `core.logic_speed`, `trainer.before_battle`, `catch.nickname`) are true on every game, and a name raised in only some generations answers true for those generations alone (`battle.style` and `catch.party_full` are Gen 1 only; `transition.style` is Gen 1 and Gen 2; `mod.options_changed` is true everywhere); Gen 2 additions follow the cart (`phone.call_received`, `radio.channel`, `phone.contact_list` and the intro cinema are Gold, Silver and Crystal only; `shiny.roll`, `gender.roll`, `held_item.trigger`, `breeding.compatibility`, `egg.hatched`, `happiness.changed`, `pokerus.infected` and the roamer events are true on Gen 2 and Gen 3). Custom `mod.<id>.*` events are always true.
+For `hooks` and `events` the answer is **native per version**: a name returns true only on the versions that have a call site. Names with a call site in every generation (`pokemon.level_visible`, `battle.field_residual`, `core.logic_speed`, `trainer.before_battle`, `catch.nickname`, `battle.style`, `catch.party_full`, `pokemon.before_give`) are true on every game, and a name raised in only some generations answers true for those generations alone (`transition.style` is Gen 1 and Gen 2; `mod.options_changed` is true everywhere); Gen 2 additions follow the cart (`phone.call_received`, `radio.channel`, `phone.contact_list` and the intro cinema are Gold, Silver and Crystal only; `shiny.roll`, `gender.roll`, `held_item.trigger`, `breeding.compatibility`, `egg.hatched`, `happiness.changed`, `pokerus.infected` and the roamer events are true on Gen 2 and Gen 3). Custom `mod.<id>.*` events are always true.
 
 `hooks:wrap`, `events:on` and `events:once` accept any catalogued name on any game, so one source file loads everywhere; a subscription to a name the game does not raise simply never fires. Unknown names raise. Check `mod:supports` before relying on a callback.
 
@@ -1898,7 +1955,7 @@ Use a fresh, increasing intent ID per mod; native prompt, stale-revision and rep
 
 ### Hooks and events
 
-`mod.hooks:wrap(name, function(next, ...) end)` and `mod.events:on/once` keep their forms. API 3 converts record-valued payloads at the boundary (including mutable `pokemon.before_give`). Priorities, unsubscribe closures, owner rollback and the run-vanilla-at-most-once rule are unchanged. Game, battle and context handles stay native. A mod may subscribe to another mod's events but only emit under its own `mod.<id>.*` prefix; engine events cannot be forged. The start-menu hook exposes executable `onSelect` rows on every generation.
+`mod.hooks:wrap(name, function(next, ...) end)` and `mod.events:on/once` keep their forms. API 3 converts record-valued payloads at the boundary (including mutable `pokemon.before_give`). Priorities, unsubscribe closures, owner rollback and the run-vanilla-at-most-once rule are unchanged. Game, battle and context handles stay native. A mod may subscribe to another mod's events but only emit under its own `mod.<id>.*` prefix; engine events cannot be forged. The start-menu hook exposes executable `onSelect` rows on every generation. `fieldmove.eligibility` returns nil or a member of `ctx.party` (or the matching `ctx.save.party` entry); any other table is an error and the downstream answer stands. A `trainer.party` row the mod builds needs `species`.
 
 ### Screens on Gen 3
 

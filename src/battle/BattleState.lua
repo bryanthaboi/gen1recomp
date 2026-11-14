@@ -5667,9 +5667,7 @@ function BattleState:offerNickname(mon, displayName)
       { battle = self, name = displayName, game = self.game })
     if verdict == false then return false end
     if type(verdict) == "string" then
-      -- the naming grid's own limit, so a mod cannot hand the party a name
-      -- the summary screen has no room to draw
-      verdict = verdict:sub(1, 10)
+      verdict = require("src.core.TextClip").clip(verdict, 10, Font.split)
       if #verdict > 0 then mon.nickname = verdict end
       return false
     end
@@ -5775,13 +5773,20 @@ function BattleState:storeCaughtMon()
       local boxNum = require("src.pokemon.Boxes").deposit(game.save, self.enemy.mon)
       if boxNum then
         askCaughtNickname()
-        -- _ItemUseBallText07/08 keyed on EVENT_MET_BILL
-        local metBill = game.save.flags and game.save.flags.EVENT_MET_BILL
-        self:sayNext(self:romText(
-          metBill and "_ItemUseBallText07" or "_ItemUseBallText08",
-          metBill and "%s was\ntransferred to\nBILL's PC!"
-                  or "%s was\ntransferred to\nsomeone's PC!",
-          self.enemy.name))
+        -- engine/items/item_effects.asm:561-566
+        -- data/text/text_6.asm:37-38
+        local function transferText()
+          local metBill = game.save.flags and game.save.flags.EVENT_MET_BILL
+          return self:romText(
+            metBill and "_ItemUseBallText07" or "_ItemUseBallText08",
+            metBill and "%s was\ntransferred to\nBILL's PC!"
+                    or "%s was\ntransferred to\nsomeone's PC!",
+            self.enemy.mon.nickname or self.enemy.name)
+        end
+        local transferRow
+        self:actNext(function() transferRow.text = transferText() end)
+        self:sayNext(transferText())
+        transferRow = self.queue[self.nextInsert]
       else
         self:sayNext(Strings("But every BOX\nis full!"))
       end

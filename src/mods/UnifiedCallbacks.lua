@@ -112,12 +112,12 @@ sites("events", "123", [[
   discord.join_requested flag.changed game.ready
   intro.oak_speech.answered intro.oak_speech.finished
   intro.oak_speech.started intro.oak_speech.step link.battle_ended
-  link.connected link.desync link.ended map.entered map.exited
+  link.desync map.entered map.exited
   map.reloaded mod.options_changed mods.loaded music.started
-  music.stopped player.warped pokemon.caught pokemon.evolved
+  music.stopped player.warped pokemon.before_give pokemon.caught pokemon.evolved
   pokemon.level_up pokemon.move_learned pokemon.received save.created
   save.loaded save.loading save.writing screen.popped screen.pushed
-  script.ended script.started sound.played trade.completed
+  script.ended script.started sound.played
   world.blacked_out world.block_replaced world.boulder_moved
   world.interacted world.npc_spawned world.object_toggled world.stepped
   world.trainer_engaged
@@ -126,7 +126,7 @@ sites("events", "12", [[
   world.live_maps_preparing world.live_maps_updated world.tod_changed
 ]])
 sites("events", "13", [[
-  pokemon.before_give
+  link.connected link.ended trade.completed
 ]])
 sites("events", "23", [[
   breeding.egg_created egg.hatched happiness.changed pokerus.infected
@@ -144,7 +144,8 @@ sites("hooks", "123", [[
   battle.damage battle.enemy_action battle.exp_award
   battle.field_residual battle.low_health_alarm battle.menu_auxiliary
   battle.move_grid_navigation battle.overlay battle.run
-  battle.status_hud_visible battle.turn_order catch.nickname catch.rate
+  battle.status_hud_visible battle.style battle.turn_order
+  catch.nickname catch.party_full catch.rate
   core.logic_speed core.quit_to_launcher core.update encounter.fishing
   encounter.roll encounter.species encounter.table evolution.check
   exp.gain fieldmove.eligibility input.gamepad input.key input.pointer
@@ -168,9 +169,6 @@ sites("hooks", "13", [[
 sites("hooks", "23", [[
   battle.enemy_switch_or_item breeding.compatibility gender.roll
   held_item.trigger shiny.roll
-]])
-sites("hooks", "1", [[
-  battle.style catch.party_full
 ]])
 sites("hooks", "2", [[
   phone.contact_list
@@ -466,6 +464,10 @@ local function boundary(loader, name, fishing)
       end
       if next(changes) == nil then return raw end
       local safe = safeMon(original)
+      if not entry and next(original) == nil then
+        if changes.species == nil then error("a new Pokemon needs species", 0) end
+        safe.species = false
+      end
       local previous = shallow(safe)
       local ok, reason = Records.applyMon(safe, changes, generation, data, version)
       if not ok then error(reason, 0) end
@@ -620,7 +622,12 @@ local function boundary(loader, name, fishing)
       local out = restoreArguments(args, originals)
       local role = resultRole(name)
       if results and role and type(results[1]) == "table" then
-        results[1] = restoreValue(results[1], nil, role)
+        local entry = bindings[results[1]]
+        if role == "mon" and not (entry and entry.kind == "mon") then
+          if not mons[results[1]] then error(name .. " must return nil or a Pokemon from ctx.party", 0) end
+        else
+          results[1] = restoreValue(results[1], nil, role)
+        end
       end
       return out
     end)

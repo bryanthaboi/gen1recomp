@@ -98,6 +98,8 @@ ADD_SYMBOLS = frozenset({
     "wBT_OTTrainerClass",
     # data/wild/treemons_asleep.asm:3,17,25
     "AsleepTreeMonsNite", "AsleepTreeMonsDay", "AsleepTreeMonsMorn",
+    # engine/gfx/color.asm:1301
+    "PartyMenuBGPalette",
 })
 
 # Mobile System GB art, all of it present in the international v1.0 object:

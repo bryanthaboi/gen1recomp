@@ -677,26 +677,12 @@ local function dispatch(vm, row)
     if level < 1 then level = 5 end
     local nickname
     if ModRuntime.wants("pokemon.before_give") then
-      local Pokemon = require("src.core.game3.pokemon")
-      local gift = {
-        ctx = Ctx.modCtx(vm),
-        species = Pokemon.keyName(species) or species,
-        speciesId = species,
-        level = level,
-      }
-      ModRuntime.emit("pokemon.before_give", gift)
-      local id = type(gift.species) == "number" and gift.species
-        or Pokemon.speciesFromName(gift.species)
-      if tonumber(id) and tonumber(id) >= 1 and tonumber(id) ~= species then
-        species = tonumber(id)
+      local given
+      given, level, nickname = require("src.core.game3.gift").beforeGive(Ctx.modCtx(vm), species, level)
+      if given ~= species then
+        species = given
         local src = tonumber(row[1] or row.species) or 0
         if src >= 0x4000 then Flags.setVar(store, ctx, src, species) end
-      end
-      if tonumber(gift.level) then
-        level = math.max(1, math.min(100, math.floor(tonumber(gift.level))))
-      end
-      if type(gift.nickname) == "string" and gift.nickname ~= "" then
-        nickname = gift.nickname
       end
     end
     -- pokefirered/src/script_pokemon_util.c:48
@@ -721,6 +707,15 @@ local function dispatch(vm, row)
     return false
   elseif op == "giveegg" then
     local species = var_get(store, ctx, row[1] or row.species)
+    if ModRuntime.wants("pokemon.before_give") then
+      local Gift = require("src.core.game3.gift")
+      local given = Gift.beforeGive(Ctx.modCtx(vm), species, Gift.EGG_LEVEL, { isEgg = true })
+      if given ~= species then
+        species = given
+        local src = tonumber(row[1] or row.species) or 0
+        if src >= 0x4000 then Flags.setVar(store, ctx, src, species) end
+      end
+    end
     -- pokefirered/src/script_pokemon_util.c:75
     local code
     if a.giveEggToPlayer then

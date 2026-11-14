@@ -20,9 +20,10 @@ CacheContract.VERSION_FORMAT = {
   -- data/items/catch_rate_items.asm:5
   -- data/battle/accuracy_multipliers.asm:4, data/moves/effects_pointers.asm:1
   -- data/maps/flypoints.asm:1
-  gold = "rom-cache-v18:",
-  silver = "rom-cache-v18:",
-  crystal = "rom-cache-v18-crystal8:",
+  -- engine/gfx/cgb_layouts.asm:117
+  gold = "rom-cache-v19:",
+  silver = "rom-cache-v19:",
+  crystal = "rom-cache-v19-crystal8:",
   -- engine/overworld/map_sprites.asm:181, engine/battle/animations.asm:2600
   -- data/pikachu/pikachu_pic_animation.asm:340, engine/movie/title.asm:76
   -- engine/pikachu/pikachu_pic_animation.asm:412, engine/battle/core.asm:2135-2138

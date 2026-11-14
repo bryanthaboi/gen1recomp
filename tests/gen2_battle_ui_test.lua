@@ -18,6 +18,7 @@ love = require("tests.love_stub")
 local Battle = require("src.battle.gen2.Battle")
 local BattleAnimView = require("src.ui.gen2.BattleAnimView")
 local BattleState = require("src.ui.gen2.BattleState")
+local Chrome = require("src.ui.gen2.Chrome")
 local Damage = require("src.battle.gen2.Damage")
 local Input = require("src.core.Input")
 local Mon = require("src.battle.gen2.Mon")
@@ -95,6 +96,9 @@ local POKEMON = {
 }
 
 local DATA = {
+  gen2Palettes = { battleText = {
+    { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+  } },
   pokemon = POKEMON,
   moves = MOVES,
   text = require("tests.gen2_battle_text_fixture")(), type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = MATCHUPS },
@@ -110,6 +114,7 @@ local DATA = {
   },
 }
 
+DATA.text._BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}"
 local perfect = { attack = 15, defense = 15, speed = 15, special = 15 }
 perfect.hp = Mon.hpDV(perfect)
 
@@ -649,8 +654,8 @@ do
   screen.message = "CYNDAQUIL gained 54 EXP. Points!"
   screen.expBurst = { frame = 8 }
   local order = {}
-  local realBox = Chrome.box
-  Chrome.box = function(x, y, w, h)
+  local realBox = Chrome.paletteBox
+  Chrome.paletteBox = function(x, y, w, h)
     order[#order + 1] = ("box %d,%d,%d,%d"):format(x, y, w, h)
   end
   local realEnd = screen.hud.drawExpBarEnd
@@ -659,7 +664,7 @@ do
     return true
   end
   local ok, err = pcall(function() screen:drawSceneBody() end)
-  Chrome.box = realBox
+  Chrome.paletteBox = realBox
   screen.hud.drawExpBarEnd = realEnd
   check(ok, "the scene draws with the burst up: " .. tostring(err))
   local lastBox, firstSpark, sparks = 0, nil, 0
@@ -1437,6 +1442,103 @@ do
   eq(findEvent(screen3, "dex-entry"), nil, "an owned row opens nothing")
 end
 
+-- ../pokecrystal/engine/battle/core.asm:4744-4747
+-- ../pokecrystal/engine/items/item_effects.asm:582
+-- ../pokecrystal/engine/items/item_effects.asm:597-599
+-- ../pokecrystal/engine/items/item_effects.asm:677-680
+-- ../pokecrystal/engine/items/item_effects.asm:704-709
+do
+  local Screens = require("src.ui.Screens")
+  local realPush = Screens.push
+  local naming
+  Screens.push = function(_, _, opts)
+    naming = { opts = opts, drawPanel = function() end,
+      drawWidescreen = function() end }
+    return naming
+  end
+  local function answer(screen, yes)
+    for _ = 1, 600 do
+      if screen.phase == "ask-nickname" then break end
+      drainStep(screen)
+    end
+    eq(screen.phase, "ask-nickname", "AskGiveNicknameText is up")
+    screen:answerNickname(yes)
+  end
+
+  local textPal = { { 255, 255, 255 }, { 90, 90, 156 }, { 58, 58, 99 }, { 0, 0, 0 } }
+  DATA.gen2Diploma = { palettes = { {}, {}, {}, {}, {}, {}, {}, textPal } }
+  local screen, _, _, wild = newScreen({ inventory = { MASTER_BALL = 1 } })
+  check(runToMenu(screen), "reached the menu")
+  screen:useItem("MASTER_BALL")
+  eq(screen:enemyHudName(screen:activeMon("enemy")), "PIDGEY",
+    "the HUD reads the species under Gotcha")
+  answer(screen, true)
+  naming.opts.onDone("AAAA")
+  eq(wild.nickname, "AAAA", "the party mon takes the typed name")
+  eq(screen:enemyHudName(screen:activeMon("enemy")), "PIDGEY",
+    "the enemy HUD keeps wEnemyMonNickname after naming")
+  eq(screen.captureScreen, "naming", "the naming screen stays on the tilemap")
+  eq(screen.namingBackdrop, naming, "drawn from the screen NamingScreen left")
+  eq(screen.message, nil, "with no text box over it")
+  eq(screen:exitFadeBgp(), 0x90, "RotateThreePalettesRight step 1")
+  check(pcall(screen.draw, screen), "the naming backdrop draws")
+  run(screen, 8)
+  eq(screen:exitFadeBgp(), 0x40, "step 2 after 8 frames")
+  run(screen, 8)
+  eq(screen:exitFadeBgp(), 0x00, "step 3 after 16 frames")
+  run(screen, 8)
+  eq(screen.captureScreen, "cleared", "ClearTilemap after the fade")
+  eq(screen.namingBackdrop, nil, "the naming tiles are gone")
+  eq(screen.message, nil, "and nothing is printed")
+  eq(screen.phase, "fadeout", "the battle exits over the cleared screen")
+  check(pcall(screen.draw, screen), "the cleared screen draws")
+
+  local screen2 = newScreen({ inventory = { MASTER_BALL = 1 } })
+  check(runToMenu(screen2), "reached the menu")
+  screen2:useItem("MASTER_BALL")
+  answer(screen2, false)
+  eq(screen2.captureScreen, "cleared", "NO jumps to .return_from_capture")
+  eq(screen2.captureFade, nil, "with no fade")
+  eq(screen2.message, nil, "and the question is cleared with the tilemap")
+
+  local party3 = {}
+  for i = 1, 6 do
+    local mon = Mon.new(DATA, "CYNDAQUIL", 10, { dvs = perfect })
+    mon.moves = { { id = "TACKLE", pp = 35, maxPp = 35 } }
+    party3[i] = mon
+  end
+  local screen3, battle3, _, wild3, save3 = newScreen({ player = party3[1],
+    party = party3, inventory = { MASTER_BALL = 1 } })
+  save3.boxes = { {} }
+  save3.player = { name = "GOLD", money = 0 }
+  check(runToMenu(screen3), "reached the menu")
+  battle3.payDay = 40
+  screen3:useItem("MASTER_BALL")
+  answer(screen3, true)
+  naming.opts.onDone("BBBB")
+  eq(wild3.nickname, "BBBB", "the boxed mon takes the typed name")
+  eq(screen3.captureScreen, "naming", "BallSentToPCText prints over the naming screen")
+  eq(screen3.message, "BBBB was\nsent to BILL's PC.", "naming the box nickname")
+  eq(screen3:textboxPalette(), textPal, "the PC line box wears diploma palette 7")
+  eq(screen3:enemyHudName(screen3:activeMon("enemy")), "PIDGEY",
+    "the HUD latch still reads the species")
+  check(pcall(screen3.draw, screen3), "the PC line over the naming screen draws")
+  for _ = 1, 60 do
+    if screen3.captureFade then break end
+    drainStep(screen3)
+  end
+  check(screen3.captureFade ~= nil, "RotateThreePalettesRight after the PC line")
+  eq(screen3.message, "BBBB was\nsent to BILL's PC.", "the line fades with the screen")
+  run(screen3, 24)
+  eq(screen3.captureScreen, "cleared", "then the tilemap is cleared")
+  check(screen3.message and screen3.message:find("40", 1, true) ~= nil,
+    "Pay Day prints on the cleared screen")
+  check(pcall(screen3.draw, screen3), "the Pay Day box on the cleared screen draws")
+  eq(screen2:textboxPalette(), DATA.gen2Palettes.battleText, "NO keeps the battle textbox palette")
+  DATA.gen2Diploma = nil
+  Screens.push = realPush
+end
+
 -- ---- the low-HP siren dies with the enemy, and with a healing item --------
 do
   -- StopDangerSound plus the wBattleLowHealthAlarm latch on every wild enemy
@@ -2000,9 +2102,9 @@ do
   screen.moveIndex = 1
 
   local boxes, prints = {}, {}
-  local saved = { box = Chrome.box, print = Chrome.print,
+  local saved = { box = Chrome.paletteBox, print = Chrome.print,
     printRight = Chrome.printRight, cursor = Chrome.cursor }
-  Chrome.box = function(x, y, w, h)
+  Chrome.paletteBox = function(x, y, w, h)
     boxes[#boxes + 1] = ("%d,%d,%d,%d"):format(x, y, w, h)
   end
   Chrome.print = function(text, x, y)
@@ -2015,7 +2117,7 @@ do
     prints[#prints + 1] = ("cursor@%d,%d"):format(x, y)
   end
   local ok, err = pcall(function() screen:drawPanel() end)
-  Chrome.box, Chrome.print = saved.box, saved.print
+  Chrome.paletteBox, Chrome.print = saved.box, saved.print
   Chrome.printRight, Chrome.cursor = saved.printRight, saved.cursor
   check(ok, "the move menu draws: " .. tostring(err))
 
@@ -2252,6 +2354,66 @@ do
   run(sliding, 1)
   check(sliding.slideFrame > 0 and sliding.arrowBlink ~= before,
     "the blink phase advances through update's early returns")
+end
+
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:116-145
+do
+  local HpBar = require("src.battle.gen2.HpBar")
+  local attr = {}
+  local function fill(x, y, w, h, pal)
+    for ty = y, y + h - 1 do
+      for tx = x, x + w - 1 do attr[ty * 20 + tx] = pal end
+    end
+  end
+  fill(0, 0, 20, 18, "ENEMY_HP")
+  fill(0, 4, 10, 8, "PLAYER")
+  fill(10, 0, 10, 7, "ENEMY")
+  fill(0, 0, 10, 4, "ENEMY_HP")
+  fill(10, 7, 10, 5, "PLAYER_HP")
+  fill(10, 11, 9, 1, "EXP")
+  fill(0, 12, 20, 6, "TEXT")
+
+  local HP = { green = { "green" }, yellow = { "yellow" }, red = { "red" } }
+  local want = {
+    ENEMY_HP = HP.green, PLAYER_HP = HP.red,
+    ENEMY = { "enemy pic" }, PLAYER = { "player pic" },
+    EXP = { "exp" }, TEXT = { "text" },
+  }
+  local built = 0
+  local hud = {
+    barColors = function(_, key) built = built + 1 return { key } end,
+    expColors = function() built = built + 1 return { "exp" } end,
+  }
+  local enemy, player = { species = "E" }, { species = "P" }
+  local state = setmetatable({
+    palettes = {}, hud = hud,
+    battle = { enemy = enemy, player = player },
+    textboxPalette = function() return want.TEXT end,
+    cachedMonColors = function(_, species)
+      return species == "E" and want.ENEMY or want.PLAYER
+    end,
+    hudHpPixels = function(_, _, side)
+      return side == "enemy" and HpBar.GREEN_PIXELS or 0
+    end,
+  }, { __index = BattleState })
+
+  local wrong = {}
+  for _ = 1, 2 do
+    for ty = 0, 17 do
+      for tx = 0, 19 do
+        local got = state:bgAttrColors(tx, ty)
+        local region = attr[ty * 20 + tx]
+        local expect = want[region]
+        if not (got and got[1] == expect[1]) then
+          wrong[#wrong + 1] = ("(%d,%d)=%s want %s"):format(tx, ty,
+            tostring(got and got[1]), region)
+        end
+      end
+    end
+  end
+  eq(#wrong, 0, "bgAttrColors follows the battle attrmap: "
+    .. table.concat(wrong, " ", 1, math.min(#wrong, 6)))
+  eq(built, 3, "the HUD region palettes are built once each, not per tile")
 end
 
 S.finish()

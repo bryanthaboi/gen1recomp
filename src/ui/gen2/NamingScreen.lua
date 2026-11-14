@@ -18,7 +18,6 @@
 
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
-local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Runtime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
@@ -511,26 +510,30 @@ end
 -- middle lines for the rest (NamingScreen_InitNameEntry).
 function NamingScreen:drawEntry(tx, ty)
   local G = love.graphics
-  local pen = tx * 8
   local length = #self.text
-  for i = 1, self.maxLength do
-    if i <= length then
+  local pal = self.palette
+  local shaded = pal and GbcPalette.available()
+  for i = 1, math.min(length, self.maxLength) do
+    Chrome.printThrough(self.text:sub(i, i), tx + i - 1, ty, pal)
+  end
+  local previous = shaded and G.getShader and G.getShader() or nil
+  for i = length + 1, self.maxLength do
+    local pen = (tx + i - 1) * 8
+    local isNext = i == length + 1
+    local glyph = isNext and self.tiles.underLine or self.tiles.middleLine
+    if glyph and shaded then
+      G.setColor(1, 1, 1, 1)
+      GbcPalette.use(pal)
+      G.draw(glyph, pen, ty * 8)
+      G.setShader(previous)
+    elseif glyph then
       G.setColor(0, 0, 0, 1)
-      Font.draw(self.text:sub(i, i), pen, ty * 8)
+      G.draw(glyph, pen, ty * 8)
     else
-      local isNext = i == length + 1
-      local glyph = isNext and self.tiles.underLine or self.tiles.middleLine
-      if glyph then
-        G.setColor(0, 0, 0, 1)
-        G.draw(glyph, pen, ty * 8)
-      else
-        -- No extracted line tiles: draw them.  Underline sits on the cell's
-        -- baseline, the middle line halfway up, same as the 1bpp art.
-        G.setColor(0, 0, 0, 1)
-        G.rectangle("fill", pen + 1, ty * 8 + (isNext and 7 or 4), 6, 1)
-      end
+      local ink = shaded and GbcPalette.color(pal, 4) or { 0, 0, 0 }
+      G.setColor(ink[1] / 255, ink[2] / 255, ink[3] / 255, 1)
+      G.rectangle("fill", pen + 1, ty * 8 + (isNext and 7 or 4), 6, 1)
     end
-    pen = pen + 8
   end
   G.setColor(1, 1, 1, 1)
 end

@@ -40,8 +40,8 @@ local function tiles(scene,frame,over)
       if tile then
         local ts=textures[tile[2]] or T.get(tile[2])
         if tile[2] then textures[tile[2]]=ts end
-        if ts then
-          local slot=T.slotFor(ts,tile[1])
+        local slot=ts and T.slotFor(ts,tile[1])
+        if slot then
           local quad
           if over then quad=T.overQuad(ts,slot) else quad=T.quad(ts,slot) end
           local image

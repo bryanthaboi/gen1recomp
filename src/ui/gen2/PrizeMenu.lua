@@ -305,7 +305,7 @@ end
 -- The transaction itself, once the player has said yes.  Item counters do the
 -- giveitem BEFORE the takecoins, so a bag that turns out to be full costs
 -- nothing; that ordering is what makes "room" a possible answer here too.
-function PrizeMenu.buy(save, counter, prize, data, where)
+function PrizeMenu.buy(save, counter, prize, data, where, game)
   if counter.kind == "coins" then
     local reason = PrizeMenu.check(save, counter, prize, data)
     if reason ~= "ok" then return reason end
@@ -317,7 +317,10 @@ function PrizeMenu.buy(save, counter, prize, data, where)
   if counter.kind == "mon" then
     if not PrizeMenu.hasRoom(save, counter, prize, data) then return "room" end
     local Mon = require("src.battle.gen2.Mon")
-    local mon = Mon.new(data, prize.id, prize.level)
+    -- ../pokecrystal/engine/pokemon/move_mon.asm:1619
+    local species, level, nickname = require("src.core.gen2.Gift").beforeGive(data,
+      { game = game, save = save, world = game and game.world }, prize.id, prize.level)
+    local mon = Mon.new(data, species, level, { nickname = nickname })
     if not mon then return "room" end
     save.party = save.party or {}
     -- The prize is a `givepoke`, so it takes AddPartyMon's stamp (move_mon.asm:143-149).
@@ -336,8 +339,8 @@ function PrizeMenu.buy(save, counter, prize, data, where)
     -- mon is registered as seen and caught even though it never appeared in a
     -- battle.
     save.pokedex = save.pokedex or { seen = {}, caught = {} }
-    save.pokedex.seen[prize.id] = true
-    save.pokedex.caught[prize.id] = true
+    save.pokedex.seen[species] = true
+    save.pokedex.caught[species] = true
     PrizeMenu.takeCoins(save, prize.cost)
     return "ok"
   end
@@ -507,7 +510,7 @@ end
 
 function PrizeMenu:complete(prize)
   local reason = PrizeMenu.buy(self.save, self.counter, prize, self.data,
-    self:caughtWhere())
+    self:caughtWhere(), self.game)
   if reason ~= "ok" then
     self:refuse(reason)
     return

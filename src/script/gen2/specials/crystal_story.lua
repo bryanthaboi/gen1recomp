@@ -246,9 +246,12 @@ M.GiveOddEgg = function(vm)
   local row = ODD_EGGS[oddEggIndex(Specials.random(0x10000) - 1)]
   local egg = buildOddEgg(data, row, record)
   if not egg then return end
+  local h = S.hooks(vm)
+  local world = h.world
+  egg = require("src.core.gen2.Gift").giveEgg(data,
+    { game = world and world.game, save = record, world = world, runner = vm }, record, egg)
   -- ../pokecrystal/engine/events/odd_egg.asm:50-57 TossItem on the EGG TICKET,
   -- ahead of the party write.
-  local h = S.hooks(vm)
   local ticket = h.itemIndex and h.itemIndex(EGG_TICKET)
   if ticket and h.takeItem then h.takeItem(ticket, 1) end
   party[#party + 1] = egg

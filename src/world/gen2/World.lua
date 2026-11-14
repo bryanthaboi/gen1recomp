@@ -463,13 +463,12 @@ end
 -- Gen 2 moveset lives in `levelMoves` (EvosAttacks).  So every scripted gift,
 -- the STARTER included, arrived knowing nothing: FIGHT listed no moves and the
 -- battle had no legal action left in it.
-local function givePokeMon(data, speciesIndex, level, itemIndex, opts)
-  local id = speciesByIndex(data.pokemon, speciesIndex)
+local function givePokeMon(data, id, level, itemIndex, nickname)
   if not id then return nil end
   return Mon.new(data, id, level or 5, {
     item = itemIndex and itemIndex ~= 0
       and itemByIndex(data.items, itemIndex) or nil,
-    nickname = opts and opts.nickname or nil,
+    nickname = nickname,
   })
 end
 
@@ -1116,39 +1115,7 @@ function World:load()
       if self.game then self.game.stringBuffer = value end
     end,
     givePoke = function(speciesIndex, level, item, opts)
-      local data = self.game and self.game.data
-      local save = self.game and self.game.save
-      if not (data and save) then return end
-      save.party = save.party or {}
-      local mon = givePokeMon(data, speciesIndex, level, item, opts)
-      if mon then
-        if opts and opts.otName then
-          mon.ot = opts.otName
-          mon.otName = opts.otName
-          mon.otId = RANDY_OT_ID
-        end
-        -- GivePoke -> TryAddMonToParty -> AddPartyMon (move_mon.asm:44-56, :143-149).
-        Mon.stampOT(save, mon)
-        -- move_mon.asm:1734, :1761
-        if Mon.hasCaughtData(save.version) then
-          if opts and opts.otName then
-            Mon.setGiftCaughtData(mon, opts.caughtBy or "unknown")
-          else
-            Catching.stampCaughtData(mon, self:caughtDataOpts())
-          end
-        end
-        Party.add(save.party, mon)
-        -- GivePoke ends in SetSeenAndCaughtMon, which is why the STARTER is
-        -- already ticked off in the #DEX before the first battle.
-        save.pokedex = save.pokedex or { seen = {}, caught = {} }
-        save.pokedex.seen[mon.species] = true
-        save.pokedex.caught[mon.species] = true
-        -- AddPartyMon's `.registerunowndex` runs on the same path, so a
-        -- gifted Unown lands in the form list too (move_mon.asm:347).
-        Unown.registerCatch(save, mon)
-      end
-      -- engine/pokemon/move_mon.asm:1632-1645
-      return mon
+      return self:givePoke(speciesIndex, level, item, opts)
     end,
     giveItem = function(itemIndex, qty)
       local data = self.game and self.game.data
@@ -2920,6 +2887,47 @@ function World:hasPoke(speciesIndex)
   return false
 end
 
+function World:givePoke(speciesIndex, level, item, opts)
+  local data = self.game and self.game.data
+  local save = self.game and self.game.save
+  if not (data and save) then return end
+  save.party = save.party or {}
+  local id = speciesByIndex(data.pokemon, speciesIndex)
+  if not id then return end
+  -- ../pokecrystal/engine/pokemon/move_mon.asm:1619
+  local nickname, named
+  id, level, nickname, named = require("src.core.gen2.Gift").beforeGive(data,
+    { game = self.game, save = save, world = self }, id, level or 5,
+    { nickname = opts and opts.nickname })
+  local mon = givePokeMon(data, id, level, item, nickname)
+  if mon then
+    if opts and opts.otName then
+      mon.ot = opts.otName
+      mon.otName = opts.otName
+      mon.otId = RANDY_OT_ID
+    end
+    -- GivePoke -> TryAddMonToParty -> AddPartyMon (move_mon.asm:44-56, :143-149).
+    Mon.stampOT(save, mon)
+    -- move_mon.asm:1734, :1761
+    if Mon.hasCaughtData(save.version) then
+      if opts and opts.otName then
+        Mon.setGiftCaughtData(mon, opts.caughtBy or "unknown")
+      else
+        Catching.stampCaughtData(mon, self:caughtDataOpts())
+      end
+    end
+    Party.add(save.party, mon)
+    -- engine/pokemon/move_mon.asm:196
+    save.pokedex = save.pokedex or { seen = {}, caught = {} }
+    save.pokedex.seen[mon.species] = true
+    save.pokedex.caught[mon.species] = true
+    -- engine/pokemon/move_mon.asm:347
+    Unown.registerCatch(save, mon)
+  end
+  -- engine/pokemon/move_mon.asm:1632-1645
+  return mon, named
+end
+
 -- `giveegg`: the same builder every other party member goes through, marked
 -- and counted down the way src/core/gen2/Breeding.lua marks a Day-Care egg, so
 -- the ODD_EGG and the Togepi egg hatch through DoEggStep like any other.
@@ -2931,20 +2939,14 @@ function World:giveEgg(speciesIndex, level)
   if not (data and save) then return false end
   save.party = save.party or {}
   if #save.party >= Breeding.PARTY_SIZE then return false end
-  local id, def = speciesByIndex(data.pokemon, speciesIndex)
+  local id = speciesByIndex(data.pokemon, speciesIndex)
   if not id then return false end
-  local mon = Mon.new(data, id, level or Breeding.EGG_LEVEL)
+  local Gift = require("src.core.gen2.Gift")
+  id, level = Gift.beforeGive(data, { game = self.game, save = save, world = self },
+    id, level or Breeding.EGG_LEVEL, { isEgg = true })
+  -- engine/pokemon/move_mon.asm:1121-1139
+  local mon = Gift.egg(data, save, id, level)
   if not mon then return false end
-  mon.isEgg = true
-  -- `ld de, String_Egg / call CopyName2`: the slot's nickname IS "EGG", and the
-  -- box list prints it verbatim (engine/pokemon/move_mon.asm:1193-1194, :1220).
-  mon.nickname = Breeding.EGG_NAME
-  -- DayCare_InitBreeding's `ld [hl], EGG_STEPS`: the counter is the species'
-  -- own eggSteps in 256-step cycles, and DayCare_GiveEgg zeroes the HP.
-  mon.eggSteps = (def and def.eggSteps) or 0
-  mon.hp = 0
-  -- GiveEgg goes through TryAddMonToParty too (move_mon.asm:1121-1139).
-  Mon.stampOT(save, mon)
   save.party[#save.party + 1] = mon
   return true
 end

@@ -466,7 +466,7 @@ end
 
 function DayCareMenu:takeEgg()
   local ok, reason = Breeding.collectEgg(self.data, self.save,
-    { rng = self.rng })
+    { rng = self.rng, game = self.game })
   if not ok then
     -- .PartyFull is the ONE branch that sets wScriptVar to TRUE.
     if reason == Breeding.REFUSE_PARTY_FULL then self.scriptVar = 1 end

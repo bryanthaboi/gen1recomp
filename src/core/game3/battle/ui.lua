@@ -41,6 +41,12 @@ local chromeInstallWarned = false
 -- pokefirered/src/text.c:537 TextPrinterWaitAutoMode
 local POKEDUDE_AUTO_SCROLL = 120
 
+-- pokefirered/src/battle_message.c:2773
+local function auto_scroll()
+  local st = Ui._st
+  return st ~= nil and (st.link or st.pokedude) and true or false
+end
+
 -- The stat window may only be on screen while the battle is in a phase that can
 -- still dismiss it; init.lua owns the list (#2324).  Resolved lazily because
 -- init.lua requires this module.
@@ -469,6 +475,7 @@ local function open_pending_yesno()
     return false
   end
   if not (Message.isWaiting and Message.isWaiting()) then return true end
+  if (Message._page or 1) < #(Message._pages or {}) then return true end
   local cb = Ui._pendingYesNo
   Ui._pendingYesNo = nil
   -- pokefirered/data/battle_scripts_1.s:3129
@@ -967,7 +974,7 @@ local function show_next()
   if item and item.timed and Message and Message.show then
     Ui._showing = true
     Ui._timed = { frames = 0, wait = item.wait or 64, cb = cb }
-    Message.show(text, { frame = "battle", battle = true, stay = true })
+    Message.show(text, { frame = "battle", battle = true, stay = true, autoScroll = auto_scroll() })
     return
   end
   if Message and Message.show then

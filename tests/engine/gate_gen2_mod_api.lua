@@ -387,6 +387,7 @@ local GEN2_EVENTS = {
   -- in the party or the box, Evolution.apply after the species swap, both
   -- matching the Gen 1 payload keys
   "pokemon.caught", "pokemon.evolved",
+  "pokemon.before_give",
   -- the arena battle's own result, from src/ui/ArenaState.lua and
   -- src/ui/gen2/ArenaState.lua with the same five keys
   "link.battle_ended",
@@ -416,7 +417,8 @@ local GEN2_HOOKS = {
   "battle.damage", "battle.crit", "battle.accuracy",
   "battle.charge_required", "battle.turn_order",
   "battle.enemy_action", "battle.run", "battle.exp_award", "exp.gain",
-  "catch.rate", "catch.nickname", "trainer.party",
+  "catch.rate", "catch.nickname", "catch.party_full", "battle.style",
+  "trainer.party",
   -- one wrap cancels or forces an evolution in either game: Gold passes `data`
   -- where Gen 1 passes `game`, and positions 2-4 (mon, row, trigger) match
   "evolution.check",

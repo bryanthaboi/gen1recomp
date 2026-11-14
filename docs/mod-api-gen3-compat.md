@@ -79,7 +79,14 @@ native Gen 3 call site.
   `battle.menu_auxiliary`, `battle.caught_marker_visible`,
   `battle.bottom_ui_visible`, `battle.status_hud_visible`,
   `battle.move_grid_navigation`, `held_item.trigger`, `exp.gain`,
-  `catch.rate`, `catch.nickname`, `trainer.party`, `evolution.check`.
+  `catch.rate`, `catch.nickname`, `catch.party_full`, `battle.style`,
+  `trainer.party`, `evolution.check`.
+  `catch.party_full` runs from `Catching.storeCaught` when the party is full,
+  with ctx `{ battle, mon, name, game, species, speciesId }`; a claim skips the
+  PC, the nickname question and the transfer page, and `pokemon.caught`
+  reports `destination = "mod"`. `battle.style` is read through
+  `Battle.battleStyle(st)` when a trainer's mon faints, after the link,
+  facility and fainted-player gates, and answers `"set"` or `"shift"`.
   `battle.field_residual` returns data-only damage rows from
   `src/core/game3/battle/residuals.lua`; the native faint and experience paths
   keep authority over HP, replacements and battle end.

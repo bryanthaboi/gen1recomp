@@ -44,6 +44,9 @@ end
 local function dataFor(version)
   return {
     version = version,
+    gen2Palettes = { battleText = {
+      { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+    } },
     pokemon = {
       growthRates = { GROWTH_MEDIUM_FAST = {
         numerator = 1, denominator = 1, squared = 0, linear = 0, constant = 0,

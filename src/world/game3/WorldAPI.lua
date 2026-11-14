@@ -429,6 +429,8 @@ end
 function WorldAPI:replaceBlock(bx, by, block)
   local F = self:_field()
   if not F then return nil, NO_OVERWORLD end
+  local ok, err = require("src.core.game3.mod_layout").checkMetatile(F.currentPair(), block)
+  if not ok then return nil, err end
   warnOnce("replaceBlock",
     "[%s] mod.world:replaceBlock on FireRed sets one 16px METATILE at (x, y); "
     .. "FireRed has no 32px blocks", tostring(self.modId))

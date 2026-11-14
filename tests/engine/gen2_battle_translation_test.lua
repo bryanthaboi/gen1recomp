@@ -228,7 +228,7 @@ end
 do
   local drawn = {}
   Chrome.clear = function() end
-  Chrome.box = function() end
+  Chrome.paletteBox = function() end
   Chrome.cursorThrough = function() end
   Chrome.printThrough = function(text) drawn[#drawn + 1] = text end
   GbcPalette.setBgp = function() return nil end
@@ -236,6 +236,9 @@ do
   local state = setmetatable({
     battle = { player = {}, enemy = {} },
     phase = "ask-nickname", messageTimer = 0, nicknameIndex = 1,
+    palettes = { battleText = {
+      { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+    } },
     bottomUIVisible = function() return true end,
     drawHud = function() end,
     printMessage = function() end,

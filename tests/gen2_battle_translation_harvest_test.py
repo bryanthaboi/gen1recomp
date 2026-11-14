@@ -47,7 +47,6 @@ class Gen2BattleTranslationHarvestTest(TestCase):
             '"YES"',
             '"NO"',
             '"Gotcha! %s was caught!"',
-            '"%s was sent to BILL\'s PC."',
             '"Wild %s appeared!"',
             '"%s sent out %s!"',
         }

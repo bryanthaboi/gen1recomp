@@ -9,6 +9,8 @@ function M.register(DEF, ID, H)
   local DW, DH = H.DW, H.DH
   local Sin, s16, u16 = H.Sin, H.s16, H.u16
   local winH, copyBuf, setCircularMask, fadeScreenBlack = H.winH, H.copyBuf, H.setCircularMask, H.fadeScreenBlack
+  local winHSpans = H.winHSpans
+  local WSPANS = {}
 
   -- pokeemerald/src/battle_transition.c:3044
   local function blackholeInit(fx)
@@ -235,14 +237,34 @@ function M.register(DEF, ID, H)
     end,
     rowSpans = function(fx, y, R, out)
       if not fx.shred1 then return 0 end
-      local l, r = winH(fx.shred1[DH + y])
-      if not l then
-        out[1], out[2] = R.X0, R.X1
-        return 1
+      local win
+      if y < 0 or y > DH - 1 then
+        local e = y < 0 and 0 or DH - 1
+        local cameraX = fx.t.cameraX or 0
+        if band(e, 1) == 0 then
+          -- pokeemerald/src/battle_transition.c:2959
+          win = bor(lshift(u16(cameraX - fx.shred1[e]), 8), DW + 1)
+        else
+          -- pokeemerald/src/battle_transition.c:2924
+          win = DW - u16(fx.shred1[e] - cameraX)
+        end
+      else
+        win = fx.shred1[DH + y]
       end
-      local n = 0
-      if l > 0 then n = n + 1; out[2 * n - 1], out[2 * n] = R.X0, R.hmap(l) end
-      if r < DW then n = n + 1; out[2 * n - 1], out[2 * n] = R.hmap(r), R.X1 end
+      local k = winHSpans(win, WSPANS)
+      local n, x = 0, 0
+      for i = 1, k do
+        local a, b = WSPANS[2 * i - 1], WSPANS[2 * i]
+        if a > x then
+          n = n + 1
+          out[2 * n - 1], out[2 * n] = x == 0 and R.X0 or R.hmap(x), R.hmap(a)
+        end
+        x = b
+      end
+      if x < DW then
+        n = n + 1
+        out[2 * n - 1], out[2 * n] = x == 0 and R.X0 or R.hmap(x), R.X1
+      end
       return n
     end,
     shift = function(fx, y, R)

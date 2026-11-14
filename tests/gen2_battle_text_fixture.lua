@@ -1,5 +1,6 @@
 return function()
   return {
+    _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}",
     FrozenSolidText = "{USER}\nis frozen solid!{PROMPT}",
     FullyParalyzedText = "{USER}'s\nfully paralyzed!{PROMPT}",
     MustRechargeText = "{USER}\nmust recharge!{PROMPT}",

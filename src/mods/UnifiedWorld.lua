@@ -568,7 +568,14 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
       local id
       id, err = blockAt(game, api, current.mapId, a, b)
       if id == nil then return nil, err end
-      if generation == 3 then g3("field").setMetatile(a, b, c); return true end
+      if generation == 3 then
+        local Field = g3("field")
+        local ok
+        ok, err = g3("mod_layout").checkMetatile(Field.currentPair(), c)
+        if not ok then return nil, err end
+        Field.setMetatile(a, b, c)
+        return true
+      end
       local ow = api:overworld()
       if not (ow.map.tileset and ow.map.tileset.blocks and ow.map.tileset.blocks[c + 1]) then
         return nil, "unknown block id"
