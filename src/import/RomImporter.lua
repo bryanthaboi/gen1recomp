@@ -7,6 +7,7 @@ local HostPicker = require("src.core.HostPicker")
 local Platform = require("src.core.Platform")
 local SafeArea = require("src.core.SafeArea")
 local SecretGames = require("src.import.SecretGames")
+local RomDetect = require("src.import.RomDetect")
 
 local RomImporter = {}
 RomImporter.__index = RomImporter
@@ -832,8 +833,148 @@ local function baseRomScanSatisfied(self)
   return true
 end
 
+-- baseroms/ next to the game, minus the portable folder pfs() already scans.
+local function nativeBaseRomDirs()
+  if not Platform.isDesktop() or Platform.isHandheld() then return {} end
+  local SaveData = require("src.core.SaveData")
+  local portable = SaveData.portableBaseDir and SaveData.portableBaseDir()
+  local portableKey
+  if portable then
+    portableKey = ((portable:gsub("\\", "/"):gsub("/+$", "")) .. "/" .. BASE_ROMS_DIR):lower()
+  end
+  local dirs, seen = {}, {}
+  for _, base in ipairs(SaveData.gameFolders and SaveData.gameFolders() or {}) do
+    local dir = (base:gsub("\\", "/"):gsub("/+$", "")) .. "/" .. BASE_ROMS_DIR
+    local key = dir:lower()
+    if key ~= portableKey and not seen[key] then
+      seen[key] = true
+      dirs[#dirs + 1] = dir
+    end
+  end
+  return dirs
+end
+
+-- Where a player should drop a ROM: the game folder, portable, then the save dir.
+local function baseRomDirHint()
+  local SaveData = require("src.core.SaveData")
+  local portable = SaveData.portableBaseDir and SaveData.portableBaseDir()
+  if portable then return portable .. "/" .. BASE_ROMS_DIR end
+  for _, dir in ipairs(nativeBaseRomDirs()) do
+    local stat = SaveData.statNative and SaveData.statNative(dir)
+    if stat and stat.type == "directory" then return dir end
+  end
+  local ok, save = pcall(love.filesystem.getSaveDirectory)
+  if ok and type(save) == "string" and save ~= "" then
+    return save .. "/" .. BASE_ROMS_DIR
+  end
+  return BASE_ROMS_DIR
+end
+
+local function addBaseRomEntry(entries, seen, entry)
+  local key = entry.native and entry.path:gsub("\\", "/"):lower()
+    or ("save:" .. entry.path)
+  if seen[key] then return end
+  seen[key] = true
+  entries[#entries + 1] = entry
+end
+
+-- Every ROM in baseroms/, from the save directory and the desktop game folders.
+local function collectBaseRomEntries()
+  local entries, seen = {}, {}
+  local fs = pfs()
+  -- Xbox ships the empty folder to fill; a desktop player creates it.
+  if Platform.isUWP() and not fs.getInfo(BASE_ROMS_DIR) and fs.createDirectory then
+    pcall(fs.createDirectory, BASE_ROMS_DIR)
+  end
+  -- A source checkout mounts its own baseroms/, so the native walk below finds
+  -- the same files again: one name is one candidate, and the mount wins
+  -- because readBaseRom() reads it.
+  local mounted = {}
+  for _, name in ipairs(fs.getDirectoryItems(BASE_ROMS_DIR) or {}) do
+    if name:sub(1, 1) ~= "." and isRomFilename(name) then
+      local path = BASE_ROMS_DIR .. "/" .. name
+      local file = fs.getInfo(path, "file")
+      if file then
+        mounted[name:lower()] = true
+        addBaseRomEntry(entries, seen, {
+          path = path, name = name, size = file.size,
+          native = false, root = BASE_ROMS_DIR,
+        })
+      end
+    end
+  end
+  if Platform.isDesktop() and not Platform.isHandheld() then
+    local SaveData = require("src.core.SaveData")
+    for _, dir in ipairs(nativeBaseRomDirs()) do
+      local names = SaveData.listNative and SaveData.listNative(dir) or nil
+      for _, name in ipairs(names or {}) do
+        if name:sub(1, 1) ~= "." and isRomFilename(name)
+            and not mounted[name:lower()] then
+          local path = dir .. "/" .. name
+          local stat = SaveData.statNative and SaveData.statNative(path) or nil
+          if stat and stat.type == "file" then
+            addBaseRomEntry(entries, seen, {
+              path = path, name = name, size = stat.size,
+              native = true, root = dir,
+            })
+          end
+        end
+      end
+    end
+  end
+  table.sort(entries, function(a, b) return a.path < b.path end)
+  return entries
+end
+
+local function readBaseRom(rec)
+  if rec.native then return readExternalPath(rec.path) end
+  return pfs().read(rec.path)
+end
+
+-- Versions the launcher still needs; locked secret games stay out.
+local function unresolvedBaseRoms(self)
+  local set = {}
+  for _, version in ipairs(GameVersion.ORDER) do
+    if not self.ready[version] and not self.baseRoms[version]
+        and SecretGames.shown(self, version) then
+      set[version] = true
+    end
+  end
+  return set
+end
+
+local function finishBaseRomScan(self, scan)
+  if scan.state == "done" then return end
+  scan.state = "done"
+  -- Warn only while a game is still missing, and on that game's tab.
+  if scan.unrecognised and #scan.unrecognised > 0 then
+    local pending = unresolvedBaseRoms(self)
+    local candidates = scan.unrecognised[1].versions or {}
+    local version = nil
+    for _, candidate in ipairs(candidates) do
+      if pending[candidate] then version = candidate break end
+    end
+    if not version and GameVersion.info(self.tab) and pending[self.tab] then
+      version = self.tab
+    end
+    for _, candidate in ipairs(GameVersion.ORDER) do
+      if not version and pending[candidate] then version = candidate break end
+    end
+    if version then
+      self.notice = {
+        version = version,
+        -- status and detail print as one paragraph under "No ROM imported".
+        status = Strings("Could not identify a ROM in baseroms/."),
+        detail = Strings("Only a clean, unpatched dump is accepted; the README "
+          .. "lists the SHA-1 of each one."),
+      }
+    end
+  end
+end
+
 function RomImporter:_queueBaseRomScan()
   if not self.baseRomDiscovery then return end
+  self.baseRomDirHint = self.baseRomDirHint or baseRomDirHint()
   if baseRomScanSatisfied(self) then
     self.baseRomScan = { state = "done" }
     return
@@ -847,38 +988,60 @@ function RomImporter:_stepBaseRomScan()
     return
   end
   if scan.state == "queued" then
-    local info = pfs().getInfo(BASE_ROMS_DIR)
-    if not info and pfs().createDirectory then
-      pfs().createDirectory(BASE_ROMS_DIR)
-    end
-    scan.paths = listRomPaths(BASE_ROMS_DIR)
-    table.sort(scan.paths)
+    scan.entries = collectBaseRomEntries()
+    scan.index = 1
     scan.state = "running"
   end
 
-  local path = scan.paths[scan.index]
-  if not path then
-    scan.state = "done"
+  local entry = scan.entries[scan.index]
+  if not entry then
+    finishBaseRomScan(self, scan)
     return
   end
   scan.index = scan.index + 1
 
-  local info = pfs().getInfo(path, "file")
-  if info and isAcceptedRomSize(info.size) then
-    local data = pfs().read(path)
-    if type(data) == "string" and isAcceptedRomSize(#data) then
-      local version = self:_versionForSha1(sha1(data))
-      if version and not self.ready[version] and not self.baseRoms[version] then
-        self.baseRoms[version] = {
-          path = path,
-          name = path:match("[^/\\]+$") or path,
-        }
-      end
+  -- Size before bytes: no cart is 3 MiB, so do not read and hash it to say so.
+  local unsupported = entry.size and #RomDetect.versionsForSize(entry.size) == 0
+
+  local data, readErr
+  if not unsupported then data, readErr = readBaseRom(entry) end
+
+  if unsupported then
+    Logger.warn("baseroms: skipped %s (unsupported size %d)", entry.name, entry.size)
+  elseif type(data) ~= "string" then
+    Logger.warn("baseroms: could not read %s: %s", entry.path, tostring(readErr))
+  else
+    local result = RomDetect.identify({
+      size = #data, data = data, sha1 = sha1,
+    }, {
+      unresolved = unresolvedBaseRoms(self),
+    })
+    if result.version and not self.ready[result.version]
+        and not self.baseRoms[result.version]
+        and SecretGames.shown(self, result.version) then
+      self.baseRoms[result.version] = {
+        path = entry.path,
+        name = entry.name,
+        native = entry.native,
+        revision = result.revision,
+        root = entry.root,
+      }
+      Logger.info("baseroms: %s -> %s%s", entry.name, result.version,
+        result.revision and (" rev " .. result.revision) or "")
+    elseif result.reject == "unknown" then
+      scan.unrecognised = scan.unrecognised or {}
+      scan.unrecognised[#scan.unrecognised + 1] = {
+        name = entry.name, versions = result.versions,
+      }
+      Logger.warn("baseroms: skipped %s (no SHA-1 match)", entry.name)
+    elseif result.reject ~= "already" then
+      -- "already" is the steady state of a rescan, not something to report.
+      Logger.warn("baseroms: skipped %s (%s)", entry.name, result.reject)
     end
   end
 
-  if baseRomScanSatisfied(self) or not scan.paths[scan.index] then
-    scan.state = "done"
+  if baseRomScanSatisfied(self) or not scan.entries[scan.index] then
+    finishBaseRomScan(self, scan)
   end
 end
 
@@ -2003,9 +2166,14 @@ function RomImporter.new(onComplete, opts)
     android = android,
     ios = mobileOS == "iOS",
     nativePicker = romImportMode == "native-picker",
-    baseRomDiscovery = opts.launcher and Platform.isUWP(),
+    -- Xbox has always had a baseroms/ drop folder; desktop gets the same one
+    -- next to the game.  Handhelds keep their ROMs on the SD card.
+    baseRomDiscovery = opts.launcher
+      and (Platform.isUWP()
+        or (Platform.isDesktop() and not Platform.isHandheld())),
     baseRoms = {},
     baseRomScan = nil,
+    baseRomDirHint = nil,
     -- One startup poll pass on both mobiles.  iOS: files dropped through the
     -- Files app are swept into the save dir before Lua boots (GRBootstrap) with
     -- no love.focus event necessarily following.  Android: the SAF picker is a
@@ -3967,7 +4135,7 @@ function RomImporter:choose(version)
   local baseRom = self.baseRomDiscovery and self.baseRoms[self.chooseVersion]
   if baseRom then
     self.baseRoms[self.chooseVersion] = nil
-    local data = love.filesystem.read(baseRom.path)
+    local data = readBaseRom(baseRom)
     if not data then
       self.notice = {
         version = self.chooseVersion,

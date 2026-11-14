@@ -225,7 +225,8 @@ end
 function stub.filesystem.getInfo(name, filter)
   if files[name] then
     if filter and filter ~= "file" then return nil end
-    return { type = "file" }
+    -- getInfo reports size; the ROM scan uses it to reject a file unread.
+    return { type = "file", size = #files[name] }
   end
   local prefix = name .. "/"
   for key in pairs(files) do
@@ -237,6 +238,7 @@ function stub.filesystem.getInfo(name, filter)
   local key, kind = resolveViaMounts(name)
   if key and kind then
     if filter and filter ~= kind then return nil end
+    if kind == "file" then return { type = kind, size = #files[key] } end
     return { type = kind }
   end
   return nil
