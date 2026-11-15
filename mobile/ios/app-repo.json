@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.7",
+          "date": "2026-11-15",
+          "size": 44801142,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.7/gen1recomp++-0.4.7-ios.ipa",
+          "localizedDescription": "fixes gen 2 mods that reach into engine internals dying on boot since 0.4.6 (engine flags werent bound before game.ready)\n\nheads up mod authors, 0.4.6 moved a bunch of gen 2 stuff onto the cache so if ur mod pokes at engine internals u may need to update:\n- gen 2 engine flags are names now, read from the cache. src.core.gen2.FlagNames is gone, use src.core.gen2.FlagIds.events(constants) instead\n- gen 2 ui text, landmarks and swarm data are required cache reads now, theres no hand typed fallback anymore\n- if ur mod tests build a fake game.data u need to feed it real rom_text, text, landmarks and encounters or those screens will throw\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.4.6",
           "date": "2026-11-15",
           "size": 44804672,
