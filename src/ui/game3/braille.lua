@@ -47,34 +47,9 @@ for byte = 0, Braille.NUM_CHARS - 1 do
   if ch and not Braille.CODE[ch] then RECOVERED[ch] = byte end
 end
 
-local SHEET_PATHS = {
-  "chrome/fonts/braille_fg.rgba",
-  "data/generated/gba/chrome/fonts/braille_fg.rgba",
-  "chrome/fonts/braille.rgba",
-  "data/generated/gba/chrome/fonts/braille.rgba",
-  "chrome/fonts/braille_fg.png",
-  "data/generated/gba/chrome/fonts/braille_fg.png",
-  "chrome/fonts/braille.png",
-  "data/generated/gba/chrome/fonts/braille.png",
-}
-
-local SHADOW_PATHS = {
-  "chrome/fonts/braille_shadow.rgba",
-  "data/generated/gba/chrome/fonts/braille_shadow.rgba",
-  "chrome/fonts/braille_shadow.png",
-  "data/generated/gba/chrome/fonts/braille_shadow.png",
-}
-
-local MANIFEST_PATHS = {
-  "chrome/fonts/braille.lua",
-  "data/generated/gba/chrome/fonts/braille.lua",
-}
-
-local SHEET_SIZES = {
-  { w = 256, h = 64 },
-  { w = 128, h = 128 },
-  { w = 256, h = 128 },
-}
+local SHEET_PATH = "data/generated/gba/chrome/fonts/braille_fg.rgba"
+local SHADOW_PATH = "data/generated/gba/chrome/fonts/braille_shadow.rgba"
+local MANIFEST_PATH = "data/generated/gba/chrome/fonts/braille.lua"
 
 local WHITE = { 1, 1, 1, 1 }
 -- pokefirered/src/field_specials.c:2488
@@ -83,105 +58,45 @@ local CURSOR_SEQ = { 0, 1, 2, 3, 2, 1 }
 Braille._fg = nil
 Braille._sh = nil
 Braille._quads = nil
-Braille._tried = false
-Braille._logged = false
 Braille._cursor = nil
 Braille._pitch = nil
 Braille._window = nil
 
-local function log(msg)
-  if Braille._logged then return end
-  Braille._logged = true
-  print("[game3/braille] " .. tostring(msg))
-end
-
 local function read_bytes(rel)
-  local okD, Dataset = pcall(require, "src.core.game3.dataset")
-  if okD and Dataset and Dataset.cache then
-    local okC, cache = pcall(Dataset.cache)
-    if okC and cache and cache.read then
-      local okR, d = pcall(cache.read, cache, rel)
-      if okR and type(d) == "string" and #d > 0 then return d end
-    end
-  end
-  local okF, CacheFs = pcall(require, "src.import.CacheFs")
-  if okF and CacheFs and CacheFs.readActive then
-    local okR, d = pcall(CacheFs.readActive, rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
-  end
+  local d = require("src.core.game3.dataset").cache():read(rel)
+  if type(d) == "string" and #d > 0 then return d end
+  d = require("src.import.CacheFs").readActive(rel)
+  if type(d) == "string" and #d > 0 then return d end
   if love and love.filesystem and love.filesystem.read then
-    local okR, d = pcall(CacheBlob.readFs, rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
-    local alt = "data/generated/gba/" .. (rel:gsub("^data/generated/gba/", ""))
-    okR, d = pcall(CacheBlob.readFs, alt)
-    if okR and type(d) == "string" and #d > 0 then return d end
+    d = CacheBlob.readFs(rel)
+    if type(d) == "string" and #d > 0 then return d end
   end
-  local candidates = { rel, "data/generated/gba/" .. (rel:gsub("^data/generated/gba/", "")) }
-  for _, path in ipairs(candidates) do
-    local f = io.open(path, "rb")
-    if f then
-      local d = CacheBlob.decode(path, f:read("*a"))
-      f:close()
-      if d and #d > 0 then return d end
-    end
+  local f = io.open(rel, "rb")
+  if f then
+    d = CacheBlob.decode(rel, f:read("*a"))
+    f:close()
+    if d and #d > 0 then return d end
   end
-  return nil
+  error(rel .. " is not in the cache", 0)
 end
 
-local function load_lua(paths)
-  for _, path in ipairs(paths) do
-    local src = read_bytes(path)
-    if src then
-      local chunk = (load or loadstring)(src, "@" .. path, "t", {})
-      if chunk then
-        local ok, t = pcall(chunk)
-        if ok and type(t) == "table" then return t end
-      end
-    end
+local function load_manifest()
+  local t = assert((load or loadstring)(read_bytes(MANIFEST_PATH), "@" .. MANIFEST_PATH, "t", {}))()
+  if type(t) ~= "table" or not (tonumber(t.width) and tonumber(t.height)) then
+    error(MANIFEST_PATH .. " has no sheet size", 0)
   end
-  return nil
+  return t
 end
 
-local function image_from(data, path, manifest)
-  if not (love and love.image and love.graphics) then return nil end
-  local sizes = {}
-  if type(manifest) == "table" and tonumber(manifest.width) and tonumber(manifest.height) then
-    sizes[1] = { w = math.floor(tonumber(manifest.width)), h = math.floor(tonumber(manifest.height)) }
+local function load_sheet(path, manifest)
+  local data = read_bytes(path)
+  local w, h = math.floor(tonumber(manifest.width)), math.floor(tonumber(manifest.height))
+  if #data ~= w * h * 4 then
+    error(("%s is %d bytes, not a %dx%d sheet"):format(path, #data, w, h), 0)
   end
-  for _, size in ipairs(SHEET_SIZES) do sizes[#sizes + 1] = size end
-  for _, size in ipairs(sizes) do
-    if #data == size.w * size.h * 4 then
-      local okId, id = pcall(love.image.newImageData, size.w, size.h, "rgba8", data)
-      if okId and id then
-        local img = love.graphics.newImage(id)
-        if img and img.setFilter then img:setFilter("nearest", "nearest") end
-        return img
-      end
-    end
-  end
-  if love.filesystem and love.filesystem.newFileData then
-    local okFd, fd = pcall(love.filesystem.newFileData, data, path)
-    if okFd and fd then
-      local okId, id = pcall(love.image.newImageData, fd)
-      if okId and id then
-        local img = love.graphics.newImage(id)
-        if img and img.setFilter then img:setFilter("nearest", "nearest") end
-        return img
-      end
-    end
-  end
-  return nil
-end
-
-local function load_sheet(paths, manifest)
-  for _, path in ipairs(paths) do
-    local data = read_bytes(path)
-    if data then
-      local img = image_from(data, path, manifest)
-      if img then return img, path end
-    end
-  end
-  return nil, nil
+  local img = love.graphics.newImage(love.image.newImageData(w, h, "rgba8", data))
+  if img.setFilter then img:setFilter("nearest", "nearest") end
+  return img
 end
 
 function Braille.sheetCols(manifest, imageWidth)
@@ -199,20 +114,11 @@ end
 
 local function ensure()
   if Braille._quads then return true end
-  if Braille._tried then return Braille._fg ~= nil end
-  Braille._tried = true
-  if not (love and love.graphics and love.graphics.newQuad) then return false end
-  local manifest = load_lua(MANIFEST_PATHS)
-  local fg, path = load_sheet(SHEET_PATHS, manifest)
-  if not fg then
-    log("no braille glyph sheet in the cache; printing the plain text instead")
-    return false
-  end
-  Braille._fg = fg
-  Braille._pitch = type(manifest) == "table" and tonumber(manifest.linePitch) or nil
-  if not (type(manifest) == "table" and manifest.shadow == false) then
-    Braille._sh = load_sheet(SHADOW_PATHS, manifest)
-  end
+  if not (love and love.graphics and love.graphics.newQuad and love.image) then return false end
+  local manifest = load_manifest()
+  local fg = load_sheet(SHEET_PATH, manifest)
+  local sh = nil
+  if manifest.shadow ~= false then sh = load_sheet(SHADOW_PATH, manifest) end
   local w, h = fg:getWidth(), fg:getHeight()
   local cols = Braille.sheetCols(manifest, w)
   local quads = {}
@@ -222,8 +128,9 @@ local function ensure()
       quads[code] = love.graphics.newQuad(gx, gy, Braille.GLYPH_WIDTH, Braille.GLYPH_HEIGHT, w, h)
     end
   end
+  Braille._fg, Braille._sh = fg, sh
+  Braille._pitch = tonumber(manifest.linePitch)
   Braille._quads = quads
-  log("braille glyph sheet from " .. tostring(path))
   return true
 end
 
@@ -236,7 +143,6 @@ function Braille.invalidate()
   Braille._sh = nil
   Braille._quads = nil
   Braille._pitch = nil
-  Braille._tried = false
 end
 
 function Braille.linePitch()
@@ -381,14 +287,7 @@ end
 function Braille.drawText(text, x, y, opts)
   opts = opts or {}
   local limit = tonumber(opts.limitChars)
-  if not ensure() then
-    FrlgFont.draw(tostring(text or ""), x, y, {
-      maxWidth = opts.maxWidth or 208,
-      limitChars = limit,
-      colors = opts.colors or FrlgFont.COLOR.NORMAL,
-    })
-    return false
-  end
+  if not ensure() then return false end
   local colors = opts.colors or FrlgFont.COLOR.NORMAL
   local drawn = 0
   for row, line in ipairs(Braille.encode(text)) do

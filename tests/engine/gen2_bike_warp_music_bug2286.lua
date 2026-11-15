@@ -3,6 +3,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local eq = T.eq
 
 love = require("tests.love_stub")

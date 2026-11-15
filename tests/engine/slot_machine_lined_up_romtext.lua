@@ -1,9 +1,3 @@
--- SlotMachine:resolveWin's "%s lined up!\nScored %d coins!" message used
--- to interpolate the symbol id AND the payout into one bare Lua literal.
--- The real _LinedUpText label has no slot for the symbol at all (the
--- original ROM drew it separately) -- only for the coin count. This test
--- fakes _LinedUpText and checks the symbol is concatenated in front of the
--- translated suffix, with the payout correctly substituted into it.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -24,16 +18,22 @@ do
   T.eq(self.message, " FAKE-SUFFIX 8!",
     "a translated _LinedUpText reaches the lined-up message")
   T.eq(self.winSymbol, "CHERRY", "the winning symbol is kept for its picture")
-  Data.text._LinedUpText = nil
+  Data.text._LinedUpText = " lined up!\nScored {RAM:wStringBuffer} coins!{DONE}"
 end
 
--- vanilla: with no catalog entry, the English literal still substitutes,
--- with its own leading space (the original had no slot for the symbol)
 do
   local self = mkSelf()
   self:resolveWin({ symbol = "CHERRY", payout = 8 })
   T.eq(self.message, " lined up!\nScored 8 coins!",
-    "no catalog entry still falls back to the English literal")
+    "the cached _LinedUpText prints with the payout")
+end
+
+do
+  local self = mkSelf()
+  Data.text._LinedUpText = nil
+  local ok, err = pcall(self.resolveWin, self, { symbol = "CHERRY", payout = 8 })
+  T.check(not ok and tostring(err):find("_LinedUpText", 1, true) ~= nil,
+    "a cache without _LinedUpText is an error, not an English literal")
 end
 
 T.finish("slot_machine_lined_up_romtext")

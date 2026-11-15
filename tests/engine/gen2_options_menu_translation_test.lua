@@ -1,14 +1,4 @@
--- Gold's OPTION screen (src/ui/gen2/OptionsMenu.lua) used to draw every row
--- label -- and the cart-original value strings (FAST/MID/SLOW, ON/OFF,
--- SHIFT/SET, ...) -- as bare literals baked into the module-level ROWS
--- table, invisible to a translation mod's `strings` registry (reported
--- against a real Gold build, gen1recomp#1642). This drives
--- OptionsMenu:drawPanel() with a mod-loaded Strings catalog and checks the
--- translated text reaches Font.draw, for both a cart-original row (label +
--- display value) and a port-added row (label only -- its value already
--- comes pre-translated from the shared module it calls, same as the Gen 1
--- OPTION screen's equivalent rows), plus a vanilla no-mod case proving the
--- fallback is unchanged.
+-- engine/menus/options_menu.asm:74 StringOptions, :163 Options_TextSpeed
 package.path = "./?.lua;./?/init.lua;" .. package.path
 _G.POKEPORT_LOOP_PANEL_SYNC = true
 
@@ -36,6 +26,7 @@ package.loaded["src.render.Font"] = {
 
 local OptionsMenu = require("src.ui.gen2.OptionsMenu")
 local Strings = require("src.core.Strings")
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
 
 local function drawnAt(x, y)
   for _, d in ipairs(drawn) do
@@ -68,12 +59,12 @@ local function pageFor(menu, id)
   end
 end
 
-local function fakeGame()
+local function fakeGame(text)
   local stack = { items = {} }
   function stack:push(s) self.items[#self.items + 1] = s; return s end
   function stack:pop() self.items[#self.items] = nil end
   function stack:top() return self.items[#self.items] end
-  return { stack = stack }
+  return { stack = stack, data = { text = text or Fixture.text() } }
 end
 
 -- ---------------------------------------------- vanilla: no mod catalog
@@ -95,15 +86,16 @@ do
     "and its cart-original display value too")
 end
 
--- ------------------------------------------------- a translation mod's turn
 do
+  local localized = Fixture.text({
+    StringOptions = Fixture.RAW.StringOptions:gsub("^TEXT SPEED", "VITESSE TEXTE")
+      :gsub("CANCEL$", "RETOUR"),
+    ["Options_TextSpeed.Mid"] = "MOY ",
+  })
   Strings.load({
     strings = {
-      ["TEXT SPEED"] = "VITESSE TEXTE",
-      ["MID "] = "MOY ",
       ["CONTROLS"] = "COMMANDES",
       ["SPEED"] = "VITESSE",
-      ["BACK"] = "RETOUR",
       ["AUTO"] = "AUTO-FR",
       ["GEN 2"] = "GEN2-FR",
       ["OFF"] = "SANS",
@@ -112,7 +104,7 @@ do
     },
   })
 
-  local menu = OptionsMenu.new(fakeGame())
+  local menu = OptionsMenu.new(fakeGame(localized))
   drawn = {}
   menu:drawPanel()
   T.eq(drawnAt(LABEL_X, 2 * 8), "VITESSE",
@@ -122,9 +114,9 @@ do
   drawn = {}
   page:drawPanel()
   T.eq(drawnAt(LABEL_X, 2 * 8), "VITESSE TEXTE",
-    "a mod catalog reaches a cart-original row's label")
+    "StringOptions line 1 is the cart row's label")
   T.eq(drawnAt(VALUE_X, 3 * 8), "MOY ",
-    "and its cart-original display value")
+    "and Options_TextSpeed.Mid its display value")
 
   local index = rowIndex(menu.view, "controls")
   T.check(index ~= nil, "CONTROLS is one of the rows")
@@ -138,7 +130,7 @@ do
 
   -- BACK is the last row, built into ROWS like any other -- there is no
   -- separate hook to fall through if this one row is missed.
-  local cancelMenu = OptionsMenu.new(fakeGame())
+  local cancelMenu = OptionsMenu.new(fakeGame(localized))
   local cancelIndex = #cancelMenu.view
   T.check(cancelMenu.view[cancelIndex].cancel, "the last row is BACK")
   cancelMenu.index = cancelIndex
@@ -150,7 +142,7 @@ do
     if entry.index == cancelIndex then cancelY = entry.labelY end
   end
   T.eq(drawnAt(LABEL_X, cancelY * 8), "RETOUR",
-    "CANCEL, the way out of the menu, is translated too")
+    "CANCEL, the way out of the menu, is StringOptions line 15")
 
   -- Port-added finite values used to be returned by helper modules after the
   -- only Strings lookup in drawPanel had already happened.  They must pass
@@ -206,6 +198,8 @@ do
   -- every check below it in this file.
   Strings.load({})
   T.check(not Strings.active(), "the catalog is unloaded for the checks after this one")
+  T.raises(function() OptionsMenu.new(fakeGame(Fixture.without("Options_TextSpeed.Mid"))) end,
+    "Options_TextSpeed.Mid", "a cache without a value label is an error")
 end
 
 T.finish("gen2_options_menu_translation_test")

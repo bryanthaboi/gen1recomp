@@ -14,6 +14,12 @@ local InitClock = require("src.ui.gen2.InitClock")
 local GenderSelect = require("src.ui.gen2.GenderSelect")
 local OakSpeech = require("src.ui.gen2.OakSpeech")
 
+local S7C_TEXT = require("tests.fixture_data.gen2_rom_text_s7_c").text(nil, "crystal")
+local function withS7Text(game)
+  game.data = game.data or { text = S7C_TEXT }
+  return game
+end
+
 local function fakeInput()
   return {
     pressed = {},
@@ -66,7 +72,7 @@ end
 do
   -- Gold and Silver: NewGame_ClearTilemapEtc has already blanked the screen,
   -- so InitClock's RotateFourPalettesLeft fades a cleared tilemap out.
-  local clock = InitClock.new({ input = fakeInput() },
+  local clock = InitClock.new(withS7Text({ input = fakeInput() }),
     { save = {}, fades = true })
   check(clock.blank, "the leading fade runs over a cleared tilemap")
   check(IntroFade.busy(clock), "and it is a fade, not the clock screen")
@@ -80,19 +86,19 @@ do
   check(not IntroFade.busy(clock), "64 frames covers both rotations")
 
   -- Crystal: the gender screen carried RotateFourPalettesLeft out with it.
-  local after = InitClock.new({ input = fakeInput() },
+  local after = InitClock.new(withS7Text({ input = fakeInput() }),
     { save = {}, fades = true, faded = true })
   eq(after.fade and after.fade.kind, "inBlack",
     "so the clock opens straight on RotateFourPalettesRight")
   check(not after.blank, "with the clock screen already under it")
 
   -- The day wheel and the driver path never fade.
-  local day = InitClock.new({}, { save = {}, mode = "day", fades = true })
+  local day = InitClock.new(withS7Text({}), { save = {}, mode = "day", fades = true })
   check(not IntroFade.busy(day), "SetDayOfWeek is not InitClock")
-  local driven = InitClock.new({}, { save = {}, autoConfirm = true,
+  local driven = InitClock.new(withS7Text({}), { save = {}, autoConfirm = true,
     fades = true })
   check(not IntroFade.busy(driven), "and autoConfirm keeps its frame counts")
-  local plain = InitClock.new({ input = fakeInput() }, { save = {} })
+  local plain = InitClock.new(withS7Text({ input = fakeInput() }), { save = {} })
   check(not IntroFade.busy(plain), "a screen opened without fades has none")
 end
 
@@ -100,7 +106,7 @@ end
 do
   local input = fakeInput()
   local done = false
-  local clock = InitClock.new({ input = input },
+  local clock = InitClock.new(withS7Text({ input = input }),
     { save = {}, fades = true, faded = true,
       onDone = function() done = true end })
   for _ = 1, 32 do clock:update(0) end
@@ -124,7 +130,7 @@ end
 -- ------------------------------------------- the gender screen's way out
 do
   local chosen = nil
-  local gender = GenderSelect.new({}, {
+  local gender = GenderSelect.new(withS7Text({}), {
     save = { player = {} }, fades = true,
     onDone = function(g) chosen = g end,
   })
@@ -139,7 +145,7 @@ do
   eq(chosen, "female", "and the answer follows the black screen")
 
   local quick = nil
-  local plain = GenderSelect.new({}, {
+  local plain = GenderSelect.new(withS7Text({}), {
     save = { player = {} }, onDone = function(g) quick = g end })
   plain:choose(1)
   for _ = 1, 10 do plain:update(0) end

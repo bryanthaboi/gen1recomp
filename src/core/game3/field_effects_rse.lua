@@ -836,7 +836,8 @@ local function coverReflections(camX, camY)
     shader:send("mask", ts.midImage)
     for i = 1, bucket.n, 3 do
       local tx, ty = bucket[i], bucket[i + 1]
-      local q = NT.quad(ts, NT.slotFor(ts, bucket[i + 2]))
+      local slot = NT.slotFor(ts, bucket[i + 2])
+      local q = slot and NT.quad(ts, slot)
       if q then love.graphics.draw(ts.image, q, tx * CELL - camX, ty * CELL - camY) end
     end
     bucket.n = 0

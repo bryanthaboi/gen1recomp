@@ -14,7 +14,7 @@ local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
 local TextBox = require("src.render.TextBox")
 local Font = require("src.render.Font")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local OakSpeech = {}
 OakSpeech.__index = OakSpeech
@@ -82,20 +82,8 @@ function OakSpeech:sgbPalettes(game)
   return require("src.render.PaletteFX").wholeNamed(game.data, "MEWMON")
 end
 
-local FALLBACKS = {
-  _OakSpeechText1 = Strings.source("Hello there!\nWelcome to the\vworld of POKéMON!\fMy name is OAK!\nPeople call me\vthe POKéMON PROF!"),
-  _OakSpeechText2A = Strings.source("This world is\ninhabited by\vcreatures called\vPOKéMON!"),
-  _OakSpeechText2B = Strings.source("\fFor some people,\nPOKéMON are\vpets. Others use\vthem for fights.\fMyself...\fI study POKéMON\nas a profession."),
-  _OakSpeechText3 = Strings.source("{PLAYER}!\fYour very own\nPOKéMON legend is\vabout to unfold!\fA world of dreams\nand adventures\vwith POKéMON\vawaits! Let's go!"),
-  _IntroducePlayerText = Strings.source("First, what is\nyour name?"),
-  _IntroduceRivalText = Strings.source("This is my grand-\nson. He's been\vyour rival since\vyou were a baby.\f...Erm, what is\nhis name again?"),
-  _YourNameIsText = Strings.source("Right! So your\nname is {PLAYER}!"),
-  _HisNameIsText = Strings.source("That's right! I\nremember now! His\vname is {RIVAL}!"),
-}
-
 local function textOr(game, key)
-  local t = game.data.text
-  return (t and t[key]) or FALLBACKS[key]
+  return RomText(game.data, key, nil)
 end
 
 -- through Assets.resolve so an enabled mod's overrides/ shadows these the
@@ -203,7 +191,6 @@ function OakSpeech.defaultSteps(speech)
       id = "name_player",
       kind = "name",
       who = "player",
-      title = Strings("YOUR NAME?"),
       presetsWho = "player",
       presetsFallback = { "RED", "ASH", "JACK" },
     },
@@ -232,8 +219,6 @@ function OakSpeech.defaultSteps(speech)
       id = "name_rival",
       kind = "name",
       who = "rival",
-      -- engine/menus/naming_screen.asm:487
-      title = Strings("RIVAL's NAME?"),
       presetsWho = "rival",
       presetsFallback = { "BLUE", "GARY", "JOHN" },
     },
@@ -484,8 +469,10 @@ function OakSpeech:runStep(step)
                      step.presetsFallback or { "RED" })
     local function openNaming()
       require("src.ui.Screens").push(self.game, "NamingScreen", {
-        title = step.title or (who == "rival" and Strings("RIVAL's NAME?")
-                                              or Strings("YOUR NAME?")),
+        -- engine/menus/naming_screen.asm:453-483
+        title = step.title or (RomText(self.game.data,
+          who == "rival" and "RivalsTextString" or "YourTextString", nil)
+          .. RomText(self.game.data, "NameTextString", nil)),
         presets = presets,
         introBox = true,
         maxLen = step.maxLen or self.nameLen,

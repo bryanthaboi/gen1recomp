@@ -9,7 +9,6 @@ local BattleTower = require("src.core.gen2.BattleTower")
 local BattleTowerText = require("src.script.gen2.BattleTowerText")
 local RomText = require("src.core.RomText")
 local Save = require("src.core.gen2.Save")
-local Strings = require("src.core.Strings")
 
 local M = {}
 
@@ -25,21 +24,13 @@ local function initChallengeRam(vm)
   if vm.mem then vm.mem[BattleTower.WRAM_NR_BEATEN] = 0 end
 end
 
--- ../pokecrystal/engine/events/battle_tower/rules.asm:57-92, the far labels
--- data/generated/rom_text.lua carries.
-local RULE_FALLBACKS = {
-  _ExcuseMeYoureNotReadyText =
-    Strings.source("Excuse me.\nYou're not ready."),
-  _OnlyThreeMonMayBeEnteredText =
-    Strings.source("Only three POKéMON\nmay be entered."),
-  _TheMonMustAllBeDifferentKindsText =
-    Strings.source("The {STRBUF} POKéMON\nmust all be different kinds."),
-  _TheMonMustNotHoldTheSameItemsText =
-    Strings.source("The {STRBUF} POKéMON\nmust not hold the same items."),
-  _YouCantTakeAnEggText = Strings.source("You can't take an\nEGG!"),
-  _BattleTowerReturnWhenReadyText =
-    Strings.source("Please return when\nyou're ready."),
-}
+local function towerMenus(vm)
+  local data = S.data(vm)
+  local tables = data and data.gen2EventTables
+  local menus = tables and tables.battleTowerMenus
+  if menus == nil then error("events.lua has no battleTowerMenus", 2) end
+  return menus
+end
 
 -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1157-1171
 -- BattleTower_CheckSaveFileExistsAndIsYours; the running game IS the loaded
@@ -136,18 +127,15 @@ ACTIONS[A.GSBALL] = function(vm, _tower, record)
   S.answer(vm, Save.GS_BALL_STATES[flag] and BattleTower.GS_BALL_AVAILABLE or 0)
 end
 
--- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1311-1312
--- String_MysteryJP, the OT the Mobile Stadium stamps on an Odd Egg.
-local MYSTERY_OT = "\227\129\170\227\129\158\227\131\138\227\131\142"
-
 -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:1244-1309: the
 -- EGG_TICKET is spent only on a party egg carrying String_MysteryJP.
 ACTIONS[A.EGGTICKET] = function(vm, _tower, record)
   S.answer(vm, FALSE)
   local held = record and record.inventory and record.inventory.EGG_TICKET
   if not held or held <= 0 then return end
+  local mysteryOt = towerMenus(vm).eggTicketOt
   for _, mon in ipairs(S.party(vm)) do
-    if mon.isEgg and mon.otName == MYSTERY_OT then
+    if mon.isEgg and mon.otName == mysteryOt then
       mon.otName = ""
       Bag.remove(record, "EGG_TICKET", 1)
       return S.answer(vm, TRUE)
@@ -242,7 +230,7 @@ M.CheckForBattleTowerRules = function(vm)
   -- ../pokecrystal/engine/events/battle_tower/rules.asm:28-31 wStringBuffer2
   vm:setStringBuffer(BattleTower.RULE_PARTY_COUNT_TEXT)
   for _, label in ipairs(lines) do
-    vm:showRaw(RomText(data, label, RULE_FALLBACKS[label] or label))
+    vm:showRaw(RomText(data, label))
   end
   S.answer(vm, failed and TRUE or FALSE)
 end
@@ -250,27 +238,19 @@ end
 -- ../pokecrystal/mobile/mobile_5f.asm:425-468 and its MenuData at :490-495.
 -- wScriptVar comes in TRUE for the English rows and leaves holding the row
 -- number, or 4 for a B press.
-local CHALLENGE_MENU_ROWS = {
-  Strings.source("Challenge"),
-  Strings.source("Explanation"),
-  Strings.source("Cancel"),
-}
 local CHALLENGE_MENU_CANCEL = 4
-
--- ../pokecrystal/mobile/mobile_5f.asm:484-488 MenuHeader, `menu_coords 0, 0,
--- 14, 7` with STATICMENU_CURSOR | STATICMENU_WRAP.
-local CHALLENGE_MENU_FLAGS = 0x80 + 0x20
 
 M.Menu_ChallengeExplanationCancel = function(vm)
   local h = S.hooks(vm)
+  local menu = towerMenus(vm).challengeMenu
   local choice = Specials.block(vm, function(done)
     if not h.scriptMenu then return done(0) end
-    h.scriptMenu({ items = CHALLENGE_MENU_ROWS, left = 0, top = 0,
-      right = 14, bottom = 7, dataFlags = CHALLENGE_MENU_FLAGS, cursor = 1 },
-      done)
+    h.scriptMenu({ items = menu.rows, left = menu.left, top = menu.top,
+      right = menu.right, bottom = menu.bottom, dataFlags = menu.dataFlags,
+      cursor = menu.defaultOption }, done)
   end)
   choice = math.floor(tonumber(choice) or 0)
-  if choice < 1 or choice > #CHALLENGE_MENU_ROWS then
+  if choice < 1 or choice > #menu.rows then
     return S.answer(vm, CHALLENGE_MENU_CANCEL)
   end
   S.answer(vm, choice)
@@ -312,20 +292,15 @@ M.BattleTowerBattle = function(vm)
   local record = S.save(vm)
   local data = S.data(vm)
   local h = S.hooks(vm)
+  if not record then error("BattleTowerBattle has no save to battle from", 2) end
   local opponent = vm.btOpponent
-  if not opponent and record then
+  if not opponent then
     opponent = BattleTower.drawOpponent(data, record, Specials.random,
       vm.btLevelGroup)
     vm.btOpponent = opponent
   end
-  -- A cache with no `battleTower` block on trainers.lua has nobody to send
-  -- out.  LOSE is the room script's own back-out arm
-  -- (../pokecrystal/maps/BattleTowerBattleRoom.asm:34-37), so the challenge
-  -- ends rather than looping on an opponent that never appears.
-  if not (opponent and record) then
-    vm.btBattleEnded = 1
-    return S.answer(vm, 1)
-  end
+  -- ../pokecrystal/engine/events/battle_tower/battle_tower.asm:229
+  if not opponent then error("trainers.lua has no battleTower roster", 2) end
   -- :229 ReadBTTrainerParty -> CopyBTTrainer_FromBT_OT_TowBT_OTTemp (:549-570)
   local streak = BattleTower.beginBattle(record)
   -- :228 farcall HealParty, before the send-out.

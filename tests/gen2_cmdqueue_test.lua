@@ -74,14 +74,33 @@ local function iceCtx(objects, pits)
   }
 end
 
-local ICE = CmdQueue.mapEntry("ICE_PATH_B1F")
+local function stoneTable(rows)
+  return { type = CmdQueue.STONETABLE, queue = "CMDQUEUE_STONETABLE", rows = rows }
+end
+
+local ICE = CmdQueue.fromExtracted(stoneTable({
+  { warp = 3, object = 2, scriptKey = "46:6192" },
+  { warp = 4, object = 3, scriptKey = "46:619a" },
+  { warp = 5, object = 4, scriptKey = "46:61a2" },
+  { warp = 6, object = 5, scriptKey = "46:61aa" },
+}), "ICE_PATH_B1F")
+
+local GYM = CmdQueue.fromExtracted(stoneTable({
+  { warp = 5, object = 4, scriptKey = "53:49f3" },
+  { warp = 3, object = 5, scriptKey = "53:49f8" },
+  { warp = 4, object = 6, scriptKey = "53:49fd" },
+}), "BLACKTHORN_GYM_2F")
 
 do
   check(ICE ~= nil, "Ice Path B1F has a stone table")
   eq(ICE.kind, CmdQueue.STONETABLE, "written as CMDQUEUE_STONETABLE")
   eq(#ICE.rows, 4, "with a row per boulder")
-  check(CmdQueue.mapEntry("NEW_BARK_TOWN") == nil,
-    "and a map with no callback has none")
+  eq(ICE.rows[1].script, "46:6192", "each row names its scripts.lua key")
+  check(CmdQueue.fromExtracted({ type = CmdQueue.TYPE1, rows = {
+    { warp = 3, object = 2, scriptKey = "46:6192" } } }) == nil,
+    "and a queue type nothing acts on writes no entry")
+  check(CmdQueue.fromExtracted(stoneTable({})) == nil,
+    "nor does a stone table with no rows")
 end
 
 -- The happy path: boulder 1 (object id 2) pushed onto warp 3 at (11,2).
@@ -135,45 +154,16 @@ do
     "no entry, nothing to handle")
 end
 
--- ---- the two hand-ported tables -------------------------------------------
--- Object ids are the cart's (`object_const_def` is `const_def 2`), and the
--- Blackthorn rows are transcribed in the cart's own out-of-order warp mapping.
 do
-  local rows = ICE.rows
-  for i, row in ipairs(rows) do
+  for i, row in ipairs(ICE.rows) do
     eq(row.object, i + 1, "Ice Path boulder " .. i .. " is object id " .. (i + 1))
     eq(row.warp, i + 2, "and falls through warp " .. (i + 2))
   end
 
-  local gym = CmdQueue.mapEntry("BLACKTHORN_GYM_2F")
-  eq(#gym.rows, 3, "Blackthorn Gym 2F has three rows for its six boulders")
-  eq(gym.rows[1].warp, 5, "BOULDER1 -> warp 5")
-  eq(gym.rows[2].warp, 3, "BOULDER2 -> warp 3, not 4")
-  eq(gym.rows[3].warp, 4, "BOULDER3 -> warp 4: the cart's own order, kept")
-end
-
--- The script each row runs: .FinishBoulder, with .BoulderFallsThrough inlined.
-do
-  local script = ICE.rows[1].script
-  local ops = {}
-  for _, cmd in ipairs(script) do ops[#ops + 1] = cmd.op end
-  eq(table.concat(ops, ","),
-    "disappear,clearevent,pause,playsound,earthquake,opentext,rawtext," ..
-    "waitbutton,closetext,end",
-    "the order is .FinishBoulder's, with .BoulderFallsThrough inlined")
-  eq(script[1].object, 2, "it disappears its own boulder")
-  eq(script[2].event, 1805,
-    "and clears EVENT_BOULDER_IN_ICE_PATH_1A, which is what puts the boulder " ..
-    "on the floor below")
-  eq(script[3].frames, 30, "pause 30")
-  eq(script[5].param, 80,
-    "earthquake 80: two pixels for sixteen frames, one byte carrying both")
-
-  local gym = CmdQueue.mapEntry("BLACKTHORN_GYM_2F")
-  local gymOps = {}
-  for _, cmd in ipairs(gym.rows[1].script) do gymOps[#gymOps + 1] = cmd.op end
-  check(not table.concat(gymOps, ","):find("clearevent"),
-    "the gym's boulders clear no event: nothing appears downstairs")
+  eq(#GYM.rows, 3, "Blackthorn Gym 2F has three rows for its six boulders")
+  eq(GYM.rows[1].warp, 5, "BOULDER1 -> warp 5")
+  eq(GYM.rows[2].warp, 3, "BOULDER2 -> warp 3, not 4")
+  eq(GYM.rows[3].warp, 4, "BOULDER3 -> warp 4: the cart's own order, kept")
 end
 
 S.finish()

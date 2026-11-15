@@ -28,12 +28,17 @@ local Catalog = require("Catalog")
 local MonOps = require("MonOps")
 local Ops = require("Ops")
 local State = require("State")
+local EventFlagOrder = require("tests.fixture_data.gen2_event_flag_order")
+require("Gen2Flags").setSource(function(engine)
+  return { eventFlagOrder = EventFlagOrder[engine] }
+end)
 local Save2 = require("src.core.gen2.Save")
 local Bag = require("src.inventory.Bag")
 local SaveData = require("src.core.SaveData")
 local GameVersion = require("src.core.GameVersion")
 
 local data = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_e"),
   pokemon = {
     CYNDAQUIL = {
       id = "CYNDAQUIL", name = "CYNDAQUIL", dex = 155,
@@ -101,7 +106,9 @@ end
 do
   GameVersion.set("silver")
   eq(Save2.newGame().version, "silver", "a silver boot stamps silver")
-  eq(Save2.newGame().player.name, "SILVER", "with silver's preset name")
+  local silverText = require("tests.fixture_data.gen2_rom_text_s7_c").text({ ["PlayerNameArray#1"] = "SILVER" })
+  eq(Save2.newGame({ data = { text = silverText } }).player.name, "SILVER",
+    "with silver's preset name from the cache")
   eq(Gen.of(Save2.newGame()), 2, "Gen.of silver newGame")
   GameVersion.set("gold")
 end
@@ -241,9 +248,8 @@ do
   S.selectedBox = 1
   local ok = Ops.deposit(S)
   check(not ok, "refuse depositing last healthy mon")
-  check(S.status:lower():find("last", 1, true) or S.status:find("POKéMON")
-      or S.status:find("POKEMON") or S.status:find("last"),
-    "deposit refusal names the last-healthy rule: " .. tostring(S.status))
+  eq(S.status, "No more usable <PK><MN>!",
+    "deposit refusal is PCString_NoMoreUsablePKMN")
   eq(#S.save.party, 1, "party still has the mon")
 end
 
@@ -533,13 +539,19 @@ end
 
 do
   GameVersion.set("red")
-  local crystal = Gen.newGame("crystal")
+  local NameText = require("tests.fixture_data.gen2_rom_text_s7_c")
+  local crystalData = { text = NameText.text(nil, "crystal") }
+  local silverData = { text = NameText.text({ ["PlayerNameArray#1"] = "SILVER" }) }
+  local goldData = { text = NameText.text() }
+  local crystal = Gen.newGame("crystal", crystalData)
   eq(crystal.version, "crystal", "Gen.newGame('crystal') stamps crystal")
   eq(crystal.generation, 2, "crystal stub is generation 2")
-  eq(crystal.player.name, "CHRIS", "crystal stub uses Crystal's preset name")
-  eq(Gen.newGame("silver").version, "silver", "Gen.newGame('silver') stamps silver")
-  eq(Gen.newGame("silver").player.name, "SILVER", "silver stub keeps SILVER")
-  eq(Gen.newGame("gold").player.name, "GOLD", "gold stub keeps GOLD")
+  eq(crystal.player.name, "CHRIS", "crystal stub takes MalePlayerNameArray#1 from the cache")
+  eq(Gen.newGame("silver", silverData).version, "silver", "Gen.newGame('silver') stamps silver")
+  eq(Gen.newGame("silver", silverData).player.name, "SILVER", "silver stub takes PlayerNameArray#1")
+  eq(Gen.newGame("gold", goldData).player.name, "GOLD", "gold stub takes PlayerNameArray#1")
+  eq(Gen.newGame("gold", { text = NameText.text({ ["PlayerNameArray#1"] = "ORO" }) }).player.name,
+    "ORO", "a localized cache's first preset name is the stub's name")
   eq(Gen.newGame("blue").version, "blue", "Gen.newGame('blue') stamps blue")
   eq(Gen.newGame("yellow").version, "yellow", "Gen.newGame('yellow') stamps yellow")
   eq(Gen.newGame(nil).version, "red", "no version falls back to the active game")
@@ -577,6 +589,17 @@ do
   check(gs.EVENT_WADE_READY_FOR_REMATCH ~= nil, "and still resolves on gs")
   check(Gen2Flags.byName("crystal") == crys, "byName caches per lineage")
   check(Gen2Flags.byName("gold") == gs, "an unknown lineage reads as gs")
+  local asked = {}
+  Gen2Flags.setSource(function(engine)
+    asked[#asked + 1] = engine
+    return { eventFlagOrder = { [62] = "EVENT_FROM_THE_CACHE", [63] = false } }
+  end)
+  eq(Gen2Flags.byName("crystal").EVENT_FROM_THE_CACHE, 61,
+    "names come from the cache's eventFlagOrder, index - 1")
+  eq(asked[1], "crystal", "asked for the save's own lineage")
+  Gen2Flags.setSource(function() return nil end)
+  check(not pcall(Gen2Flags.byName, "gs"), "no cache for the lineage is an error, not an empty list")
+  Gen2Flags.setSource(function(engine) return { eventFlagOrder = EventFlagOrder[engine] } end)
 end
 
 do
@@ -864,46 +887,48 @@ local function readable(path)
 end
 
 do
-  local Gen2Flags = require("Gen2Flags")
   local goldAsm = (os.getenv("POKEGOLD") or "../pokegold")
     .. "/constants/event_flags.asm"
   local crystalAsm = (os.getenv("POKECRYSTAL") or "../pokecrystal")
     .. "/constants/event_flags.asm"
   if readable(goldAsm) and readable(crystalAsm) and readable("tools/goldwalk/flags.lua") then
     local Flags = dofile("tools/goldwalk/flags.lua")
-    local gold = Flags.parse(goldAsm)
-    local crys = Flags.parse(crystalAsm)
-    local addedBad, removedBad, missing = 0, 0, 0
-    for name, id in pairs(crys) do
-      if gold[name] ~= id and Gen2Flags.CRYSTAL_ADDED[name] ~= id then
-        missing = missing + 1
+    for engine, path in pairs({ gs = goldAsm, crystal = crystalAsm }) do
+      local pret = Flags.parse(path)
+      local fixture = require("Gen2Flags").byName(engine)
+      local wrong, n, m = 0, 0, 0
+      for name, id in pairs(pret) do
+        n = n + 1
+        if fixture[name] ~= id then wrong = wrong + 1 end
       end
+      for _ in pairs(fixture) do m = m + 1 end
+      eq(wrong, 0, engine .. ": the event flag fixture is pret's whole list")
+      eq(m, n, engine .. ": and nothing more")
     end
-    for name, id in pairs(Gen2Flags.CRYSTAL_ADDED) do
-      if crys[name] ~= id then addedBad = addedBad + 1 end
-    end
-    for name in pairs(Gen2Flags.CRYSTAL_REMOVED) do
-      if crys[name] ~= nil or gold[name] == nil then removedBad = removedBad + 1 end
-    end
-    eq(missing, 0, "every Crystal event Gold disagrees on is in CRYSTAL_ADDED")
-    eq(addedBad, 0, "every CRYSTAL_ADDED id matches pokecrystal")
-    eq(removedBad, 0, "every CRYSTAL_REMOVED name is Gold-only")
-    local byName = Gen2Flags.byName("crystal")
-    local wrong = 0
-    for name, id in pairs(crys) do
-      if byName[name] ~= id then wrong = wrong + 1 end
-    end
-    eq(wrong, 0, "the resolved crystal table is pokecrystal's whole event list")
   else
-    check(true, "pokegold / pokecrystal absent : flag delta cross-check SKIPPED")
+    check(true, "pokegold / pokecrystal absent : fixture cross-check SKIPPED")
+  end
+  local CacheConstants = require("tests.cache_gen2_constants")
+  local FlagIds = require("src.core.gen2.FlagIds")
+  for engine, version in pairs({ gs = "gold", crystal = "crystal" }) do
+    local constants = CacheConstants.load(version)
+    if constants and constants.eventFlagOrder then
+      local fromCache = FlagIds.events(constants)
+      local fixture = require("Gen2Flags").byName(engine)
+      local wrong = 0
+      for name, id in pairs(fromCache) do if fixture[name] ~= id then wrong = wrong + 1 end end
+      for name, id in pairs(fixture) do if fromCache[name] ~= id then wrong = wrong + 1 end end
+      eq(wrong, 0, version .. ": the cache's eventFlagOrder is the fixture's")
+    else
+      check(true, version .. " cache absent or older than eventFlagOrder : SKIPPED")
+    end
   end
 end
 
 do
   local Gen2Flags = require("Gen2Flags")
   local cache = os.getenv("CRYSTAL_CACHE")
-    or ((os.getenv("HOME") or "") ..
-        "/Library/Application Support/LOVE/lead-crystal/crystal")
+    or require("tests.cache_gen2_constants").root("crystal") or ""
   local initialPath = cache .. "/data/generated/initial_events.lua"
   local stdScripts = (os.getenv("POKECRYSTAL") or "../pokecrystal")
     .. "/engine/events/std_scripts.asm"

@@ -7,11 +7,11 @@ return {
   OAKS_LAB = {
     -- data/events/hidden_events.asm:147
     onInteract = function(game, ow, fx, fy)
-      local t = game.data.text or {}
+      local t = game.data.text
       -- engine/events/hidden_events/oaks_lab_posters.asm:1
       if fy == 0 and fx == 4 then
         game.stack:push(TextBox.new(game,
-          t._PushStartText or "Push START to\nopen the MENU!"))
+          t._PushStartText))
         return true
       end
       if fy == 0 and fx == 5 then
@@ -19,17 +19,15 @@ return {
         for _ in pairs(game.save.pokedex.owned or {}) do owned = owned + 1 end
         game.stack:push(TextBox.new(game,
           owned >= 2
-            and (t._StrengthsAndWeaknessesText
-                 or "All POKéMON types\nhave strong and\vweak points\vagainst others.")
-            or (t._SaveOptionText
-                or "The SAVE option is\non the MENU\vscreen.")))
+            and t._StrengthsAndWeaknessesText
+            or t._SaveOptionText))
         return true
       end
       -- engine/events/hidden_events/oaks_lab_email.asm:1
       if fy == 1 and (fx == 0 or fx == 1) then
         if ow.player.facing ~= "up" then return false end
         game.stack:push(TextBox.new(game,
-          t._OakLabEmailText or "There's an e-mail\nmessage here!"))
+          t._OakLabEmailText))
         return true
       end
       return false

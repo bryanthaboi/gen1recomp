@@ -17,19 +17,13 @@
 --         no  -> ReceiveItemFromPokemon on the mail ITEM
 --                                 -> _MailDetachedText / _MailNoSpaceText
 --   QUIT  `ld a, $3`, i.e. redraw the list and stay in it
---
--- Every string below is transcribed from data/text/common_2.asm and paired
--- with its pokegold label in LABELS, the same way src/ui/gen2/DayCareMenu.lua
--- pairs the Day-Care's: the cache's own characters win when the extractor has
--- seeded that label, and the transcription is what an older cache falls back
--- to.
 
 local Bag = require("src.inventory.Bag")
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
+local RomText = require("src.core.RomText")
 local Screens = require("src.ui.Screens")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local MailMenu = {}
@@ -51,27 +45,11 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 local DOWN_ARROW = "\xe2\x96\xbc"
 local ARROW_X, ARROW_Y = 18, 17
 
--- .MenuData's three rows, verbatim.
+-- engine/pokemon/mon_menu.asm:552
 local ENTRIES = {
-  { id = "read", label = Strings.source("READ") },
-  { id = "take", label = Strings.source("TAKE") },
-  { id = "quit", label = Strings.source("QUIT") },
-}
-
-local function page(...) return { ... } end
-local function pages(...) return { ... } end
-
-local TEXT = {
-  askSendToPc = pages(page("Send the removed", "MAIL to your PC?")),
-  mailboxFull = pages(page("Your PC's MAILBOX", "is full.")),
-  sentToPc = pages(page("The MAIL was sent", "to your PC.")),
-  loseMessage = pages(page("The MAIL will lose", "its message. OK?")),
-  -- _MailDetachedText's second line is a text_ram nickname, so it is spliced
-  -- rather than being part of the string.
-  detached = function(name)
-    return pages(page("MAIL detached from", ("%s."):format(name)))
-  end,
-  noSpace = pages(page("There's no space", "for removing MAIL.")),
+  { id = "read", rom = "MonMailAction.MenuData#1" },
+  { id = "take", rom = "MonMailAction.MenuData#2" },
+  { id = "quit", rom = "MonMailAction.MenuData#3" },
 }
 
 local LABELS = {
@@ -87,25 +65,8 @@ local FILL = {
   detached = function(name) return { name } end,
 }
 
-MailMenu.TEXT = TEXT
 MailMenu.LABELS = LABELS
 MailMenu.ENTRIES = ENTRIES
-
-local function extractedText(text)
-  local out = setmetatable({}, { __index = TEXT })
-  for key, label in pairs(LABELS) do
-    local list = CommonText.of(text, label)
-    if list then
-      local fill = FILL[key]
-      if fill then
-        out[key] = function(...) return CommonText.fill(list, fill(...)) end
-      else
-        out[key] = list
-      end
-    end
-  end
-  return out
-end
 
 -- opts: save, slot (the party index the list landed on), text (text.lua),
 -- onClose()
@@ -116,7 +77,7 @@ function MailMenu.new(game, opts)
   self.save = opts.save or (game and game.save)
   self.slot = opts.slot or 1
   self.textData = opts.text or (game and game.world and game.world.text)
-  self.TEXT = extractedText(self.textData)
+  self.TEXT = CommonText.texts(self.textData, LABELS, FILL)
   self.onClose = opts.onClose
   self.index = 1
   self.message = nil
@@ -278,9 +239,11 @@ function MailMenu:drawTextBox(lines)
 end
 
 function MailMenu:drawYesNo(choice)
+  local data = self.game and self.game.data
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 
@@ -304,11 +267,12 @@ function MailMenu:drawPanel()
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
+  local data = self.game and self.game.data
   Chrome.box(MENU_X, MENU_Y, MENU_W, MENU_H)
   for row, entry in ipairs(ENTRIES) do
     local ty = MENU_LABEL_Y + (row - 1) * 2
     if row == self.index then Chrome.cursor(MENU_LABEL_X - 1, ty) end
-    Chrome.print(Strings(entry.label), MENU_LABEL_X, ty)
+    Chrome.print(RomText(data, entry.rom), MENU_LABEL_X, ty)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

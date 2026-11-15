@@ -41,10 +41,8 @@ for _, cell in ipairs({ { 4, 4 }, { 6, 2 }, { 5, 6 }, { 1, 3 }, { 0, 0 } }) do
   T.eq(pushed, nil, "and pushes nothing")
 end
 
--- with no cache text the hook still prints the line
 pushed = nil
-onInteract({ data = {}, stack = game.stack }, {}, 1, 0)
-T.check(pushed ~= nil and pushed.text:find("BICYCLE", 1, true) ~= nil,
-  "a dataset without the label falls back to the engine wording")
+T.check(not pcall(onInteract, { data = {}, stack = game.stack }, {}, 1, 0) and pushed == nil,
+  "a dataset without the label prints no hand-typed line")
 
 T.finish("bike shop display text (#1530)")

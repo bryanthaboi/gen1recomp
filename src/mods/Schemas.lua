@@ -5,7 +5,6 @@
 -- are generated from it, so neither can drift from the engine.
 -- Pure Lua, no love.*, so the headless loader and doc generator run it.
 local Merge = require("src.mods.Merge")
-local Phone = require("src.core.gen2.Phone")
 
 local Schemas = {}
 
@@ -924,7 +923,13 @@ function Schemas.gen2Index(registry, id, value, data, mode)
     error(registry.name .. ": Gen 2 index collision: " .. index, 0)
   end
   out.index = index
+  if registry.name == "pokemon" and previous == nil and mode ~= "patch"
+      and out.eggMoves == nil then
+    out.eggMoves = {}
+  end
   if phone then
+    local events = data and data.gen2EventTables
+    local scripts = type(events) == "table" and events.phoneScripts or {}
     local effective = mode == "patch"
       and Merge.deepMerge(Merge.deepCopy(registry:get(id) or {}), out, registry.spec.semantics) or out
     if previous == nil and not (type(effective.name) == "string" and effective.name ~= "")
@@ -935,7 +940,7 @@ function Schemas.gen2Index(registry, id, value, data, mode)
       local key = effective[direction .. "Key"]
       if type(effective[direction .. "Time"]) == "number" and effective[direction .. "Time"] > 0
           and not (type(key) == "string" and key ~= "")
-          and not (previous ~= nil and previous <= floor and Phone.scriptKey(effective[direction])) then
+          and not (previous ~= nil and previous <= floor and scripts[effective[direction]]) then
         error("phone_contacts: enabled " .. direction .. " needs a script key", 0)
       end
     end
@@ -3448,6 +3453,8 @@ R.palettes = {
     roofSlot = f.int(0, 7),
     hpBar = f.map(f.enum{ "green", "yellow", "red", "blue" }, gen2PaletteRow),
     expBar = gen2PaletteRow,
+    battleText = gen2PaletteRow,
+    specialTilesets = f.map(f.str, f.list(gen2PaletteRow)),
     partyMenu = f.list(gen2PaletteRow),
     battleObjects = f.map(f.str, gen2PaletteRow),
     -- the ordered name lists the numeric indices above resolve through
@@ -3919,7 +3926,7 @@ R.phone_contacts = {
     map = f.opt(f.id("maps")),
     -- the SCRIPT1 / SCRIPT2 time masks: MORN | DAY | NITE, 0 for "never"
     calleeTime = f.opt(f.int(0, 7)), callerTime = f.opt(f.int(0, 7)),
-    -- the script LABEL (Phone.SCRIPT_KEYS resolves it) and, once the cache
+    -- the script LABEL (events.lua phoneScripts resolves it) and, once the cache
     -- has been read, the "<bank>:<addr>" pointer it resolved to
     callee = f.opt(f.str), caller = f.opt(f.str),
     calleeKey = f.opt(f.str), callerKey = f.opt(f.str),

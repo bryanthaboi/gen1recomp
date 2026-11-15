@@ -28,8 +28,8 @@
 local Chrome = require("src.ui.gen2.Chrome")
 local NpcTrade = require("src.core.gen2.NpcTrade")
 local Screens = require("src.ui.Screens")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local TradeMenu = {}
@@ -49,20 +49,6 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 local GENDER_GLYPH = {
   TRADE_GENDER_MALE = "\xe2\x99\x82",
   TRADE_GENDER_FEMALE = "\xe2\x99\x80",
-}
-
--- Fallbacks for a cache with no tradeTexts (one built before the extractor
--- reached TradeTexts).  Transcribed from the COLLECTOR set, which is the one
--- the first trade in the game uses.
-local FALLBACK = {
-  TRADE_DIALOG_INTRO = Strings.source(
-    "I collect #MON.\nDo you have\v{STRBUF}?\fWant to trade it\nfor my {STRBUF}?"),
-  TRADE_DIALOG_CANCEL = Strings.source("You don't want to\ntrade? Aww…"),
-  TRADE_DIALOG_WRONG = Strings.source(
-    "Huh? That's not\n{STRBUF}. What a letdown…"),
-  TRADE_DIALOG_COMPLETE = Strings.source(
-    "Yay! I got myself\n{STRBUF}!\vThanks!"),
-  TRADE_DIALOG_AFTER = Strings.source("Hi, how's my old\n{STRBUF} doing?"),
 }
 
 -- The markers the extractor writes for the cart's own text controls: `para`
@@ -151,11 +137,21 @@ end
 
 function TradeMenu:wantsFillScale() return true end
 
-function TradeMenu:lineFor(dialog)
+function TradeMenu:tradeText(label, set)
   local texts = self.eventTables.tradeTexts
-  local row = texts and texts[dialog]
+  if type(texts) ~= "table" then error("events.lua has no tradeTexts", 3) end
+  local body = texts[label]
+  if set ~= nil then body = type(body) == "table" and body[set] or nil end
+  if type(body) ~= "string" then
+    error(("events.lua tradeTexts has no %s %s"):format(
+      tostring(label), tostring(set or "")), 3)
+  end
+  return body
+end
+
+function TradeMenu:lineFor(dialog)
   local set = self.row and self.row.dialog
-  local body = (row and set and row[set]) or FALLBACK[dialog] or ""
+  local body = self:tradeText(dialog, set)
   local bufRow = (self.eventTables.tradeBuffers or {})[dialog]
   local buffers = bufRow and set and bufRow[set]
   return TradeMenu.paginate(
@@ -238,20 +234,17 @@ function TradeMenu:chose(index)
   if refusal then return self:refuse(refusal) end
   -- The flag is set BEFORE the swap, and the cable line before that.
   NpcTrade.markDone(self.save, self.id)
-  local texts = self.eventTables.tradeTexts or {}
   local bufs = self.eventTables.tradeBuffers or {}
   -- NPCTradeCableText is a bare PrintText (engine/events/npc_trade.asm:37-41):
   -- nothing rings under the cable line.  The sounds all belong to the
   -- animation past it (SFX_GIVE_TRADEMON / SFX_GET_TRADEMON).
-  self:sayRaw(texts.NPCTradeCableText
-      or Strings.source("OK, connect the\nGame Link Cable."),
+  self:sayRaw(self:tradeText("NPCTradeCableText"),
     bufs.NPCTradeCableText,
     function()
       local given, received =
         NpcTrade.perform(self.data, self.save, self.row, index)
       self:playAnim(given, received, function()
-        self:sayRaw(texts.TradedForText
-            or Strings.source("{PLAYER} traded\n{STRBUF} for\v{STRBUF}."),
+        self:sayRaw(self:tradeText("TradedForText"),
           bufs.TradedForText,
           function() self:refuse(NpcTrade.DIALOG_COMPLETE) end)
       end)
@@ -339,8 +332,10 @@ end
 
 function TradeMenu:drawYesNo(choice)
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  local data = self.game and self.game.data
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 

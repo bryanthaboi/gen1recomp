@@ -135,7 +135,7 @@ local function loadExtractorWithStubs(pokeRun, sectionsRun)
     ready = function() return true end,
     run = function() return {} end,
   }
-  for _, sibling in ipairs({ "credits_extract", "league_extract", "battle_ai_extract", "roamer_extract" }) do
+  for _, sibling in ipairs({ "credits_extract", "league_extract", "battle_ai_extract", "roamer_extract", "mail_extract" }) do
     package.loaded["src.import.gba." .. sibling] = {
       ready = function() return true end,
       run = function() return {} end,

@@ -18,7 +18,7 @@ local NamingScreen = require("src.ui.NamingScreen")
 local function newGame()
   local stack = setmetatable({}, { __index = StateStack })
   stack:init()
-  local game = { data = {} }
+  local game = { data = { text = dofile("tests/fixture_data/text.lua") } }
   game.stack = stack
   game.input = {
     queue = {},

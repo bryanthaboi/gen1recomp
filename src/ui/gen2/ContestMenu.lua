@@ -33,9 +33,9 @@
 
 local BugContest = require("src.core.gen2.BugContest")
 local Chrome = require("src.ui.gen2.Chrome")
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Font = require("src.render.Font")
-local GameVersion = require("src.core.GameVersion")
 
 local ContestMenu = {}
 ContestMenu.__index = ContestMenu
@@ -61,40 +61,20 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 local TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W, TEXT_BOX_H = 0, 12, 20, 6
 local TEXT_X, TEXT_Y = 1, 14
 
--- ----------------------------------------------------------------- strings
---
--- display_stats.asm's .Stock / .This / .Health, spelled with the same leading
--- and trailing spaces, and data/text/common_2.asm's _ContestAskSwitchText.
--- <PK> and <MN> are one tile each, so "<PK><MN>" is two tiles and not seven.
-ContestMenu.TEXT = {
-  stock = Strings.source(" STOCK <PK><MN> "),
-  this = Strings.source(" THIS <PK><MN> "),
-  health = Strings.source("HEALTH"),
-  askSwitch = Strings.source("Switch #MON?"),
-  -- _ContestCaughtMonText and _ContestAlreadyCaughtText, the two lines that
-  -- bracket this screen in BugContest_SetCaughtContestMon.
-  caught = function(name) return { Strings("Caught %s!", name) } end,
-  alreadyCaught = function(name)
-    local text = Strings("You already caught\na %s.", name)
-    local lines = {}
-    for line in (text .. "\n"):gmatch("(.-)\n") do
-      lines[#lines + 1] = line
-    end
-    return lines
-  end,
+-- engine/events/bug_contest/display_stats.asm:82-87, data/text/common_2.asm:595
+ContestMenu.LABELS = {
+  stock = "DisplayCaughtContestMonStats.Stock",
+  this = "DisplayCaughtContestMonStats.This",
+  health = "DisplayCaughtContestMonStats.Health",
+  askSwitch = "_ContestAskSwitchText",
 }
 
--- pokecrystal engine/events/bug_contest/display_stats.asm:84-87
--- pokecrystal home/text.asm:316,408
-ContestMenu.TEXT_CRYSTAL = {
-  stock = " STOCK <PK><MN> ",
-  this = " THIS <PK><MN>  ",
-}
-
-function ContestMenu.labels()
-  local text = GameVersion.engine() == "crystal" and ContestMenu.TEXT_CRYSTAL
-    or ContestMenu.TEXT
-  return text.stock, text.this
+function ContestMenu.texts(text)
+  local out = {}
+  for key, label in pairs(ContestMenu.LABELS) do
+    out[key] = CommonText.plain(CommonText.get(text, label))
+  end
+  return out
 end
 
 function ContestMenu:wantsFillScale() return true end
@@ -127,6 +107,7 @@ function ContestMenu.new(game, opts)
   self.stock = opts.stock or BugContest.caughtMon(self.save)
   self.caught = opts.caught
   self.onClose = opts.onClose
+  self.TEXT = ContestMenu.texts(opts.text or (game and game.world and game.world.text))
   -- PlaceYesNoBox opens on YES, and YesNoMenuHeader has no
   -- STATICMENU_DISABLE_B, so B is the same as picking NO.
   self.choice = 1
@@ -160,9 +141,9 @@ end
 
 function ContestMenu:drawMonBox(boxY, label, mon)
   Chrome.textbox(STOCK_BOX_X, boxY, BOX_INNER_W, BOX_INNER_H)
-  Chrome.print(Strings(label), LABEL_X, boxY)
+  Chrome.print(label, LABEL_X, boxY)
   Chrome.print(nameAndLevel(mon), NAME_X, boxY + NAME_ROW_OFFSET)
-  Chrome.print(Strings(ContestMenu.TEXT.health), HEALTH_X,
+  Chrome.print(self.TEXT.health, HEALTH_X,
     boxY + HEALTH_ROW_OFFSET)
   -- `lb bc, 2, 3`: two source bytes into a three-digit field, space padded
   -- because PRINTNUM_LEADINGZEROS is not set, laid down FROM hlcoord 11 --
@@ -177,8 +158,10 @@ function ContestMenu:drawYesNo()
   -- STATICMENU_CURSOR, and YesNoMenuHeader sets STATICMENU_NO_TOP_SPACING so
   -- there is no third row of padding -- YES at (16,8), NO at (16,10), cursor
   -- column 15.
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  local data = self.game and self.game.data
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (self.choice == 1 and 1 or 3))
 end
 
@@ -186,11 +169,10 @@ function ContestMenu:drawPanel()
   -- pokecrystal engine/events/bug_contest/display_stats.asm:5
   local wasBattle = Font.useBattleExtra(true)
   Chrome.clear()
-  local stock, this = ContestMenu.labels()
-  self:drawMonBox(STOCK_BOX_Y, stock, self.stock)
-  self:drawMonBox(THIS_BOX_Y, this, self.caught)
+  self:drawMonBox(STOCK_BOX_Y, self.TEXT.stock, self.stock)
+  self:drawMonBox(THIS_BOX_Y, self.TEXT.this, self.caught)
   Chrome.box(TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W, TEXT_BOX_H)
-  Chrome.print(Strings(ContestMenu.TEXT.askSwitch), TEXT_X, TEXT_Y)
+  Chrome.print(self.TEXT.askSwitch, TEXT_X, TEXT_Y)
   self:drawYesNo()
   Font.useBattleExtra(wasBattle)
   love.graphics.setColor(1, 1, 1, 1)

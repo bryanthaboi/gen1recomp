@@ -13,7 +13,12 @@ local OverworldState = require("src.world.OverworldController")
 
 check(type(ItemEffects.itemUseLine) == "function",
       "ItemEffects exports the used-line helper")
-eq(ItemEffects.itemUseLine({}, { player = { name = "RED" } }, "OLD ROD"),
+local USE_TEXT = { _ItemUseText001 = "{PLAYER} used{DONE}",
+                   _ItemUseText002 = "{RAM:wStringBuffer}!{DONE}",
+                   _NoNibbleText = "Not even a nibble!",
+                   _NothingHereText = "Looks like there's\nnothing here.",
+                   _ItsABiteText = "Oh!\nIt's a bite!" }
+eq(ItemEffects.itemUseLine({ text = USE_TEXT }, { player = { name = "RED" } }, "OLD ROD"),
    "RED used\nOLD ROD!", "it is the _ItemUseText001 line")
 
 local function setUpvalue(fn, name, value)
@@ -112,7 +117,7 @@ local FakeBox = { new = function(_, text, onDone, opts)
   return box
 end }
 local fakeGame = {
-  data = { items = { OLD_ROD = { name = "OLD ROD" },
+  data = { text = USE_TEXT, items = { OLD_ROD = { name = "OLD ROD" },
                      SUPER_ROD = { name = "SUPER ROD" } } },
   save = { player = { name = "RED" } },
   stack = { push = function(_, box) pushed[#pushed + 1] = box end },

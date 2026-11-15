@@ -17,6 +17,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = T.check, T.eq
 
 local Gen2Save = require("src.save_convert.Gen2Save")
@@ -426,7 +427,8 @@ do
   local save = assert(Gen2Save.decode(build("gold"), "gold", CROSSWALK))
   local view = setmetatable(
     { mon = save.party[1], moves = CROSSWALK.moves, items = CROSSWALK.items,
-      party = {}, page = SummaryMenu.GREEN_PAGE },
+      party = {}, page = SummaryMenu.GREEN_PAGE,
+      game = { data = { text = require("tests.fixture_data.gen2_rom_text_s7_e") } } },
     { __index = SummaryMenu })
   local rows = {}
   for _, row in ipairs(view:greenPlacements()) do
@@ -444,7 +446,7 @@ do
   local StartMenu = require("src.ui.gen2.StartMenu")
   SaveConvert.setGen2DataStub(CROSSWALK)
   local imported = assert(SaveConvert.importSav(build("gold"), "gold", "gold"))
-  local menu = setmetatable({ save = imported }, { __index = StartMenu })
+  local menu = setmetatable({ save = imported, game = { data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } } }, { __index = StartMenu })
   local rows = {}
   for _, item in ipairs(menu:visibleItems()) do rows[#rows + 1] = item.value end
   local list = table.concat(rows, ",")
@@ -454,7 +456,7 @@ do
     "and the POKEGEAR row too -- got: " .. list)
 
   local before = assert(SaveConvert.importSav(build("gold", true), "gold", "gold"))
-  local early = setmetatable({ save = before }, { __index = StartMenu })
+  local early = setmetatable({ save = before, game = { data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } } }, { __index = StartMenu })
   local earlyRows = {}
   for _, item in ipairs(early:visibleItems()) do earlyRows[#earlyRows + 1] = item.value end
   check(table.concat(earlyRows, ","):find("pokedex", 1, true) == nil,

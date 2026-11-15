@@ -23,7 +23,7 @@
 local Chrome = require("src.ui.gen2.Chrome")
 local Buena = require("src.core.gen2.Buena")
 local FieldMoves = require("src.world.gen2.FieldMoves")
-local FlagNames = require("src.core.gen2.FlagNames")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local GbcPalette = require("src.render.GbcPalette")
 local Gen2Save = require("src.core.gen2.Save")
 local Clock = require("src.core.gen2.Clock")
@@ -31,8 +31,8 @@ local CommonText = require("src.core.gen2.CommonText")
 local Font = require("src.render.Font")
 local Palettes = require("src.world.gen2.Palettes")
 local Phone = require("src.core.gen2.Phone")
+local RomText = require("src.core.RomText")
 local SpriteRenderer = require("src.render.SpriteRenderer")
-local Strings = require("src.core.Strings")
 local TileSheet = require("src.ui.gen2.TileSheet")
 
 local Pokegear = {}
@@ -51,27 +51,36 @@ local BLANK_TILE = 0x4f
 -- by wPokegearCard.  Listing RADIO before PHONE made the arrow jump column 2 ->
 -- 6 -> 4.
 local CARDS = {
-  { id = "clock", label = Strings.source("CLOCK"), icon = 0x46, iconX = 0 },
-  { id = "map", label = Strings.source("MAP"), flag = "map", icon = 0x40, iconX = 2 },
-  { id = "phone", label = Strings.source("PHONE"), flag = "phone", icon = 0x44, iconX = 4 },
-  { id = "radio", label = Strings.source("RADIO"), flag = "radio", icon = 0x42, iconX = 6 },
+  { id = "clock", icon = 0x46, iconX = 0 },
+  { id = "map", flag = "map", icon = 0x40, iconX = 2 },
+  { id = "phone", flag = "phone", icon = 0x44, iconX = 4 },
+  { id = "radio", flag = "radio", icon = 0x42, iconX = 6 },
 }
 
 -- _FlyMap draws the SAME town map, but it is not the MAP card: it is its own
 -- screen (LoadTownMapGFX / FlyMap / TownMapBubble), with no card strip and no
 -- ENGINE_MAP_CARD gate, which is why FLY works before the Guide Gent hands the
 -- card over.  One row, so `#self.cards` stays 1 and nothing pages.
-local FLY_MAP_CARD = { id = "map", label = Strings.source("FLY") }
+local FLY_MAP_CARD = { id = "map" }
 
 -- ../pokecrystal/engine/events/specials.asm:102 OverworldTownMap -> _TownMap
 -- (:1757): the wall map and the DECO_TOWN_MAP poster, no strip and no card gate.
-local TOWN_MAP_CARD = { id = "map", label = Strings.source("MAP") }
-local AM_LABEL = Strings.source("AM")
-local PM_LABEL = Strings.source("PM")
-local DAY_LABEL = Strings.source("DAY")
+local TOWN_MAP_CARD = { id = "map" }
+-- engine/rtc/print_hours_mins.asm:64
+local AM_LABEL = "String_AM"
+-- engine/rtc/print_hours_mins.asm:65
+local PM_LABEL = "String_PM"
+-- home/text.asm:968
+local DAY_LABEL = "TextCommand_DAY.Day"
+-- engine/pokegear/pokegear.asm:2132
+local WHERE_LABEL = "TownMapBubble.Where"
 
-local function meridiem(hour)
-  return Strings(hour < 12 and AM_LABEL or PM_LABEL)
+local function romLine(data, label, ...)
+  return (CommonText.plain(RomText(data, label, nil, ...)):gsub("^\n", ""))
+end
+
+local function meridiem(data, hour)
+  return romLine(data, hour < 12 and AM_LABEL or PM_LABEL)
 end
 
 -- ---------------------------------------------------------------- the radio
@@ -117,72 +126,70 @@ local RADIO_CHANNEL_SONGS = {
   BUENAS_PASSWORD = "Music_BuenasPassword",
 }
 
--- The station names LoadStation_* hands the tuner (the *Name labels at the
--- bottom of pokegear.asm).  `#` is the four-tile POKé compression byte, so
--- spelling it out costs the same tiles; `<PKMN>` is NOT -- it is the two-tile
--- <PK><MN> ligature the font already carries, so it stays a ligature.
+-- engine/pokegear/pokegear.asm:1699
 -- LoadStation_RocketRadio really does reuse LetsAllSingName, and
 -- LoadStation_EvolutionRadio really does reuse UnownStationName.
-local STATION_NAMES = {
-  OAKS_POKEMON_TALK = "OAK's <PK><MN> Talk",
-  POKEDEX_SHOW = "POKéDEX Show",
-  POKEMON_MUSIC = "POKéMON Music",
-  LUCKY_CHANNEL = "Lucky Channel",
-  PLACES_AND_PEOPLE = "Places & People",
-  LETS_ALL_SING = "Let's All Sing!",
-  ROCKET_RADIO = "Let's All Sing!",
-  POKE_FLUTE_RADIO = "POKé FLUTE",
-  UNOWN_RADIO = "?????",
-  EVOLUTION_RADIO = "?????",
+local STATION_LABELS = {
+  OAKS_POKEMON_TALK = "OaksPKMNTalkName",
+  POKEDEX_SHOW = "PokedexShowName",
+  POKEMON_MUSIC = "PokemonMusicName",
+  LUCKY_CHANNEL = "LuckyChannelName",
+  PLACES_AND_PEOPLE = "PlacesAndPeopleName",
+  LETS_ALL_SING = "LetsAllSingName",
+  ROCKET_RADIO = "LetsAllSingName",
+  POKE_FLUTE_RADIO = "PokeFluteStationName",
+  UNOWN_RADIO = "UnownStationName",
+  EVOLUTION_RADIO = "UnownStationName",
 }
 
--- OaksPKMNTalk8.Adverbs, in table order: `maskbits 16` makes every roll valid,
--- which is why there is no retry loop around it.
+-- engine/pokegear/radio.asm:329
 local OPT_ADVERBS = {
-  Strings.source("sweet and adorably"), Strings.source("wiggly and slickly"),
-  Strings.source("aptly named and"), Strings.source("undeniably kind of"),
-  Strings.source("so, so unbearably"), Strings.source("wow, impressively"),
-  Strings.source("almost poisonously"), Strings.source("ooh, so sensually"),
-  Strings.source("so mischievously"), Strings.source("so very topically"),
-  Strings.source("sure addictively"), Strings.source("looks in water is"),
-  Strings.source("evolution must be"), Strings.source("provocatively"),
-  Strings.source("so flipped out and"), Strings.source("heart-meltingly"),
+  "OaksPKMNTalk8.OPT_SweetAdorablyText", "OaksPKMNTalk8.OPT_WigglySlicklyText",
+  "OaksPKMNTalk8.OPT_AptlyNamedText", "OaksPKMNTalk8.OPT_UndeniablyKindOfText",
+  "OaksPKMNTalk8.OPT_UnbearablyText", "OaksPKMNTalk8.OPT_WowImpressivelyText",
+  "OaksPKMNTalk8.OPT_AlmostPoisonouslyText", "OaksPKMNTalk8.OPT_SensuallyText",
+  "OaksPKMNTalk8.OPT_MischievouslyText", "OaksPKMNTalk8.OPT_TopicallyText",
+  "OaksPKMNTalk8.OPT_AddictivelyText", "OaksPKMNTalk8.OPT_LooksInWaterText",
+  "OaksPKMNTalk8.OPT_EvolutionMustBeText", "OaksPKMNTalk8.OPT_ProvocativelyText",
+  "OaksPKMNTalk8.OPT_FlippedOutText", "OaksPKMNTalk8.OPT_HeartMeltinglyText",
 }
 
--- OaksPKMNTalk9.Adjectives.
+-- engine/pokegear/radio.asm:438
+-- ../pokecrystal/engine/pokegear/radio.asm:460
 local OPT_ADJECTIVES = {
-  Strings.source("cute."), Strings.source("weird."),
-  Strings.source("pleasant."), Strings.source("bold, sort of."),
-  Strings.source("frightening."), Strings.source("suave & debonair!"),
-  Strings.source("powerful."), Strings.source("exciting."),
-  Strings.source("now!"), Strings.source("inspiring."),
-  Strings.source("friendly."), Strings.source("hot, hot, hot!"),
-  Strings.source("stimulating."), Strings.source("guarded."),
-  Strings.source("lovely."), Strings.source("speedy."),
+  "OaksPKMNTalk9.OPT_CuteText", "OaksPKMNTalk9.OPT_WeirdText",
+  "OaksPKMNTalk9.OPT_PleasantText", "OaksPKMNTalk9.OPT_BoldSortOfText",
+  "OaksPKMNTalk9.OPT_FrighteningText", "OaksPKMNTalk9.OPT_SuaveDebonairText",
+  "OaksPKMNTalk9.OPT_PowerfulText", "OaksPKMNTalk9.OPT_ExcitingText",
+  { "OaksPKMNTalk9.OPT_NowText", "OaksPKMNTalk9.OPT_GroovyText" },
+  "OaksPKMNTalk9.OPT_InspiringText",
+  "OaksPKMNTalk9.OPT_FriendlyText", "OaksPKMNTalk9.OPT_HotHotHotText",
+  "OaksPKMNTalk9.OPT_StimulatingText", "OaksPKMNTalk9.OPT_GuardedText",
+  "OaksPKMNTalk9.OPT_LovelyText", "OaksPKMNTalk9.OPT_SpeedyText",
 }
 
+-- engine/pokegear/radio.asm:1120
 -- PeoplePlaces5.Adjectives and PeoplePlaces7.Adjectives are the same sixteen
 -- rows in the same order, so one table serves both.
 local PNP_ADJECTIVES = {
-  Strings.source("is cute."), Strings.source("is sort of lazy."),
-  Strings.source("is always happy."), Strings.source("is quite noisy."),
-  Strings.source("is precocious."), Strings.source("is somewhat bold."),
-  Strings.source("is too picky!"), Strings.source("is sort of OK."),
-  Strings.source("is just so-so."), Strings.source("is actually great."),
-  Strings.source("is just my type."), Strings.source("is so cool, no?"),
-  Strings.source("is inspiring!"), Strings.source("is kind of weird."),
-  Strings.source("is right for me?"), Strings.source("is definitely odd!"),
+  "PnP_CuteText", "PnP_LazyText", "PnP_HappyText", "PnP_NoisyText",
+  "PnP_PrecociousText", "PnP_BoldText", "PnP_PickyText", "PnP_SortOfOKText",
+  "PnP_SoSoText", "PnP_GreatText", "PnP_MyTypeText", "PnP_CoolText",
+  "PnP_InspiringText", "PnP_WeirdText", "PnP_RightForMeText", "PnP_OddText",
 }
 
--- RocketRadioText1..10.  The text_pause bytes inside 7-10 only stall the
--- printer, so the port carries the words either side of them as one line.
-local ROCKET_LINES = {
-  Strings.source("… …Ahem, we are"), Strings.source("TEAM ROCKET!"),
-  Strings.source("After three years"), Strings.source("of preparation, we"),
-  Strings.source("have risen again"), Strings.source("from the ashes!"),
-  Strings.source("GIOVANNI! Can you"), Strings.source("hear? We did it!"),
-  Strings.source("Where is our Boss?"), Strings.source("Is he listening?"),
-}
+-- engine/pokegear/radio.asm:1327
+local ROCKET_LINES = {}
+for index = 1, 10 do ROCKET_LINES[index] = "RocketRadioText" .. index end
+
+local function versionLabel(data, label)
+  if type(label) ~= "table" then return label end
+  local text = data and data.text or {}
+  for _, candidate in ipairs(label) do
+    if text[candidate] then return candidate end
+  end
+  return label[1]
+end
 
 -- data/radio/oaks_pkmn_talk_routes.asm: the fifteen maps Oak's Pokemon Talk
 -- draws its wild mon from.  `and %11111` then `cp 15` is a rejection roll, so
@@ -218,13 +225,13 @@ local PNP_HIDDEN = {
 local PNP_HIDDEN_BEAT_E4 = 6    -- first index of PnP_HiddenPeople_BeatE4
 local PNP_HIDDEN_BEAT_KANTO = 14 -- first index of PnP_HiddenPeople_BeatKanto
 
+-- home/text.asm:952
 -- TextCommand_DAY's .Days table, plus its "DAY" suffix.  GetWeekday counts
 -- from Sunday = 0, which is NOT os.date's 1-based wday.
 local RADIO_DAYS = {
-  [0] = Strings.source("SUNDAY"), Strings.source("MONDAY"),
-  Strings.source("TUESDAY"), Strings.source("WEDNESDAY"),
-  Strings.source("THURSDAY"), Strings.source("FRIDAY"),
-  Strings.source("SATURDAY"),
+  [0] = "TextCommand_DAY.Sun", "TextCommand_DAY.Mon", "TextCommand_DAY.Tues",
+  "TextCommand_DAY.Wednes", "TextCommand_DAY.Thurs", "TextCommand_DAY.Fri",
+  "TextCommand_DAY.Satur",
 }
 
 -- macros/data.asm: `percent` is `* $ff / 100`, so these are the two literal
@@ -307,6 +314,11 @@ end
 -- `call Random`: one byte, 0..255.
 function Radio:random()
   return math.floor(self.rng() or 0) % 256
+end
+
+-- engine/pokegear/radio.asm:101
+function Radio:line(label, ...)
+  return romLine(self.data, versionLabel(self.data, label), ...)
 end
 
 -- Half the shows sample by rejection: roll a byte, throw it away if it is out
@@ -421,18 +433,19 @@ end
 -- Channel jingle, which resets the counter and drops back into the fourth
 -- segment for another five.
 
+-- engine/pokegear/radio.asm:276
 RadioJumptable["OAKS_POKEMON_TALK"] = function(R)
   R.vars.segmentCounter = 5
   R:startStation()
-  R:nextLine(Strings("MARY: PROF.OAK'S"), "OAKS_POKEMON_TALK_2")
+  R:nextLine(R:line("OPT_IntroText1"), "OAKS_POKEMON_TALK_2")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_2"] = function(R)
-  R:nextLine(Strings("POKéMON TALK!"), "OAKS_POKEMON_TALK_3")
+  R:nextLine(R:line("OPT_IntroText2"), "OAKS_POKEMON_TALK_3")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_3"] = function(R)
-  R:nextLine(Strings("With me, MARY!"), "OAKS_POKEMON_TALK_4")
+  R:nextLine(R:line("OPT_IntroText3"), "OAKS_POKEMON_TALK_4")
 end
 
 -- OaksPKMNTalk4: roll a route, roll a time of day, roll one of the middle
@@ -470,29 +483,29 @@ RadioJumptable["OAKS_POKEMON_TALK_4"] = function(R)
   R.vars.landmark = R.data.mapLandmark and R.data.mapLandmark[map]
   -- _OPT_OakText1 is "OAK: @" plus the mon name, with no punctuation: the
   -- sentence is finished by the next two segments.
-  R:printLine(Strings("OAK: %s", tostring(species or "")),
+  R:printLine(R:line("OPT_OakText1", tostring(species or "")),
     "OAKS_POKEMON_TALK_5")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_5"] = function(R)
-  R:nextLine(Strings("may be seen around"), "OAKS_POKEMON_TALK_6")
+  R:nextLine(R:line("OPT_OakText2"), "OAKS_POKEMON_TALK_6")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_6"] = function(R)
   -- _OPT_OakText3 is the landmark name with a full stop welded on.
   local entry = R.data.landmarks and R.data.landmarks[R.vars.landmark]
-  R:nextLine(Strings("%s.", flatName(entry and entry.name)),
+  R:nextLine(R:line("OPT_OakText3", flatName(entry and entry.name)),
     "OAKS_POKEMON_TALK_7")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_7"] = function(R)
-  R:nextLine(Strings("MARY: %s's", tostring(R.vars.species or "")),
+  R:nextLine(R:line("OPT_MaryText1", tostring(R.vars.species or "")),
     "OAKS_POKEMON_TALK_8")
 end
 
 RadioJumptable["OAKS_POKEMON_TALK_8"] = function(R)
   local adverb = OPT_ADVERBS[R:random() % 16 + 1]
-  R:nextLine(Strings(adverb), "OAKS_POKEMON_TALK_9")
+  R:nextLine(R:line(adverb), "OAKS_POKEMON_TALK_9")
 end
 
 -- OaksPKMNTalk9 rolls the adjective FIRST and only then spends the segment
@@ -505,7 +518,7 @@ RadioJumptable["OAKS_POKEMON_TALK_9"] = function(R)
     R.vars.segmentCounter = 5
     nextLine = "OAKS_POKEMON_TALK_10"
   end
-  R:nextLine(Strings(adjective), nextLine)
+  R:nextLine(R:line(adjective), nextLine)
 end
 
 -- The Pokemon Channel jingle.  OaksPKMNTalk10 calls PrintText rather than
@@ -514,7 +527,7 @@ end
 -- rest in over 100 frames each.
 RadioJumptable["OAKS_POKEMON_TALK_10"] = function(R)
   R.music = "Music_PokemonChannel" -- RadioMusicRestartPokemonChannel
-  R.top, R.bottom = Strings("POKéMON"), ""
+  R.top, R.bottom = R:line("OPT_PokemonChannelText"), ""
   R.log[#R.log + 1] = R.top
   R.cur = "OAKS_POKEMON_TALK_11"
   R.delay = RADIO_LINE_FRAMES
@@ -526,7 +539,7 @@ RadioJumptable["OAKS_POKEMON_TALK_11"] = function(R)
   R.delay = R.delay - 1
   if R.delay ~= 0 then return end
   R.top = R.top .. string.rep(" ", math.max(0, 8 - tileWidth(R.top)))
-    .. Strings("POKéMON")
+    .. R:line("OaksPKMNTalk11.pokemon_string")
   R.log[#R.log + 1] = R.top
   R:placeString("OAKS_POKEMON_TALK_12")
 end
@@ -534,11 +547,11 @@ end
 RadioJumptable["OAKS_POKEMON_TALK_12"] = function(R)
   R.delay = R.delay - 1
   if R.delay ~= 0 then return end
-  R.bottom = Strings("POKéMON Channel") -- hlcoord 1, 16
+  R.bottom = R:line("OaksPKMNTalk12.pokemon_channel_string")
   R.log[#R.log + 1] = R.bottom
   R:placeString("OAKS_POKEMON_TALK_13")
 end
-
+ -- hlcoord 1, 16
 -- `hlcoord 12, 16` with a bare "@": nothing is drawn, the hop only buys
 -- another 100 frames of the jingle.
 RadioJumptable["OAKS_POKEMON_TALK_13"] = function(R)
@@ -622,46 +635,51 @@ local function startPokemonMusicChannel(R)
   R.music = odd and "Music_PokemonLullaby" or "Music_PokemonMarch"
 end
 
+-- engine/pokegear/radio.asm:837
 RadioJumptable["POKEMON_MUSIC"] = function(R)
   startPokemonMusicChannel(R)
-  R:nextLine(Strings("BEN: POKéMON MUSIC"), "POKEMON_MUSIC_2")
+  R:nextLine(R:line("BenIntroText1"), "POKEMON_MUSIC_2")
 end
 
 RadioJumptable["POKEMON_MUSIC_2"] = function(R)
-  R:nextLine(Strings("CHANNEL!"), "POKEMON_MUSIC_3")
+  R:nextLine(R:line("BenIntroText2"), "POKEMON_MUSIC_3")
 end
 
 RadioJumptable["POKEMON_MUSIC_3"] = function(R)
-  R:nextLine(Strings("It's me, DJ BEN!"), "POKEMON_MUSIC_4")
+  R:nextLine(R:line("BenIntroText3"), "POKEMON_MUSIC_4")
 end
 
+-- engine/pokegear/radio.asm:849
 RadioJumptable["LETS_ALL_SING"] = function(R)
   startPokemonMusicChannel(R)
-  R:nextLine(Strings("FERN: POKéMUSIC!"), "LETS_ALL_SING_2")
+  R:nextLine(R:line("FernIntroText1"), "LETS_ALL_SING_2")
 end
 
 -- FernMonMusic2 names POKEMON_MUSIC_4, not a LETS_ALL_SING segment: this is
 -- the handoff, and from here Kanto's station is running Johto's code.
 RadioJumptable["LETS_ALL_SING_2"] = function(R)
-  R:nextLine(Strings("With DJ FERN!"), "POKEMON_MUSIC_4")
+  R:nextLine(R:line("FernIntroText2"), "POKEMON_MUSIC_4")
 end
 
+-- engine/pokegear/radio.asm:857
 RadioJumptable["POKEMON_MUSIC_4"] = function(R)
-  local day = Strings(RADIO_DAYS[(R.data.weekday or 0) % 7] or "")
-  R:nextLine(Strings("Today's %s,", day), "POKEMON_MUSIC_5")
+  local day = R:line(RADIO_DAYS[(R.data.weekday or 0) % 7])
+    .. R:line(DAY_LABEL)
+  R:nextLine(R:line("BenFernText1", { DAY = day }), "POKEMON_MUSIC_5")
 end
 
+-- engine/pokegear/radio.asm:861
 RadioJumptable["POKEMON_MUSIC_5"] = function(R)
   local odd = (R.data.weekday or 0) % 2 == 1
-  R:nextLine(odd and Strings("so chill out to")
-    or Strings("so let us jam to"),
+  R:nextLine(R:line(odd and "BenFernText2B" or "BenFernText2A"),
     "POKEMON_MUSIC_6")
 end
 
+-- engine/pokegear/radio.asm:869
 RadioJumptable["POKEMON_MUSIC_6"] = function(R)
   local odd = (R.data.weekday or 0) % 2 == 1
-  R:nextLine(odd and Strings("POKéMON Lullaby!")
-    or Strings("POKéMON March!"), "POKEMON_MUSIC_7")
+  R:nextLine(R:line(odd and "BenFernText3B" or "BenFernText3A"),
+    "POKEMON_MUSIC_7")
 end
 
 -- BenFernMusic7 is a bare `ret`.  Both music stations really do stop talking
@@ -673,33 +691,34 @@ RadioJumptable["POKEMON_MUSIC_7"] = function() end
 -- Eleven fixed lines, the week's number read out twice, and a 1-in-256 chance
 -- of REED admitting he is bored before he starts over.
 
+-- engine/pokegear/radio.asm:968
 local LUCKY_LINES = {
-  LUCKY_CHANNEL = { Strings.source("REED: Yeehaw! How"), "LUCKY_NUMBER_SHOW_2" },
-  LUCKY_NUMBER_SHOW_2 = { Strings.source("y'all doin' now?"), "LUCKY_NUMBER_SHOW_3" },
-  LUCKY_NUMBER_SHOW_3 = { Strings.source("Whether you're up"), "LUCKY_NUMBER_SHOW_4" },
-  LUCKY_NUMBER_SHOW_4 = { Strings.source("or way down low,"), "LUCKY_NUMBER_SHOW_5" },
-  LUCKY_NUMBER_SHOW_5 = { Strings.source("don't you miss the"), "LUCKY_NUMBER_SHOW_6" },
-  LUCKY_NUMBER_SHOW_6 = { Strings.source("LUCKY NUMBER SHOW!"), "LUCKY_NUMBER_SHOW_7" },
-  LUCKY_NUMBER_SHOW_7 = { Strings.source("This week's Lucky"), "LUCKY_NUMBER_SHOW_8" },
-  LUCKY_NUMBER_SHOW_9 = { Strings.source("I'll repeat that!"), "LUCKY_NUMBER_SHOW_10" },
+  LUCKY_CHANNEL = { "LC_Text1", "LUCKY_NUMBER_SHOW_2" },
+  LUCKY_NUMBER_SHOW_2 = { "LC_Text2", "LUCKY_NUMBER_SHOW_3" },
+  LUCKY_NUMBER_SHOW_3 = { "LC_Text3", "LUCKY_NUMBER_SHOW_4" },
+  LUCKY_NUMBER_SHOW_4 = { "LC_Text4", "LUCKY_NUMBER_SHOW_5" },
+  LUCKY_NUMBER_SHOW_5 = { "LC_Text5", "LUCKY_NUMBER_SHOW_6" },
+  LUCKY_NUMBER_SHOW_6 = { "LC_Text6", "LUCKY_NUMBER_SHOW_7" },
+  LUCKY_NUMBER_SHOW_7 = { "LC_Text7", "LUCKY_NUMBER_SHOW_8" },
+  LUCKY_NUMBER_SHOW_9 = { "LC_Text9", "LUCKY_NUMBER_SHOW_10" },
   -- LC_Text7 and LC_Text8 again: REED reads the number out a second time.
-  LUCKY_NUMBER_SHOW_10 = { Strings.source("This week's Lucky"), "LUCKY_NUMBER_SHOW_11" },
-  LUCKY_NUMBER_SHOW_12 = { Strings.source("Match it and go to"), "LUCKY_NUMBER_SHOW_13" },
-  LUCKY_NUMBER_SHOW_14 = { Strings.source("…Repeating myself"), "LUCKY_NUMBER_SHOW_15" },
-  LUCKY_NUMBER_SHOW_15 = { Strings.source("gets to be a drag…"), "LUCKY_CHANNEL" },
+  LUCKY_NUMBER_SHOW_10 = { "LC_Text7", "LUCKY_NUMBER_SHOW_11" },
+  LUCKY_NUMBER_SHOW_12 = { "LC_Text10", "LUCKY_NUMBER_SHOW_13" },
+  LUCKY_NUMBER_SHOW_14 = { "LC_DragText1", "LUCKY_NUMBER_SHOW_15" },
+  LUCKY_NUMBER_SHOW_15 = { "LC_DragText2", "LUCKY_CHANNEL" },
 }
 for segment, row in pairs(LUCKY_LINES) do
   RadioJumptable[segment] = function(R)
     if segment == "LUCKY_CHANNEL" then R:startStation() end
-    R:nextLine(Strings(row[1]), row[2])
+    R:nextLine(R:line(row[1]), row[2])
   end
 end
 
 -- LuckyNumberShow8 prints wLuckyIDNumber with PRINTNUM_LEADINGZEROS over five
 -- digits, so a low number reads as "00042".
 local function luckyNumberLine(R)
-  return Strings("Number is %05d!",
-    math.floor(R.data.luckyNumber or 0) % 100000)
+  return R:line("LC_Text8",
+    ("%05d"):format(math.floor(R.data.luckyNumber or 0) % 100000))
 end
 
 RadioJumptable["LUCKY_NUMBER_SHOW_8"] = function(R)
@@ -714,7 +733,7 @@ end
 -- complains about once every 256 times round.
 RadioJumptable["LUCKY_NUMBER_SHOW_13"] = function(R)
   local roll = R:random()
-  R:nextLine(Strings("the RADIO TOWER!"),
+  R:nextLine(R:line("LC_Text11"),
     roll ~= 0 and "LUCKY_CHANNEL" or "LUCKY_NUMBER_SHOW_14")
 end
 
@@ -723,13 +742,14 @@ end
 -- DJ LILY alternates between a trainer ("People") and a landmark ("Places"),
 -- with a 4% chance after each of restarting the show from its own intro.
 
+-- engine/pokegear/radio.asm:1041
 RadioJumptable["PLACES_AND_PEOPLE"] = function(R)
   R:startStation()
-  R:nextLine(Strings("PLACES AND PEOPLE!"), "PLACES_AND_PEOPLE_2")
+  R:nextLine(R:line("PnP_Text1"), "PLACES_AND_PEOPLE_2")
 end
 
 RadioJumptable["PLACES_AND_PEOPLE_2"] = function(R)
-  R:nextLine(Strings("Brought to you by"), "PLACES_AND_PEOPLE_3")
+  R:nextLine(R:line("PnP_Text2"), "PLACES_AND_PEOPLE_3")
 end
 
 -- `cp 49 percent - 1` with `jr c` taking People, so the split is 123/256 to
@@ -740,7 +760,7 @@ local function peopleOrPlaces(R)
 end
 
 RadioJumptable["PLACES_AND_PEOPLE_3"] = function(R)
-  R:nextLine(Strings("me, DJ LILY!"), peopleOrPlaces(R))
+  R:nextLine(R:line("PnP_Text3"), peopleOrPlaces(R))
 end
 
 -- PeoplePlaces4: roll a trainer class, reject the ones the hidden list is
@@ -763,7 +783,7 @@ RadioJumptable["PLACES_AND_PEOPLE_4"] = function(R)
   R.vars.trainer = class.trainer
   R.vars.classIndex = index
   -- _PnP_Text4 is the class name and the trainer name with one space between.
-  R:nextLine(Strings("%s %s", tostring(class.name or ""),
+  R:nextLine(R:line("PnP_Text4", tostring(class.name or ""),
     tostring(class.trainer or "")),
     "PLACES_AND_PEOPLE_5")
 end
@@ -774,7 +794,7 @@ RadioJumptable["PLACES_AND_PEOPLE_5"] = function(R)
   local adjective = PNP_ADJECTIVES[R:random() % 16 + 1]
   local nextLine = "PLACES_AND_PEOPLE"
   if R:random() >= PNP_RESTART_CHANCE then nextLine = peopleOrPlaces(R) end
-  R:nextLine(Strings(adjective), nextLine)
+  R:nextLine(R:line(adjective), nextLine)
 end
 
 -- PeoplePlaces6: roll one of the nine PnP_Places maps and name its landmark.
@@ -797,7 +817,7 @@ RadioJumptable["PLACES_AND_PEOPLE_7"] = function(R)
   local adjective = PNP_ADJECTIVES[R:random() % 16 + 1]
   local nextLine = "PLACES_AND_PEOPLE"
   if R:random() >= PNP_RESTART_CHANCE then nextLine = peopleOrPlaces(R) end
-  R:printLine(Strings(adjective), nextLine)
+  R:printLine(R:line(adjective), nextLine)
 end
 
 -- ------------------------------------------------------------ Rocket Radio
@@ -806,11 +826,11 @@ end
 
 RadioJumptable["ROCKET_RADIO"] = function(R)
   R:startStation()
-  R:nextLine(Strings(ROCKET_LINES[1]), "ROCKET_RADIO_2")
+  R:nextLine(R:line(ROCKET_LINES[1]), "ROCKET_RADIO_2")
 end
 for index = 2, 10 do
   RadioJumptable["ROCKET_RADIO_" .. index] = function(R)
-    R:nextLine(Strings(ROCKET_LINES[index]),
+    R:nextLine(R:line(ROCKET_LINES[index]),
       index < 10 and ("ROCKET_RADIO_" .. (index + 1)) or "ROCKET_RADIO")
   end
 end
@@ -976,24 +996,19 @@ local RADIO_CHANNELS = {
 -- PHONE_DISPLAY_HEIGHT.
 local PHONE_ROWS = 4
 
--- data/text/common_3.asm.  Every one of these lives in ROM bank $66, which the
--- importer does not reach yet (it follows map script pointers and nothing on a
--- map points into the phone banks), so they are transcribed here with the
--- "bank:addr" key their extracted form will have -- Pokegear:phoneText prefers
--- the extracted string and only falls back to the transcription.
+-- data/text/common_3.asm:34
 local PHONE_TEXT = {
-  GearEllipse = { key = "66:4066", body = Strings.source("……") },
-  GearOutOfService = { key = "66:4069",
-    body = Strings.source("You're out of the service area.") },
-  AskWhoCall = { key = "66:4089", body = Strings.source("Whom do you want to call?") },
+  GearEllipse = "_GearEllipseText",
+  GearOutOfService = "_GearOutOfServiceText",
+  AskWhoCall = "_PokegearAskWhoCallText",
   -- _PokegearPressButtonText, the CLOCK card's bottom-box prompt.
-  PressButton = { key = "66:40a4", body = Strings.source("Press any button to exit.") },
-  AskDelete = { key = "66:40bf", body = Strings.source("Delete this stored phone number?") },
-  WrongNumber = { key = "66:40e1", body = Strings.source("Huh? Sorry, wrong number!") },
-  Click = { key = "66:40fc", body = Strings.source("Click!") },
-  PhoneEllipse = { key = "66:4104", body = Strings.source("……") },
-  OutOfArea = { key = "66:4107", body = Strings.source("That number is out of the area.") },
-  JustTalkToThem = { key = "66:4128", body = Strings.source("Just go talk to that person!") },
+  PressButton = "_PokegearPressButtonText",
+  AskDelete = "_PokegearAskDeleteText",
+  WrongNumber = "_PhoneWrongNumberText",
+  Click = "_PhoneClickText",
+  PhoneEllipse = "_PhoneEllipseText",
+  OutOfArea = "_PhoneOutOfAreaText",
+  JustTalkToThem = "_PhoneJustTalkToThemText",
 }
 
 function Pokegear:wantsFillScale() return true end
@@ -1003,8 +1018,8 @@ function Pokegear:drawsWidescreen() return true end
 -- radioData (a prebuilt Radio data table, for tests), radioRng, onClose(),
 -- mapDef (the maps.lua record the player is standing on, for the phone's
 -- signal / same-map tests), trainers (trainers.lua, for contact names), text
--- (text.lua) and onCall(descriptor), which hands a placed call out to whoever
--- can run its script
+-- (rom_text.lua) and onCall(descriptor), which hands a placed call out to
+-- whoever can run its script
 function Pokegear.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, Pokegear)
@@ -1038,7 +1053,6 @@ function Pokegear.new(game, opts)
   self.phoneSubmenuCursor = 0
   self.mapDef = opts.mapDef
   self.trainers = opts.trainers or data.trainers or data.gen2Trainers
-  -- text.lua, for the phone strings; `text` is already a method name here.
   self.textData = opts.text
   self.onCall = opts.onCall
   -- The show that the tuned frequency resolved to, and its state machine.
@@ -1138,22 +1152,20 @@ function Pokegear:cursor(tx, ty)
   return Chrome.cursorThrough(tx, ty, pals and pals[1], false, false, true)
 end
 
--- wPokegearFlags' four card bits are ENGINE flags: EngineFlags rows 0-3 are
--- POKEGEAR_RADIO/MAP/PHONE/EXPN_CARD_F (pokegold data/events/engine_flags.asm,
--- constants/engine_flags.asm const order), so the scripts' `setflag` -- the
+-- wPokegearFlags' four card bits are ENGINE flags: POKEGEAR_RADIO/MAP/PHONE/
+-- EXPN_CARD_F (pokegold data/events/engine_flags.asm), so the scripts' `setflag` -- the
 -- Radio Tower quiz's ENGINE_RADIO_CARD, the Guide Gent's ENGINE_MAP_CARD,
 -- Mom's ENGINE_PHONE_CARD and the Lavender tower's ENGINE_EXPN_CARD -- lands
 -- each id in save.engineFlags through World:setEngineFlag.  The string-keyed
 -- save.pokegearFlags overlay stays readable so a test can seed a card without
 -- a world.
-local CARD_ENGINE_FLAGS = { radio = 0, map = 1, phone = 2, expn = 3 }
+local CARD_ENGINE_FLAGS = {
+  radio = "ENGINE_RADIO_CARD", map = "ENGINE_MAP_CARD",
+  phone = "ENGINE_PHONE_CARD", expn = "ENGINE_EXPN_CARD",
+}
 
--- ../pokecrystal/constants/engine_flags.asm:25
-function Pokegear:engineFlag(name, goldId)
-  local world = self.game and self.game.world
-  local id = goldId
-  if world and world.engineFlagId then id = world:engineFlagId(name, goldId) end
-  return ((self.save or {}).engineFlags or {})[id] == true
+function Pokegear:engineFlag(name)
+  return ((self.save or {}).engineFlags or {})[EngineFlags.id(name)] == true
 end
 
 function Pokegear:flags()
@@ -1161,8 +1173,8 @@ function Pokegear:flags()
   local flags = {}
   for key, value in pairs(save.pokegearFlags or {}) do flags[key] = value end
   local engine = save.engineFlags or {}
-  for key, id in pairs(CARD_ENGINE_FLAGS) do
-    if engine[id] == true then flags[key] = true end
+  for key, name in pairs(CARD_ENGINE_FLAGS) do
+    if engine[EngineFlags.id(name)] == true then flags[key] = true end
   end
   return flags
 end
@@ -1180,9 +1192,13 @@ function Pokegear:card()
   return self.cards[self.cardIndex]
 end
 
-function Pokegear:cardLabel(card)
-  card = card or self:card()
-  return card and Strings(card.label) or ""
+function Pokegear:romText()
+  return { text = self.textData
+    or (self.game and self.game.data and self.game.data.text) }
+end
+
+function Pokegear:romLine(label, ...)
+  return romLine(self:romText(), label, ...)
 end
 
 -- PokegearClock_Init / UpdateClock read hHours, hMinutes and GetWeekday right
@@ -1236,16 +1252,10 @@ function Pokegear:phoneContext()
   return { map = map, clock = { hour = hour, minute = minute } }
 end
 
--- A common phone string: the extracted text when bank $66 finally arrives,
--- and the transcription from data/text/common_3.asm until then.
 function Pokegear:phoneText(name)
-  local entry = PHONE_TEXT[name]
-  if not entry then return "" end
-  local text = self.textData
-    or (self.game and self.game.world and self.game.world.text)
-  local extracted = CommonText.plain(text and text[entry.key])
-  if extracted and extracted ~= "" then return extracted end
-  return Strings(entry.body)
+  local label = PHONE_TEXT[name]
+  if not label then return "" end
+  return self:romLine(label)
 end
 
 -- GetCallerClassAndName: a trainer contact is "<name>:" over the class name, a
@@ -1355,9 +1365,9 @@ function Pokegear:region()
     and landmarks[self.currentLandmark]
   local index = current and current.index or 0
   -- LANDMARK_FAST_SHIP is $5e = 94, past every Kanto landmark and still Johto.
-  if index == self:landmarkIndex("FAST_SHIP", 0x5e) then return "johto" end
+  if index == self:landmarkIndex("FAST_SHIP") then return "johto" end
   -- `cp KANTO_LANDMARK`, which is PALLET_TOWN's own index.
-  if index >= self:landmarkIndex("PALLET_TOWN", 0x2e) then return "kanto" end
+  if index >= self:landmarkIndex("PALLET_TOWN") then return "kanto" end
   return "johto"
 end
 
@@ -1377,29 +1387,34 @@ function Pokegear:radioContext()
     -- POKEGEAR_EXPN_CARD_F, the Kanto radio upgrade.
     expnCard = flags.expn or false,
     -- STATUSFLAGS_ROCKET_SIGNAL_F, set while Team Rocket holds Mahogany.
-    rocketSignal = self:engineFlag("ENGINE_ROCKET_SIGNAL_ON_CH20",
-      FlagNames.engine.ENGINE_ROCKET_SIGNAL_ON_CH20),
+    rocketSignal = self:engineFlag("ENGINE_ROCKET_SIGNAL_ON_CH20"),
   }
 end
 
 -- LoadStation_* display names come from the radio_channels registry.  The
 -- station id remains the show-machine key; only its presentation is patched.
--- Falling back to STATION_NAMES keeps pure-module tests and loader-free boots
--- faithful.  A registry value is already authored display text, so it is not
--- fed through Strings a second time.
+-- A registry value is already authored display text, so it is not fed through
+-- Strings a second time.
 function Pokegear:stationName(station)
   if not station then return nil end
   local data = self.game and self.game.data
   local rows = data and data.gen2RadioChannels
   if type(rows) == "table" then
     local record = rows[station]
-    return record and record.name or nil
+    if not record then return nil end
+    return record.name or Pokegear.stationNameFrom(self:romText(), station)
   end
   if station == "BUENAS_PASSWORD" then
     local metadata = Buena.metadata(data)
     return metadata and metadata.stationName
   end
-  return STATION_NAMES[station]
+  return Pokegear.stationNameFrom(self:romText(), station)
+end
+
+function Pokegear.stationNameFrom(data, station)
+  local label = STATION_LABELS[station]
+  if not label then return nil end
+  return romLine(data, label)
 end
 
 -- Every RadioChannels row, with the station its test resolves to right now
@@ -1511,6 +1526,7 @@ function Pokegear:radioData()
   local save = self.save or {}
   local out = { inJohto = self:region() == "johto" }
   out.crystal = save.version == "crystal"
+  out.text = self:romText().text
   out.buenaData, out.buenaSave = data, save
   out.hour = function() return self:clockParts() end
 
@@ -1586,8 +1602,7 @@ function Pokegear:radioData()
   out.luckyNumber = save.luckyNumber or 0
   -- ../pokegold/engine/events/std_scripts.asm:255
   out.rocketsInRadioTower =
-    self:engineFlag("ENGINE_ROCKETS_IN_RADIO_TOWER",
-      FlagNames.engine.ENGINE_ROCKETS_IN_RADIO_TOWER)
+    self:engineFlag("ENGINE_ROCKETS_IN_RADIO_TOWER")
   self.radioDataCache = out
   return out
 end
@@ -1690,17 +1705,14 @@ end
 -- computed from the STRING coordinate by `bccoord -1, -2, 0`; entries are one
 -- <NEXT> apart, which is TWO tile rows, and the cursor column steps by the
 -- same two rows.
+-- engine/pokegear/pokegear.asm:1235
 local PHONE_SUBMENUS = {
   callDeleteCancel = { x = 9, y = 4, rows = 3, textX = 11, textY = 6,
-    entries = { "CALL", "DELETE", "CANCEL" } },
+    entries = { "CALL", "DELETE", "CANCEL" },
+    label = "PokegearPhoneContactSubmenu.CallDeleteCancelStrings#1" },
   callCancel = { x = 9, y = 6, rows = 2, textX = 11, textY = 8,
-    entries = { "CALL", "CANCEL" } },
-}
-
-local PHONE_SUBMENU_LABELS = {
-  CALL = Strings.source("CALL"),
-  DELETE = Strings.source("DELETE"),
-  CANCEL = Strings.source("CANCEL"),
+    entries = { "CALL", "CANCEL" },
+    label = "PokegearPhoneContactSubmenu.CallCancelStrings#1" },
 }
 
 Pokegear.PHONE_SUBMENUS = PHONE_SUBMENUS
@@ -1840,26 +1852,15 @@ end
 -- INDEX, not a position: up steps to the next landmark id and down to the
 -- previous one, and the two limit registers d (the last landmark of the
 -- region) and e (the first) are what it wraps between.
---
--- LANDMARK_* indices, from constants/landmark_constants.asm:
---   NEW_BARK_TOWN $01   SILVER_CAVE $2d   PALLET_TOWN $2e
---   VICTORY_ROAD  $57   ROUTE_28    $5d   FAST_SHIP   $5e
--- LANDMARK_SPECIAL ($00) and LANDMARK_FAST_SHIP ($5e) sit outside both
--- ranges, so the cursor can never land on either.
-local LANDMARK_NEW_BARK_TOWN = 0x01
-local LANDMARK_SILVER_CAVE = 0x2d
-local LANDMARK_PALLET_TOWN = 0x2e
-local LANDMARK_VICTORY_ROAD = 0x57
-local LANDMARK_ROUTE_28 = 0x5d
 
--- ../pokecrystal/constants/landmark_constants.asm:34 inserts BATTLE_TOWER, so
--- every index above it is one higher than pokegold's; the cache's own record is
--- the authority and the numbers above are the fallback for a dataset without one.
-function Pokegear:landmarkIndex(id, fallback)
-  local records = (self.landmarks or {}).landmarks
-  local record = records and (records["LANDMARK_" .. id] or records[id])
+-- ../pokecrystal/constants/landmark_constants.asm:34
+function Pokegear:landmarkIndex(id)
+  local records = self.landmarks and self.landmarks.landmarks
+  if type(records) ~= "table" then error("landmarks.lua is missing", 2) end
+  local record = records["LANDMARK_" .. id] or records[id]
   local index = record and tonumber(record.index)
-  return index or fallback
+  if not index then error("landmarks.lua has no LANDMARK_" .. tostring(id), 2) end
+  return index
 end
 
 -- Returns d (last) and e (first).  Kanto's pair comes from
@@ -1869,14 +1870,14 @@ end
 function Pokegear:cursorLimits()
   if self:region() ~= "kanto" then
     -- `ld d, KANTO_LANDMARK - 1`, which is SILVER_CAVE either way round.
-    return self:landmarkIndex("SILVER_CAVE", LANDMARK_SILVER_CAVE),
-      self:landmarkIndex("NEW_BARK_TOWN", LANDMARK_NEW_BARK_TOWN)
+    return self:landmarkIndex("SILVER_CAVE"),
+      self:landmarkIndex("NEW_BARK_TOWN")
   end
-  local last = self:landmarkIndex("ROUTE_28", LANDMARK_ROUTE_28)
+  local last = self:landmarkIndex("ROUTE_28")
   if ((self.save or {}).flags or {}).HALL_OF_FAME then
-    return last, self:landmarkIndex("PALLET_TOWN", LANDMARK_PALLET_TOWN)
+    return last, self:landmarkIndex("PALLET_TOWN")
   end
-  return last, self:landmarkIndex("VICTORY_ROAD", LANDMARK_VICTORY_ROAD)
+  return last, self:landmarkIndex("VICTORY_ROAD")
 end
 
 -- The cursor's landmark index.  Unset, it is the player's own, which is what
@@ -2171,19 +2172,23 @@ function Pokegear:drawClock()
   local hour, minute, weekday = self:clockParts()
   self:drawTilemap(self.gfx and self.gfx.cards and self.gfx.cards.clock)
   self:drawStrip()
-  self:text(" " .. Strings("SWITCH"), 12, 1)
+  -- engine/pokegear/pokegear.asm:305, ../pokecrystal/engine/pokegear/pokegear.asm:313
+  local switch = self:romLine("InitPokegearTilemap.switch"):gsub("▶$", "")
+  self:text(switch, 19 - tileWidth(switch), 1)
   self:cursor(19, 1)
 
   -- Pokegear_UpdateClock: ClearBox(3,5) 5x14, the day at (6,6) and
   -- PrintHoursMins at (6,8) -- two digits, ':', two more, then AM/PM at
   -- column 12.
-  self:text(Clock.weekdayName(weekday) or "", 6, 6)
+  local day = RADIO_DAYS[(weekday or 0) - 1]
+  self:text(day and self:romLine("Pokegear_UpdateClock.GearTodayText",
+    { DAY = self:romLine(day) .. self:romLine(DAY_LABEL) }) or "", 6, 6)
   local display = hour % 12
   if display == 0 then display = 12 end
   self:text(Chrome.number(display, 2), 6, 8)
   self:text(":", 8, 8)
   self:text(Chrome.number(minute, 2, true), 9, 8)
-  self:text(meridiem(hour), 12, 8)
+  self:text(meridiem(self:romText(), hour), 12, 8)
 
   -- The bottom Textbox is part of the card (lb bc, 4, 18 at (0,12)), and
   -- PokegearClock_Init prints PokegearPressButtonText straight into it
@@ -2287,7 +2292,7 @@ function Pokegear:drawFlyBubble()
   self:tile(0x32, 1, 2)
   for x = 2, 17 do self:tile(SPACE_TILE, x, 2) end
   self:tile(0x33, 18, 2)
-  self:text(Strings("Where?"), 2, 0)
+  self:text(self:romLine(WHERE_LABEL), 2, 0)
   local row = self:flyRow()
   self:text(flatName(row and row.name), 2, 1)
   self:tile(0x34, 18, 1)
@@ -2551,101 +2556,18 @@ function Pokegear:drawPhoneSubmenu()
   -- `ld a, [de] / sla a` -> b is twice the entry count, and Textbox's b/c are
   -- interior rows/columns, so the box is (rows * 2 + 2) tall and 10 wide.
   self:textbox(menu.x, menu.y, 8, menu.rows * 2)
-  for index, label in ipairs(menu.entries) do
-    local ty = menu.textY + (index - 1) * 2
-    self:text(Strings(PHONE_SUBMENU_LABELS[label] or label), menu.textX, ty)
+  local index = 0
+  for line in (self:romLine(menu.label) .. "\n"):gmatch("(.-)\n") do
+    self:text(line, menu.textX, menu.textY + index * 2)
+    index = index + 1
   end
   self:cursor(menu.textX - 1, menu.textY + self.phoneSubmenuCursor * 2)
-end
-
--- ------------------------------------------------------------------ fallback
-
-function Pokegear:drawPlain()
-  Chrome.clear()
-  if self.fly then
-    -- No town-map art in this cache, so the bubble's "Where?" and the rows it
-    -- scrolls between are the whole screen.
-    Chrome.box(0, 0, 20, 4)
-    Chrome.print(Strings("Where?"), 2, 1)
-    Chrome.box(0, 4, 20, 14)
-    local rows = self.fly
-    local top = math.max(1, math.min((self.flyIndex or 1) - 3, #rows - 5))
-    for slot = 0, 5 do
-      local index = top + slot
-      local row = rows[index]
-      if row then
-        local ty = 5 + slot * 2
-        if index == (self.flyIndex or 1) then Chrome.cursor(1, ty) end
-        Chrome.print(flatName(row.name), 2, ty)
-      end
-    end
-    return
-  end
-  if self.townMap then
-    -- No town-map art in this cache, so the name plate the cursor walks is all
-    -- there is to show (../pokecrystal/engine/pokegear/pokegear.asm:700).
-    Chrome.box(7, 0, 13, 3)
-    local current = self:mapLandmark()
-    Chrome.print(flatName(current and current.name), 9, 1)
-    return
-  end
-  Chrome.box(0, 0, 20, 4)
-  local card = self:card()
-  Chrome.print(self:cardLabel(card), 2, 1)
-  if #self.cards > 1 then Chrome.cursor(17, 1) end
-  local id = card and card.id
-  if id == "clock" then
-    local hour, minute, weekday = self:clockParts()
-    Chrome.box(1, 5, 18, 7)
-    Chrome.print(Clock.weekdayName(weekday) or Strings(DAY_LABEL), 3, 7)
-    local display = hour % 12
-    if display == 0 then display = 12 end
-    Chrome.print(("%s:%s %s"):format(
-      Chrome.number(display, 2), Chrome.number(minute, 2, true),
-      meridiem(hour)), 5, 9)
-    Chrome.print(Clock.daytimeLabel(hour), 5, 11)
-  elseif id == "radio" then
-    self:ensureTuned()
-    Chrome.box(0, 4, 20, 14)
-    local row = self:currentStation()
-    Chrome.print(row.frequency, 2, 6)
-    Chrome.print(self.radio and self.radio.stationName or row.name or "", 2, 9)
-    Chrome.textbox(0, 12, 18, 4)
-    if row.station and self.radio then
-      Chrome.print(self.radio.top or "", 1, 14)
-      Chrome.print(self.radio.bottom or "", 1, 16)
-    end
-  elseif id == "phone" then
-    -- No card art, so no signal meter and no tilemap: the list and the call
-    -- box are the whole card, at the same coordinates the styled one uses so
-    -- the two read the same way.
-    Chrome.box(0, 3, 20, 9)
-    local list = self:phoneList()
-    for row = 1, PHONE_ROWS do
-      local ty = 4 + (row - 1) * 2
-      local label, className = self:contactRow(list[row + self.phoneScroll] or 0)
-      Chrome.print(label, 2, ty)
-      if className then Chrome.print(className, 5, ty + 1) end
-    end
-    Chrome.cursor(1, 4 + self.phoneCursor * 2)
-    Chrome.textbox(0, 12, 18, 4)
-    self:printBoxText(self.call and (self.call.text or "")
-      or self:phoneText("AskWhoCall"))
-    self:drawPhoneSubmenu()
-  else
-    Chrome.box(0, 4, 20, 14)
-    Chrome.print(Strings("NO CARD DATA"), 2, 6)
-  end
 end
 
 Pokegear.CUSTOM_RAMP_FILM = true
 
 function Pokegear:drawPanel()
-  if not self:styled() then
-    self:drawPlain()
-    love.graphics.setColor(1, 1, 1, 1)
-    return
-  end
+  if not self:styled() then error("menu_gfx.lua has no drawable pokegear art", 2) end
   local G = love.graphics
   local function paint()
     -- InitPokegearTilemap ByteFills the whole SCREEN_AREA with $4f before the
@@ -2726,7 +2648,8 @@ Pokegear.CARDS = CARDS
 -- Exported for tests and drivers: the dial, the show machine, and the tables
 -- the shows read out of.
 Pokegear.RADIO_CHANNELS = RADIO_CHANNELS
-Pokegear.STATION_NAMES = STATION_NAMES
+Pokegear.STATION_LABELS = STATION_LABELS
+Pokegear.PHONE_TEXT = PHONE_TEXT
 Pokegear.Radio = Radio
 Pokegear.OPT_ADVERBS = OPT_ADVERBS
 Pokegear.OPT_ADJECTIVES = OPT_ADJECTIVES

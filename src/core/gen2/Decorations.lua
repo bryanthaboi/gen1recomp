@@ -26,9 +26,16 @@
 -- top of it (src/ui/gen2/DecorationMenu.lua) and the tests can drive the same
 -- routines the map callbacks do.
 
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 
 local Decorations = {}
+
+local romData = nil
+
+local function romLine(label, ...)
+  return CommonText.plain(RomText(romData, label, nil, ...))
+end
 
 -- constants/deco_constants.asm, decoration types.  The type decides how
 -- GetDecoName spells the row and, for the four maptile kinds, that
@@ -104,50 +111,64 @@ Decorations.OBJECT_SLOTS = {
 -- byte for the four an object stands on.  The SPRITE_* names are in comments
 -- because the value the cart stores IS the byte -- wVariableSprites holds it
 -- raw and World:resolveSprite looks it up in constants.spriteOrder.
+local function decoNameLabel(index)
+  return "DecorationNames#" .. (index + 1)
+end
+
 local function deco(kind, name, action, flag, sprite)
+  if type(name) == "number" then name = decoNameLabel(name) end
   return { type = kind, name = name, action = action, flag = flag,
            sprite = sprite }
 end
 
 local TEMP = EVENT_TEMPORARY_UNTIL_MAP_RELOAD_1
 
+-- constants/deco_constants.asm:21
+local CANCEL_DECO, PUT_IT_AWAY = 0, 1
+local MAGNAPLANT, TROPICPLANT, JUMBOPLANT, TOWN_MAP_POSTER = 2, 3, 4, 5
+local FAMICOM, SUPER_NES, NINTENDO_64, VIRTUAL_BOY = 6, 7, 8, 9
+local GOLD_TROPHY, SILVER_TROPHY, SURF_PIKA_DOLL = 10, 11, 12
+local NAME_BED, NAME_CARPET, NAME_POSTER, NAME_DOLL, NAME_BIG = 13, 14, 15, 16, 17
+local FEATHERY_BED, PIKACHU_BED, PINK_BED, POLKADOT_BED = 18, 19, 20, 21
+local RED_CARPET, BLUE_CARPET, YELLOW_CARPET, GREEN_CARPET = 22, 23, 24, 25
+
 local ATTRIBUTES = {
-  [0] = deco(PLANT, "CANCEL", nil, TEMP, 0),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_BED", TEMP, 0),                    -- BEDS
-  deco(BED, "FEATHERY", "SET_UP_BED", EVENT_DECO_BED_1 + 0, 0x1b),
-  deco(BED, "PINK", "SET_UP_BED", EVENT_DECO_BED_1 + 1, 0x1c),
-  deco(BED, "POLKADOT", "SET_UP_BED", EVENT_DECO_BED_1 + 2, 0x1d),
-  deco(BED, "PIKACHU", "SET_UP_BED", EVENT_DECO_BED_1 + 3, 0x1e),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_CARPET", TEMP, 0),                 -- CARPETS
-  deco(CARPET, "RED", "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 0, 0x08),
-  deco(CARPET, "BLUE", "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 1, 0x0b),
-  deco(CARPET, "YELLOW", "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 2, 0x0e),
-  deco(CARPET, "GREEN", "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 3, 0x11),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_PLANT", TEMP, 0),                  -- PLANTS
-  deco(PLANT, "MAGNAPLANT", "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 0, 0x20),
-  deco(PLANT, "TROPICPLANT", "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 1, 0x21),
-  deco(PLANT, "JUMBOPLANT", "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 2, 0x22),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_POSTER", TEMP, 0),                 -- POSTERS
+  [0] = deco(PLANT, CANCEL_DECO, nil, TEMP, 0),
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_BED", TEMP, 0), -- BEDS
+  deco(BED, FEATHERY_BED, "SET_UP_BED", EVENT_DECO_BED_1 + 0, 0x1b),
+  deco(BED, PINK_BED, "SET_UP_BED", EVENT_DECO_BED_1 + 1, 0x1c),
+  deco(BED, POLKADOT_BED, "SET_UP_BED", EVENT_DECO_BED_1 + 2, 0x1d),
+  deco(BED, PIKACHU_BED, "SET_UP_BED", EVENT_DECO_BED_1 + 3, 0x1e),
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_CARPET", TEMP, 0), -- CARPETS
+  deco(CARPET, RED_CARPET, "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 0, 0x08),
+  deco(CARPET, BLUE_CARPET, "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 1, 0x0b),
+  deco(CARPET, YELLOW_CARPET, "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 2, 0x0e),
+  deco(CARPET, GREEN_CARPET, "SET_UP_CARPET", EVENT_DECO_CARPET_1 + 3, 0x11),
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_PLANT", TEMP, 0), -- PLANTS
+  deco(PLANT, MAGNAPLANT, "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 0, 0x20),
+  deco(PLANT, TROPICPLANT, "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 1, 0x21),
+  deco(PLANT, JUMBOPLANT, "SET_UP_PLANT", EVENT_DECO_PLANT_1 + 2, 0x22),
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_POSTER", TEMP, 0), -- POSTERS
   -- The TOWN MAP poster is a DECO_PLANT: its name is a DecorationNames entry
   -- rather than a species, so GetDecoName must not append " POSTER" to it.
-  deco(PLANT, "TOWN MAP", "SET_UP_POSTER", EVENT_DECO_POSTER_1 + 0, 0x1f),
+  deco(PLANT, TOWN_MAP_POSTER, "SET_UP_POSTER", EVENT_DECO_POSTER_1 + 0, 0x1f),
   deco(POSTER, "PIKACHU", "SET_UP_POSTER", EVENT_DECO_POSTER_1 + 1, 0x23),
   deco(POSTER, "CLEFAIRY", "SET_UP_POSTER", EVENT_DECO_POSTER_1 + 2, 0x24),
   deco(POSTER, "JIGGLYPUFF", "SET_UP_POSTER", EVENT_DECO_POSTER_1 + 3, 0x25),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_CONSOLE", TEMP, 0),                -- CONSOLES
-  deco(PLANT, "NES", "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 0, 0x5c),     -- SPRITE_FAMICOM
-  deco(PLANT, "SUPER NES", "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 1, 0x5b),
-  deco(PLANT, "NINTENDO64", "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 2, 0x51),
-  deco(PLANT, "VIRTUAL BOY", "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 3, 0x57),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_BIG_DOLL", TEMP, 0),               -- BIG_DOLLS
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_CONSOLE", TEMP, 0), -- CONSOLES
+  deco(PLANT, FAMICOM, "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 0, 0x5c), -- SPRITE_FAMICOM
+  deco(PLANT, SUPER_NES, "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 1, 0x5b),
+  deco(PLANT, NINTENDO_64, "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 2, 0x51),
+  deco(PLANT, VIRTUAL_BOY, "SET_UP_CONSOLE", EVENT_DECO_FAMICOM + 3, 0x57),
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_BIG_DOLL", TEMP, 0), -- BIG_DOLLS
   deco(BIGDOLL, "SNORLAX", "SET_UP_BIG_DOLL", EVENT_DECO_BIG_SNORLAX_DOLL + 0, 0x33),
   deco(BIGDOLL, "ONIX", "SET_UP_BIG_DOLL", EVENT_DECO_BIG_SNORLAX_DOLL + 1, 0x50),
   deco(BIGDOLL, "LAPRAS", "SET_UP_BIG_DOLL", EVENT_DECO_BIG_SNORLAX_DOLL + 2, 0x47),
-  deco(PLANT, "PUT IT AWAY", "PUT_AWAY_DOLL", TEMP, 0),                   -- DOLLS
+  deco(PLANT, PUT_IT_AWAY, "PUT_AWAY_DOLL", TEMP, 0), -- DOLLS
   deco(DOLL, "PIKACHU", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 0, 0x8e),
   -- The surfing Pikachu doll is a DECO_PLANT too, and for the same reason:
   -- "SURF PIKACHU DOLL" is one DecorationNames string, not a mon plus " DOLL".
-  deco(PLANT, "SURF PIKACHU DOLL", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 1, 0x34),
+  deco(PLANT, SURF_PIKA_DOLL, "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 1, 0x34),
   deco(DOLL, "CLEFAIRY", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 2, 0x8f),
   deco(DOLL, "JIGGLYPUFF", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 3, 0x94),
   deco(DOLL, "BULBASAUR", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 4, 0x93),
@@ -169,8 +190,8 @@ local ATTRIBUTES = {
   deco(DOLL, "MACHOP", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 19, 0x9a),
   deco(DOLL, "TENTACOOL", "SET_UP_DOLL", EVENT_DECO_PIKACHU_DOLL + 20, 0x98),
   -- Both trophies are SET_UP_DOLL: a trophy stands in an ornament slot.
-  deco(PLANT, "GOLD TROPHY", "SET_UP_DOLL", EVENT_DECO_GOLD_TROPHY, 0x5e),
-  deco(PLANT, "SILVER TROPHY", "SET_UP_DOLL", EVENT_DECO_SILVER_TROPHY, 0x5f),
+  deco(PLANT, GOLD_TROPHY, "SET_UP_DOLL", EVENT_DECO_GOLD_TROPHY, 0x5e),
+  deco(PLANT, SILVER_TROPHY, "SET_UP_DOLL", EVENT_DECO_SILVER_TROPHY, 0x5f),
 }
 Decorations.ATTRIBUTES = ATTRIBUTES
 
@@ -187,13 +208,13 @@ local function range(first, last)
 end
 
 Decorations.CATEGORIES = {
-  { id = 1, label = "BED", members = range(2, 5) },
-  { id = 6, label = "CARPET", members = range(7, 10) },
-  { id = 11, label = "PLANT", members = range(12, 14) },
-  { id = 15, label = "POSTER", members = range(16, 19) },
-  { id = 20, label = "GAME CONSOLE", members = range(21, 24) },
-  { id = 29, label = "ORNAMENT", members = range(30, 52) },
-  { id = 25, label = "BIG DOLL", members = range(26, 28) },
+  { id = 1, members = range(2, 5) },
+  { id = 6, members = range(7, 10) },
+  { id = 11, members = range(12, 14) },
+  { id = 15, members = range(16, 19) },
+  { id = 20, members = range(21, 24) },
+  { id = 29, members = range(30, 52) },
+  { id = 25, members = range(26, 28) },
 }
 
 -- data/decorations/decorations.asm DecorationIDs: DECOFLAG_* -> DECO_*.  The
@@ -266,6 +287,18 @@ end
 -- decoration constants are a bare const_def block with no name table in the
 -- ROM behind it, so there is nothing to spell them by; battle_anims addresses
 -- its unnamed rows the same way ("subanim:<n>").
+-- data/decorations/names.asm:1
+local function nameText(data, index)
+  return RomText(data, decoNameLabel(index), nil)
+end
+
+local function baseName(data, name)
+  if type(name) == "string" and name:match("^DecorationNames#%d+$") then
+    return RomText(data, name, nil)
+  end
+  return name
+end
+
 local DECO_ID_PREFIX = "deco:"
 local registryRows = nil
 
@@ -296,19 +329,10 @@ end
 
 -- the merged table, held by reference; nil forgets it
 function Decorations.useRegistry(data)
+  romData = data
   registryRows = data and data.gen2Decorations or nil
   return registryRows ~= nil
 end
-
--- GetDecoName's grammar.  These are templates rather than translated suffix
--- fragments so a language can move the kind before or after the authored
--- colour/species name.  Strings.source keeps the templates visible to the
--- translation catalog while the lookup stays at use time, after mods load.
-local BED_NAME = Strings.source("%s BED")
-local CARPET_NAME = Strings.source("%s CARPET")
-local POSTER_NAME = Strings.source("%s POSTER")
-local DOLL_NAME = Strings.source("%s DOLL")
-local BIG_DOLL_NAME = Strings.source("BIG %s")
 
 -- GetDecoName: the display name, built from the type and the name column.  The
 -- four types that name a SPECIES read the mon's name out of the data table,
@@ -317,13 +341,13 @@ local BIG_DOLL_NAME = Strings.source("BIG %s")
 function Decorations.name(decoId, monName)
   local attr = Decorations.attributes(decoId)
   if not attr then return "" end
-  local base = attr.name
-  if attr.type == BED then return Strings(BED_NAME, base) end
-  if attr.type == CARPET then return Strings(CARPET_NAME, base) end
+  local base = baseName(romData, attr.name)
+  if attr.type == BED then return base .. nameText(romData, NAME_BED) end
+  if attr.type == CARPET then return base .. nameText(romData, NAME_CARPET) end
   local mon = (monName and monName(base)) or base
-  if attr.type == POSTER then return Strings(POSTER_NAME, mon) end
-  if attr.type == DOLL then return Strings(DOLL_NAME, mon) end
-  if attr.type == BIGDOLL then return Strings(BIG_DOLL_NAME, mon) end
+  if attr.type == POSTER then return mon .. nameText(romData, NAME_POSTER) end
+  if attr.type == DOLL then return mon .. nameText(romData, NAME_DOLL) end
+  if attr.type == BIGDOLL then return nameText(romData, NAME_BIG) .. mon end
   return base
 end
 
@@ -391,18 +415,18 @@ end
 -- Placing
 --------------------------------------------------------------------------
 
--- data/text/common_1.asm.  Declared up here and formatted at the call site, so
--- Strings.source is what registers them.
-local SET_UP = Strings.source("Set up the\n%s.")
-local PUT_AWAY = Strings.source("Put away the\n%s.")
-local NOTHING_TO_PUT_AWAY = Strings.source("There's nothing to\nput away.")
-local ALREADY_SET_UP = Strings.source("That's already set\nup.")
-local NOTHING_TO_CHOOSE = Strings.source("There's nothing to\nchoose.")
--- _PutAwayAndSetUpText is one text with a `para` in it, so it is two pages.
-local PUT_AWAY_PAGE = Strings.source("Put away the\n%s")
-local AND_SET_UP = Strings.source("and set up the\n%s.")
+-- data/text/common_1.asm:316
+local SET_UP = "_SetUpTheDecoText"
+local PUT_AWAY = "_PutAwayTheDecoText"
+local NOTHING_TO_PUT_AWAY = "_NothingToPutAwayText"
+local ALREADY_SET_UP = "_AlreadySetUpText"
+local PUT_AWAY_AND_SET_UP = "_PutAwayAndSetUpText"
 
-Decorations.NOTHING_TO_CHOOSE = NOTHING_TO_CHOOSE
+local function pages(body)
+  local out = {}
+  for page in (body .. "\f"):gmatch("(.-)\f") do out[#out + 1] = page end
+  return out
+end
 
 -- DoDecorationAction2 for one menu row.  Returns
 --   changed  wChangedDecorations: TRUE only when the room actually changed,
@@ -431,23 +455,22 @@ function Decorations.apply(state, decoId, side, monName)
     -- DecoAction_TryPutItAway clears the slot BEFORE it checks what was in it,
     -- so putting away an empty slot still writes a 0 over the 0.
     state[slot] = 0
-    if current == 0 then return false, { Strings(NOTHING_TO_PUT_AWAY) } end
+    if current == 0 then return false, { romLine(NOTHING_TO_PUT_AWAY) } end
     -- DecoAction_PutItAway_Ornament names the thing that WAS out, not the row
     -- the player picked (the row is the PUT IT AWAY row and has no name).
-    return true, { Strings(PUT_AWAY, name(current)) }
+    return true, { romLine(PUT_AWAY, name(current)) }
   end
 
   if current == decoId then
     -- .alreadythere: carry, so nothing is written and nothing changed.
-    return false, { Strings(ALREADY_SET_UP) }
+    return false, { romLine(ALREADY_SET_UP) }
   end
 
   state[slot] = decoId
   if current == 0 then
-    return true, { Strings(SET_UP, name(decoId)) }
+    return true, { romLine(SET_UP, name(decoId)) }
   end
-  return true, { Strings(PUT_AWAY_PAGE, name(current)),
-                 Strings(AND_SET_UP, name(decoId)) }
+  return true, pages(romLine(PUT_AWAY_AND_SET_UP, name(current), name(decoId)))
 end
 
 -- DecoAction_SetItUp_Ornament .getwhichside: setting a doll up on one side

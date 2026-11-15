@@ -16,15 +16,7 @@ local FILES = {
   "src/script/gen2/specials/unown_words.lua",
 }
 
-local KNOWN = {
-  ["Give a nickname to\nthe {STRBUF} you\nreceived?"] = true, -- data/text/common_2.asm:1085
-  ["This Bug-Catching\nContest winner is\f%s,\nwho caught a\n%s!"] = true, -- data/text/common_2.asm:972
-  ["It's {STRBUF}\nthat was left with\nthe DAY-CARE MAN."] = true, -- data/text/common_2.asm:818
-  ["It's {STRBUF}\nthat was left with\nthe DAY-CARE LADY."] = true, -- data/text/common_2.asm:810
-  ["Which #MON\nshould I photo-\ngraph?"] = true, -- data/text/common_1.asm:1865
-  ["The {STRBUF} POKéMON\nmust all be different kinds."] = true, -- data/text/common_3.asm:1156
-  ["The {STRBUF} POKéMON\nmust not hold the same items."] = true, -- data/text/common_3.asm:1166
-}
+local KNOWN = {}
 
 local ESC = { n = "\n", v = "\v", f = "\f", t = "\t", r = "\r",
   ["\\"] = "\\", ['"'] = '"', ["'"] = "'" }
@@ -99,7 +91,7 @@ for _, path in ipairs(FILES) do
   end
 end
 
-check(swept > 100, ("swept %d multi-line strings"):format(swept))
+check(swept <= 1, ("%d multi-line literals left; the specials print the cache's text"):format(swept))
 for text in pairs(KNOWN) do
   check(seenKnown[text], ("KNOWN entry still present in source: %q"):format(text:sub(1, 40)))
 end

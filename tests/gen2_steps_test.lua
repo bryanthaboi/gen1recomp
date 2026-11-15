@@ -3,12 +3,14 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 steps")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local StepEvents = require("src.world.gen2.StepEvents")
 local Breeding = require("src.core.gen2.Breeding")
 local Happiness = require("src.core.gen2.Happiness")
 local Phone = require("src.core.gen2.Phone")
+require("tests.fixtures.gen2_phone_events").install()
 
 local function mon(opts)
   opts = opts or {}

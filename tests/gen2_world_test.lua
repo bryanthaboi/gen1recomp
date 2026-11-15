@@ -4,6 +4,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 world")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local Permissions = require("src.world.gen2.Permissions")
@@ -92,6 +93,10 @@ check(not World.isRod("OLD_ROD", { OLD_ROD = { index = 7 } }),
   "a rod at the wrong ItemNames index is refused")
 
 local DATA = {
+  text = require("tests.fixtures.gen2_rom_text").text(
+    require("tests.fixture_data.gen2_rom_text_s7_g").text()),
+  gen2Text = require("tests.fixtures.gen2_common_text").text(),
+  gen2EventTables = require("tests.fixtures.gen2_phone_events").events,
   items = ITEMS,
   moves = {
     HEADBUTT = { name = "HEADBUTT", pp = 15 },
@@ -308,6 +313,13 @@ end
 -- A world with the render half replaced: no love here, so the seams that would
 -- push a TextBox, a ChoiceBox or the battle screen record instead.  `log` is
 -- the script trace the assertions read.
+local T = setmetatable({}, {
+  __index = function(_, key)
+    local label = require("src.world.gen2.FieldMoves").TEXT[key] or key
+    return (DATA.text[label]:gsub("{DONE}", ""):gsub("{PROMPT}", ""))
+  end,
+})
+
 local function fakeWorld(cells, player, party, fishGroup, opts)
   opts = opts or {}
   local game = {
@@ -501,7 +513,7 @@ runFrames(seaWorld, 41)
 eq(seaWorld.fishing.phase, "bite", "the cast runs out into the bite")
 eq(#seaWorld.log, 0, "and says nothing until the rod comes back")
 runFrames(seaWorld, 41)
-eq(seaWorld.log[1], "Oh!\nA bite!", "RodBiteText lands after the second pause")
+eq(seaWorld.log[1], T._RodBiteText, "RodBiteText lands after the second pause")
 check(seaWorld.log[2] == nil, "and the battle waits on the button")
 advanceText(seaWorld)
 eq(seaWorld.log[2], "<battle:MAGIKARP>", "the hooked mon is the battle")
@@ -514,7 +526,7 @@ local dryWorld = fakeWorld(waterCells, fakePlayer(5, 5, "up"), nil,
   "FISHGROUP_NONE")
 eq(dryWorld:useRod("OLD_ROD"), "nofish", "no fish group is .FishNoFish")
 runFrames(dryWorld, 41)
-eq(dryWorld.log[1], "Not even a nibble!", "and RodNothingText is the line")
+eq(dryWorld.log[1], T._RodNothingText, "and RodNothingText is the line")
 advanceText(dryWorld)
 check(dryWorld.fishing == nil, "the rod goes away after the nibble line")
 
@@ -734,7 +746,7 @@ local noWorld = fakeWorld(treeCells, fakePlayer(5, 5, "up"), {
     moves = { { id = "HEADBUTT", pp = 15 } } },
 })
 check(noWorld:interact(), "a tree with a HEADBUTT mon takes the press")
-eq(noWorld.log[1], "A POKéMON could be\nin this tree.\fWant to HEADBUTT\nit?",
+eq(noWorld.log[1], T._AskHeadbuttText,
   "AskHeadbuttText is the question")
 advanceText(noWorld)
 eq(noWorld.log[2], "<yesno>", "and it is a yesorno")
@@ -753,7 +765,7 @@ check(hitWorld:interact(), "the ask opens again")
 advanceText(hitWorld)
 answerYesNo(hitWorld, true)
 eq(hitGame.stringBuffer, "OWL", "GetPartyNickname fills wStringBuffer2")
-eq(hitWorld.log[3], "{STRBUF} did a\nHEADBUTT!", "UseHeadbuttText names the mon")
+eq(hitWorld.log[3], T._UseHeadbuttText, "UseHeadbuttText names the mon")
 check(hitWorld.headbutt == nil, "the shake waits for the text")
 advanceText(hitWorld)
 check(hitWorld.headbutt ~= nil, "then ShakeHeadbuttTree starts")
@@ -777,7 +789,7 @@ advanceText(emptyWorld)
 answerYesNo(emptyWorld, true)
 advanceText(emptyWorld)
 runFrames(emptyWorld, 33)
-eq(emptyWorld.log[4], "Nope. Nothing…", "HeadbuttNothingText closes it out")
+eq(emptyWorld.log[4], T._HeadbuttNothingText, "HeadbuttNothingText closes it out")
 
 -- A tree the player is not facing is somebody else's press.
 local pastWorld = fakeWorld(treeCells, fakePlayer(5, 5, "down"), {
@@ -809,16 +821,20 @@ do
   eq(Enc.treeSetUsable("TREEMON_SET_UNUSED", "gs"), false, "so is UNUSED")
 
   -- ../pokecrystal/engine/battle/core.asm:6422 CheckSleepingTreeMon
-  eq(Enc.treeMonAsleep("SPEAROW", "NITE", "crystal"), true,
+  local asleep = { treeMonsAsleep = { NITE = { "SPEAROW" },
+    DAY = { "HOOTHOOT" }, MORN = { "HOOTHOOT" } } }
+  eq(Enc.treeMonAsleep("SPEAROW", "NITE", "crystal", asleep), true,
     "SPEAROW is on the Nite list")
-  eq(Enc.treeMonAsleep("SPEAROW", "DARK", "crystal"), true,
+  eq(Enc.treeMonAsleep("SPEAROW", "DARK", "crystal", asleep), true,
     "DARKNESS_F falls through to Nite")
-  eq(Enc.treeMonAsleep("SPEAROW", "DAY", "crystal"), false,
+  eq(Enc.treeMonAsleep("SPEAROW", "DAY", "crystal", asleep), false,
     "and is awake by day")
-  eq(Enc.treeMonAsleep("HOOTHOOT", "DAY", "crystal"), true,
+  eq(Enc.treeMonAsleep("HOOTHOOT", "DAY", "crystal", asleep), true,
     "HOOTHOOT is on the Day list")
-  eq(Enc.treeMonAsleep("HOOTHOOT", "DAY", "gs"), false,
+  eq(Enc.treeMonAsleep("HOOTHOOT", "DAY", "gs", asleep), false,
     "pokegold has no asleep table at all")
+  check(not pcall(Enc.treeMonAsleep, "SPEAROW", "NITE", "crystal", nil),
+    "crystal with no treeMonsAsleep is an error, not a transcription")
 end
 
 -- ../pokecrystal/engine/events/treemons.asm:126 GetTreeMon's three gates
@@ -964,7 +980,6 @@ local ALL_BADGES = {
   ZEPHYR = true, HIVE = true, PLAIN = true, FOG = true,
   STORM = true, MINERAL = true, GLACIER = true, RISING = true,
 }
-local T = FieldMoves.TEXT
 
 -- One johto tree block in the block the facing cell (5,4) sits in: bx 2, by 2
 -- of a 10-wide grid, so blocks[2 * 10 + 2 + 1].
@@ -1184,7 +1199,7 @@ check(not fieldWorld({}, CUTTER):useFieldMove("DIG", CUTTER[1]).ok,
 do
 local SCENTER = { { species = "HOOTHOOT", nickname = "OWL",
   moves = { { id = "SWEET_SCENT", pp = 20 } } } }
-local NOTHING_HERE = "Looks like there's\nnothing here…"
+local NOTHING_HERE = T._SweetScentNothingText
 
 local bareScent, bareGame = fieldWorld({}, SCENTER)
 bareScent.encounters = nil
@@ -1192,7 +1207,7 @@ check(bareScent:useFieldMove("SWEET_SCENT", SCENTER[1]).ok,
   "SWEET SCENT always queues")
 eq(#bareScent.log, 0, "QueueScript says nothing while the menu is still up")
 runFrames(bareScent, 1)
-eq(bareScent.log[1], "{STRBUF} used\nSWEET SCENT!",
+eq(bareScent.log[1], T._UseSweetScentText,
   "UseSweetScentText names the mon")
 eq(bareGame.stringBuffer, "OWL", "GetPartyNickname fills wStringBuffer2")
 advanceText(bareScent)
@@ -1238,6 +1253,7 @@ contestScent.encounters = ALWAYS
 contestScent.game.save.bugContest = { active = true }
 contestScent.game.data = {
   items = DATA.items, moves = DATA.moves, pokemon = DATA.pokemon,
+  text = DATA.text,
   gen2Encounters = { bugContest = {
     { chance = 1000, species = "HOOTHOOT", min = 5, max = 5 },
   } },
@@ -1418,11 +1434,11 @@ check(Permissions.surfable(0x07) == nil, "a wall is neither")
 -- Already surfing, the menu says so rather than trying again.
 local afloat = fieldWorld(seaCells, SURFER)
 afloat.playerState = FieldMoves.PLAYER_SURF
-eq(afloat:useFieldMove("SURF", SURFER[1]).text, T.ALREADY_SURFING,
+eq(afloat:useFieldMove("SURF", SURFER[1]).text, FieldMoves.TEXT.ALREADY_SURFING,
   "AlreadySurfingText comes before the tile check")
 afloat.playerState = FieldMoves.PLAYER_NORMAL
 local ashore = fieldWorld({}, SURFER)
-eq(ashore:useFieldMove("SURF", SURFER[1]).text, T.CANT_SURF,
+eq(ashore:useFieldMove("SURF", SURFER[1]).text, FieldMoves.TEXT.CANT_SURF,
   "and dry land is CantSurfText")
 
 -- Encounters roll while surfing: the tile underfoot is water, so the gate
@@ -1529,6 +1545,10 @@ local menuWorld, menuGame = fieldWorld({ [4 * 100 + 5] = COLL_CUT_TREE },
   CUTTER, { blocks = { [TREE_BLOCK_INDEX] = 0x5b } })
 menuGame.input = stubInput()
 menuGame.stack = stubStack()
+menuGame.data.text = menuGame.data.text or {}
+for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_e")) do
+  if menuGame.data.text[label] == nil then menuGame.data.text[label] = text end
+end
 local list = PartyMenu.new(menuGame, { party = CUTTER, submenu = true })
 local rows = list:submenuItems(CUTTER[1])
 eq(rows[1].id, "CUT", "a mon that knows CUT gets a CUT row first")
@@ -1546,6 +1566,10 @@ eq(menuGame.stack.cleared, 1, "and the $2 return clears the menus off")
 local menuFail, failGame = fieldWorld({}, CUTTER)
 failGame.input = stubInput()
 failGame.stack = stubStack()
+failGame.data.text = failGame.data.text or {}
+for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_e")) do
+  if failGame.data.text[label] == nil then failGame.data.text[label] = text end
+end
 local failList = PartyMenu.new(failGame, { party = CUTTER, submenu = true })
 failGame.input:press("a")
 failList:update(0)
@@ -1669,15 +1693,29 @@ do
   check(not town:isWaterCell(-1, -1), "off-map cells are never water")
 end
 
--- src/world/gen2/CmdQueue.lua's hand-ported stone tables name warps, object ids
--- and event flags by NUMBER, because the callback they live behind is not
--- extracted.  Pin the four numbers the cache actually emits, so a re-import that
--- shifts any of them fails here rather than by a boulder quietly not falling.
 do
   local CmdQueue = require("src.world.gen2.CmdQueue")
+  local scripts = loadLua("data/generated/scripts.lua")
+  local function entryFor(mapId)
+    for _, cb in ipairs(maps[mapId].callbacks or {}) do
+      if cb.callback == "MAPCALLBACK_CMDQUEUE" then
+        for _, cmd in ipairs(scripts[cb.scriptKey] or {}) do
+          if cmd.op == "writecmdqueue" then
+            return CmdQueue.fromExtracted(cmd.queue, mapId)
+          end
+        end
+      end
+    end
+  end
+
   local ice = maps.ICE_PATH_B1F
   local iceMap = Map.new(ice, tilesets[ice.tileset])
-  for i, row in ipairs(CmdQueue.STONE_TABLES.ICE_PATH_B1F) do
+  local iceEntry = entryFor("ICE_PATH_B1F")
+  check(iceEntry ~= nil, "Ice Path B1F writes a stone table")
+  eq(#iceEntry.rows, 4, "with a row per boulder")
+  for i, row in ipairs(iceEntry.rows) do
+    eq(row.object, i + 1, ("Ice Path row %d is object id %d"):format(i, i + 1))
+    eq(row.warp, i + 2, ("and falls through warp %d"):format(i + 2))
     local obj = ice.objects[row.object - 1]
     eq(obj and obj.movement, CmdQueue.BOULDER_MOVEDATA,
       ("Ice Path row %d names a STRENGTH_BOULDER object"):format(i))
@@ -1687,7 +1725,12 @@ do
     check(warp ~= nil, ("row %d names a real warp"):format(i))
     eq(iceMap:cellCollision(warp.x, warp.y), 0x60,
       ("and the tile under it is COLL_PIT (%d,%d)"):format(warp.x, warp.y))
-    eq(row.script[2].event, 1804 + i,
+    local body = scripts[row.script]
+    check(body ~= nil, ("row %d script is in scripts.lua"):format(i))
+    eq(body[1].op, "disappear", ("row %d disappears its boulder first"):format(i))
+    eq(body[1].object, row.object, ("and it is object %d"):format(row.object))
+    eq(body[2].op, "clearevent", ("row %d clears its twin one floor down"):format(i))
+    eq(body[2].event, 1804 + i,
       ("it clears EVENT_BOULDER_IN_ICE_PATH_%dA"):format(i))
   end
   local below = maps.ICE_PATH_B2F_MAHOGANY_SIDE
@@ -1695,13 +1738,22 @@ do
     eq(below.objects[i].eventFlag, 1804 + i,
       ("which is the boulder one floor down (%d)"):format(i))
   end
+
   local gym = maps.BLACKTHORN_GYM_2F
-  for i, row in ipairs(CmdQueue.STONE_TABLES.BLACKTHORN_GYM_2F) do
+  local gymEntry = entryFor("BLACKTHORN_GYM_2F")
+  check(gymEntry ~= nil, "Blackthorn Gym 2F writes a stone table")
+  eq(#gymEntry.rows, 3, "with three rows for its six boulders")
+  local GYM_WARPS = { 5, 3, 4 }
+  for i, row in ipairs(gymEntry.rows) do
+    eq(row.warp, GYM_WARPS[i], ("Blackthorn row %d keeps the cart's warp order"):format(i))
     local obj = gym.objects[row.object - 1]
     eq(obj and obj.movement, CmdQueue.BOULDER_MOVEDATA,
       ("Blackthorn row %d names a STRENGTH_BOULDER object"):format(i))
     check(gym.warps[row.warp] ~= nil,
       ("Blackthorn row %d names a real warp"):format(i))
+    local body = scripts[row.script]
+    check(body ~= nil and body[1].op == "disappear" and body[2].op ~= "clearevent",
+      ("Blackthorn row %d clears no event: nothing appears downstairs"):format(i))
   end
 end
 
@@ -1732,52 +1784,6 @@ do
     -- MAPCALLBACK_SPRITES is in the enum and no map uses it; a count here
     -- would mean the type byte is being read one row off.
     eq(seen.MAPCALLBACK_SPRITES, nil, "no map uses MAPCALLBACK_SPRITES")
-  end
-end
-
--- The extracted stone tables against the hand-ported ones.  These are the
--- SAME data by two routes -- CmdQueue.STONE_TABLES was transcribed from
--- pokegold, the rows below were followed out of the ROM -- so any drift means
--- one of them is wrong.
-do
-  local CmdQueue = require("src.world.gen2.CmdQueue")
-  local scripts = loadLua("data/generated/scripts.lua")
-  local function extractedRows(mapId)
-    for _, cb in ipairs(maps[mapId].callbacks or {}) do
-      if cb.callback == "MAPCALLBACK_CMDQUEUE" then
-        for _, cmd in ipairs(scripts[cb.scriptKey] or {}) do
-          if cmd.op == "writecmdqueue" then return cmd.queue end
-        end
-      end
-    end
-  end
-  local ice = extractedRows("ICE_PATH_B1F")
-  if not ice then
-    check(true, "cache predates writecmdqueue following (SKIP)")
-  else
-    eq(ice.queue, "CMDQUEUE_STONETABLE", "Ice Path writes a stone table")
-    for mapId, hand in pairs(CmdQueue.STONE_TABLES) do
-      local got = CmdQueue.fromExtracted(extractedRows(mapId), mapId)
-      check(got ~= nil, ("%s converts to a queue entry"):format(mapId))
-      eq(#got.rows, #hand, ("%s row count"):format(mapId))
-      for i, row in ipairs(hand) do
-        eq(got.rows[i].warp, row.warp, ("%s row %d warp"):format(mapId, i))
-        eq(got.rows[i].object, row.object, ("%s row %d object"):format(mapId, i))
-        -- The hand-ported row inlines its command list; the extracted one
-        -- names a scripts.lua key, and the script behind it must exist or the
-        -- boulder disappears into a missing key.
-        check(scripts[got.rows[i].script] ~= nil,
-          ("%s row %d script is in scripts.lua"):format(mapId, i))
-      end
-    end
-    -- The boulder script the cart runs, which the hand-port had to write out
-    -- as `rawtext` because nothing pointed at its string.
-    local first = CmdQueue.fromExtracted(ice, "ICE_PATH_B1F").rows[1]
-    local body = scripts[first.script]
-    eq(body[1].op, "disappear", "the boulder disappears first")
-    eq(body[1].object, 2, "and it is ICEPATHB1F_BOULDER1")
-    eq(body[2].op, "clearevent", "then clears its twin one floor down")
-    eq(body[2].event, 1805, "EVENT_BOULDER_IN_ICE_PATH_1A")
   end
 end
 
@@ -2709,7 +2715,28 @@ eq(phoneWorld:specialCall(), 0, "and SPECIALCALL_NONE clears it")
 local function roamerAndSwarmSuite()
 
 local Encounter = require("src.battle.gen2.Encounter")
-local Roamers = require("src.core.gen2.Roamers")
+local RoamersModule = require("src.core.gen2.Roamers")
+local RoamFixture = require("tests.fixtures.gen2_roamers")
+local ROAM_ENCOUNTERS = RoamFixture.encounters("gold")
+local ROAM_ARG = { entryFor = 2, jumpOne = 3, moveOne = 5, update = 4,
+  jumpAll = 4, afterWildBattle = 4, endBattle = 7 }
+local Roamers = setmetatable({}, { __index = function(_, key)
+  local fn = RoamersModule[key]
+  if key == "init" then
+    return function(save, opts)
+      opts = opts or {}
+      opts.encounters = opts.encounters or ROAM_ENCOUNTERS
+      return fn(save, opts)
+    end
+  end
+  local at = ROAM_ARG[key]
+  if not at then return fn end
+  return function(...)
+    local args = { ... }
+    if args[at] == nil then args[at] = ROAM_ENCOUNTERS end
+    return fn(unpack(args, 1, at))
+  end
+end })
 
 -- A random that hands back a scripted queue of ROM bytes.  `% n` because the
 -- module asks for 0..n-1 and the cart masks the same byte down at each use.
@@ -2721,12 +2748,12 @@ local function seeded(bytes)
   end
 end
 
-eq(#Roamers.MAPS, Roamers.NUM_MAPS, "RoamMaps has NUM_ROAMMON_MAPS entries")
+eq(#RoamFixture.ROAM_MAPS, Roamers.NUM_MAPS, "RoamMaps has NUM_ROAMMON_MAPS entries")
 eq(Roamers.NUM_MAPS, 16, "...which is 16, the width JumpRoamMon's mask assumes")
 -- Every destination has to be a START map too, or a beast that walks there can
 -- never walk out again: `.Update`'s not-found path leaves it parked forever.
 local strandedFrom = {}
-for _, row in ipairs(Roamers.MAPS) do
+for _, row in ipairs(RoamFixture.ROAM_MAPS) do
   for _, dest in ipairs(row.to) do
     if not Roamers.entryFor(dest) then
       strandedFrom[#strandedFrom + 1] = row.map .. "->" .. dest
@@ -2741,7 +2768,7 @@ eq(#Roamers.entryFor("ROUTE_36").to, 4, "ROUTE 36 is a four-way junction")
 eq(#Roamers.entryFor("ROUTE_42").to, 4, "so is ROUTE 42")
 eq(#Roamers.entryFor("ROUTE_39").to, 1, "ROUTE 39 is a dead end")
 local widest = 0
-for _, row in ipairs(Roamers.MAPS) do widest = math.max(widest, #row.to) end
+for _, row in ipairs(RoamFixture.ROAM_MAPS) do widest = math.max(widest, #row.to) end
 eq(widest, 4, "no entry has more connections than a two-bit index can reach")
 check(Roamers.entryFor("ROUTE_40") == nil,
   "the water routes are absent: ROUTE 40 is not a roam map")
@@ -2789,8 +2816,8 @@ eq(Roamers.moveOne("GOLDENROD_CITY", nil, "NEW_BARK_TOWN", seeded({ 2 })),
 -- The 1-in-32 jump, and the fact that the SAME byte decides both: a byte whose
 -- low five bits are zero jumps instead of stepping.
 eq(Roamers.moveOne("ROUTE_42", nil, "NEW_BARK_TOWN", seeded({ 32, 5 })),
-  Roamers.MAPS[6].map, "a masked byte of 0 jumps to a random roam map")
-eq(Roamers.MAPS[6].map, "ROUTE_34", "...which for index 5 is ROUTE 34")
+  RoamFixture.ROAM_MAPS[6].map, "a masked byte of 0 jumps to a random roam map")
+eq(RoamFixture.ROAM_MAPS[6].map, "ROUTE_34", "...which for index 5 is ROUTE 34")
 -- JumpRoamMon re-rolls off the map the PLAYER is standing on.
 eq(Roamers.jumpOne("ROUTE_34", seeded({ 5, 6 })), "ROUTE_35",
   "a jump onto the player's own map re-rolls")
@@ -3013,13 +3040,13 @@ Swarm.timeEvents(fishExpire, 201)
 eq(Swarm.fishing(fishExpire), Swarm.FISH_NONE,
   "the fishing flag is cleared with the rest")
 
--- The cache does not carry the swarm or roam tables today.  Assert the reader
--- SHAPE rather than the data, so this suite tells the truth either way.
-check(Roamers.mapTable(nil) == Roamers.MAPS,
-  "with no extracted RoamMaps the transcribed table is used")
+check(not pcall(RoamersModule.mapTable, nil),
+  "with no extracted RoamMaps the reader is an error")
+check(not pcall(RoamersModule.roster, {}),
+  "and so it is with no extracted roamMons")
 local FAKE_ROAM = { { map = "ROUTE_29", to = { "ROUTE_30" } } }
-check(Roamers.mapTable({ roamMaps = FAKE_ROAM }) == FAKE_ROAM,
-  "and an extracted encounters.roamMaps takes over the moment it appears")
+check(RoamersModule.mapTable({ roamMaps = FAKE_ROAM }) == FAKE_ROAM,
+  "an extracted encounters.roamMaps is the table")
 
 end
 roamerAndSwarmSuite()

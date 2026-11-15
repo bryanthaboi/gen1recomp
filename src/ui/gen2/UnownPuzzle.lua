@@ -31,15 +31,12 @@
 --
 -- The art comes out of the cache as menu_gfx.unownPuzzle (the extractor already
 -- does ConvertLoadedPuzzlePieces' 2x enlargement and the border pass, so a
--- picture is a plain 96x96 sheet of 4x4 panels).  Without it the board still
--- plays: panels draw as their numbers, which is enough to solve and enough for
--- a test, and is the same degrade src/ui/gen2/CardFlip.lua takes.
+-- picture is a plain 96x96 sheet of 4x4 panels).
 
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local TileSheet = require("src.ui.gen2.TileSheet")
 
 local UnownPuzzle = {}
@@ -49,22 +46,6 @@ UnownPuzzle.isOpaque = true
 -- DEF PUZZLE_BORDER EQU $ee / DEF PUZZLE_VOID EQU $ef.
 UnownPuzzle.BORDER_TILE = 0xee
 UnownPuzzle.VOID_TILE = 0xef
-
--- PREDEFPAL_UNOWN_PUZZLE (gfx/sgb/predef.pal), transcribed at the extractor's
--- own 5-bit to 8-bit scale so a re-imported cache produces these same bytes:
--- RGB 31,31,31 / 24,20,11 / 18,13,11 / 00,00,00, i.e. white, tan, dark brown,
--- black.  Used when the cache predates the extractor emitting the palette; the
--- same inline transcription src/ui/gen2/GameFreakPresents.lua keeps.
-UnownPuzzle.PALETTE = {
-  { 255, 255, 255 }, { 197, 165, 90 }, { 148, 107, 90 }, { 0, 0, 0 },
-}
--- _CGB_UnownPuzzle loads the same palette into wOBPals1 and then overwrites
--- OBJ colour 0 with `palred 31` (pure red); _UnownPuzzle's `ld a, $24 / call
--- DmgToCgbObjPal0` reorders that to entries 0, 1, 2, 0.  The cursor sheet uses
--- colours 0 and 3, so the bracket comes out red on both.
-UnownPuzzle.CURSOR_PALETTE = {
-  { 255, 0, 0 }, { 197, 165, 90 }, { 148, 107, 90 }, { 255, 0, 0 },
-}
 
 UnownPuzzle.COLUMNS = 6
 UnownPuzzle.ROWS = 6
@@ -114,11 +95,6 @@ local SFX_SOLVED = "Sfx_1stPlace"
 -- press reloads wTextDelayFrames with 15 and every repeat after that with 5.
 local REPEAT_DELAY = 15
 local REPEAT_RATE = 5
-
--- The ten caption tiles ($f6..$ff) spell START▶CANCEL; the same words are
--- printed with the font when the sheet is not in the cache.  Declared here and
--- looked up at the draw site, which is what Strings.source marks.
-UnownPuzzle.CAPTION = Strings.source("START>CANCEL")
 
 -- ---------------------------------------------------------------- the board
 --
@@ -254,35 +230,31 @@ end
 function UnownPuzzle:gfx()
   local data = self.game and self.game.data
   local menu = data and data.gen2MenuGfx
-  return menu and menu.unownPuzzle or nil
+  local gfx = menu and menu.unownPuzzle
+  if type(gfx) ~= "table" then error("menu_gfx.lua has no unownPuzzle", 3) end
+  for _, key in ipairs({ "palette", "cursorPalette", "chrome", "chromeTiles",
+      "chromeFirstTile", "pictures", "cursor" }) do
+    if gfx[key] == nil then error("menu_gfx.lua unownPuzzle has no " .. key, 3) end
+  end
+  return gfx
 end
 
 function UnownPuzzle:loadGfx()
   local gfx = self:gfx()
-  -- The palettes stand on their own: the board is coloured even on the
-  -- art-less degrade, because the cart's colour comes from _CGB_UnownPuzzle
-  -- and not from any sheet.
-  self.palette = (gfx and gfx.palette) or UnownPuzzle.PALETTE
-  self.cursorPalette = (gfx and gfx.cursorPalette)
-    or UnownPuzzle.CURSOR_PALETTE
-  if not gfx then return end
+  self.palette = gfx.palette
+  self.cursorPalette = gfx.cursorPalette
   self.chrome = TileSheet.new({
     path = gfx.chrome,
-    wide = gfx.chromeTiles or 19,
-    firstTile = gfx.chromeFirstTile or 0xed,
+    wide = gfx.chromeTiles,
+    firstTile = gfx.chromeFirstTile,
     palette = self.palette,
   })
-  -- `and` would truncate pcall's second return, so the two loads cannot fold
-  -- into one-liners.
-  local path = gfx.pictures and gfx.pictures[(self.puzzle % 4) + 1]
-  if path then
-    local ok, image = pcall(Assets.image, path)
-    if ok and image then self.picture = image end
-  end
-  if gfx.cursor then
-    local ok, image = pcall(Assets.image, gfx.cursor)
-    if ok and image then self.cursorSheet = image end
-  end
+  local path = gfx.pictures[(self.puzzle % 4) + 1]
+  if not path then error("menu_gfx.lua unownPuzzle has no picture " .. self.puzzle, 2) end
+  self.picture = Assets.image(path)
+  if not self.picture then error(path .. " is missing", 2) end
+  self.cursorSheet = Assets.image(gfx.cursor)
+  if not self.cursorSheet then error(gfx.cursor .. " is missing", 2) end
 end
 
 -- WaitPlaySFX (home/audio.asm:220)
@@ -405,28 +377,11 @@ local CAPTION_FIRST = 0xf6
 local BOX_TOP_LEFT, BOX_TOP, BOX_TOP_RIGHT = 0xf0, 0xf1, 0xf2
 local BOX_SIDE, BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT = 0xf3, 0xf4, 0xf5
 
--- The board is BROWN, not grey.  _CGB_UnownPuzzle (engine/gfx/cgb_layouts.asm)
--- runs CopyFourPalettes over PalPacket_UnownPuzzle, which is
--- PREDEFPAL_UNOWN_PUZZLE four times, and then WipeAttrmap puts every tile on BG
--- palette 0 -- so the whole screen wears white / tan / dark brown / black.  The
--- later `ld a, $e4 / call DmgToCgbBGPals` is the IDENTITY reorder of that
--- palette (home/palettes.asm CopyPals), not a grey ramp of its own.
-local function paletteColor(colors, index)
-  local c = GbcPalette.color(colors, index)
-  return (c[1] or 0) / 255, (c[2] or 0) / 255, (c[3] or 0) / 255
-end
-
 function UnownPuzzle:drawTile(tile, tx, ty)
-  if self.chrome and self.chrome:draw(tile, tx, ty) then return true end
-  local G = love.graphics
-  if tile == UnownPuzzle.VOID_TILE then
-    G.setColor(paletteColor(self.palette, 1))
-  else
-    G.setColor(paletteColor(self.palette, 3))
+  if not self.chrome:draw(tile, tx, ty) then
+    error(("tile $%02x is not in %s"):format(tile, tostring(self.chrome.path)), 2)
   end
-  G.rectangle("fill", tx * 8, ty * 8, 8, 8)
-  G.setColor(0, 0, 0, 1)
-  return false
+  return true
 end
 
 function UnownPuzzle:fillCell(cell, tile)
@@ -461,32 +416,23 @@ end
 -- just the panel's row and column in the 4x4 picture.
 function UnownPuzzle:drawPiece(piece, tx, ty)
   local size = UnownPuzzle.PIECE_TILES * 8
-  if self.picture then
-    local index = piece - 1
-    local sx = (index % UnownPuzzle.PIECES_WIDE) * size
-    local sy = math.floor(index / UnownPuzzle.PIECES_WIDE) * size
-    local w, h = self.picture:getDimensions()
-    local quad = reusedQuad(self, "piece", sx, sy, size, size, w, h)
-    love.graphics.setColor(1, 1, 1, 1)
-    -- The four pictures are drawn out of colours 1 and 2 alone, so binding BG
-    -- palette 0 here is what turns the panels tan and dark brown.
-    local function body()
-      love.graphics.draw(self.picture, quad, tx * 8, ty * 8)
-    end
-    if self.palette and GbcPalette.available() then
-      GbcPalette.with(self.palette, body)
-    else
-      body()
-    end
-    love.graphics.setColor(0, 0, 0, 1)
-    return
+  local index = piece - 1
+  local sx = (index % UnownPuzzle.PIECES_WIDE) * size
+  local sy = math.floor(index / UnownPuzzle.PIECES_WIDE) * size
+  local w, h = self.picture:getDimensions()
+  local quad = reusedQuad(self, "piece", sx, sy, size, size, w, h)
+  love.graphics.setColor(1, 1, 1, 1)
+  -- The four pictures are drawn out of colours 1 and 2 alone, so binding BG
+  -- palette 0 here is what turns the panels tan and dark brown.
+  local function body()
+    love.graphics.draw(self.picture, quad, tx * 8, ty * 8)
   end
-  local G = love.graphics
-  G.setColor(paletteColor(self.palette, 2))
-  G.rectangle("fill", tx * 8, ty * 8, size, size)
-  G.setColor(0, 0, 0, 1)
-  G.rectangle("line", tx * 8 + 0.5, ty * 8 + 0.5, size - 1, size - 1)
-  Chrome.print(tostring(piece), tx + 1, ty + 1)
+  if GbcPalette.available() then
+    GbcPalette.with(self.palette, body)
+  else
+    body()
+  end
+  love.graphics.setColor(0, 0, 0, 1)
 end
 
 -- The cursor's four OBJ tiles, mirrored into a 3x3 bracket by
@@ -503,12 +449,6 @@ local CURSOR_CELLS = {
 
 function UnownPuzzle:drawCursor(tx, ty)
   local G = love.graphics
-  if not self.cursorSheet then
-    G.setColor(paletteColor(self.cursorPalette, 4))
-    G.rectangle("line", tx * 8 + 0.5, ty * 8 + 0.5, 23, 23)
-    G.setColor(0, 0, 0, 1)
-    return
-  end
   local w, h = self.cursorSheet:getDimensions()
   G.setColor(1, 1, 1, 1)
   local function body()
@@ -524,7 +464,7 @@ function UnownPuzzle:drawCursor(tx, ty)
   end
   -- OBJ palette 0, whose colours 0 and 3 are both the red _CGB_UnownPuzzle
   -- forces in: the bracket's sheet uses only those two, so it draws red.
-  if self.cursorPalette and GbcPalette.available() then
+  if GbcPalette.available() then
     GbcPalette.with(self.cursorPalette, body)
   else
     body()
@@ -546,15 +486,9 @@ function UnownPuzzle:drawStartCancel()
   self:drawTile(BOX_BOTTOM_RIGHT, BOX_RIGHT, BOX_Y + 2)
   -- On the solve the border is redrawn without the caption, so the box empties.
   if self.solved then return end
-  local drew = false
-  if self.chrome then
-    drew = self.chrome:available()
-    for i = 0, CAPTION_TILES - 1 do
-      self.chrome:draw(CAPTION_FIRST + i, CAPTION_X + i, CAPTION_Y)
-    end
-  end
-  if not drew then
-    Chrome.print(Strings(UnownPuzzle.CAPTION), CAPTION_X, CAPTION_Y)
+  if not self.chrome:available() then error(self.chrome.path .. " is missing", 2) end
+  for i = 0, CAPTION_TILES - 1 do
+    self.chrome:draw(CAPTION_FIRST + i, CAPTION_X + i, CAPTION_Y)
   end
 end
 

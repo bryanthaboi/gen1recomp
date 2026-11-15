@@ -32,6 +32,7 @@ for _, key in ipairs({ "OPP_BROCK#1", "OPP_MISTY#1", "OPP_LT_SURGE#1",
     text[label] = "text:" .. label
   end
 end
+text._CeruleanGymMistyTM11ExplanationText = "text:_CeruleanGymMistyTM11ExplanationText"
 
 local fakeGame = { data = { text = text }, save = { flags = {} } }
 

@@ -16,6 +16,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 badges")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local FieldMoves = require("src.world.gen2.FieldMoves")
@@ -40,16 +41,7 @@ eq(FieldMoves.BADGE_FLAG[34].store, "kantoBadges",
 -- pokecrystal/constants/engine_flags.asm:39 declares 162 flags to pokegold's
 -- 93, moving the whole badge block up one.
 do
-  local order = {}
-  for i = 1, 43 do order[i] = "ENGINE_UNRELATED" .. i end
-  order[10] = nil -- a const_skip hole must not truncate the map
-  for index, name in ipairs(FieldMoves.JOHTO_BADGES) do
-    order[27 + index] = "ENGINE_" .. name .. "BADGE"
-  end
-  for index, name in ipairs(FieldMoves.KANTO_BADGES) do
-    order[35 + index] = "ENGINE_" .. name .. "BADGE"
-  end
-  FieldMoves.bindEngineFlags(order)
+  FieldMoves.bindEngineFlags(require("tests.fixture_data.gen2_engine_flags").order("crystal"))
   eq(FieldMoves.BADGE_FLAG[27].name, "ZEPHYR", "crystal ZEPHYRBADGE is 27")
   eq(FieldMoves.BADGE_FLAG[28].name, "HIVE", "crystal HIVEBADGE is 28")
   eq(FieldMoves.BADGE_FLAG[34].name, "RISING", "crystal RISINGBADGE is 34")
@@ -58,8 +50,10 @@ do
      "a renumbered Kanto badge still lands in kantoBadges")
   eq(FieldMoves.BADGE_FLAG[26], nil, "Gold's ZEPHYR slot is vacated")
 
-  FieldMoves.bindEngineFlags(nil)
-  eq(FieldMoves.BADGE_FLAG[26].name, "ZEPHYR", "no map falls back to Gold")
+  check(not pcall(FieldMoves.bindEngineFlags, nil),
+    "a dataset with no engineFlagOrder is an error")
+  require("tests.fixture_data.gen2_engine_flags").bind("gold")
+  eq(FieldMoves.BADGE_FLAG[26].name, "ZEPHYR", "Gold's ZEPHYRBADGE is 26")
 end
 
 -- ---------------------------------------------------------------------------

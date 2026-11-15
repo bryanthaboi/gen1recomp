@@ -33,7 +33,9 @@ local function newGame(speed)
   local save = Save.newGame({ playerName = "GOLD", trainerId = 1 })
   save.options = save.options or {}
   save.options.textSpeed = speed
-  return { input = input, save = save, data = { audio = {}, items = {} } },
+  return { input = input, save = save, data = { audio = {}, items = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text(
+      require("tests.fixture_data.gen2_rom_text_s7_f1").text()) } },
     input, save
 end
 

@@ -66,7 +66,7 @@ end
 
 -- ------- Screens: resolution identity (parity)
 Screens.invalidate()
-local sgame = { data = {}, stack = newStack() }
+local sgame = { data = { text = dofile("tests/fixture_data/text.lua") }, stack = newStack() }
 for _, id in ipairs({ "TitleState", "IntroMovie", "OakSpeech", "NamingScreen",
     "StartMenu", "PokedexMenu", "DexEntryMenu", "TownMap", "PartyMenu",
     "BagMenu", "SummaryMenu", "TrainerCard", "OptionsMenu", "ShopMenu",
@@ -146,7 +146,7 @@ StateStack:pop()
 local StartMenu = require("src.ui.StartMenu")
 local function startGame()
   return {
-    data = {},
+    data = { text = dofile("tests/fixture_data/text.lua") },
     stack = newStack(),
     input = newInput(),
     save = { flags = { EVENT_GOT_POKEDEX = true }, party = { {} },
@@ -690,7 +690,7 @@ do
     return true
   end
   sgame.overworld = owStub
-  sgame.data.text = {} -- the strength texts fall back to Strings sources
+  sgame.data.text = dofile("tests/fixture_data/text.lua")
   sgame.save.inventory.RAINBOWBADGE = 1
   sgame.save.party[1].moves = { { id = "STRENGTH" } }
   local pm = PartyMenu.new(sgame)

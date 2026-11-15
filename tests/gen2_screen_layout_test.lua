@@ -81,7 +81,9 @@ end
 -- one corner tile; .LetterEntries steps its XOFFSET by $10 a column from an
 -- XCOORD of 24 (OAM), i.e. screen tile 2 for column 0.  The old cursor sat a
 -- tile to the left, between two letters.
-local naming = NamingScreen.new({}, { type = "player" })
+local naming = NamingScreen.new({ data = require("tests.fixtures.gen2_naming").fill({
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text() }) },
+  { type = "player" })
 
 local KEYBOARD_TOP = 8
 for col = 0, 8 do
@@ -119,7 +121,9 @@ check("bracket y matches the printed letter", ty, KEYBOARD_TOP + 2 * 2)
 
 -- A box screen shifts the whole keyboard up two rows and gains a sixth row;
 -- the bracket follows keyboardTop rather than a baked constant.
-local box = NamingScreen.new({}, { type = "box" })
+local box = NamingScreen.new({ data = require("tests.fixtures.gen2_naming").fill({
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text() }) },
+  { type = "box" })
 box.col, box.row = 0, 0
 local btx, bty = box:cursorTile()
 check("box keyboard bracket x", btx, 2)
@@ -154,7 +158,9 @@ function optStack:push(s) self.items[#self.items + 1] = s; return s end
 function optStack:pop() self.items[#self.items] = nil end
 function optStack:top() return self.items[#self.items] end
 
-local options = OptionsMenu.new({ stack = optStack }, { options = {} })
+local options = OptionsMenu.new({ stack = optStack,
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } },
+  { options = {} })
 options:focusRow("textSpeed"):drawPanel()
 local framePage = options:focusRow("frame")
 framePage.index = 1
@@ -225,10 +231,12 @@ local martItems = {
   POTION = { id = "POTION", name = "POTION", pocket = "ITEM", price = 300,
     description = "Restores HP\nby 20." },
 }
-local mart = MartMenu.new({ save = martSave, data = { items = martItems } }, {
+local mart = MartMenu.new({ save = martSave, data = { items = martItems,
+  text = require("tests.fixture_data.gen2_rom_text_s7_f2") } }, {
   save = martSave,
   items = martItems,
   marts = { lists = { { "POTION" } } },
+  text = require("tests.fixtures.gen2_common_text").text(),
 })
 mart:draw()
 check("the top menu does not blank the tilemap", martClears, 0)
@@ -297,7 +305,9 @@ local pcSave = Save.newGame({ playerName = "GOLD", trainerId = 1 })
 pcSave.party[1] = { species = "CYNDAQUIL", nickname = "CYNDA", hp = 20,
   maxHp = 20, level = 5 }
 local pcGame = { input = pcInput, save = pcSave,
-  data = { audio = {}, items = {} } }
+  data = { audio = {}, items = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(
+      require("tests.fixture_data.gen2_rom_text_s7_e")) } }
 
 local pc = CenterPcMenu.new(pcGame, { save = pcSave, onClose = function() end })
 reset()
@@ -333,7 +343,8 @@ check("the .TopMenu window stays up under a PC_DisplayText line",
   hasBox(0, 0, 16, 12), true)
 check("with the speech box over it", hasBox(0, 12, 20, 6), true)
 
-local saveMenu = SaveMenu.new({ save = pcSave, data = { audio = {} } },
+local saveMenu = SaveMenu.new({ save = pcSave, data = { audio = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } },
   { save = pcSave, existed = false, writer = function() return true end })
 reset()
 saveMenu:draw()

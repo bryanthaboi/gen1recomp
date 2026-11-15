@@ -2,9 +2,6 @@
 -- two visible text lines, A to advance.
 --
 -- Text markers (from the extractor): \n = second line, \v = scroll one
--- line up, \f = page break (wait for A, clear).  {PLAYER}/{RIVAL} etc. are
--- substituted before display.  Pushed on the state stack; pops itself when
--- the text is exhausted and A is pressed, then calls onDone.
 
 local Font = require("src.render.Font")
 local UIVisibility = require("src.battle.UIVisibility")
@@ -47,7 +44,7 @@ TextBox.PAUSE = "\1"
 local PAUSE_FRAMES = 30
 
 local function glyphs(str)
-  return #Font.split((str:gsub("[\n\v\f]", "")))
+  return #Font.split((str:gsub("[\n\v\f\r]", "")))
 end
 
 local function stripPauses(text)
@@ -351,14 +348,15 @@ function TextBox.paginate(text, maxCols, gen1)
         end
       end
       while true do
-        local npos = pageText:find("[\n\v]", pos)
+        local npos = pageText:find("[\n\v\r]", pos)
         if not npos then
           addSegment(pageText:sub(pos))
           break
         end
         addSegment(pageText:sub(pos, npos - 1))
-        waitNext = pageText:sub(npos, npos) == "\v"
-        afterNl = not waitNext
+        local sep = pageText:sub(npos, npos)
+        waitNext = sep == "\v"
+        afterNl = sep == "\n"
         pos = npos + 1
       end
       if lines[#lines] == "" then

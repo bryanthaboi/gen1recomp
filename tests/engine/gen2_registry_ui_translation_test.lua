@@ -4,6 +4,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 
 love = require("tests.love_stub")
 require("src.core.Logger").warn = function() end
@@ -16,33 +17,32 @@ local Strings = require("src.core.Strings")
 
 Strings.load({ strings = {
   AM = "MATIN", PM = "SOIR", DAY = "JOUR",
-  [" PAGE AREA CRY PRNT"] = " PAGE ZONE CRI IMPR",
-  lb = "liv", ["%s'S NEST"] = "NID DE %s",
+
   ["Press any button to exit."] = "Appuyez pour sortir.",
 } })
 
--- MainMenu_PrintCurrentTimeAndDay: the clock box now goes through
--- MainMenu.timeString/InitClock.hourString (../pokecrystal/engine/menus/
--- main_menu.asm:286), whose MORN/DAY/NITE word -- not AM/PM -- is
--- Clock.daytimeLabel's own translated DAYTIME_LABEL entry; the no-weekday
--- fallback moved down one row (14 -> 15) with the box's own reposition.
+-- ../pokecrystal/engine/menus/main_menu.asm:286, engine/rtc/timeset.asm:688
 do
   local oldPrint, oldTextbox = Chrome.print, Chrome.textbox
   local drawn = {}
   Chrome.print = function(text, x, y) drawn[x .. ":" .. y] = text end
   Chrome.textbox = function() end
-  local menu = MainMenu.new({}, { hasSave = false, save = false,
-    clock = { hour = 13, minute = 5, weekday = 99 } })
+  local menu = MainMenu.new({ data = { text = require("tests.fixture_data.gen2_rom_text_s7_c")
+    .text({ ["PrintDayOfWeek.Day"] = "JOUR", ["GetTimeOfDayString.day_string"] = "JOUR" }) } },
+    { hasSave = false, save = false, clock = { hour = 13, minute = 5, weekday = 99 } })
   menu:drawClockBox()
-  T.eq(drawn["1:15"], "JOUR", "the main-menu DAY fallback is translated")
+  T.eq(drawn["1:15"], "JOUR", "the main-menu DAY fallback is PrintDayOfWeek.Day")
   T.eq(drawn["4:16"], "JOUR 1:05",
-    "the main-menu daytime word (DAY, not PM) is translated")
+    "the main-menu daytime word (DAY, not PM) is GetTimeOfDayString's")
   Chrome.print, Chrome.textbox = oldPrint, oldTextbox
 end
 
--- Pokegear_UpdateClock uses the same keys in the styled card path.
+-- engine/rtc/print_hours_mins.asm:64
 do
-  local gear = Pokegear.new({ data = {} }, {
+  local text = require("tests.fixture_data.gen2_rom_text_s7_d").text({
+    String_AM = "MATIN", _PokegearPressButtonText = "Appuyez pour sortir.{DONE}",
+  })
+  local gear = Pokegear.new({ data = { text = text } }, {
     save = {}, clock = { hour = 1, minute = 2, weekday = 99 },
   })
   local drawn = {}
@@ -59,11 +59,15 @@ do
 end
 
 -- DexEntryScreen's action strip is one ROM string rather than four invented
--- fragments.  The unit and the grammatical nest title resolve independently.
+-- fragments.
 do
   local save = { pokedex = { seen = { BULBASAUR = true }, caught = {} } }
   local game = { save = save, data = {
     pokemon = { BULBASAUR = { name = "BULBIZARRE" } },
+    text = { ["Pokedex_GetArea.String_SNest"] = " (NID)",
+      ["Pokedex_DrawDexEntryScreenBG.MenuItems#1"] = " PAGE ZONE CRI IMPR",
+      ["Pokedex_DrawDexEntryScreenBG.Height"] = "HT  ?<ROCKET>??<DEXEND>",
+      ["Pokedex_DrawDexEntryScreenBG.Weight"] = "PDS   ???liv" },
     gen2Pokedex = { entries = {
       BULBASAUR = { dex = 1, kind = "GRAINE", height = 204, weight = 150 },
     }, newOrder = { "BULBASAUR" } },
@@ -80,15 +84,18 @@ do
   dex.cursorVisible = function() return false end
   dex:drawEntryBody(dex:current(), game.data.gen2Pokedex.entries.BULBASAUR)
   T.eq(drawn["1:17"], " PAGE ZONE CRI IMPR",
-    "the complete Pokedex action strip is translated")
-  T.eq(drawn["17:9"], "liv", "the Pokedex weight unit is translated")
+    "the Pokedex action strip is .MenuItems")
+  T.eq(drawn["9:9"], "PDS   ???liv", "the Pokedex weight line is .Weight")
 
   local title
   dex.drawAreaHeader = function(_, text) title = text end
   dex.areaBlink = 0
   dex:drawArea()
-  T.eq(title, "NID DE BULBIZARRE",
-    "the Pokedex nest template supports grammatical reordering")
+  T.eq(title, "BULBIZARRE (NID)",
+    "the Pokedex nest title is the name then Pokedex_GetArea.String_SNest")
+  game.data.text["Pokedex_GetArea.String_SNest"] = nil
+  T.check(not pcall(dex.drawArea, dex),
+    "a cache without Pokedex_GetArea.String_SNest is an error")
 end
 
 Strings.load(nil)

@@ -19,6 +19,7 @@ local Theme = require("src.ui.Theme")
 local FieldDefaults = require("src.world.FieldDefaults")
 local Map = require("src.world.Map")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 local Status = require("src.battle.Status")
 local Timing = require("src.core.Timing")
 
@@ -76,6 +77,11 @@ local FIELD_MOVE_X = {
   strength = 10, TELEPORT = 10, softboiled = 8,
 }
 
+local FIELD_MOVE_ACTION = {
+  CUT = "cut", FLY = "fly", SURF = "surf", STRENGTH = "strength", FLASH = "flash",
+  SOFTBOILED = "softboiled", DIG = "escape", TELEPORT = "escape",
+}
+
 local function sameItems(_, items) return items end
 
 local function followerUnavailable(game, mon)
@@ -88,18 +94,16 @@ end
 local function refuseUnavailable(self)
   self.swapFrom = nil
   local TextBox = require("src.render.TextBox")
-  local t = self.game.data and self.game.data.text or {}
   self.game.stack:push(TextBox.new(self.game,
-    t._SleepingPikachuText1 or Strings("There isn't any\nresponse...")))
+    romText(self.game.data, "_SleepingPikachuText1", nil)))
 end
 
 -- .newBadgeRequired (start_sub_menus.asm): every badge-gated arm of
 -- .outOfBattleMovePointers prints this and jumps back to the open submenu
 local function refuseBadge(self)
   local TextBox = require("src.render.TextBox")
-  local t = self.game.data and self.game.data.text or {}
   self.game.stack:push(TextBox.new(self.game,
-    t._NewBadgeRequiredText or Strings("No! A new BADGE\nis required.")))
+    romText(self.game.data, "_NewBadgeRequiredText", nil)))
 end
 
 -- where DIG escapes work: escape_rope_tilesets.asm (Agatha's room is
@@ -621,9 +625,7 @@ function PartyMenu:update(dt)
              FieldDefaults.field(self.game.data, "outsideTilesets")) then
           local TextBox = require("src.render.TextBox")
           local def = self.game.data.pokemon[mon.species]
-          local txt = (self.game.data.text._CannotFlyHereText
-                       or Strings("{RAM:wNameBuffer} can't\nFLY here."))
-                      :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
+          local txt = romText(self.game.data, "_CannotFlyHereText", nil, mon.nickname or def.name)
           self.game.stack:push(TextBox.new(self.game, txt))
           return -- .loop: submenu stays open behind the message
         end
@@ -687,8 +689,7 @@ function PartyMenu:update(dt)
                        current = "_CurrentTooFastText",
                        no_place = "_SurfingNoPlaceToGetOffText" })[reason]
                     or "_NoSurfingHereText"
-        local txt = (self.game.data.text[key] or Strings("No SURFing here!"))
-                    :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
+        local txt = romText(self.game.data, key, nil):gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
         if reason == "no_place" then
           -- .cannotStopSurfing prints _SurfingNoPlaceToGetOffText but
           -- never zeroes wActionResultOrTookBattleTurn, so unlike the
@@ -719,8 +720,7 @@ function PartyMenu:update(dt)
         local def = self.game.data.pokemon[mon.species]
         local key = (reason == "no_badge") and "_NewBadgeRequiredText"
                                             or "_NothingToCutText"
-        local txt = (self.game.data.text[key] or Strings("Nothing to CUT!"))
-                    :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
+        local txt = romText(self.game.data, key, nil):gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
         self.game.stack:push(TextBox.new(self.game, txt))
         return -- .loop: submenu stays open behind the message
       elseif action == "strength" then
@@ -775,9 +775,7 @@ function PartyMenu:update(dt)
                FieldDefaults.field(self.game.data, "outsideTilesets")) then
             local TextBox = require("src.render.TextBox")
             local def = self.game.data.pokemon[mon.species]
-            local txt = (self.game.data.text._CannotUseTeleportNowText
-                         or Strings("{RAM:wNameBuffer} can't\nuse TELEPORT now."))
-                        :gsub("{RAM:wNameBuffer}", mon.nickname or def.name)
+            local txt = romText(self.game.data, "_CannotUseTeleportNowText", nil, mon.nickname or def.name)
             self.game.stack:push(TextBox.new(self.game, txt))
             return -- .loop: submenu stays open behind the message
           end
@@ -790,9 +788,7 @@ function PartyMenu:update(dt)
           -- bagged ESCAPE ROPE
           local TextBox = require("src.render.TextBox")
           self.game.stack:push(TextBox.new(self.game,
-            self.game.data.text._ItemUseNotTimeText
-            or Strings("OAK: %s!\nThis isn't the\ntime to use that!",
-                       self.game.save.player.name)))
+            romText(self.game.data, "_ItemUseNotTimeText", nil, self.game.save.player.name)))
           return -- .loop: submenu stays open behind the message
         end
         if entry.move == "TELEPORT" then
@@ -940,6 +936,19 @@ function PartyMenu:update(dt)
                                   self.game, items, mon, ctx)
       if type(hooked) == "table" then
         items = hooked
+        if not self.battle then
+          for i, row in ipairs(items) do
+            if type(row) == "table" and row.action == nil and row.move ~= nil
+                and row.onSelect == nil then
+              local move = (tostring(row.move):upper():gsub("^MOVE_", ""))
+              local action = FIELD_MOVE_ACTION[move]
+              if action then
+                items[i] = { label = row.label or Strings(move), action = action,
+                             move = action == "escape" and move or nil }
+              end
+            end
+          end
+        end
       else
         Logger.error("ui.party.submenu returned %s; keeping the vanilla list",
                      type(hooked))
@@ -962,20 +971,15 @@ function PartyMenu:bottomMessage()
   if self.message then
     text = self.message
   elseif self.swapFrom then
-    text = self.game.data.text._PartyMenuSwapMonText
-      or Strings("Move POKéMON\nwhere?")
+    text = romText(self.game.data, "_PartyMenuSwapMonText", nil)
   elseif self.tmhm then
-    text = self.game.data.text._PartyMenuUseTMText
-      or Strings("Use TM on which\nPOKéMON?")
+    text = romText(self.game.data, "_PartyMenuUseTMText", nil)
   elseif self.softboiledFrom or self.itemUse then
-    text = self.game.data.text._PartyMenuItemUseText
-      or Strings("Use item on which\nPOKéMON?")
+    text = romText(self.game.data, "_PartyMenuItemUseText", nil)
   elseif self.forceSwitch then
-    text = self.game.data.text._PartyMenuBattleText
-      or Strings("Bring out which\nPOKéMON?")
+    text = romText(self.game.data, "_PartyMenuBattleText", nil)
   else
-    text = self.game.data.text._PartyMenuNormalText
-      or Strings("Choose a POKéMON.")
+    text = romText(self.game.data, "_PartyMenuNormalText", nil)
   end
   -- constants/charmap.asm:19-20
   return require("src.render.TextBox").strip(text)

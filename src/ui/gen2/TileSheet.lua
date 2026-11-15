@@ -30,15 +30,15 @@ function TileSheet.new(opts)
   return self
 end
 
+function TileSheet.loadImage(path)
+  if not (love and love.graphics and love.graphics.newImage) then return nil end
+  if not path then error("tile sheet has no path", 2) end
+  return Assets.image(path)
+end
+
 function TileSheet:image()
   if self.loaded == nil then
-    self.loaded = false
-    if self.path then
-      -- `and` would truncate pcall's second return, so this cannot fold into
-      -- a one-liner.
-      local ok, image = pcall(Assets.image, self.path)
-      if ok and image then self.loaded = image end
-    end
+    self.loaded = TileSheet.loadImage(self.path) or false
   end
   return self.loaded or nil
 end

@@ -16,7 +16,8 @@ local function fake(tower)
   local opened = false
   local state = setmetatable({
     phase = "menu",
-    game = { options = { battleStyle = "SHIFT" }, stack = {} },
+    game = { options = { battleStyle = "SHIFT" }, stack = {},
+      data = { text = require("tests.fixture_data.gen2_rom_text_s7_b").text() } },
     battle = {
       inBattleTowerBattle = tower or nil,
       player = { hp = 10 }, trainer = {},

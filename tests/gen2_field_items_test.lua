@@ -57,7 +57,23 @@ local Strings = require("src.core.Strings")
 
 -- ------------------------------------------------------------------ fixtures
 
+local S7G = require("tests.fixture_data.gen2_rom_text_s7_g")
+
+local function rom(label, ...)
+  local args, i = { ... }, 0
+  local body = S7G.RAW[label]:gsub("%b{}", function(token)
+    if token == "{STRBUF}" or token == "{NUM}" then
+      i = i + 1
+      return tostring(args[i])
+    end
+  end)
+  return (body:gsub("{PROMPT}", ""):gsub("{DONE}", ""))
+end
+
 local DATA = {
+  text = require("tests.fixtures.gen2_rom_text").text(S7G.text()),
+  gen2Text = require("tests.fixtures.gen2_common_text").text(),
+  gen2EventTables = require("tests.fixtures.gen2_phone_events").events,
   audio = { sfx = {}, sfxOrder = {} },
   tokens = require("src.render.TextBox").TOKENS,
   pokemon = {
@@ -188,13 +204,13 @@ do
   local result = ItemEffects.useOnMon("POTION", mon, DATA)
   eq(result.used, true, "a POTION on a hurt mon is spent")
   eq(mon.hp, 30, "and heals HealingHPAmounts' 20")
-  eq(result.text, "CYNDAQUIL\nrecovered 20HP!", "with the cart's line")
+  eq(result.text, rom("_RecoveredSomeHPText", "CYNDAQUIL", 20), "with the cart's line")
 
   local capped = fixtureMon(12, { hp = mon.maxHp - 5 })
   local capResult = ItemEffects.useOnMon("HYPER_POTION", capped, DATA)
   eq(capResult.used, true, "a heal near full HP still lands")
   eq(capped.hp, capped.maxHp, "capped at max HP")
-  eq(capResult.text, "CYNDAQUIL\nrecovered 5HP!", "printing the real delta")
+  eq(capResult.text, rom("_RecoveredSomeHPText", "CYNDAQUIL", 5), "printing the real delta")
 
   local full = fixtureMon(12)
   eq(ItemEffects.useOnMon("POTION", full, DATA).used, false,
@@ -202,7 +218,7 @@ do
   local fainted = fixtureMon(12, { hp = 0 })
   local faintResult = ItemEffects.useOnMon("POTION", fainted, DATA)
   eq(faintResult.used, false, "a fainted target refuses (IsMonFainted)")
-  eq(faintResult.text, ItemEffects.TEXT_NO_EFFECT,
+  eq(faintResult.text, rom(ItemEffects.TEXT_NO_EFFECT),
     "with ItemWontHaveEffectText")
 end
 
@@ -213,7 +229,7 @@ do
   local result = ItemEffects.useOnMon("ANTIDOTE", psn, DATA)
   eq(result.used, true, "ANTIDOTE cures poison")
   eq(psn.status, nil, "the status byte clears")
-  eq(result.text, "CYNDAQUIL's\ncured of poison.", "with the party text")
+  eq(result.text, rom("_CuredOfPoisonText", "CYNDAQUIL"), "with the party text")
 
   local brn = fixtureMon(12, { status = "brn" })
   eq(ItemEffects.useOnMon("ANTIDOTE", brn, DATA).used, false,
@@ -223,7 +239,7 @@ do
   local slp = fixtureMon(12, { status = "sleep" })
   local healAll = ItemEffects.useOnMon("FULL_HEAL", slp, DATA)
   eq(healAll.used, true, "FULL_HEAL's $ff mask takes any status")
-  eq(healAll.text, "CYNDAQUIL's\nhealth returned.", "as HEAL_ALL")
+  eq(healAll.text, rom("_HealthReturnedText", "CYNDAQUIL"), "as HEAL_ALL")
 
   local clean = fixtureMon(12)
   eq(ItemEffects.useOnMon("FULL_HEAL", clean, DATA).used, false,
@@ -249,7 +265,7 @@ do
   eq(result.used, true, "REVIVE stands a fainted mon up")
   eq(down.hp, math.floor(down.maxHp / 2), "at half max HP (ReviveHalfHP)")
   eq(down.status, nil, "with the status wiped")
-  eq(result.text, "CYNDAQUIL\nis revitalized.", "and the cart's line")
+  eq(result.text, rom("_RevitalizedText", "CYNDAQUIL"), "and the cart's line")
 
   local down2 = fixtureMon(12, { hp = 0 })
   ItemEffects.useOnMon("MAX_REVIVE", down2, DATA)
@@ -262,7 +278,7 @@ do
   local egg = fixtureMon(12, { isEgg = true, hp = 0 })
   local eggResult = ItemEffects.useOnMon("REVIVE", egg, DATA)
   eq(eggResult.used, false, "an EGG refuses (UseItem_SelectMon's cp EGG)")
-  eq(eggResult.text, ItemEffects.TEXT_CANT_USE_ON_EGG, "with the EGG line")
+  eq(eggResult.text, rom(ItemEffects.TEXT_CANT_USE_ON_EGG), "with the EGG line")
 end
 
 -- ------------------------------------------------- ItemEffects: RARE CANDY
@@ -279,7 +295,7 @@ do
   check(mon.maxHp > before.max, "stats recomputed at the new level")
   eq(mon.hp, 20 + (mon.maxHp - before.max),
     "current HP gains exactly the max-HP delta")
-  eq(result.text, "CYNDAQUIL grew to\nlevel 12!", "with the grew-to line")
+  eq(result.text, rom("_GrewToLevelText", "CYNDAQUIL", 12), "with the grew-to line")
   eq(#result.learned, 1, "LearnLevelMoves offers the level-12 move")
   eq(result.learned[1], "EMBER", "which is EMBER")
 
@@ -311,14 +327,14 @@ do
   check(mon.maxHp > before.maxHp, "UpdateStatsAfterItem recomputes max HP")
   eq(mon.stats.hp, mon.maxHp, "the recomputed hp stat lands on stats too")
   eq(mon.hp, before.hp, "current HP is UNCHANGED by HP UP")
-  eq(result.text, "CYNDAQUIL's\nHEALTH rose.", "with the cart's stat line")
+  eq(result.text, rom("_ItemStatRoseText", "CYNDAQUIL", "HEALTH"), "with the cart's stat line")
 
   local ceiling = fixtureMon(12, { statExp = {
     hp = 25600, attack = 0, defense = 0, speed = 0, special = 0 } })
   local refused = ItemEffects.useOnMon("HP_UP", ceiling, DATA)
   eq(refused.used, false, "25600 stat exp refuses (cp 100 / jr nc)")
   eq(ceiling.statExp.hp, 25600, "and leaves the word untouched")
-  eq(refused.text, ItemEffects.TEXT_NO_EFFECT, "with NoEffectMessage")
+  eq(refused.text, rom(ItemEffects.TEXT_NO_EFFECT), "with NoEffectMessage")
 
   local edge = fixtureMon(12, { statExp = {
     hp = 25599, attack = 0, defense = 0, speed = 0, special = 0 } })
@@ -337,7 +353,7 @@ do
     local target = fixtureMon(12)
     local outcome = ItemEffects.useOnMon(itemId, target, DATA)
     eq(target.statExp[row.stat], 2560, itemId .. " raises its own stat exp")
-    eq(outcome.text, ("CYNDAQUIL's\n%s rose."):format(row.label),
+    eq(outcome.text, rom("_ItemStatRoseText", "CYNDAQUIL", row.label),
       itemId .. " prints " .. row.label)
   end
 end
@@ -346,34 +362,34 @@ end
 
 do
   local mon = fixtureMon(12)
-  eq(ItemEffects.usePpItem("ETHER", mon, 1).used, true,
+  eq(ItemEffects.usePpItem("ETHER", mon, 1, DATA).used, true,
     "an ETHER on a drained slot is spent")
   eq(mon.moves[1].pp, 35, "restoring 10 capped at max (30 + 10 > 35)")
-  eq(ItemEffects.usePpItem("ETHER", mon, 2).used, false,
+  eq(ItemEffects.usePpItem("ETHER", mon, 2, DATA).used, false,
     "a slot already at max refuses (.dont_restore)")
 
   local berry = fixtureMon(12)
   berry.moves[1].pp = 10
-  ItemEffects.usePpItem("MYSTERYBERRY", berry, 1)
+  ItemEffects.usePpItem("MYSTERYBERRY", berry, 1, DATA)
   eq(berry.moves[1].pp, 15, "MYSTERYBERRY restores 5")
 
   local deep = fixtureMon(12)
   deep.moves[1].pp = 0
-  ItemEffects.usePpItem("MAX_ETHER", deep, 1)
+  ItemEffects.usePpItem("MAX_ETHER", deep, 1, DATA)
   eq(deep.moves[1].pp, 35, "MAX ETHER restores the whole slot")
 
   local elixer = fixtureMon(12)
   elixer.moves[1].pp = 5
   elixer.moves[2].pp = 3
-  local all = ItemEffects.usePpItem("ELIXER", elixer)
+  local all = ItemEffects.usePpItem("ELIXER", elixer, nil, DATA)
   eq(all.used, true, "an ELIXER needs no slot")
   eq(elixer.moves[1].pp, 15, "restoring 10 to every move")
   eq(elixer.moves[2].pp, 13, "each capped by its own max")
-  eq(all.text, ItemEffects.TEXT_PP_RESTORED, "with PPRestoredText")
+  eq(all.text, rom(ItemEffects.TEXT_PP_RESTORED), "with PPRestoredText")
 
   local fullMon = fixtureMon(12)
   fullMon.moves[1].pp = 35
-  eq(ItemEffects.usePpItem("MAX_ELIXER", fullMon).used, false,
+  eq(ItemEffects.usePpItem("MAX_ELIXER", fullMon, nil, DATA).used, false,
     "a party mon with every slot full refuses the ELIXER family")
 end
 
@@ -392,13 +408,13 @@ do
   local capped = ItemEffects.usePpItem("PP_UP", mon, 1, DATA)
   eq(capped.used, false, "a 4th PP UP refuses (PP_UP_MASK's 3-use cap)")
   eq(mon.moves[1].maxPp, 56, "and leaves max PP where it was")
-  eq(capped.text, "TACKLE's PP\nis maxed out.", "with PPIsMaxedOutText")
+  eq(capped.text, rom("_PPIsMaxedOutText", "TACKLE"), "with PPIsMaxedOutText")
 
   local sketch = fixtureMon(12)
   sketch.moves[1] = { id = "SKETCH", pp = 1, maxPp = 1 }
   local sketchResult = ItemEffects.usePpItem("PP_UP", sketch, 1, DATA)
   eq(sketchResult.used, false, "SKETCH refuses a PP UP")
-  eq(sketchResult.text, "SKETCH's PP\nis maxed out.",
+  eq(sketchResult.text, rom("_PPIsMaxedOutText", "SKETCH"),
     "with the same maxed-out line")
 
   local modMon = fixtureMon(12)
@@ -408,7 +424,7 @@ do
     "an id absent from data.moves with no maxPp refuses (base PP unknown)")
   eq(modMon.moves[1].ppUps, nil, "and is not consumed")
   eq(modMon.moves[1].pp, 5, "with current PP untouched")
-  eq(unknown.text, "MOD_MOVE's PP\nis maxed out.",
+  eq(unknown.text, rom("_PPIsMaxedOutText", "MOD_MOVE"),
     "printing the same maxed-out line rather than PP 0")
 end
 
@@ -441,13 +457,13 @@ do
   host:useFieldItem("POTION")
   local party = host.stack:top()
   check(party ~= nil and party.prompt ~= nil, "USE pushes the party list")
-  eq(party.prompt, "Use on which <PK><MN>?",
+  eq(party.prompt, "UseOnWhichPKMNString",
     "under UseOnWhichPKMNString")
   -- Pick the first mon: the real PartyMenu update loop takes the A press.
   drive(host, function() return party.itemResult ~= nil end)
   -- engine/items/item_effects.asm:1748
   check(party.itemResult ~= nil, "the pick stays in the party list")
-  eq(party.itemResult.text, "CYNDAQUIL\nrecovered 20HP!",
+  eq(party.itemResult.text, rom("_RecoveredSomeHPText", "CYNDAQUIL", 20),
     "with PARTYMENUTEXT_HEAL_HP in the list's box")
   eq(party.itemResult.shown, 10, "the bar starts at the pre-heal HP")
   eq(party.itemResult.target, 30, "and climbs to the healed value")

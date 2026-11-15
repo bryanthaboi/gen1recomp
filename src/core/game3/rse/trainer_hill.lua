@@ -404,16 +404,19 @@ function Hill.composeLayout(sess, def)
   local cells = {}
   for y = 0, Hill.FLOOR_HEIGHT_MARGIN - 1 do
     for x = 0, W - 1 do
-      local c = base.cells[y * base.width + x + 1] or { mid = 0, coll = 0xff, elev = 0 }
+      local c = base.cells[y * base.width + x + 1]
+        or error(("trainer hill base layout has no cell at %d,%d"):format(x, y))
       cells[y * W + x + 1] = { mid = c.mid, coll = c.coll, elev = c.elev }
     end
   end
   for y = 0, Hill.FLOOR_HEIGHT_MAIN - 1 do
-    local row = tonumber(fl.map.collision[y + 1]) or 0
+    local row = tonumber(fl.map.collision[y + 1])
+      or error(("trainer hill floor has no collision row %d"):format(y))
     for x = 0, W - 1 do
       local impassable = bit.band(bit.rshift(row, 15 - x), 1)
       cells[(y + Hill.FLOOR_HEIGHT_MARGIN) * W + x + 1] = {
-        mid = (fl.map.metatiles[y * W + x + 1] or 0) + Hill.NUM_METATILES_IN_PRIMARY,
+        mid = (fl.map.metatiles[y * W + x + 1]
+          or error(("trainer hill floor has no metatile at %d,%d"):format(x, y))) + Hill.NUM_METATILES_IN_PRIMARY,
         coll = impassable, elev = Hill.ELEVATION_DEFAULT,
       }
     end

@@ -159,7 +159,9 @@ check(setUpvalue(Commands.show_text, "TextBox", {
 local function textCtx(state)
   return {
     overworld = state,
-    game = { data = { text = {}, resolveText = function() return nil end },
+    game = { data = { text = { rub = "rub", better = "better", received = "received",
+                               noroom = "noroom" },
+                      resolveText = function() return nil end },
              stack = { push = function(_, b) table.insert(boxes, b) end } },
     runner = { yield = function() end, resume = function() end },
   }

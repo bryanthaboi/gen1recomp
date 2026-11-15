@@ -5,9 +5,17 @@ local Battle = require("src.battle.gen2.Battle")
 local Mon = require("src.battle.gen2.Mon")
 
 local text = require("tests.gen2_battle_text_fixture")()
+local capture = require("tests.gen2_capture_text_fixture")()
+for _, copied in ipairs({ require("tests.fixture_data.gen2_rom_text_s7_a"),
+    require("tests.fixture_data.gen2_rom_text_s7_b") }) do
+  for label in pairs(copied.RAW) do capture[label] = true end
+  for label in pairs(copied.crystal) do capture[label] = true end
+end
 for label, line in pairs(text) do
   T.check(not line:find("RAM:", 1, true), label .. " uses the cache's own tokens")
-  T.check(line:find("{PROMPT}$") or line:find("{DONE}$"), label .. " ends like the cache")
+  if not capture[label] then
+    T.check(line:find("{PROMPT}$") or line:find("{DONE}$"), label .. " ends like the cache")
+  end
 end
 
 local pokemon = {

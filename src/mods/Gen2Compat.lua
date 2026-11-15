@@ -1134,10 +1134,7 @@ local function buildOverworld()
     -- NEVER World:replaceBlock, which exists on Gold under the same name and
     -- takes a FLAT INDEX plus a block id: forwarding there edits an unrelated
     -- block and drops the third argument, without erroring.
-    local ok = world:changeBlock(bx, by, block)
-    Runtime.emit("world.block_replaced",
-      { mapId = world.map and world.map.id, bx = bx, by = by, block = block })
-    return ok
+    return world:changeBlock(bx, by, block)
   end
 
   ow.addRuntimeObject = function(mapId, objDef, owner)
@@ -1653,7 +1650,8 @@ local function buildPartyMenu()
 
   -- src/ui/gen2/PartyMenu.lua:734 verbatim
   function overrides.bottomMessage(self)
-    if self.switchFrom then return Party2.PROMPTS.moveTo end
+    if self.switchFrom then return self:rom(Party2.PROMPTS.moveTo) end
+    if self.promptIsBuiltin then return self:rom(self.prompt) end
     return self.prompt
   end
 

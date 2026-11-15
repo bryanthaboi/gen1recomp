@@ -33,11 +33,40 @@ T.eq(crystal.textRows, 12, "ParseCredits clears SCREEN_WIDTH * 12")
 T.eq(crystal.theEndY, 9, "Credits_TheEnd is hlcoord 6, 9")
 T.eq(crystal.lyStep, -2, "Credits_LYOverride is `dec a / dec a`")
 
-T.eq(#Credits.PALETTES_CRYSTAL, 12, "credits.pal is four blocks of three")
-T.eq(Credits.SCENE_SPECIES_CRYSTAL[0], "PICHU", "scene 0 is Pichu")
-T.eq(Credits.SCENE_SPECIES_CRYSTAL[3], "IGGLYBUFF", "scene 3 Igglybuff")
+local function scale5(value) return math.floor(value * 255 / 31 + 0.5) end
+local function pal555(...)
+  local out, args = {}, { ... }
+  for index = 1, 4 do
+    local base = (index - 1) * 3
+    out[index] = { scale5(args[base + 1]), scale5(args[base + 2]),
+      scale5(args[base + 3]) }
+  end
+  return out
+end
+-- ../pokecrystal/gfx/credits/credits.pal:2
+local CRYSTAL_GFX = { palettesPerScene = 3, palettes = {
+  pal555(31, 00, 31, 31, 25, 00, 11, 14, 31, 07, 07, 07),
+  pal555(31, 05, 05, 11, 14, 31, 11, 14, 31, 31, 31, 31),
+  pal555(31, 05, 05, 00, 00, 00, 31, 31, 31, 31, 31, 31),
+  pal555(31, 31, 31, 31, 27, 00, 26, 06, 31, 07, 07, 07),
+  pal555(03, 13, 31, 20, 00, 24, 26, 06, 31, 31, 31, 31),
+  pal555(03, 13, 31, 00, 00, 00, 31, 31, 31, 31, 31, 31),
+  pal555(31, 31, 31, 23, 12, 28, 31, 22, 00, 07, 07, 07),
+  pal555(03, 20, 00, 31, 22, 00, 31, 22, 00, 31, 31, 31),
+  pal555(03, 20, 00, 00, 00, 00, 31, 31, 31, 31, 31, 31),
+  pal555(31, 31, 31, 31, 10, 31, 31, 00, 09, 07, 07, 07),
+  pal555(31, 14, 00, 31, 00, 09, 31, 00, 09, 31, 31, 31),
+  pal555(31, 14, 00, 31, 31, 31, 31, 31, 31, 31, 31, 31),
+} }
+-- ../pokegold/gfx/credits/credits.pal:1
+local GOLD_GFX = { palettesPerScene = 1, palettes = {
+  pal555(31, 31, 31, 29, 08, 27, 15, 24, 12, 07, 07, 07),
+  pal555(31, 31, 31, 30, 26, 11, 31, 11, 27, 07, 07, 07),
+  pal555(31, 31, 31, 31, 31, 05, 17, 23, 31, 07, 07, 07),
+  pal555(31, 31, 31, 22, 15, 10, 31, 19, 09, 07, 07, 07),
+} }
 
-local movie = Credits.new({ data = {} }, {})
+local movie = Credits.new({ data = {} }, { gfx = CRYSTAL_GFX })
 movie.scene = 0
 local banner, strips, field = movie:palettes()
 T.check(banner ~= strips and strips ~= field and banner ~= field,
@@ -65,13 +94,9 @@ ending:parse()
 T.eq(ending.shown[1].y, 9, "THE END lands on row 9")
 
 local stale = Credits.new({ data = {} },
-  { gfx = { palettes = { Credits.PALETTES[0], Credits.PALETTES[1],
-    Credits.PALETTES[2], Credits.PALETTES[3], Credits.PALETTES[0],
-    Credits.PALETTES[1] } } })
-stale.scene = 0
-local _, _, staleField = stale:palettes()
-rgb(staleField[4], 255, 255, 255,
-  "an older crystal cache uses the transcribed block")
+  { gfx = { palettes = GOLD_GFX.palettes } })
+T.check(not pcall(stale.palettes, stale),
+  "a credits.lua without palettesPerScene errors")
 
 local fresh = { palettes = {} }
 for index = 1, 12 do fresh.palettes[index] = { { index, 0, 0 } } end
@@ -97,7 +122,7 @@ T.eq(gs.textRows, 8, "and eight rows of text field")
 T.eq(gs.theEndY, 8, "THE END on row 8")
 T.eq(gs.lyStep, 2, "with the override counting up")
 
-local gold = Credits.new({ data = {} }, {})
+local gold = Credits.new({ data = {} }, { gfx = GOLD_GFX })
 gold.scene = 0
 local one, two, three = gold:palettes()
 T.check(one == two and two == three,

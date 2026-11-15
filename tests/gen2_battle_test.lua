@@ -284,19 +284,20 @@ do
   check("the count line leads", ev[1].text, "1, 2 and…")
   -- ../pokecrystal/home/text.asm:887-896
   check("and is a text_pause, not a prompt", ev[1].textPause, true)
-  check("forgot text names the dropped move",
-    ev[2].text:find("forgot TACKLE") ~= nil, true)
+  check("forgot text names the dropped move", ev[2].text,
+    b:romLine("Text_MoveForgetCount")
+      .. b:romLine("_MoveForgotText", b:monName(learner), "TACKLE"))
   -- engine/pokemon/learn.asm:225-229
   check("the poof rides the forgot line", ev[2].sfx, "Sfx_SwitchPokemon")
-  check("learned text names the new move",
-    ev[3].text:find("learned SPORE") ~= nil, true)
+  check("learned text names the new move", ev[3].text,
+    b:romLine("LearnedMoveText", b:monName(learner), "SPORE"))
 
   -- Decline keeps the moveset and says so.
   b:declineForget(1, "SPORE")
   local dev = b:takeEvents()
   check("decline queues one line", #dev, 1)
-  check("and it is the did-not-learn line",
-    dev[1].text:find("did not learn SPORE") ~= nil, true)
+  check("and it is the did-not-learn line", dev[1].text,
+    b:romLine("DidNotLearnMoveText", b:monName(learner), "SPORE"))
 end
 
 -- Evolution threshold.
@@ -857,9 +858,10 @@ do
     if event.kind == "message" and not withdrew then withdrew = event.text end
     if event.kind == "send" then sentOut = event.text end
   end
-  check("EnemyWithdrewText comes first", withdrew, "JOEY withdrew GEODUDE!")
-  -- ../pokecrystal/data/text/battle.asm:240-246
-  check("then the send-out line", sentOut, "JOEY\nsent out\vPIDGEY!")
+  check("EnemyWithdrewText comes first", withdrew,
+    rotateBattle:romLine("EnemyWithdrewText", "JOEY", "GEODUDE"))
+  check("then the send-out line", sentOut,
+    rotateBattle:romLine("BattleText_EnemySentOut", "JOEY", "PIDGEY"))
 
   -- A refused RUN costs nothing.  .cant_run_from_trainer leaves
   -- wBattlePlayerAction at BATTLEPLAYERACTION_USEMOVE, so BattleMenu_Run's
@@ -1036,11 +1038,11 @@ check("stage total", stages.attack, 3)
 Effects.applyStage(stages, "attack", 6)
 check("clamped at +6", stages.attack, 6)
 check("and refuses to go higher", Effects.applyStage(stages, "attack", 1), nil)
-check("message names the stat", Effects.stageMessage("PIDGEY", "attack", 1),
-  "PIDGEY's ATTACK rose!")
+check("message names the stat", Effects.stageMessage(DATA, "PIDGEY", "attack", 1),
+  "PIDGEY's\nATTACK went up!")
 check("two stages are sharp",
-  Effects.stageMessage("PIDGEY", "defense", -2),
-  "PIDGEY's DEFENSE sharply fell!")
+  Effects.stageMessage(DATA, "PIDGEY", "defense", -2),
+  "PIDGEY's\nDEFENSE\rsharply fell!")
 
 -- Recoil is a quarter of the damage dealt, drain half, both at least 1.
 check("recoil quarter", Effects.recoilDamage(40), 10)
@@ -2884,12 +2886,12 @@ end)()
   b:takeEvents()
   check("the first Protect holds",
     said(b:takeTurn({ kind = "move", move = "PROTECT" }),
-      "CYNDAQUIL protected itself!"), true)
+      b:romText("ProtectedItselfText", player)), true)
   -- A different move zeroes the count, so the next Protect is back to $ff.
   b:takeTurn({ kind = "move", move = "TACKLE" })
   check("an ordinary move resets the count",
     said(b:takeTurn({ kind = "move", move = "PROTECT" }),
-      "CYNDAQUIL protected itself!"), true)
+      b:romText("ProtectedItselfText", player)), true)
   check("and the consecutive one is refused on the halved odds",
     said(b:takeTurn({ kind = "move", move = "PROTECT" }),
       "But it failed!"), true)
@@ -2996,7 +2998,7 @@ end)()
   check("a storing turn spends no PP", player.moves[1].pp, 9)
   check("and stays locked", b:forcedMove(player), "BIDE")
   check("`.still_storing` prints rather than attacking",
-    said(b:takeEvents(), "CYNDAQUIL is storing energy!"), true)
+    said(b:takeEvents(), b:romText("StoringEnergyText", player)), true)
 
   -- A dry BIDE keeps running: the bide arm jumps past MoveSelectionScreen,
   -- where .CheckPlayerHasUsableMoves lives (engine/battle/core.asm:5058).
@@ -3084,13 +3086,13 @@ end)()
     b:canAct(player, "TACKLE"), false)
   check("and the counter was spent", player.statusTurns, 2)
   check("FastAsleepText still goes up",
-    said(b:takeEvents(), "CYNDAQUIL is fast asleep!"), true)
+    said(b:takeEvents(), b:romText("FastAsleepText", player)), true)
 
   player.statusTurns = 3
   check("SLEEP TALK is let through", b:canAct(player, "SLEEP_TALK"), true)
   check("...and still spends its sleep turn", player.statusTurns, 2)
   check("...and still prints the line",
-    said(b:takeEvents(), "CYNDAQUIL is fast asleep!"), true)
+    said(b:takeEvents(), b:romText("FastAsleepText", player)), true)
   player.statusTurns = 3
   check("SNORE is let through too", b:canAct(player, "SNORE"), true)
   b:takeEvents()
@@ -3233,8 +3235,8 @@ end)()
   local events = b:takeEvents()
   check("Belly Drum pays half the max HP", player.hp, 20)
   check("and maximizes ATTACK", b.stages.player.attack, 6)
-  check("with BellyDrumText's second box",
-    said(events, "maximized ATTACK!"), true)
+  check("with BellyDrumText",
+    said(events, b:romText("BellyDrumText", player)), true)
 
   -- CheckUserHasEnoughHP (engine/battle/core.asm:1930) returns the borrow, so
   local half, halfPlayer, halfWild = drumBattle()

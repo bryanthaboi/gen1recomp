@@ -99,16 +99,16 @@ eq(gx .. "," .. gy, "16,32", "glyph 0x11 on an 8 wide sheet is row 2 column 1")
 gx, gy = Braille.glyphCell(0x3F, 16)
 eq(gx .. "," .. gy, "240,48", "the last glyph is the bottom right cell")
 
-print("[test] 6. with no glyph sheet the plain text is printed instead")
-eq(Braille.hasSheet(), false, "no braille sheet is baked in this tier")
+print("[test] 6. without an image renderer nothing is drawn, not the plain text")
+eq(Braille.hasSheet(), false, "no image module, no sheet")
 local FrlgFont = require("src.ui.game3.frlg_font")
 local realDraw = FrlgFont.draw
 local drew = nil
 FrlgFont.draw = function(text) drew = text; return 0 end
 local usedGlyphs = Braille.drawText("CUT", 0, 0, {})
 FrlgFont.draw = realDraw
-eq(usedGlyphs, false, "drawText reports that it fell back")
-eq(drew, "CUT", "the fallback printed the raw string in the ordinary font")
+eq(usedGlyphs, false, "drawText reports that it drew no glyphs")
+eq(drew, nil, "the raw string is never printed in the ordinary font")
 
 print("[test] 7. show opens the message box on a braille frame")
 -- pokefirered/src/scrcmd.c:1558

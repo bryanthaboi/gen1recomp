@@ -48,7 +48,9 @@ return function(game)
   end
   local ow,box=setup(false,true)
   U.wait(300)
-  check("full bag requires acknowledgement",getmetatable(box)==TB and game.stack:top()==box and box:arrowVisible())
+  -- home/joypad2.asm:60-61, home/window.asm:247-250
+  local held=version=="yellow" and box.waiting and box:arrowVisible() or box.done and not box:arrowVisible()
+  check("full bag requires acknowledgement",getmetatable(box)==TB and game.stack:top()==box and held)
   U.shot(game,dir.."/2479_"..version.."_full_bag_wait.png")
   ow,box=setup(true,true)
   U.wait(300)

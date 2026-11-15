@@ -16,7 +16,6 @@ M.DisplayUnownWords = function(vm)
   local game = world and world.game
   if not (game and game.stack) then return end
   local wall = UnownWords.wallFor(game.data, vm.scriptVar or 0)
-  if not wall then return end
   S.block(vm, function(done)
     local screen = UnownWords.new(game, {
       wall = wall, world = world, onClose = function() done(true) end,

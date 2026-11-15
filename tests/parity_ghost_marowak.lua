@@ -73,7 +73,7 @@ local onStep = scripts.POKEMON_TOWER_6F.onStep
 check(onStep ~= nil, "the tower 6F step trigger is registered")
 
 local game = {
-  data = { text = {} },
+  data = { text = Data.text },
   save = { flags = {}, inventory = {} },
   stack = { push = function() end },
 }

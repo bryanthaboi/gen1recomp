@@ -41,10 +41,7 @@
 -- Credits<Mon>GFX sheets, TheEndGFX and CreditsPalettes).  The strip on rows 4
 -- and 13 is drawn from the real 9-tile border: DrawCreditsBorder starts at
 -- tile $24 on row 4 and $20 on row 13, so the two rows are DIFFERENT halves of
--- that strip, not one strip drawn twice.  A cache that predates the extractor
--- change has no such table, and then the banner falls back to the extracted
--- 16x16 mon ICONS, centred in each 4x4 cell and flipping between their two
--- frames on the cadence the real ones would.
+-- that strip, not one strip drawn twice.
 --
 -- THE TEXT IS OURS.  This project replaces GAME FREAK's branding with its own
 -- everywhere else it appears (the boot card, the title screen row), and a
@@ -53,10 +50,8 @@
 -- the scene changes and the copyright/THE END tail are the cart's.
 
 local Chrome = require("src.ui.gen2.Chrome")
-local Font = require("src.render.Font")
 local GameVersion = require("src.core.GameVersion")
 local GbcPalette = require("src.render.GbcPalette")
-local Logger = require("src.core.Logger")
 local Music = require("src.core.Music")
 
 local Credits = {}
@@ -124,49 +119,6 @@ local POST_CREDITS_MUSIC = "Music_PostCredits"
 -- `.end`: `ld a, 32 / ld [wMusicFade], a`.
 local POST_CREDITS_FADE = 32
 
---------------------------------------------------------------------------
--- Palettes
---------------------------------------------------------------------------
-
--- gfx/credits/credits.pal, the first four sets (GetCreditsPalette masks the
--- scene with %11 and each set is 8 bytes).  RGB555 scaled the way the importer
--- scales it, `round(v * 255 / 31)`, so these sit in the same 0-255 space every
--- other palette in the port does.
-local function scale5(value) return math.floor(value * 255 / 31 + 0.5) end
-
-local function pal555(...)
-  local out, args = {}, { ... }
-  for index = 1, 4 do
-    local base = (index - 1) * 3
-    out[index] = { scale5(args[base + 1]), scale5(args[base + 2]),
-      scale5(args[base + 3]) }
-  end
-  return out
-end
-
-Credits.PALETTES = {
-  [0] = pal555(31, 31, 31, 29, 08, 27, 15, 24, 12, 07, 07, 07), -- Bellossom
-  [1] = pal555(31, 31, 31, 30, 26, 11, 31, 11, 27, 07, 07, 07), -- Togepi
-  [2] = pal555(31, 31, 31, 31, 31, 05, 17, 23, 31, 07, 07, 07), -- Elekid
-  [3] = pal555(31, 31, 31, 22, 15, 10, 31, 19, 09, 07, 07, 07), -- Sentret
-}
-
-Credits.PALETTES_CRYSTAL = {
-  pal555(31, 00, 31, 31, 25, 00, 11, 14, 31, 07, 07, 07),
-  pal555(31, 05, 05, 11, 14, 31, 11, 14, 31, 31, 31, 31),
-  pal555(31, 05, 05, 00, 00, 00, 31, 31, 31, 31, 31, 31),
-  pal555(31, 31, 31, 31, 27, 00, 26, 06, 31, 07, 07, 07),
-  pal555(03, 13, 31, 20, 00, 24, 26, 06, 31, 31, 31, 31),
-  pal555(03, 13, 31, 00, 00, 00, 31, 31, 31, 31, 31, 31),
-  pal555(31, 31, 31, 23, 12, 28, 31, 22, 00, 07, 07, 07),
-  pal555(03, 20, 00, 31, 22, 00, 31, 22, 00, 31, 31, 31),
-  pal555(03, 20, 00, 00, 00, 00, 31, 31, 31, 31, 31, 31),
-  pal555(31, 31, 31, 31, 10, 31, 31, 00, 09, 07, 07, 07),
-  pal555(31, 14, 00, 31, 00, 09, 31, 00, 09, 31, 31, 31),
-  pal555(31, 14, 00, 31, 31, 31, 31, 31, 31, 31, 31, 31),
-}
-Credits.CRYSTAL_PALETTES_PER_SCENE = 3
-
 -- Credits_LoadBorderGFX's .Frames, as which of a mon's graphics each of the
 -- four animation frames uses.  Three of the four mons repeat their first
 -- graphic on frame 2; Sentret is the one with four distinct frames.
@@ -184,12 +136,6 @@ Credits.BORDER_FRAMES_CRYSTAL = {
   [2] = { 1, 2, 3, 4 },
   [3] = { 1, 2, 3, 4 },
 }
-
--- The four species the banner parades, in scene order.
-Credits.SCENE_SPECIES = { [0] = "BELLOSSOM", "TOGEPI", "ELEKID", "SENTRET" }
--- ../pokecrystal/engine/movie/credits.asm:610-613
-Credits.SCENE_SPECIES_CRYSTAL =
-  { [0] = "PICHU", "SMOOCHUM", "DITTO", "IGGLYBUFF" }
 
 --------------------------------------------------------------------------
 -- The strings
@@ -413,13 +359,7 @@ function Credits.new(game, opts)
   self.onDone = opts.onDone
   self.script = opts.script or Credits.SCRIPT
   self.allowSkip = opts.allowSkip and true or false
-  self.icons = opts.icons or data.gen2Icons
   self.gfx = opts.gfx or data.gen2Credits
-  if not (self.gfx and self.gfx.scenes) and not Credits.warned then
-    Credits.warned = true
-    Logger.info("gold credits: gfx/credits/ is not in the cache -- the "
-      .. "banner falls back to the mon icons")
-  end
   self.images = {}
 
   -- wJumptableIndex's low nibble, and its two flags kept as their own fields
@@ -479,8 +419,7 @@ local function place(self, id, line)
   self.pending[#self.pending + 1] = { text = text, x = x, y = y }
 end
 
--- Credits_TheEnd: two rows of eight running tile ids at hlcoord 6, 8.  Without
--- gfx/credits/theend.2bpp the same eight columns carry the words instead.
+-- Credits_TheEnd: two rows of eight running tile ids at hlcoord 6, 8.
 local function theEnd(self)
   self.pending[#self.pending + 1] =
     { theEnd = true, x = THEEND_X, y = layout().theEndY, width = THEEND_W }
@@ -662,88 +601,45 @@ end
 -- Drawing
 --------------------------------------------------------------------------
 
--- GetCreditsPalette masks the scene with %11 and takes the 8-byte set at that
--- index.  The extracted table is 1-based, so scene 0 is set 1; the transcribed
--- PALETTES above stay as the fallback for a cache without it.
-function Credits:palette()
-  if isCrystal() then return (self:palettes()) end
-  local sets = self.gfx and self.gfx.palettes
-  local extracted = sets and sets[self.scene % 4 + 1]
-  if extracted then return extracted end
-  return Credits.PALETTES[self.scene] or Credits.PALETTES[0]
+function Credits:need(key)
+  local value = self.gfx and self.gfx[key]
+  if value == nil then error("credits.lua has no " .. key, 2) end
+  return value
 end
 
 -- ../pokecrystal/engine/movie/credits.asm:501-514
 function Credits:palettes()
-  if not isCrystal() then
-    local pal = self:palette()
-    return pal, pal, pal
-  end
-  local sets = self.gfx and self.gfx.palettes
-  if not (sets and sets[12]) then sets = Credits.PALETTES_CRYSTAL end
-  local base = (self.scene % 4) * Credits.CRYSTAL_PALETTES_PER_SCENE
-  return sets[base + 1], sets[base + 2], sets[base + 3]
+  local sets = self:need("palettes")
+  local perScene = self:need("palettesPerScene")
+  local base = (self.scene % 4) * perScene
+  local banner = sets[base + 1]
+  if perScene == 1 then return banner, banner, banner end
+  return banner, sets[base + 2], sets[base + 3]
+end
+
+function Credits:palette()
+  return (self:palettes())
 end
 
 function Credits:image(path)
-  if not path then return nil end
   local cached = self.images[path]
-  if cached == nil then
+  if not cached then
     local Assets = require("src.render.Assets")
-    local ok, image = pcall(Assets.image, path)
-    cached = ok and image or false
-    if cached then cached:setFilter("nearest", "nearest") end
+    cached = Assets.image(path)
+    cached:setFilter("nearest", "nearest")
     self.images[path] = cached
   end
-  return cached or nil
+  return cached
 end
 
--- The icon standing in for this scene's 4x4 mon graphic, and which of its two
--- 16x16 frames the border frame maps onto.
-function Credits:sceneIcon()
-  local names = isCrystal() and Credits.SCENE_SPECIES_CRYSTAL
-    or Credits.SCENE_SPECIES
-  local species = names[self.scene]
-  local icons = self.icons
-  if not (species and icons and icons.species and icons.icons) then return nil end
-  local entry = icons.icons[icons.species[species]]
-  if not entry then return nil end
-  return self:image(entry.image), entry
-end
-
--- An icon sheet is one column of `frames` 16x16 cells, so the four border
--- frames fold onto the two the icon has: 1,2,1,3 becomes 1,2,1,2.  Quads are
--- built once per (sheet, frame) rather than per draw.
-function Credits:iconQuad(image, entry, graphic)
-  local frames = entry.frames or 2
-  local index = (graphic - 1) % frames
-  self.quads = self.quads or {}
-  local key = tostring(entry.id) .. ":" .. index
-  local quad = self.quads[key]
-  if not quad then
-    local height = math.floor((entry.height or 32) / frames)
-    quad = love.graphics.newQuad(0, index * height, entry.width or 16, height,
-      image:getDimensions())
-    self.quads[key] = quad
-  end
-  return quad
-end
-
--- The real 4x4 sheet for this scene, if the cache has one.  Credits<Mon>GFX
--- is `frames` 32x32 blocks stacked, and .Frames' offsets are in whole blocks,
--- so `graphic` indexes straight into it (clamped, because three of the four
--- mons only have three blocks and .Frames never asks them for a fourth).
 function Credits:sceneSheet()
-  local scenes = self.gfx and self.gfx.scenes
-  local entry = scenes and scenes[self.scene % 4 + 1]
-  if not entry then return nil end
+  local entry = self:need("scenes")[self.scene % 4 + 1]
   return self:image(entry.image), entry
 end
 
 function Credits:sheetQuad(image, entry, graphic)
-  local frames = entry.frames or 1
-  local index = math.min(graphic, frames) - 1
-  local w, h = entry.width or 32, entry.height or 32
+  local index = math.min(graphic, entry.frames) - 1
+  local w, h = entry.width, entry.height
   self.quads = self.quads or {}
   local key = "sheet:" .. tostring(entry.species) .. ":" .. index
   local quad = self.quads[key]
@@ -754,10 +650,8 @@ function Credits:sheetQuad(image, entry, graphic)
   return quad
 end
 
--- TheEndGFX, or nil while the cache is without it.
 function Credits:theEndImage()
-  local path = self.gfx and self.gfx.theEnd
-  return path and self:image(path) or nil
+  return self:image(self:need("theEnd"))
 end
 
 -- One 8x8 tile out of the 9-tile border strip, 1-based the way
@@ -793,35 +687,21 @@ function Credits:drawBanner()
       or (GbcPalette.color(pal, 3) or pal[3])
     fill(backdrop, 0, row * 8, SCREEN_W, cell)
     if graphic then
-      -- The real sheet first: a 32x32 block is exactly the 4x4 cell, so it
-      -- tiles the row with no centring and no backdrop showing through.
       local image, entry = self:sceneSheet()
-      local quad = image and entry and self:sheetQuad(image, entry, graphic)
-      local px, py = 0, row * 8
-      if not quad then
-        image, entry = self:sceneIcon()
-        quad = image and entry and self:iconQuad(image, entry, graphic)
-        if quad then
-          local iconW, iconH = entry.width or 16,
-            math.floor((entry.height or 32) / (entry.frames or 2))
-          px = math.floor((cell - iconW) / 2)
-          py = row * 8 + math.floor((cell - iconH) / 2)
+      local quad = self:sheetQuad(image, entry, graphic)
+      local py = row * 8
+      love.graphics.setColor(1, 1, 1, 1)
+      local function body()
+        for repeatIndex = 0, BANNER_REPEATS - 1 do
+          love.graphics.draw(image, quad, repeatIndex * cell, py)
         end
       end
-      if quad then
-        love.graphics.setColor(1, 1, 1, 1)
-        local function body()
-          for repeatIndex = 0, BANNER_REPEATS - 1 do
-            love.graphics.draw(image, quad, repeatIndex * cell + px, py)
-          end
-        end
-        if GbcPalette.available() then
-          GbcPalette.useRaw(pal)
-          body()
-          GbcPalette.clear()
-        else
-          body()
-        end
+      if GbcPalette.available() then
+        GbcPalette.useRaw(pal)
+        body()
+        GbcPalette.clear()
+      else
+        body()
       end
     end
   end
@@ -838,39 +718,28 @@ function Credits:drawBorderStrips()
   local pal = GbcPalette.resolve(strips)
   local color = GbcPalette.color(pal, 3) or pal[3]
   local shift = self.lyOverride % 32
-  local gfx = self.gfx
-  local image = gfx and gfx.border and self:image(gfx.border)
+  local image = self:image(self:need("border"))
   local rows = layout().borderRows
-  local starts = { [rows[1]] = (gfx and gfx.borderTopTile) or 5,
-    [rows[2]] = (gfx and gfx.borderBottomTile) or 1 }
+  local starts = { [rows[1]] = self:need("borderTopTile"),
+    [rows[2]] = self:need("borderBottomTile") }
   for _, row in ipairs(rows) do
     fill(color, 0, row * 8, SCREEN_W, 8)
-    if image then
-      local first = starts[row]
-      love.graphics.setColor(1, 1, 1, 1)
-      local function body()
-        for x = -32, SCREEN_W, 32 do
-          for tile = 0, 3 do
-            love.graphics.draw(image, self:borderQuad(image, first + tile),
-              x + tile * 8 - shift, row * 8)
-          end
+    local first = starts[row]
+    love.graphics.setColor(1, 1, 1, 1)
+    local function body()
+      for x = -32, SCREEN_W, 32 do
+        for tile = 0, 3 do
+          love.graphics.draw(image, self:borderQuad(image, first + tile),
+            x + tile * 8 - shift, row * 8)
         end
       end
-      if GbcPalette.available() then
-        GbcPalette.useRaw(pal)
-        body()
-        GbcPalette.clear()
-      else
-        body()
-      end
+    end
+    if GbcPalette.available() then
+      GbcPalette.useRaw(pal)
+      body()
+      GbcPalette.clear()
     else
-      -- Without the real strip art the slide has nothing to move, so the notch
-      -- below is what carries it: one lighter cell per four, at the offset the
-      -- LY override is holding.
-      local light = GbcPalette.color(pal, 2) or pal[2]
-      for x = -32, SCREEN_W, 32 do
-        fill(light, x + shift, row * 8, 8, 8)
-      end
+      body()
     end
   end
 end
@@ -880,24 +749,14 @@ function Credits:drawText()
   for _, entry in ipairs(self.shown) do
     if entry.theEnd then
       local image = self:theEndImage()
-      if image then
-        -- TheEndGFX is 16 tiles, placed 8 wide on rows 8 and 9: the sheet's
-        -- own 64x16 layout, so it draws whole at the tilemap coordinate.
-        local shaded = GbcPalette.resolve(pal)
-        love.graphics.setColor(1, 1, 1, 1)
-        if GbcPalette.available() then
-          GbcPalette.useRaw(shaded)
-          love.graphics.draw(image, entry.x * 8, entry.y * 8)
-          GbcPalette.clear()
-        else
-          love.graphics.draw(image, entry.x * 8, entry.y * 8)
-        end
+      local shaded = GbcPalette.resolve(pal)
+      love.graphics.setColor(1, 1, 1, 1)
+      if GbcPalette.available() then
+        GbcPalette.useRaw(shaded)
+        love.graphics.draw(image, entry.x * 8, entry.y * 8)
+        GbcPalette.clear()
       else
-        -- Centred in the eight columns the graphic occupies.
-        local text = "THE END"
-        local width = Font.width(text)
-        Chrome.printThrough(text,
-          entry.x + math.floor((entry.width * 8 - width) / 16), entry.y, pal)
+        love.graphics.draw(image, entry.x * 8, entry.y * 8)
       end
     else
       Chrome.printThrough(entry.text, entry.x, entry.y, pal)

@@ -8,13 +8,24 @@ local check = T.check
 require("tests.game3_cache").stubSpeciesNames()
 
 local Pokemon = require("src.core.game3.pokemon")
-Pokemon._battleMoves = {
+local FIXTURE_MOVES = {
   [1] = { name = "POUND", type = 0, pp = 35, power = 40, accuracy = 100 },
   [2] = { name = "KARATE CHOP", type = 1, pp = 25, power = 50, accuracy = 100 },
   [3] = { name = "DOUBLE SLAP", type = 0, pp = 10, power = 15, accuracy = 85 },
   [4] = { name = "COMET PUNCH", type = 0, pp = 15, power = 18, accuracy = 85 },
   [5] = { name = "MEGA PUNCH", type = 0, pp = 20, power = 80, accuracy = 85 },
 }
+local function installFixtureMoves()
+  Pokemon._battleMoves = FIXTURE_MOVES
+  Pokemon._moveNames = {}
+  for id, m in pairs(FIXTURE_MOVES) do Pokemon._moveNames[id] = m.name end
+end
+local realInstall = Pokemon.install
+Pokemon.install = function(...)
+  realInstall(...)
+  installFixtureMoves()
+end
+installFixtureMoves()
 
 package.loaded["src.core.game3.rom_text"] = {
   plain = function(key) return key end, box = function(key) return key end,

@@ -63,7 +63,8 @@ local function newPc(pcItems)
   local game = {
     input = input,
     save = save,
-    data = { audio = {}, pokemon = {}, items = ITEMS },
+    data = { audio = {}, pokemon = {}, items = ITEMS,
+      text = require("tests.fixture_data.gen2_rom_text_s7_e") },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,

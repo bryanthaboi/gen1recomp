@@ -164,7 +164,7 @@ do
   T.eq(battle.outcome, "win", "on the win arm")
   T.eq(save.player.money, 1000 + 2 * LEVEL, "which is where CheckPayDay runs")
   T.eq(battle.payDay, nil, "and the counter is cleared")
-  local paid = eventWithText(battle:takeEvents(), "GOLD picked up ¥30!")
+  local paid = eventWithText(battle:takeEvents(), "GOLD picked up\n¥30!")
   T.check(paid, "BattleText_PlayerPickedUpPayDayMoney")
   T.eq(paid and paid.kind, "money", "on the same event kind the prize uses")
 end
@@ -203,6 +203,7 @@ local function newScreen(save, battle, opts)
   opts = opts or {}
   local pushed = {}
   local screen = setmetatable({
+    game = { data = DATA },
     save = save, battle = battle, picHidden = {},
     contest = opts.contest, tutorial = opts.tutorial,
     contestCaught = false,
@@ -229,7 +230,7 @@ do
   screen:pushCaught(caughtEnemy(battle), "POKE_BALL")
   T.eq(save.player.money, 1000 + 2 * LEVEL, "a capture pays out")
   T.eq(battle.payDay, nil, "and clears the counter")
-  T.check(findText(pushed, "GOLD picked up ¥30!"), "with the payout line")
+  T.check(findText(pushed, "GOLD picked up\n¥30!"), "with the payout line")
 end
 
 do

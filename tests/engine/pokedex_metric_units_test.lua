@@ -51,7 +51,9 @@ check(entry.heightM == 0.9 and entry.weightKg == 6.4 and entry.height == 211,
 
 local PokedexMenu = require("src.ui.gen2.PokedexMenu")
 local texts, tiles
-local menu = setmetatable({ page = 1, metricLabels = { "m", "kg" } }, { __index = PokedexMenu })
+local S7E = require("tests.fixture_data.gen2_rom_text_s7_e")
+local menu = setmetatable({ page = 1, metricLabels = { "m", "kg" }, data = { text = S7E } },
+  { __index = PokedexMenu })
 function menu:text(str, tx, ty) texts[#texts + 1] = { tostring(str), tx, ty } end
 function menu:tile(id, tx, ty) tiles[#tiles + 1] = { id, tx, ty } end
 for _, name in ipairs({ "fill", "border", "blank", "drawPic", "drawFootprint" }) do menu[name] = function() end end
@@ -74,6 +76,7 @@ check(at("???", 14, 7) and at("???", 14, 9), "a seen Gen 2 entry prints the metr
 texts, tiles = {}, {}
 menu:drawEntryBody({ species = "CHIKORITA", caught = true },
   { dex = 152, kind = "LEAF", height = 211, weight = 141 })
-check(at("lb", 17, 9) and not at("m", 17, 7), "an entry without metric values keeps the US fields")
+check(at(S7E["Pokedex_DrawDexEntryScreenBG.Weight"], 9, 9) and not at("m", 17, 7),
+  "an entry without metric values keeps the US fields")
 
 T.finish("pokedex metric units")

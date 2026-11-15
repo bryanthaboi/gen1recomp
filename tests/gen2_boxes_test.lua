@@ -9,14 +9,20 @@ local check, eq = S.check, S.eq
 love = require("tests.love_stub")
 
 local Boxes = require("src.core.gen2.Boxes")
+local TEXT = require("tests.fixture_data.gen2_rom_text_s7_e")
+local DATA = { text = TEXT }
 
 eq(Boxes.NUM_BOXES, 14, "14 boxes")
 eq(Boxes.MONS_PER_BOX, 20, "20 per box")
 eq(Boxes.PARTY_SIZE, 6, "6 party slots")
 
 -- SetDefaultBoxNames
-eq(Boxes.defaultName(1), "BOX1", "first default box name")
-eq(Boxes.defaultName(14), "BOX14", "last default box name")
+eq(Boxes.defaultName(1, DATA), TEXT["SetDefaultBoxNames.Box"] .. "1",
+  "first default box name")
+eq(Boxes.defaultName(14, DATA), TEXT["SetDefaultBoxNames.Box"] .. "14",
+  "last default box name")
+check(not pcall(Boxes.defaultName, 1, { text = {} }),
+  "a cache without SetDefaultBoxNames.Box is an error")
 
 local function mon(species, hp)
   return { species = species, name = species, level = 5,
@@ -29,14 +35,18 @@ end
 
 -- ---- names ----------------------------------------------------------------
 local save = newSave()
-eq(Boxes.name(save, 3), "BOX3", "unnamed box falls back to the default")
+eq(Boxes.name(save, 3, DATA), "BOX3", "unnamed box falls back to the default")
 check(Boxes.rename(save, 3, "SAFARI"), "rename accepted")
-eq(Boxes.name(save, 3), "SAFARI", "renamed box keeps its name")
+eq(Boxes.name(save, 3, DATA), "SAFARI", "renamed box keeps its name")
 check(not Boxes.rename(save, 15, "NOPE"), "box 15 does not exist")
 check(not Boxes.rename(save, 0, "NOPE"), "box 0 does not exist")
 
 -- ---- .CheckCanUsePC -------------------------------------------------------
-check(not Boxes.canUsePc(newSave()), "an empty party cannot open the PC")
+local cantUse, cantUseReason = Boxes.canUsePc(newSave())
+check(not cantUse, "an empty party cannot open the PC")
+eq(cantUseReason, "_PCGottaHavePokemonText", "with .CheckCanUsePC's text")
+eq(Boxes.reasonText(cantUseReason, DATA), "You gotta have\nPOKéMON to call!",
+  "read from the cache, prompt marker dropped")
 check(Boxes.canUsePc(newSave({ mon("TOTODILE") })), "a party of one can")
 
 -- ---- deposit --------------------------------------------------------------
@@ -51,7 +61,9 @@ eq(Boxes.box(save, 1)[1].species, "PIDGEY", "and it is the same mon")
 -- The last healthy mon stays put, or the next step is a whiteout.
 local blocked, reason = Boxes.canDeposit(save, 1, 1)
 check(not blocked, "the last healthy party mon cannot be deposited")
-check(reason:find("last"), "and the refusal says why: " .. tostring(reason))
+eq(reason, "PCString_NoMoreUsablePKMN", "and the refusal says why")
+eq(Boxes.reasonText(reason, DATA), TEXT.PCString_NoMoreUsablePKMN,
+  "in the cache's own words")
 
 -- A fainted mon is not what keeps you alive, so the healthy one is still last.
 save = newSave({ mon("CYNDAQUIL"), mon("PIDGEY", 0) })
@@ -68,7 +80,7 @@ end
 check(Boxes.isFull(save, 1), "box 1 is full at 20")
 local full, fullReason = Boxes.canDeposit(save, 2, 1)
 check(not full, "a full box refuses a deposit")
-check(fullReason:find("full"), "and says so: " .. tostring(fullReason))
+eq(fullReason, "PCString_BoxFull", "and says so")
 -- ...but the next box has room.
 check(Boxes.deposit(save, 2, 2), "box 2 takes it instead")
 eq(Boxes.count(save, 2), 1, "box 2 now holds one")
@@ -90,8 +102,11 @@ save = newSave({ mon("A"), mon("B"), mon("C"), mon("D"), mon("E"), mon("F") })
 Boxes.box(save, 1)[1] = mon("GEODUDE")
 local noRoom, noRoomReason = Boxes.canWithdraw(save, 1, 1)
 check(not noRoom, "a full party cannot withdraw")
-check(noRoomReason:find("any more"),
-  "and says so: " .. tostring(noRoomReason))
+eq(noRoomReason, "PCString_PartyFull", "and says so")
+eq(Boxes.reasonText(noRoomReason, DATA), TEXT.PCString_PartyFull,
+  "PCString_PartyFull out of the cache")
+check(not pcall(Boxes.reasonText, noRoomReason, { text = {} }),
+  "a cache without the label is an error")
 check(not Boxes.canWithdraw(newSave({ mon("A") }), 1, 4),
   "an empty slot has nothing to withdraw")
 

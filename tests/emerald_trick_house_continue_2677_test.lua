@@ -8,6 +8,7 @@ if not root then
   local f = candidate and io.open(candidate .. "/meta.json", "rb")
   if f then f:close() root = candidate end
 end
+root = root or require("tests.game3_cache").root("emerald")
 if not root then print("SKIP #2677 Trick House continue requires an Emerald cache"); T.finish(); return end
 require("src.core.GameVersion").set("emerald")
 require("src.import.gba.versions").select("emerald")

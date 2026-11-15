@@ -67,52 +67,47 @@ do
     "TrainerCard:drawPanel()'s base fill reaches the GbcPalette seam")
 end
 
--- Text labels are catalog-backed, while the player's chosen name is content
--- and must remain verbatim.
+-- engine/menus/trainer_card.asm:269 .Name_Money, :306 .Dex_PlayTime
 do
   local Chrome = require("src.ui.gen2.Chrome")
   local priorPrintThrough = Chrome.printThrough
   local printed = {}
   Chrome.printThrough = function(text) printed[#printed + 1] = text end
-  Strings.load({ strings = {
-    ["NAME/"] = "NOM/", MONEY = "ARGENT", ["POKéDEX"] = "DEX-FR",
-    ["PLAY TIME"] = "TEMPS", BADGES = "BADGES-FR", GOLD = "INTERDIT",
-  } })
-  TrainerCard.drawPlain({
-    page = 1,
+  Strings.load({ strings = { GOLD = "INTERDIT" } })
+  local card = TrainerCard.new({ data = { text = require("tests.fixture_data.gen2_rom_text_s7_c")
+    .text({
+      ["TrainerCard_PrintTopHalfOfCard.Name_Money"] = "NOM/\n\nARGENT",
+      ["TrainerCard_Page1_PrintDexCaught_GameTime.Dex_PlayTime"] = "DEX-FR\nTEMPS",
+    }) } }, {
     save = { player = { name = "GOLD", id = 7, money = 12 }, playTime = {} },
-    caughtCount = function() return 0 end,
+    menuGfx = { trainerCard = require("tests.fixture_data.gen2_trainer_card_s7_c").gold },
   })
+  local priorQuad = love.graphics.newQuad
+  love.graphics.newQuad = function(x, y, w, h)
+    return { getViewport = function() return x, y, w, h end }
+  end
+  card:drawCard()
+  love.graphics.newQuad = priorQuad
   local all = table.concat(printed, "|")
   T.check(all:find("NOM/", 1, true) and all:find("ARGENT", 1, true)
       and all:find("DEX-FR", 1, true) and all:find("TEMPS", 1, true),
-    "Trainer Card's finite labels pass through Strings")
+    "Trainer Card's labels are the cache's .Name_Money and .Dex_PlayTime")
   T.check(all:find("GOLD", 1, true) and not all:find("INTERDIT", 1, true),
     "the player's name stays raw")
   Strings.load({})
   Chrome.printThrough = priorPrintThrough
 end
 
--- Badge names are finite UI labels too; unlike the player's name above they
--- must be looked up when the page is drawn (and then shortened to four chars).
 do
-  local Chrome = require("src.ui.gen2.Chrome")
-  local priorPrintThrough = Chrome.printThrough
-  local printed = {}
-  Chrome.printThrough = function(text) printed[#printed + 1] = text end
-  Strings.load({ strings = {
-    ["JOHTO BADGES"] = "BADGES JOHTO",
-    ZEPHYR = "ÉCLAIR",
-  } })
-  TrainerCard.drawPlain({
-    page = 2,
-    save = { player = { badges = { ZEPHYR = true } } },
-  })
-  local all = table.concat(printed, "|")
-  T.check(all:find("BADGES JOHTO", 1, true) and all:find("ÉCLA", 1, true),
-    "Trainer Card translates and clips badge names on font-glyph boundaries")
-  Strings.load({})
-  Chrome.printThrough = priorPrintThrough
+  local text = require("tests.fixture_data.gen2_rom_text_s7_c").text()
+  T.check(not pcall(TrainerCard.new, { data = { text = text } }, { save = {} }),
+    "a cache without menu_gfx.trainerCard is an error")
+  local partial = {}
+  for k, v in pairs(require("tests.fixture_data.gen2_trainer_card_s7_c").gold) do partial[k] = v end
+  partial.statusWide = nil
+  T.check(not pcall(TrainerCard.new, { data = { text = text } },
+    { save = {}, menuGfx = { trainerCard = partial } }),
+    "and so is one missing a sheet width")
 end
 
 T.finish()

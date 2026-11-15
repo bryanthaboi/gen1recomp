@@ -19,14 +19,16 @@ local TurnOrder = require("src.battle.TurnOrder")
 local TypeChart = require("src.battle.TypeChart")
 local Timing = require("src.core.Timing")
 local romText = require("src.core.RomText")
-local Strings = require("src.core.Strings")
 
 local MoveEffects = {}
 
--- pokered's <USER>/<TARGET> text macros print "Enemy " before the
--- enemy mon's nickname (home/text.asm PlaceMoveUsersName)
-local function displayName(b)
-  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
+local function romLine(data, label, ...)
+  return romText(data, label, nil, ...)
+end
+
+-- home/text.asm:185
+local function displayName(data, b)
+  return b.isPlayer and b.name or romLine(data, "EnemyText") .. b.name
 end
 
 -- The generic "But, it failed!" line, shared by over a dozen handlers
@@ -35,18 +37,19 @@ end
 -- the flag and reintroduce primaryEffectFailed's animation bug
 -- (BattleState.lua).
 local function butItFailed(battle)
-  return { romText(battle.data, "_ButItFailedText", "But, it failed!"), failed = true }
+  return { romLine(battle.data, "_ButItFailedText"), failed = true }
 end
 
--- Stat names as printed (data/battle/stat_mod_names.asm
--- StatModTextStrings).  Strings.source, not Strings: this table is built
--- at require time, before Strings.load has a catalog, so changeStage
--- looks each label up at use time (#811).
-local STAT_LABEL = {
-  attack = Strings.source("ATTACK"), defense = Strings.source("DEFENSE"),
-  speed = Strings.source("SPEED"), special = Strings.source("SPECIAL"),
-  accuracy = Strings.source("ACCURACY"), evasion = Strings.source("EVADE"),
+-- data/battle/stat_mod_names.asm:4
+local STAT_MOD_NAME = {
+  attack = 1, defense = 2, speed = 3, special = 4, accuracy = 5, evasion = 6,
 }
+
+local function joined(...)
+  local parts = { ... }
+  for i = 1, #parts do parts[i] = parts[i]:gsub("{DONE}$", ""):gsub("{SCROLL}", "\n") end
+  return table.concat(parts)
+end
 
 -- ---------------------------------------------------------------------
 -- stat stages
@@ -60,12 +63,12 @@ local function changeStage(battle, who, stat, delta, fromEnemy)
   local cur = who.stages[stat] or 0
   local new = math.max(-6, math.min(6, cur + delta))
   if new == cur then
-    return { romText(battle.data, "_NothingHappenedText", "Nothing happened!"), failed = true }
+    return { romLine(battle.data, "_NothingHappenedText"), failed = true }
   end
   -- pokered/engine/battle/effects.asm:508
   if delta > 0 and Damage.statAtCap(battle, who, stat) then
     who.stages[stat] = new - 1
-    return { romText(battle.data, "_NothingHappenedText", "Nothing happened!"), failed = true }
+    return { romLine(battle.data, "_NothingHappenedText"), failed = true }
   end
   who.stages[stat] = new
   -- effects.asm:414-415
@@ -77,17 +80,17 @@ local function changeStage(battle, who, stat, delta, fromEnemy)
      and battle.kind ~= "link" and who == battle.player then
     Damage.reapplyBadgeBoosts(who, stat)
   end
-  -- _MonsStatsRoseText/_MonsStatsFellText: "X's / STAT rose!"; the
-  -- two-stage variants scroll "greatly" onto a third line
-  local label = Strings(STAT_LABEL[stat])  -- looked up here, not at require (#811)
-  if delta >= 2 then
-    return { Strings("%s's\n%s\ngreatly rose!", displayName(who), label) }
-  elseif delta == 1 then
-    return { Strings("%s's\n%s rose!", displayName(who), label) }
-  elseif delta == -1 then
-    return { Strings("%s's\n%s fell!", displayName(who), label) }
+  local data = battle.data
+  local name = displayName(data, who)
+  local label = romLine(data, "StatModTextStrings." .. STAT_MOD_NAME[stat])
+  -- engine/battle/effects.asm:516
+  if delta > 0 then
+    return { joined(romLine(data, "_MonsStatsRoseText", name, label),
+      delta >= 2 and romLine(data, "_GreatlyRoseText") or "", romLine(data, "_RoseText")) }
   end
-  return { Strings("%s's\n%s\ngreatly fell!", displayName(who), label) }
+  -- engine/battle/effects.asm:718
+  return { joined(romLine(data, "_MonsStatsFellText", name, label),
+    delta <= -2 and romLine(data, "_GreatlyFellText") or "", romLine(data, "_FellText")) }
 end
 MoveEffects.changeStage = changeStage
 
@@ -118,17 +121,14 @@ local function statusMove(status)
     if target.mon.status then
       -- engine/battle/effects.asm:44-47
       if status == "SLP" and target.mon.status == "SLP" then
-        return { romText(battle.data, "_AlreadyAsleepText",
-                         "%s's\nalready asleep!", displayName(target)), failed = true }
+        return { romLine(battle.data, "_AlreadyAsleepText", displayName(battle.data, target)), failed = true }
       end
       -- effects.asm:51, move_effects/paralyze.asm:12
-      return { romText(battle.data, "_DidntAffectText",
-                       "It didn't affect\n%s!", displayName(target)), failed = true }
+      return { romLine(battle.data, "_DidntAffectText", displayName(battle.data, target)), failed = true }
     end
     if status == "PSN" and target.substituteHP then
       -- effects.asm:88 .noEffect falls into .didntAffect for POISON_EFFECT
-      return { romText(battle.data, "_DidntAffectText",
-                       "It didn't affect\n%s!", displayName(target)), failed = true }
+      return { romLine(battle.data, "_DidntAffectText", displayName(battle.data, target)), failed = true }
     end
     local msgs = inflictStatus(battle, target, status, {
       toxic = move and move.id == "TOXIC",
@@ -159,7 +159,7 @@ local function statusSide(status, chance)
     -- target (regardless of the burn roll)
     if move and move.type == "FIRE" and target.mon.status == "FRZ" then
       target.mon.status = nil
-      return { romText(battle.data, "_FireDefrostedText", "Fire defrosted\n%s!", displayName(target)) }
+      return { romLine(battle.data, "_FireDefrostedText", displayName(battle.data, target)) }
     end
     if battle.rng(0, 255) >= chance then return {} end
     return inflictStatus(battle, target, status, {
@@ -200,7 +200,7 @@ local function confuse(battle, target, pierceSub)
     return butItFailed(battle)
   end
   target.confusedTurns = battle.rng(2, 5)
-  return { romText(battle.data, "_BecameConfusedText", "%s\nbecame confused!", displayName(target)) }
+  return { romLine(battle.data, "_BecameConfusedText", displayName(battle.data, target)) }
 end
 
 -- ---------------------------------------------------------------------
@@ -235,17 +235,15 @@ MoveEffects.primary = {
     -- leech_seed.asm has no substitute check: seeding lands through one
     -- engine/battle/move_effects/leech_seed.asm:28
     if target.leechSeeded then
-      return { romText(battle.data, "_EvadedAttackText",
-                       "%s\nevaded attack!", displayName(target)), failed = true }
+      return { romLine(battle.data, "_EvadedAttackText", displayName(battle.data, target)), failed = true }
     end
     for _, t in ipairs(target.curTypes) do
       if t == "GRASS" then
-        return { romText(battle.data, "_EvadedAttackText",
-                         "%s\nevaded attack!", displayName(target)), failed = true }
+        return { romLine(battle.data, "_EvadedAttackText", displayName(battle.data, target)), failed = true }
       end
     end
     target.leechSeeded = true
-    return { romText(battle.data, "_WasSeededText", "%s\nwas seeded!", displayName(target)) }
+    return { romLine(battle.data, "_WasSeededText", displayName(battle.data, target)) }
   end,
 
   HEAL_EFFECT = function(battle, user, target, move)
@@ -261,41 +259,40 @@ MoveEffects.primary = {
       if not Status.toxicSurvivesCure(battle) then user.toxicCounter = nil end
       -- engine/battle/move_effects/heal.asm:35
       local lead = hadStatus
-        and romText(battle.data, "_FellAsleepBecameHealthyText",
-          "%s\nfell asleep and\nbecame healthy!", displayName(user))
-        or romText(battle.data, "_StartedSleepingEffect", "%s\nstarted sleeping!", displayName(user))
-      return { lead, romText(battle.data, "_RegainedHealthText", "%s\nregained health!", displayName(user)),
+        and romLine(battle.data, "_FellAsleepBecameHealthyText", displayName(battle.data, user))
+        or romLine(battle.data, "_StartedSleepingEffect", displayName(battle.data, user))
+      return { lead, romLine(battle.data, "_RegainedHealthText", displayName(battle.data, user)),
                restLead = true, hpBarFirst = true }
     end
     if healFails(battle, mon) then return butItFailed(battle) end
     mon.hp = math.min(mon.stats.hp, mon.hp + math.floor(mon.stats.hp / 2))
-    return { romText(battle.data, "_RegainedHealthText", "%s\nregained health!", displayName(user)),
+    return { romLine(battle.data, "_RegainedHealthText", displayName(battle.data, user)),
              hpBarFirst = true }
   end,
 
   LIGHT_SCREEN_EFFECT = function(battle, user)
     if user.lightScreen then return butItFailed(battle) end
     user.lightScreen = true
-    return { romText(battle.data, "_LightScreenProtectedText", "%s's\nprotected against\nspecial attacks!", displayName(user)) }
+    return { romLine(battle.data, "_LightScreenProtectedText", displayName(battle.data, user)) }
   end,
 
   REFLECT_EFFECT = function(battle, user)
     if user.reflect then return butItFailed(battle) end
     user.reflect = true
-    return { romText(battle.data, "_ReflectGainedArmorText", "%s\ngained armor!", displayName(user)) }
+    return { romLine(battle.data, "_ReflectGainedArmorText", displayName(battle.data, user)) }
   end,
 
   MIST_EFFECT = function(battle, user)
     if user.mist then return butItFailed(battle) end
     user.mist = true
     -- _ShroudedInMistText (lowercase "mist")
-    return { romText(battle.data, "_ShroudedInMistText", "%s's\nshrouded in mist!", displayName(user)) }
+    return { romLine(battle.data, "_ShroudedInMistText", displayName(battle.data, user)) }
   end,
 
   FOCUS_ENERGY_EFFECT = function(battle, user)
     if user.focusEnergy then return butItFailed(battle) end
     user.focusEnergy = true
-    return { romText(battle.data, "_GettingPumpedText", "%s's\ngetting pumped!", displayName(user)) }
+    return { romLine(battle.data, "_GettingPumpedText", displayName(battle.data, user)) }
   end,
 
   HAZE_EFFECT = function(battle, user, target)
@@ -324,7 +321,7 @@ MoveEffects.primary = {
       target.skipMove = true
     end
     target.mon.status = nil
-    return { romText(battle.data, "_StatusChangesEliminatedText", "All STATUS changes\nare eliminated!") }
+    return { romLine(battle.data, "_StatusChangesEliminatedText") }
   end,
 
   -- substitute.asm reaches its PlayCurrentMoveAnimation / AnimationSubstitute
@@ -343,14 +340,14 @@ MoveEffects.primary = {
       battle:waitBeforeMoveAnim(Timing.SUBSTITUTE_ENTRY)
     end
     if user.substituteHP then
-      return { romText(battle.data, "_HasSubstituteText", "%s\nhas a SUBSTITUTE!", displayName(user)),
+      return { romLine(battle.data, "_HasSubstituteText", displayName(battle.data, user)),
                failed = true }
     end
     local cost = math.floor(user.mon.stats.hp / 4)
     -- ../pokered/engine/battle/move_effects/substitute.asm:34-40
     local zeroHpBug = not (battle.ruleset and battle.ruleset.substituteZeroHpBug == false)
     if user.mon.hp < cost or (not zeroHpBug and user.mon.hp == cost) then
-      return { romText(battle.data, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!"),
+      return { romLine(battle.data, "_TooWeakSubstituteText"),
                failed = true }
     end
     user.mon.hp = user.mon.hp - cost
@@ -366,7 +363,7 @@ MoveEffects.primary = {
       battle:actNext(function() user.substitutePending = nil end)
     end
     -- _SubstituteText
-    return { romText(battle.data, "_SubstituteText", "It created a\nSUBSTITUTE!") }
+    return { romLine(battle.data, "_SubstituteText") }
   end,
 
   CONVERSION_EFFECT = function(battle, user, target)
@@ -376,7 +373,7 @@ MoveEffects.primary = {
     end
     user.curTypes = { target.curTypes[1], target.curTypes[2] }
     -- _ConvertedTypeText
-    return { romText(battle.data, "_ConvertedTypeText", "Converted type to\n%s's!", displayName(target)) }
+    return { romLine(battle.data, "_ConvertedTypeText", displayName(battle.data, target)) }
   end,
 
   -- MIMIC_EFFECT lives in BattleState:resolveMimic: MimicEffect
@@ -416,7 +413,7 @@ MoveEffects.primary = {
       table.insert(user.curMoves, { id = mv.id, pp = 5, mimic = true })
     end
     -- _TransformedText: the copied name prints bare (wNameBuffer)
-    return { romText(battle.data, "_TransformedText", "%s\ntransformed into\n%s!", displayName(user), target.name) }
+    return { romLine(battle.data, "_TransformedText", displayName(battle.data, user), target.name) }
   end,
 
   DISABLE_EFFECT = function(battle, user, target)
@@ -431,13 +428,13 @@ MoveEffects.primary = {
     target.disabledTurns = battle.rng(1, 8)
     local id = target.curMoves[slot].id
     -- _MoveWasDisabledText: "X's / MOVE was / disabled!"
-    return { romText(battle.data, "_MoveWasDisabledText", "%s's\n%s was\ndisabled!",
-      { TARGET = displayName(target),
+    return { romLine(battle.data, "_MoveWasDisabledText",
+      { TARGET = displayName(battle.data, target),
         ["RAM:wNameBuffer"] = battle.data.moves[id].name }) }
   end,
 
   SPLASH_EFFECT = function(battle)
-    return { romText(battle.data, "_NoEffectText", "No effect!") }
+    return { romLine(battle.data, "_NoEffectText") }
   end,
 }
 
@@ -540,7 +537,7 @@ local function hitsFrom(dist, ctx)
 end
 
 -- engine/battle/core.asm ApplyDamageToEnemyPokemon
-local function drainHalf(label, text)
+local function drainHalf(label)
   return function(ctx)
     -- engine/battle/core.asm:4899
     if ctx.brokeSub then return end
@@ -550,10 +547,7 @@ local function drainHalf(label, text)
     mon.hp = math.min(mon.stats.hp, mon.hp + heal)
     -- engine/battle/move_effects/drain_hp.asm:81
     ctx.battle:drainNext(ctx.user, mon.hp)
-    -- `text` arrives as a source string (Strings.source at the call
-    -- site keeps it in the catalog); the ROM's own line wins when the
-    -- import carries it, and both are resolved here, at use time
-    ctx.say(romText(ctx.battle.data, label, text, displayName(ctx.target)))
+    ctx.say(romLine(ctx.battle.data, label, displayName(ctx.battle.data, ctx.target)))
   end
 end
 
@@ -571,7 +565,7 @@ end
 -- SUPER_FANG hits Ghosts, and only OHKO_EFFECT calls this (#616).
 local function immuneMsg(ctx)
   if TypeChart.effectiveness(ctx.move.type, ctx.target.curTypes) == 0 then
-    return romText(ctx.battle.data, "_DoesntAffectMonText", "It doesn't affect\n%s!", displayName(ctx.target))
+    return romLine(ctx.battle.data, "_DoesntAffectMonText", displayName(ctx.battle.data, ctx.target))
   end
   return nil
 end
@@ -601,7 +595,7 @@ MoveEffects.full = {
       -- no immunity check: SetDamageEffects skips AdjustDamageForMoveType (#616)
       local dmg = fixedDamageFor(ctx)
       if not dmg then
-        return nil, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
+        return nil, romLine(ctx.battle.data, "_ButItFailedText")
       end
       return dmg, plainInfo()
     end,
@@ -618,7 +612,7 @@ MoveEffects.full = {
       local blocked = immuneMsg(ctx)
       if blocked then return false, blocked end
       if TurnOrder.effectiveSpeed(ctx.user) < TurnOrder.effectiveSpeed(ctx.target) then
-        return false, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
+        return false, romLine(ctx.battle.data, "_ButItFailedText")
       end
       return true
     end,
@@ -638,17 +632,17 @@ MoveEffects.full = {
     end,
   },
   DRAIN_HP_EFFECT = {
-    afterDamage = drainHalf("_SuckedHealthText", Strings.source("Sucked health from\n%s!")),
+    afterDamage = drainHalf("_SuckedHealthText"),
   },
   DREAM_EATER_EFFECT = {
     -- only works on sleeping targets (checked before damage)
     gate = function(ctx)
       if ctx.target.mon.status ~= "SLP" then
-        return false, romText(ctx.battle.data, "_ButItFailedText", "But, it failed!")
+        return false, romLine(ctx.battle.data, "_ButItFailedText")
       end
       return true
     end,
-    afterDamage = drainHalf("_DreamWasEatenText", Strings.source("%s's\ndream was eaten!")),
+    afterDamage = drainHalf("_DreamWasEatenText"),
   },
 
   -- charge moves: first turn just charges; Fly AND Dig go
@@ -699,7 +693,7 @@ MoveEffects.full = {
   JUMP_KICK_EFFECT = {
     onMiss = function(ctx, reason)
       if reason ~= "accuracy" then return end
-      ctx.say(romText(ctx.battle.data, "_KeptGoingAndCrashedText", "%s\nkept going and\ncrashed!", displayName(ctx.user)))
+      ctx.say(romLine(ctx.battle.data, "_KeptGoingAndCrashedText", displayName(ctx.battle.data, ctx.user)))
       ctx.damage(ctx.user, 1)
     end,
   },
@@ -730,7 +724,7 @@ MoveEffects.full = {
     afterDamage = function(ctx)
       local battle = ctx.battle
       battle.payDay = (battle.payDay or 0) + 2 * ctx.user.mon.level
-      ctx.say(romText(ctx.battle.data, "_CoinsScatteredText", "Coins scattered\neverywhere!"))
+      ctx.say(romLine(ctx.battle.data, "_CoinsScatteredText"))
     end,
   },
   SWIFT_EFFECT = { neverMiss = true },
@@ -773,27 +767,27 @@ MoveEffects.full = {
         end
         if ok then
           if move.id == "ROAR" then
-            ctx.say(romText(ctx.battle.data, "_RanAwayScaredText", "%s\nran away scared!", displayName(target)))
+            ctx.say(romLine(ctx.battle.data, "_RanAwayScaredText", displayName(ctx.battle.data, target)))
           elseif move.id == "WHIRLWIND" then
-            ctx.say(romText(ctx.battle.data, "_WasBlownAwayText", "%s\nwas blown away!", displayName(target)))
+            ctx.say(romLine(ctx.battle.data, "_WasBlownAwayText", displayName(ctx.battle.data, target)))
           else
-            ctx.say(romText(ctx.battle.data, "_RanFromBattleText", "%s\nran from battle!", displayName(user)))
+            ctx.say(romLine(ctx.battle.data, "_RanFromBattleText", displayName(ctx.battle.data, user)))
           end
           battle.result = "run"
           battle.afterQueue = "finish"
         elseif move.id == "TELEPORT" then
           battle:cancelMoveAnim()
-          ctx.say(romText(ctx.battle.data, "_ButItFailedText", "But, it failed!"))
+          ctx.say(romLine(ctx.battle.data, "_ButItFailedText"))
         else
           battle:cancelMoveAnim()
-          ctx.say(romText(ctx.battle.data, "_DidntAffectText", "It didn't affect\n%s!", displayName(target)))
+          ctx.say(romLine(ctx.battle.data, "_DidntAffectText", displayName(ctx.battle.data, target)))
         end
       elseif move.id == "TELEPORT" then
         battle:cancelMoveAnim()
-        ctx.say(romText(ctx.battle.data, "_ButItFailedText", "But, it failed!"))
+        ctx.say(romLine(ctx.battle.data, "_ButItFailedText"))
       else
         battle:cancelMoveAnim()
-        ctx.say(romText(ctx.battle.data, "_IsUnaffectedText", "%s\nis unaffected!", displayName(target)))
+        ctx.say(romLine(ctx.battle.data, "_IsUnaffectedText", displayName(ctx.battle.data, target)))
       end
     end,
   },
@@ -811,7 +805,7 @@ MoveEffects.full = {
     callsMove = function(ctx)
       local last = ctx.target.lastMove
       if not last then
-        ctx.say(romText(ctx.battle.data, "_MirrorMoveFailedText", "The MIRROR MOVE\nfailed!"))
+        ctx.say(romLine(ctx.battle.data, "_MirrorMoveFailedText"))
         return nil
       end
       return last

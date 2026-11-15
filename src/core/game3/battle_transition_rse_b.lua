@@ -8,7 +8,9 @@ local M = {}
 function M.register(DEF, ID, H)
   local DW, DH = H.DW, H.DH
   local Sin, s16, u16 = H.Sin, H.s16, H.u16
-  local winH, copyBuf, setCircularMask, fadeScreenBlack = H.winH, H.copyBuf, H.setCircularMask, H.fadeScreenBlack
+  local copyBuf, setCircularMask, fadeScreenBlack = H.copyBuf, H.setCircularMask, H.fadeScreenBlack
+  local winInside, winOutside, rowSrc = H.winInside, H.winOutside, H.rowSrc
+  local WSPANS = {}
 
   -- pokeemerald/src/battle_transition.c:3044
   local function blackholeInit(fx)
@@ -27,10 +29,7 @@ function M.register(DEF, ID, H)
 
   local function holeSpans(fx, y, out)
     if not fx.hole1 then return 0 end
-    local l, r = winH(fx.hole1[y])
-    if not l then return 0 end
-    out[1], out[2] = l, r
-    return 1
+    return winInside(fx.hole1[y], out)
   end
 
   -- pokeemerald/src/battle_transition.c:618
@@ -83,6 +82,8 @@ function M.register(DEF, ID, H)
     },
     vblank = holeVblank,
     winSpans = holeSpans,
+    row0 = "prev",
+    front = { "hole1" },
   }
 
   -- pokeemerald/src/battle_transition.c:3123
@@ -124,6 +125,8 @@ function M.register(DEF, ID, H)
     },
     vblank = holeVblank,
     winSpans = holeSpans,
+    row0 = "prev",
+    front = { "hole1" },
   }
 
   -- pokeemerald/src/battle_transition.c:600
@@ -231,27 +234,32 @@ function M.register(DEF, ID, H)
       end,
     },
     vblank = function(fx)
+      fx.covered = fx.shredFinished
+      fx.shredFinished = fx.state >= 2
       if fx.T.vblankDma and fx.shred0 then copyBuf(fx.shred1, fx.shred0, DH * 2) end
     end,
-    rowSpans = function(fx, y, R, out)
+    rowSpans = function(fx, y, R, out, screenY)
       if not fx.shred1 then return 0 end
-      local l, r = winH(fx.shred1[DH + y])
-      if not l then
-        out[1], out[2] = R.X0, R.X1
-        return 1
+      if screenY < 0 or screenY > DH - 1 then
+        if fx.covered then
+          out[1], out[2] = R.X0, R.X1
+          return 1
+        end
+        fx, y = rowSrc(fx, screenY < 0 and 0 or DH - 1)
       end
-      local n = 0
-      if l > 0 then n = n + 1; out[2 * n - 1], out[2 * n] = R.X0, R.hmap(l) end
-      if r < DW then n = n + 1; out[2 * n - 1], out[2 * n] = R.hmap(r), R.X1 end
+      local n = winOutside(fx.shred1[DH + y], WSPANS)
+      for i = 1, n do
+        out[2 * i - 1], out[2 * i] = R.hmapL(WSPANS[2 * i - 1]), R.hmapR(WSPANS[2 * i])
+      end
       return n
     end,
-    shift = function(fx, y, R)
+    shift = function(fx, y, R, screenY)
       if not fx.shred1 then return 0, 0 end
-      local yy = y
-      if yy < 0 then yy = 0 end
-      if yy > DH - 1 then yy = DH - 1 end
-      return R.hdist(s16(fx.shred1[yy]) - (fx.t.cameraX or 0)), 0
+      if screenY < 0 or screenY > DH - 1 then fx, y = rowSrc(fx, screenY < 0 and 0 or DH - 1) end
+      return R.hdist(s16(fx.shred1[y]) - (fx.t.cameraX or 0)), 0
     end,
+    row0 = "prev",
+    front = { "shred1" },
     redraw = true,
   }
 

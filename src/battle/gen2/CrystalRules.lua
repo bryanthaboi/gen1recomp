@@ -1,5 +1,4 @@
 local GameVersion = require("src.core.GameVersion")
-local Strings = require("src.core.Strings")
 
 local Rules = {}
 
@@ -386,7 +385,7 @@ function Rules.install(Battle, Damage)
       if screens[field] > 0 then return end
       screens[field] = nil
       self:emit({ kind = "message", text = self:romText(label, self[side], self[side],
-        Strings(Battle.SCREEN_SIDE_LABEL[side])) })
+        self:romText(side == "player" and "HandleScreens.Your" or "HandleScreens.Enemy")) })
     end
     for _, side in ipairs(sides) do tick(side, "safeguard", "BattleText_SafeguardFaded") end
     for _, side in ipairs(sides) do

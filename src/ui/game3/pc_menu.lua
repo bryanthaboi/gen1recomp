@@ -379,7 +379,23 @@ function PcMenu.handleInput(input)
       if id == "item_storage" then
         open_item_storage(1)
       elseif id == "mailbox" then
-        show_msg(TEXT.NO_MAIL, "player_pc", TEXT.WHAT_TO_DO, 1) -- pokefirered/src/player_pc.c:227
+        local Mailbox = require("src.ui.game3.mailbox")
+        -- pokefirered/src/player_pc.c:227
+        if Mailbox.countFor(PcMenu._session) == 0 then
+          show_msg(TEXT.NO_MAIL, "player_pc", TEXT.WHAT_TO_DO, 1)
+        else
+          PcMenu.mode = "mailbox"
+          PcMenu._status = nil
+          Mailbox.show({
+            session = PcMenu._session,
+            -- pokefirered/src/player_pc.c:215 Task_ReturnToTopMenu
+            onClose = function()
+              PcMenu.mode = "player_pc"
+              PcMenu.cursor = 1
+              PcMenu._status = TEXT.WHAT_TO_DO
+            end,
+          })
+        end
       elseif PcMenu._closeOnExit then
         PcMenu.close() -- pokefirered/src/player_pc.c:257
       else

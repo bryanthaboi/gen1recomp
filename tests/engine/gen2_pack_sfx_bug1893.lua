@@ -46,7 +46,11 @@ local function openPack()
     input = newInput(),
     save = save,
     options = save.options,
-    data = { items = ITEMS, moves = {}, pokemon = {}, audio = { sfx = {
+    data = { items = ITEMS, moves = {}, pokemon = {},
+      text = require("tests.fixtures.gen2_rom_text").text(),
+      gen2Text = require("tests.fixtures.gen2_common_text").text(),
+      gen2EventTables = require("tests.fixtures.gen2_phone_events").events,
+      audio = { sfx = {
       Sfx_ReadText2 = true,
       Sfx_SwitchPockets = true,
       Sfx_SwitchPokemon = true,

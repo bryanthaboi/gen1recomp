@@ -44,6 +44,7 @@ local function fixture()
       SCRATCH = { name = "SCRATCH", pp = 35 },
     },
     items = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(),
   }
 end
 
@@ -129,7 +130,8 @@ do
   local vm = Vm.new({}, {}, Events.new(), { specials = {
     party = function() return record.party end,
     save = function() return record end,
-    data = function() return { pokemon = {}, moves = {} } end,
+    data = function() return { pokemon = {}, moves = {},
+      text = require("tests.fixture_data.gen2_rom_text_s7_f1").text() } end,
   } })
   Specials.HANDLERS.GiveShuckle(vm)
   eq(vm.scriptVar, 0, "a mon that cannot be built is refused")

@@ -28,11 +28,23 @@ local clerk = M.MUSEUM_1F.talk.TEXT_MUSEUM1F_SCIENTIST1
 local BEHIND = { { 13, 4 }, { 12, 3 } }
 local FRONT = { 10, 4 }
 
+local MUSEUM_TEXT = {
+  _Museum1FScientist1AmberIsFossilizedTreeSapText = "AMBER is fossil-\nized tree sap.{DONE}",
+  _Museum1FScientist1ComeAgainText = "Come again!{DONE}",
+  _Museum1FScientist1DoYouKnowWhatAmberIsText = "You can't sneak\nin the back way!\fOh, whatever!\nDo you know what\vAMBER is?{DONE}",
+  _Museum1FScientist1DontHaveEnoughMoneyText = "You don't have\nenough money.{PROMPT}",
+  _Museum1FScientist1GoToOtherSideText = "Please go to the\nother side!{DONE}",
+  _Museum1FScientist1TakePlentyOfTimeText = "Take plenty of\ntime to look!{DONE}",
+  _Museum1FScientist1ThankYouText = "Right, ¥50!\nThank you!{DONE}",
+  _Museum1FScientist1TheresALabSomewhereText = "There's a lab\nsomewhere trying\vto resurrect\vancient POKéMON\vfrom AMBER.{DONE}",
+  _Museum1FScientist1WouldYouLikeToComeInText = "It's ¥50 for a\nchild's ticket.\fWould you like to\ncome in?{DONE}",
+}
+
 local pushed
 local function mkGame(cash)
   pushed = {}
   return {
-    data = { text = {} },
+    data = { text = MUSEUM_TEXT },
     save = { money = cash, flags = {} },
     stack = { push = function(_, box) pushed[#pushed + 1] = box end },
   }
@@ -124,7 +136,7 @@ end
 local g2 = mkGame(3000)
 g2.save.flags.EVENT_BOUGHT_MUSEUM_TICKET = true
 clerk(g2, mkOw(12, 5), nil, function() end)
-T.check(has(pushed[1], "Take your time"),
+T.check(has(pushed[1], "Take plenty"),
   "(12,5) with a ticket gets take-your-time, not the brush-off")
 
 -- ------------------------------------------------ the ticket path holds
@@ -141,7 +153,7 @@ T.check(g3.save.flags.EVENT_BOUGHT_MUSEUM_TICKET, "and still sets the ticket fla
 local g4 = mkGame(3000)
 g4.save.flags.EVENT_BOUGHT_MUSEUM_TICKET = true
 clerk(g4, mkOw(FRONT[1], FRONT[2]), nil, function() end)
-T.check(has(pushed[1], "Take your time"),
+T.check(has(pushed[1], "Take plenty"),
   "(10,4) with a ticket still gets take-your-time")
 T.check(pushed[1].opts == nil, "and no money window on that branch")
 

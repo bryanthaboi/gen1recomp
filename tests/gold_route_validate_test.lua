@@ -22,7 +22,12 @@ local S = require("tests.harness").suite("gold route validation")
 local check, eq = S.check, S.eq
 
 local route = dofile("tests/drivers/gold/route.lua")
-local names = dofile("tests/drivers/gold/flag_names.lua")
+local FlagIds = require("src.core.gen2.FlagIds")
+local EventFlagOrder = require("tests.fixture_data.gen2_event_flag_order")
+local names = { events = FlagIds.events({ eventFlagOrder = EventFlagOrder.gs }), engine = {} }
+for _, name in pairs(require("src.save_convert.data.gen2_engine_flags").gs) do
+  names.engine[name] = true
+end
 
 check(#route > 0, "the route has rows at all")
 

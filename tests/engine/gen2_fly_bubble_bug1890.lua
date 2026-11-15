@@ -14,6 +14,7 @@ local tiles, texts, plates, cursors = {}, {}, 0, 0
 local gear = setmetatable({
   fly = { { name = "NEW BARK TOWN" }, { name = "CHERRYGROVE CITY" } },
   flyIndex = 1,
+  textData = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
 }, { __index = Pokegear })
 gear.tile = function(_, id, tx, ty)
   tiles[#tiles + 1] = { id = id, tx = tx, ty = ty }

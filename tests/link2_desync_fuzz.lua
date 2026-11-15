@@ -169,7 +169,14 @@ local ITEM_POOL = {}
 for id in pairs(ITEMS) do ITEM_POOL[#ITEM_POOL + 1] = id end
 table.sort(ITEM_POOL)
 
+local function engineFlagOrder()
+  local order = {}
+  for id, name in pairs(require("src.save_convert.data.gen2_engine_flags").gs) do order[id + 1] = name end
+  return order
+end
+
 local DATA = {
+  gen2Constants = { engineFlagOrder = engineFlagOrder() },
   pokemon = POKEMON,
   moves = MOVES,
   type_chart = { types = TYPES, matchups = MATCHUPS,

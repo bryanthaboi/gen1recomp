@@ -25,8 +25,8 @@
 -- walks out.  World:takeWarp owns that half.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 
 local ElevatorMenu = {}
 ElevatorMenu.__index = ElevatorMenu
@@ -43,20 +43,17 @@ local LIST_X, LIST_Y, LIST_W, LIST_H = 12, 1, 7, 9
 local ITEM_X, ITEM_Y = 14, 2
 local VISIBLE = 4
 
-local NOW_ON = Strings.source("Now on:")
+-- engine/events/elevator.asm:163
+local NOW_ON = "Elevator_CurrentFloorText"
 
 -- FloorToString hands back the FLOOR_* name; the cache's floorNames carries
 -- the same strings out of ElevatorFloorNames.
-local FALLBACK_FLOORS = {
-  "B4F", "B3F", "B2F", "B1F", "1F", "2F", "3F", "4F", "5F", "6F", "7F",
-  "8F", "9F", "10F", "11F", "ROOF",
-}
-
 function ElevatorMenu.floorName(floors, row)
-  if type(floors) == "table" and row and floors[row + 1] then
-    return floors[row + 1]
+  local name = type(floors) == "table" and row and floors[row + 1]
+  if not name then
+    error(("events.lua floorNames has no floor %s"):format(tostring(row)), 2)
   end
-  return FALLBACK_FLOORS[(row or 0) + 1] or "?"
+  return name
 end
 
 -- The scroll window a four-row list shows: the cursor stays inside it and the
@@ -129,7 +126,7 @@ end
 
 function ElevatorMenu:drawPanel()
   Chrome.textbox(NOW_X, NOW_Y, NOW_W, NOW_H)
-  Chrome.print(NOW_ON, NOW_LABEL_X, NOW_LABEL_Y)
+  Chrome.print(RomText(self.data, NOW_ON), NOW_LABEL_X, NOW_LABEL_Y)
   local origin = self.origin and self.floors[self.origin]
   Chrome.print(
     ElevatorMenu.floorName(self.floorNames, origin and origin.floorId),

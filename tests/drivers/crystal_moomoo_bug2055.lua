@@ -1,14 +1,12 @@
 local U = require("tests.drivers.util")
 
-local FlagNames = require("src.core.gen2.FlagNames")
+local FlagIds = require("src.core.gen2.FlagIds")
 
 -- pokecrystal/maps/Route39Barn.asm:47
 local BARN, MOOMOO_X, MOOMOO_Y = "ROUTE_39_BARN", 3, 4
 local MILTANK_SPRITE = "SPRITE_TAUROS"
 -- pokecrystal/ram/wram.asm:3142
 local BERRIES = 0xd962
-local HEALED = FlagNames.events.EVENT_HEALED_MOOMOO
-local TALKED = FlagNames.events.EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO
 
 local SHOT_DIR = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/pokeport-shots"
 
@@ -27,6 +25,10 @@ return function(game)
     love.event.quit(1)
     return
   end
+  local events = FlagIds.events(game.data.gen2Constants)
+  local HEALED = events.EVENT_HEALED_MOOMOO
+  local TALKED = events.EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO
+  ok(HEALED == 61 and TALKED == 63, "the cache names the moomoo flags 61 and 63")
 
   save.inventory = save.inventory or {}
   save.inventory.BERRY = 10

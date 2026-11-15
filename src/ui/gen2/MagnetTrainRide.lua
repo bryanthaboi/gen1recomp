@@ -12,9 +12,7 @@
 --   * The two tilemaps behind DrawMagnetTrain (MagnetTrainBGTiles, a 2x18
 --     vertical strip repeated across all 32 columns, and MagnetTrainTilemap,
 --     the 20x4 train laid over rows 6-9) come from the extracted cache at
---     data.gen2Field.magnetTrain.  A cache built before the extractor
---     learned to follow them has neither, and then the ride runs with a
---     blank screen rather than with invented art.
+--     data.gen2Field.magnetTrain.
 --   * The background is baked into a 256x144 canvas once, because the only
 --     thing that changes per frame is the per-band SCX.
 --   * SetMagnetTrainPals gives the four bush rows and the four bottom rows
@@ -89,10 +87,11 @@ function MagnetTrainRide.new(game, opts)
 
   local field = self.data and self.data.gen2Field
   local gfx = field and field.magnetTrain
+  if type(gfx) ~= "table" then error("field.lua has no magnetTrain", 2) end
   self.ride = MagnetTrain.new({
     toGoldenrod = opts.toGoldenrod,
-    bgTiles = gfx and gfx.bgTiles,
-    fgTilemap = gfx and gfx.tilemap,
+    bgTiles = gfx.bgTiles,
+    fgTilemap = gfx.tilemap,
   })
 
   self.tileset = self.data and self.data.gen2Tilesets

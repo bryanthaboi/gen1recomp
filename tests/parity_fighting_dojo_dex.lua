@@ -76,16 +76,16 @@ for _, c in ipairs({
         "the prompt names " .. c.species)
 end
 
--- before the Karate Master is beaten the ball still refuses, no dex entry
+-- scripts/FightingDojo.asm:226-235
 do
   local game = fakeGame()
   game.save.flags.EVENT_BEAT_KARATE_MASTER = nil
   dojo.talk.TEXT_FIGHTINGDOJO_HITMONLEE_POKE_BALL(game, {}, nil,
     function() end)
-  check(getmetatable(game.stack:top()) == TextBox,
-        "an unbeaten master keeps the refusal text, not the dex entry")
-  check(not game.save.pokedex.seen.HITMONLEE,
-        "the refusal does not mark Hitmonlee seen")
+  check(getmetatable(game.stack:top()) ~= TextBox,
+        "an unbeaten master still opens the dex entry")
+  check(game.save.pokedex.seen.HITMONLEE,
+        "and marks Hitmonlee seen")
 end
 
 S.finish()

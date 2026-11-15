@@ -1,7 +1,9 @@
 local Battle = require("src.battle.gen2.Battle")
 local Effects = require("src.battle.gen2.Effects")
 local Identity = require("src.online.xgen.Identity")
+local RomText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
+local TextBox = require("src.render.TextBox")
 
 local Gen2Facade = {}
 
@@ -63,10 +65,8 @@ local T = {
   rules2 = S("GEN 3 battle rules.\nNo abilities or\nheld items."),
   waiting = S("Waiting..."),
   waitingFor = S("Waiting for\n%s..."),
-  noItems = S("Items can't be used in a link battle!"),
   runAgain = S("Choose RUN again\nto forfeit."),
   cantNow = S("That can't be\nchosen now."),
-  defeated = S("%s was defeated!"),
   noMore = S("You have no more POKéMON!"),
   draw = S("The battle ended\nin a draw!"),
   foeForfeit = S("%s forfeited\nthe match!"),
@@ -75,11 +75,6 @@ local T = {
   left = S("%s left the battle."),
   illegal = S("The other game sent\na bad move. Draw."),
   broken = S("The battle could\nnot continue."),
-  fainted = S("%s fainted!"),
-  enemyFainted = S("Enemy %s fainted!"),
-  withdrew = S("%s withdrew %s!"),
-  go = S("Go! %s!"),
-  usedMove = S("%s\nused %s!"),
   woreOff = S("%s's %s wore off!"),
 }
 Gen2Facade.TEXT = T
@@ -232,12 +227,40 @@ function Facade:nameOf(v)
   return v.nickname or v.name or tostring(v.species or "?")
 end
 
+local function romLine(self, label, ...)
+  return TextBox.strip(RomText(self.data, label, nil, ...))
+end
+
+function Facade:isFoe(r)
+  return (type(r) == "table") and (r.side ~= self.seat) or (r == "enemy")
+end
+
+-- engine/battle/used_move_text.asm:1
+function Facade:usedMoveText(ref, mv)
+  return romLine(self, "_ActorNameText", { USER = self:N(ref) }) .. romLine(self, "_UsedMove1Text")
+    .. romLine(self, "_MoveNameText", { STRBUF = self:moveName(mv) }) .. romLine(self, "_EndUsedMove1Text")
+end
+
+-- ../pokecrystal/engine/battle/core.asm:7685, :7707
+function Facade:goMonText(v)
+  local name = self:nameOf(v)
+  if self.data.text and self.data.text.BattleMonNicknameText then
+    return romLine(self, "GoMonText") .. romLine(self, "BattleMonNicknameText", name)
+  end
+  return romLine(self, "GoMonText", name)
+end
+
+function Facade:faintText(seat, v)
+  v = v or self:active(seat)
+  local label = self:sideName(seat) == "enemy" and "BattleText_EnemyMonFainted" or "BattleText_MonFainted"
+  return romLine(self, label, { STRBUF = self:nameOf(v) })
+end
+
 -- home/text.asm:330-345
 function Facade:N(r)
   local v = self:ref(r)
   if not v then return "?" end
-  local foe = (type(r) == "table") and (r.side ~= self.seat) or (r == "enemy")
-  if foe then return Strings("Enemy %s", self:nameOf(v)) end
+  if self:isFoe(r) then return romLine(self, "EnemyText") .. self:nameOf(v) end
   return self:nameOf(v)
 end
 
@@ -247,29 +270,64 @@ local function moveOf(v)
 end
 
 local function stageText(self, ref, stat, delta)
-  return Effects.stageMessage(self:N(ref), Gen2Facade.STATS[stat] or stat, tonumber(delta) or 0)
+  return Effects.stageMessage(self.data, self:N(ref), Gen2Facade.STATS[stat] or stat, tonumber(delta) or 0)
 end
 
 local function wontText(self, ref, stat, up)
-  local label = Strings(Effects.STAT_NAMES[Gen2Facade.STATS[stat] or stat] or tostring(stat))
-  if up then return Strings("%s's %s won't rise anymore!", self:N(ref), label) end
-  return Strings("%s's %s won't drop anymore!", self:N(ref), label)
+  local label = Effects.statName(self.data, Gen2Facade.STATS[stat] or stat)
+  if up then return romLine(self, "WontRiseAnymoreText", { USER = self:N(ref), STRBUF = label }) end
+  return romLine(self, "WontDropAnymoreText", { TARGET = self:N(ref), STRBUF = label })
+end
+
+local function pick(f, key)
+  if type(key) ~= "table" then return f[key] end
+  for _, k in ipairs(key) do
+    if f[k] ~= nil then return f[k] end
+  end
+  return nil
+end
+
+local function say(label, slots)
+  return function(self, f)
+    if not slots then return romLine(self, label) end
+    local fill = {}
+    for slot, key in pairs(slots) do
+      if type(key) == "function" then
+        fill[slot] = key(self, f)
+      else
+        fill[slot] = self:N(pick(f, key))
+      end
+    end
+    return romLine(self, label, fill)
+  end
 end
 
 local function role(src, key)
   return function(self, f) return Strings(src, self:N(f[key])) end
 end
 
-local function plain(src)
-  return function() return Strings(src) end
-end
-
 local function inflict(status, key)
-  return function(self, f) return Strings(Battle.STATUS_INFLICT_TEMPLATES[status], self:N(f[key])) end
+  return function(self, f)
+    return romLine(self, Battle.STATUSES[status].inflictLabel, { TARGET = self:N(f[key]) })
+  end
 end
 
-local function weatherText(tbl, kind)
-  return function() return Strings(tbl[kind]) end
+local function weatherText(phase, kind)
+  return function(self) return Effects.weatherText(self.data, phase, kind) end
+end
+
+local function charge(effect, moveId)
+  return function(self, f) return Effects.chargeText(self.data, effect, moveId, self:N(f.atk)) end
+end
+
+local function buffMove(self, f) return self:moveName(moveOf(f.buff1)) end
+local function buffNum(_, f) return tonumber(f.buff1) or 0 end
+
+local function opponent(self, f)
+  if f.def ~= nil then return self:N(f.def) end
+  local atk = f.atk
+  if type(atk) == "table" and atk.side ~= nil then return self:N({ side = 1 - atk.side }) end
+  return self:N(nil)
 end
 
 local MSG = {
@@ -279,34 +337,37 @@ local MSG = {
   STRINGID_DEFENDERSSTATFELL = function(self, f) return stageText(self, f.def, f.stat, f.delta) end,
   STRINGID_STATSWONTINCREASE = function(self, f) return wontText(self, f.atk or f.def, f.buff1, true) end,
   STRINGID_STATSWONTDECREASE = function(self, f) return wontText(self, f.def or f.atk, f.buff1, false) end,
-  STRINGID_ATTACKMISSED = role("%s's attack missed!", "atk"),
-  STRINGID_BELLCHIMED = plain("A bell chimed!"),
-  STRINGID_BUTITFAILED = plain("But it failed!"),
-  STRINGID_MIRRORMOVEFAILED = plain("But it failed!"),
-  STRINGID_BUTNOTHINGHAPPENED = plain("But nothing\nhappened."),
-  STRINGID_BUTNOEFFECT = plain("But nothing\nhappened."),
-  STRINGID_COINSSCATTERED = plain("Coins scattered\neverywhere!"),
-  STRINGID_CRITICALHIT = plain("A critical hit!"),
-  STRINGID_FAINTINTHREE = plain("Both POKéMON will\nfaint in 3 turns!"),
-  STRINGID_HITXTIMES = function(_, f) return Strings("Hit %d times!", tonumber(f.buff1) or 0) end,
-  STRINGID_ITDOESNTAFFECT = role("It didn't affect\n%s!", "def"),
-  STRINGID_PKMNUNAFFECTED = role("It didn't affect\n%s!", "def"),
-  STRINGID_PKMNWASNTAFFECTED = role("It didn't affect\n%s!", "def"),
-  STRINGID_ITHURTCONFUSION = plain("It hurt itself in its confusion!"),
-  STRINGID_MAGNITUDESTRENGTH = function(_, f) return Strings("Magnitude %d!", tonumber(f.buff1) or 0) end,
-  STRINGID_NOTVERYEFFECTIVE = plain("It's not very\neffective…"),
-  STRINGID_SUPEREFFECTIVE = plain("It's super-\neffective!"),
-  STRINGID_ONEHITKO = plain("It's a one-hit KO!"),
-  STRINGID_PKMNALREADYASLEEP = role("%s's already asleep!", "def"),
-  STRINGID_PKMNALREADYASLEEP2 = role("%s's already asleep!", "atk"),
-  STRINGID_PKMNALREADYCONFUSED = role("%s's already confused!", "def"),
-  STRINGID_PKMNALREADYPOISONED = role("%s's already poisoned!", "def"),
-  STRINGID_PKMNISALREADYPARALYZED = role("%s's already paralyzed!", "def"),
-  STRINGID_PKMNALREADYHASBURN = role("%s's already burned!", "def"),
-  STRINGID_PKMNATTACK = function(self, f)
-    local sp = type(f.buff1) == "table" and f.buff1.species
-    return Strings("%s's attack!", sp and self:speciesName(sp) or "?")
+  STRINGID_ATTACKMISSED = say("AttackMissedText", { USER = "atk" }),
+  STRINGID_BELLCHIMED = say("BellChimedText"),
+  STRINGID_BUTITFAILED = say("ButItFailedText"),
+  STRINGID_MIRRORMOVEFAILED = say("MirrorMoveFailedText"),
+  STRINGID_BUTNOTHINGHAPPENED = say("NothingHappenedText"),
+  STRINGID_BUTNOEFFECT = say("NothingHappenedText"),
+  STRINGID_COINSSCATTERED = say("CoinsScatteredText"),
+  STRINGID_CRITICALHIT = say("CriticalHitText"),
+  STRINGID_FAINTINTHREE = say("StartPerishText"),
+  STRINGID_HITXTIMES = function(self, f)
+    local label = self:isFoe(f.atk) and "EnemyHitTimesText" or "PlayerHitTimesText"
+    return romLine(self, label, { NUM = buffNum(self, f) })
   end,
+  STRINGID_ITDOESNTAFFECT = say("DidntAffect1Text", { TARGET = "def" }),
+  STRINGID_PKMNUNAFFECTED = say("DidntAffect1Text", { TARGET = "def" }),
+  STRINGID_PKMNWASNTAFFECTED = say("DidntAffect1Text", { TARGET = "def" }),
+  STRINGID_ITHURTCONFUSION = say("HurtItselfText"),
+  STRINGID_MAGNITUDESTRENGTH = say("MagnitudeText", { NUM = buffNum }),
+  STRINGID_NOTVERYEFFECTIVE = say("NotVeryEffectiveText"),
+  STRINGID_SUPEREFFECTIVE = say("SuperEffectiveText"),
+  STRINGID_ONEHITKO = say("OneHitKOText"),
+  STRINGID_PKMNALREADYASLEEP = say("AlreadyAsleepText", { TARGET = "def" }),
+  STRINGID_PKMNALREADYASLEEP2 = say("AlreadyAsleepText", { TARGET = "atk" }),
+  STRINGID_PKMNALREADYCONFUSED = say("AlreadyConfusedText", { TARGET = "def" }),
+  STRINGID_PKMNALREADYPOISONED = say("AlreadyPoisonedText", { TARGET = "def" }),
+  STRINGID_PKMNISALREADYPARALYZED = say("AlreadyParalyzedText", { TARGET = "def" }),
+  STRINGID_PKMNALREADYHASBURN = role("%s's already burned!", "def"),
+  STRINGID_PKMNATTACK = say("BeatUpAttackText", { STRBUF = function(self, f)
+    local sp = type(f.buff1) == "table" and f.buff1.species
+    return sp and self:speciesName(sp) or "?"
+  end }),
   STRINGID_PKMNBADLYPOISONED = inflict("toxic", "eff"),
   STRINGID_PKMNWASPOISONED = inflict("poison", "eff"),
   STRINGID_PKMNWASBURNED = inflict("burn", "eff"),
@@ -314,156 +375,131 @@ local MSG = {
   STRINGID_PKMNWASPARALYZED = inflict("paralyze", "eff"),
   STRINGID_PKMNFELLASLEEP = inflict("sleep", "eff"),
   STRINGID_PKMNWASCONFUSED = inflict("confuse", "eff"),
-  STRINGID_PKMNBRACEDITSELF = role("%s braced itself!", "atk"),
-  STRINGID_PKMNBUFFETEDBYSANDSTORM = role("%s is buffeted by the sandstorm!", "atk"),
-  STRINGID_PKMNCHANGEDTYPE = function(self, f)
+  STRINGID_PKMNBRACEDITSELF = say("BracedItselfText", { USER = "atk" }),
+  STRINGID_PKMNBUFFETEDBYSANDSTORM = say("SandstormHitsText", { USER = "atk" }),
+  STRINGID_PKMNCHANGEDTYPE = say("TransformedTypeText", { USER = "atk", STRBUF = function(_, f)
     local t = type(f.buff1) == "table" and f.buff1.type
-    return Strings("%s transformed into the %s type!", self:N(f.atk),
-      t and (Identity.GEN3_TYPES[t] == "MYSTERY" and "???" or Identity.GEN3_TYPES[t]) or "?")
-  end,
-  STRINGID_PKMNCOPIEDSTATCHANGES = function(self, f)
-    return Strings("%s\ncopied the stat\fchanges of\n%s!", self:N(f.atk), self:N(f.def))
-  end,
-  STRINGID_PKMNCOVEREDBYVEIL = role("%s's covered by a veil!", "atk"),
-  STRINGID_PKMNUSEDSAFEGUARD = role("%s's covered by a veil!", "atk"),
-  STRINGID_PKMNCRASHED = role("%s kept going and crashed!", "atk"),
-  STRINGID_PKMNCUTHPMAXEDATTACK = role("%s\ncut its HP and\nmaximized ATTACK!", "atk"),
-  STRINGID_PKMNDREAMEATEN = role("%s's dream was eaten!", "def"),
-  STRINGID_PKMNDUGHOLE = role("%s dug a hole!", "atk"),
-  STRINGID_PKMNENDUREDHIT = role("%s endured the hit!", "def"),
-  STRINGID_PKMNENERGYDRAINED = role("%s's energy was drained!", "def"),
-  STRINGID_PKMNEVADEDATTACK = role("%s evaded the attack!", "def"),
-  STRINGID_PKMNAVOIDEDATTACK = role("%s evaded the attack!", "def"),
-  STRINGID_PKMNFASTASLEEP = role("%s is fast asleep!", "atk"),
+    return t and (Identity.GEN3_TYPES[t] == "MYSTERY" and "???" or Identity.GEN3_TYPES[t]) or "?"
+  end }),
+  STRINGID_PKMNCOPIEDSTATCHANGES = say("CopiedStatsText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNCOVEREDBYVEIL = say("CoveredByVeilText", { USER = "atk" }),
+  STRINGID_PKMNUSEDSAFEGUARD = say("CoveredByVeilText", { USER = "atk" }),
+  STRINGID_PKMNCRASHED = say("CrashedText", { USER = "atk" }),
+  STRINGID_PKMNCUTHPMAXEDATTACK = say("BellyDrumText", { USER = "atk" }),
+  STRINGID_PKMNDREAMEATEN = say("DreamEatenText", { TARGET = "def" }),
+  STRINGID_PKMNDUGHOLE = charge("EFFECT_FLY", "DIG"),
+  STRINGID_PKMNENDUREDHIT = say("EnduredText", { TARGET = "def" }),
+  STRINGID_PKMNENERGYDRAINED = say("SuckedHealthText", { TARGET = "def" }),
+  STRINGID_PKMNEVADEDATTACK = say("EvadedText", { TARGET = "def" }),
+  STRINGID_PKMNAVOIDEDATTACK = say("EvadedText", { TARGET = "def" }),
+  STRINGID_PKMNFASTASLEEP = say("FastAsleepText", { USER = "atk" }),
   STRINGID_PKMNFATIGUECONFUSION = role("%s became confused due to fatigue!", "atk"),
-  STRINGID_PKMNFELLINLOVE = role("%s\nfell in love!", "def"),
-  STRINGID_PKMNFLEWHIGH = role("%s flew up high!", "atk"),
-  STRINGID_PKMNFLINCHED = role("%s flinched!", "atk"),
-  STRINGID_PKMNFORESAWATTACK = role("%s foresaw an attack!", "atk"),
-  STRINGID_PKMNFREEDFROM = function(self, f)
-    return Strings("%s was released from %s!", self:N(f.atk), self:moveName(moveOf(f.buff1)))
+  STRINGID_PKMNFELLINLOVE = say("FellInLoveText", { TARGET = "def" }),
+  STRINGID_PKMNFLEWHIGH = charge("EFFECT_FLY"),
+  STRINGID_PKMNFLINCHED = say("FlinchedText", { USER = "atk" }),
+  STRINGID_PKMNFORESAWATTACK = say("ForesawAttackText", { USER = "atk" }),
+  STRINGID_PKMNFREEDFROM = say("BattleText_UserWasReleasedFromStringBuffer1",
+    { USER = "atk", STRBUF = buffMove }),
+  STRINGID_PKMNGETTINGPUMPED = say("GettingPumpedText", { USER = "atk" }),
+  STRINGID_PKMNGOTENCORE = say("GotAnEncoreText", { TARGET = "def" }),
+  STRINGID_PKMNENCOREENDED = say("BattleText_TargetsEncoreEnded", { TARGET = "atk" }),
+  STRINGID_PKMNHASSUBSTITUTE = say("HasSubstituteText", { USER = "atk" }),
+  STRINGID_PKMNHEALEDCONFUSION = say("ConfusedNoMoreText", { USER = "atk" }),
+  STRINGID_PKMNHITWITHRECOIL = say("RecoilText", { USER = "atk" }),
+  STRINGID_PKMNHPFULL = say("HPIsFullText", { USER = "def" }),
+  STRINGID_PKMNHURTBY = say("BattleText_UsersHurtByStringBuffer1", { USER = "atk", STRBUF = buffMove }),
+  STRINGID_PKMNHURTBYBURN = say("HurtByBurnText", { USER = "atk" }),
+  STRINGID_PKMNHURTBYPOISON = say("HurtByPoisonText", { USER = "atk" }),
+  STRINGID_PKMNHURTBYSPIKES = say("BattleText_UserHurtBySpikes", { USER = "scrActive" }),
+  STRINGID_PKMNIDENTIFIED = say("IdentifiedText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNIMMOBILIZEDBYLOVE = say("InfatuationText", { USER = "atk" }),
+  STRINGID_PKMNINLOVE = say("InLoveWithText", { USER = "atk", TARGET = { "scrActive", "def" } }),
+  STRINGID_PKMNISCONFUSED = say("IsConfusedText", { USER = "atk" }),
+  STRINGID_PKMNISFROZEN = say("FrozenSolidText", { USER = "atk" }),
+  STRINGID_PKMNISGLOWING = charge("EFFECT_SKY_ATTACK"),
+  STRINGID_PKMNISPARALYZED = say("FullyParalyzedText", { USER = "atk" }),
+  STRINGID_PKMNLEARNEDMOVE2 = say("MimicLearnedMoveText", { USER = "atk", STRBUF = buffMove }),
+  STRINGID_PKMNLOWEREDHEAD = charge("EFFECT_SKULL_BASH"),
+  STRINGID_PKMNMADESUBSTITUTE = say("MadeSubstituteText", { USER = "atk" }),
+  STRINGID_TOOWEAKFORSUBSTITUTE = say("TooWeakSubText"),
+  STRINGID_PKMNMOVEDISABLEDNOMORE = say("DisabledNoMoreText", { USER = "atk" }),
+  STRINGID_PKMNMOVEISDISABLED = say("DisabledMoveText", { USER = { "active", "atk" }, STRBUF = function(self, f)
+    return self:moveName(moveOf(f.currentMove))
+  end }),
+  STRINGID_PKMNMOVEWASDISABLED = say("WasDisabledText", { TARGET = "def", STRBUF = buffMove }),
+  STRINGID_PKMNMUSTRECHARGE = say("MustRechargeText", { USER = "atk" }),
+  STRINGID_PKMNPERISHCOUNTFELL = say("PerishCountText", { USER = "atk", NUM = buffNum }),
+  STRINGID_PKMNPROTECTEDBYMIST = say("ProtectedByMistText", { TARGET = "scrActive" }),
+  STRINGID_PKMNPROTECTEDITSELF = say("ProtectingItselfText", { TARGET = "def" }),
+  STRINGID_PKMNPROTECTEDITSELF2 = say("ProtectedItselfText", { USER = "atk" }),
+  STRINGID_PKMNRAGEBUILDING = say("RageBuildingText", { USER = "def" }),
+  STRINGID_PKMNRAISEDDEF = say("ReflectEffectText", { USER = "atk" }),
+  STRINGID_PKMNRAISEDSPDEF = say("LightScreenEffectText", { USER = "atk" }),
+  STRINGID_PKMNREDUCEDPP = say("SpiteEffectText", { TARGET = "def", STRBUF = buffMove,
+    NUM = function(_, f) return tonumber(f.buff2) or 0 end }),
+  STRINGID_PKMNREGAINEDHEALTH = say("RegainedHealthText", { USER = "def" }),
+  STRINGID_PKMNSAFEGUARDEXPIRED = say("BattleText_SafeguardFaded", { USER = "atk" }),
+  STRINGID_PKMNSAPPEDBYLEECHSEED = say("LeechSeedSapsText", { USER = "atk" }),
+  STRINGID_PKMNSEEDED = say("WasSeededText", { TARGET = "def" }),
+  STRINGID_PKMNSHROUDEDINMIST = say("MistText", { USER = "atk" }),
+  STRINGID_PKMNSKETCHEDMOVE = say("SketchedText", { USER = "atk", STRBUF = buffMove }),
+  STRINGID_PKMNSLEPTHEALTHY = say("RestedText", { USER = "atk" }),
+  STRINGID_PKMNWENTTOSLEEP = say("WentToSleepText", { USER = "atk" }),
+  STRINGID_PKMNSQUEEZEDBYBIND = say("UsedBindText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNWRAPPEDBY = say("WrappedByText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNCLAMPED = say("ClampedByText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNTRAPPEDINVORTEX = function(self, f)
+    return romLine(self, Battle.trapTextLabel(self, "WHIRLPOOL"), { TARGET = self:N(f.def) })
   end,
-  STRINGID_PKMNGETTINGPUMPED = role("%s's\ngetting pumped!", "atk"),
-  STRINGID_PKMNGOTENCORE = role("%s got an ENCORE!", "def"),
-  STRINGID_PKMNENCOREENDED = role("%s's ENCORE ended!", "atk"),
-  STRINGID_PKMNHASSUBSTITUTE = role("%s has a SUBSTITUTE!", "atk"),
-  STRINGID_PKMNHEALEDCONFUSION = role("%s's confused no more!", "atk"),
-  STRINGID_PKMNHITWITHRECOIL = role("%s is hit with recoil!", "atk"),
-  STRINGID_PKMNHPFULL = role("%s's HP is full!", "def"),
-  STRINGID_PKMNHURTBY = function(self, f)
-    return Strings("%s's hurt by %s!", self:N(f.atk), self:moveName(moveOf(f.buff1)))
-  end,
-  STRINGID_PKMNHURTBYBURN = role("%s is hurt by its burn!", "atk"),
-  STRINGID_PKMNHURTBYPOISON = role("%s is hurt by poison!", "atk"),
-  STRINGID_PKMNHURTBYSPIKES = role("%s is hurt by SPIKES!", "scrActive"),
-  STRINGID_PKMNIDENTIFIED = function(self, f) return Strings("%s identified %s!", self:N(f.atk), self:N(f.def)) end,
-  STRINGID_PKMNIMMOBILIZEDBYLOVE = role("%s's infatuation kept\nit from attacking!", "atk"),
-  STRINGID_PKMNINLOVE = function(self, f)
-    return Strings("%s\nis in love with\n%s!", self:N(f.atk), self:N(f.scrActive or f.def))
-  end,
-  STRINGID_PKMNISCONFUSED = role("%s is confused!", "atk"),
-  STRINGID_PKMNISFROZEN = role("%s is frozen solid!", "atk"),
-  STRINGID_PKMNISGLOWING = role("%s is glowing!", "atk"),
-  STRINGID_PKMNISPARALYZED = role("%s's fully paralyzed!", "atk"),
-  STRINGID_PKMNLEARNEDMOVE2 = function(self, f)
-    return Strings("%s learned %s!", self:N(f.atk), self:moveName(moveOf(f.buff1)))
-  end,
-  STRINGID_PKMNLOWEREDHEAD = role("%s lowered its head!", "atk"),
-  STRINGID_PKMNMADESUBSTITUTE = role("%s made a SUBSTITUTE!", "atk"),
-  STRINGID_TOOWEAKFORSUBSTITUTE = plain("Too weak to make\na SUBSTITUTE!"),
-  STRINGID_PKMNMOVEDISABLEDNOMORE = role("%s's move is no longer disabled!", "atk"),
-  STRINGID_PKMNMOVEISDISABLED = function(self, f)
-    return Strings("%s's %s is DISABLED!", self:N(f.active or f.atk), self:moveName(moveOf(f.currentMove)))
-  end,
-  STRINGID_PKMNMOVEWASDISABLED = function(self, f)
-    return Strings("%s's %s was disabled!", self:N(f.def), self:moveName(moveOf(f.buff1)))
-  end,
-  STRINGID_PKMNMUSTRECHARGE = role("%s must recharge!", "atk"),
-  STRINGID_PKMNPERISHCOUNTFELL = function(self, f)
-    return Strings("%s's PERISH count is %d!", self:N(f.atk), tonumber(f.buff1) or 0)
-  end,
-  STRINGID_PKMNPROTECTEDBYMIST = role("%s's protected by MIST.", "scrActive"),
-  STRINGID_PKMNPROTECTEDITSELF = role("%s protected itself!", "def"),
-  STRINGID_PKMNPROTECTEDITSELF2 = role("%s protected itself!", "atk"),
-  STRINGID_PKMNRAGEBUILDING = role("%s's RAGE is building!", "def"),
-  STRINGID_PKMNRAISEDDEF = role("%s's DEFENSE rose!", "atk"),
-  STRINGID_PKMNRAISEDSPDEF = role("%s's SPCL.DEF rose!", "atk"),
-  STRINGID_PKMNREDUCEDPP = function(self, f)
-    return Strings("%s's %s was reduced by %d!", self:N(f.def), self:moveName(moveOf(f.buff1)),
-      tonumber(f.buff2) or 0)
-  end,
-  STRINGID_PKMNREGAINEDHEALTH = role("%s regained health!", "def"),
-  STRINGID_PKMNSAFEGUARDEXPIRED = role("%s's SAFEGUARD faded!", "atk"),
-  STRINGID_PKMNSAPPEDBYLEECHSEED = role("LEECH SEED saps %s!", "atk"),
-  STRINGID_PKMNSEEDED = role("%s was seeded!", "def"),
-  STRINGID_PKMNSHROUDEDINMIST = role("%s's\nshrouded in MIST!", "atk"),
-  STRINGID_PKMNSKETCHEDMOVE = function(self, f)
-    return Strings("%s\nSKETCHED\v%s!", self:N(f.atk), self:moveName(moveOf(f.buff1)))
-  end,
-  STRINGID_PKMNSLEPTHEALTHY = role("%s fell asleep and became healthy!", "atk"),
-  STRINGID_PKMNWENTTOSLEEP = role("%s went to sleep!", "atk"),
-  STRINGID_PKMNSQUEEZEDBYBIND = function(self, f)
-    return Strings("%s used BIND on %s!", self:N(f.atk), self:N(f.def))
-  end,
-  STRINGID_PKMNWRAPPEDBY = function(self, f)
-    return Strings("%s was WRAPPED by %s!", self:N(f.def), self:N(f.atk))
-  end,
-  STRINGID_PKMNCLAMPED = function(self, f)
-    return Strings("%s was CLAMPED by %s!", self:N(f.def), self:N(f.atk))
-  end,
-  STRINGID_PKMNTRAPPEDINVORTEX = role("%s was trapped!", "def"),
-  STRINGID_PKMNSTORINGENERGY = role("%s is storing energy!", "atk"),
-  STRINGID_PKMNSUBSTITUTEFADED = role("%s's SUBSTITUTE broke!", "def"),
-  STRINGID_SUBSTITUTEDAMAGED = role("The SUBSTITUTE took damage for %s!", "def"),
+  STRINGID_PKMNSTORINGENERGY = say("StoringEnergyText", { USER = "atk" }),
+  STRINGID_PKMNSUBSTITUTEFADED = say("SubFadedText", { TARGET = "def" }),
+  STRINGID_SUBSTITUTEDAMAGED = say("SubTookDamageText", { TARGET = "def" }),
   STRINGID_PKMNSXWOREOFF = function(self, f)
     local mv = moveOf(f.buff1)
     local seat = f.atk == "enemy" and 1 or 0
-    local label = Strings(Battle.SCREEN_SIDE_LABEL[self:sideName(seat)])
-    if mv == 113 then return Strings(Battle.SCREEN_FALL_TEXT.lightScreen, label) end
-    if mv == 115 then return Strings(Battle.SCREEN_FALL_TEXT.reflect, label) end
+    local label = romLine(self, self:sideName(seat) == "player" and "HandleScreens.Your" or "HandleScreens.Enemy")
+    if mv == 113 then return romLine(self, "BattleText_MonsLightScreenFell", { STRBUF = label }) end
+    if mv == 115 then return romLine(self, "BattleText_MonsReflectFaded", { STRBUF = label }) end
     return Strings(T.woreOff, label, self:moveName(mv))
   end,
-  STRINGID_PKMNTOOKAIM = role("%s took aim!", "atk"),
-  STRINGID_PKMNTOOKATTACK = function(self, f)
-    return Strings("%s took the %s attack!", self:N(f.def), self:moveName(moveOf(f.buff1)))
-  end,
-  STRINGID_PKMNTOOKFOE = role("%s took its foe down with it!", "atk"),
-  STRINGID_PKMNTRYINGTOTAKEFOE = role("%s is trying to take its foe with it!", "atk"),
-  STRINGID_PKMNTOOKSUNLIGHT = role("%s took in sunlight!", "atk"),
-  STRINGID_PKMNUNLEASHEDENERGY = role("%s unleashed energy!", "atk"),
-  STRINGID_PKMNWASDEFROSTED = role("%s thawed out!", "def"),
-  STRINGID_PKMNWASDEFROSTED2 = role("%s thawed out!", "atk"),
-  STRINGID_PKMNWASDRAGGEDOUT = role("%s was dragged out!", "def"),
-  STRINGID_PKMNWHIPPEDWHIRLWIND = role("%s made a whirlwind!", "atk"),
-  STRINGID_PKMNWOKEUP = role("%s woke up!", "atk"),
-  STRINGID_PKMNBEGANTONAP = role("%s began to nap!", "atk"),
-  STRINGID_PKMNHASNOMOVESLEFT = role("%s has no moves left!", "atk"),
-  STRINGID_PKMNAFFLICTEDBYCURSE = role("%s's hurt by the CURSE!", "atk"),
-  STRINGID_PKMNLAIDCURSE = function(self, f)
-    return Strings("%s cut its own HP and put a CURSE on %s!", self:N(f.atk), self:N(f.def))
-  end,
-  STRINGID_PKMNFELLINTONIGHTMARE = role("%s\nstarted to have a\vNIGHTMARE!", "def"),
-  STRINGID_PKMNLOCKEDINNIGHTMARE = role("%s\nhas a NIGHTMARE!", "atk"),
-  STRINGID_PKMNBLEWAWAYSPIKES = role("%s blew away SPIKES!", "atk"),
-  STRINGID_PKMNSHEDLEECHSEED = role("%s was freed from LEECH SEED!", "atk"),
-  STRINGID_TARGETCANTESCAPENOW = role("%s can't escape now!", "def"),
-  STRINGID_SHAREDPAIN = plain("The battlers shared\ntheir pain!"),
-  STRINGID_SPIKESSCATTERED = plain("Spikes were scattered all around!"),
-  STRINGID_STATCHANGESGONE = plain("All stat changes\nwere eliminated!"),
-  STRINGID_NOPPLEFT = plain("There's no PP left\nfor this move!"),
-  STRINGID_BUTNOPPLEFT = plain("But there was no\nPP left!"),
-  STRINGID_STARTEDTORAIN = weatherText(Effects.WEATHER_START_TEXT, "rain"),
-  STRINGID_SUNLIGHTGOTBRIGHT = weatherText(Effects.WEATHER_START_TEXT, "sun"),
-  STRINGID_SANDSTORMBREWED = weatherText(Effects.WEATHER_START_TEXT, "sandstorm"),
-  STRINGID_RAINCONTINUES = weatherText(Effects.WEATHER_TURN_TEXT, "rain"),
-  STRINGID_SUNLIGHTSTRONG = weatherText(Effects.WEATHER_TURN_TEXT, "sun"),
-  STRINGID_SANDSTORMRAGES = weatherText(Effects.WEATHER_TURN_TEXT, "sandstorm"),
-  STRINGID_SANDSTORMISRAGING = weatherText(Effects.WEATHER_TURN_TEXT, "sandstorm"),
-  STRINGID_ITISRAINING = weatherText(Effects.WEATHER_TURN_TEXT, "rain"),
-  STRINGID_RAINSTOPPED = weatherText(Effects.WEATHER_END_TEXT, "rain"),
-  STRINGID_SUNLIGHTFADED = weatherText(Effects.WEATHER_END_TEXT, "sun"),
-  STRINGID_SANDSTORMSUBSIDED = weatherText(Effects.WEATHER_END_TEXT, "sandstorm"),
+  STRINGID_PKMNTOOKAIM = say("TookAimText", { USER = "atk" }),
+  STRINGID_PKMNTOOKATTACK = say("BattleText_TargetWasHitByFutureSight", { TARGET = "def" }),
+  STRINGID_PKMNTOOKFOE = say("TookDownWithItText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNTRYINGTOTAKEFOE = say("DestinyBondEffectText", { USER = "atk" }),
+  STRINGID_PKMNTOOKSUNLIGHT = charge("EFFECT_SOLARBEAM"),
+  STRINGID_PKMNUNLEASHEDENERGY = say("UnleashedEnergyText", { USER = "atk" }),
+  STRINGID_PKMNWASDEFROSTED = say("DefrostedOpponentText", { TARGET = "def" }),
+  STRINGID_PKMNWASDEFROSTED2 = say("WasDefrostedText", { USER = "atk" }),
+  STRINGID_PKMNWASDRAGGEDOUT = say("DraggedOutText", { USER = "def" }),
+  STRINGID_PKMNWHIPPEDWHIRLWIND = charge("EFFECT_RAZOR_WIND"),
+  STRINGID_PKMNWOKEUP = say("WokeUpText", { USER = "atk" }),
+  STRINGID_PKMNBEGANTONAP = say("BeganToNapText", { STRBUF = "atk" }),
+  STRINGID_PKMNHASNOMOVESLEFT = say("BattleText_MonHasNoMovesLeft", { STRBUF = "atk" }),
+  STRINGID_PKMNAFFLICTEDBYCURSE = say("HurtByCurseText", { USER = "atk" }),
+  STRINGID_PKMNLAIDCURSE = say("PutACurseText", { USER = "atk", TARGET = "def" }),
+  STRINGID_PKMNFELLINTONIGHTMARE = say("StartedNightmareText", { TARGET = "def" }),
+  STRINGID_PKMNLOCKEDINNIGHTMARE = say("HasANightmareText", { USER = "atk" }),
+  STRINGID_PKMNBLEWAWAYSPIKES = say("BlewSpikesText", { USER = "atk" }),
+  STRINGID_PKMNSHEDLEECHSEED = say("ShedLeechSeedText", { USER = "atk" }),
+  STRINGID_TARGETCANTESCAPENOW = say("CantEscapeNowText", { TARGET = "def" }),
+  STRINGID_SHAREDPAIN = say("SharedPainText"),
+  STRINGID_SPIKESSCATTERED = say("SpikesText", { TARGET = opponent }),
+  STRINGID_STATCHANGESGONE = say("EliminatedStatsText"),
+  STRINGID_NOPPLEFT = say("BattleText_TheresNoPPLeftForThisMove"),
+  STRINGID_BUTNOPPLEFT = say("NoPPLeftText"),
+  STRINGID_STARTEDTORAIN = weatherText("start", "rain"),
+  STRINGID_SUNLIGHTGOTBRIGHT = weatherText("start", "sun"),
+  STRINGID_SANDSTORMBREWED = weatherText("start", "sandstorm"),
+  STRINGID_RAINCONTINUES = weatherText("turn", "rain"),
+  STRINGID_SUNLIGHTSTRONG = weatherText("turn", "sun"),
+  STRINGID_SANDSTORMRAGES = weatherText("turn", "sandstorm"),
+  STRINGID_SANDSTORMISRAGING = weatherText("turn", "sandstorm"),
+  STRINGID_ITISRAINING = weatherText("turn", "rain"),
+  STRINGID_RAINSTOPPED = weatherText("end", "rain"),
+  STRINGID_SUNLIGHTFADED = weatherText("end", "sun"),
+  STRINGID_SANDSTORMSUBSIDED = weatherText("end", "sandstorm"),
 }
+
 Gen2Facade.MSG = MSG
 
 local SILENT = { STRINGID_SWITCHINMON = true, STRINGID_USEDMOVE = true, STRINGID_INTROMSG = true,
@@ -512,7 +548,7 @@ function Facade:endText(why, outcome, out)
   local foe = self.foeName
   if why == "faint" then
     if outcome == "win" then
-      out[#out + 1] = { kind = "message", text = Strings(T.defeated, foe) }
+      out[#out + 1] = { kind = "message", text = romLine(self, "BattleText_EnemyWasDefeated", { ENEMY = foe }) }
       out[#out + 1] = { kind = "trainer-return" }
     elseif outcome == "lose" then
       out[#out + 1] = { kind = "message", text = Strings(T.noMore) }
@@ -612,9 +648,9 @@ function Facade:translate(evs)
         local text
         if ev.reason ~= "roar" then
           if side == "player" then
-            text = Strings(T.go, self:nameOf(v))
+            text = self:goMonText(v)
           else
-            text = Battle.sentOutText(self.foeName, self:nameOf(v))
+            text = romLine(self, "BattleText_EnemySentOut", self.foeName, self:nameOf(v))
           end
         end
         out[#out + 1] = { kind = "send", side = side, mon = v, hp = v.hp or 0, status = v.status or false,
@@ -625,7 +661,8 @@ function Facade:translate(evs)
       if ev.reason ~= "start" and v then
         self:revert(v)
         if self:sideName(ev.side) == "enemy" and ev.reason == "switch" and (v.hp or 0) > 0 then
-          out[#out + 1] = { kind = "message", text = Strings(T.withdrew, self.foeName, self:nameOf(v)) }
+          out[#out + 1] = { kind = "message", text = romLine(self, "EnemyWithdrewText",
+            { ENEMY = self.foeName, STRBUF = self:nameOf(v) }) }
         end
       end
     elseif k == "move" then
@@ -686,9 +723,8 @@ function Facade:translate(evs)
       local v = self:active(ev.side)
       if v then v.hp = 0 end
       fainted[ev.side] = true
-      local side = self:sideName(ev.side)
-      out[#out + 1] = { kind = "faint", side = side,
-        text = Strings(side == "enemy" and T.enemyFainted or T.fainted, self:nameOf(v)) }
+      out[#out + 1] = { kind = "faint", side = self:sideName(ev.side),
+        text = self:faintText(ev.side, v) }
     elseif k == "weather" then
       self.weather = Gen2Facade.WEATHER[tostring(ev.weather or ""):upper()]
     elseif k == "msg" then
@@ -698,7 +734,7 @@ function Facade:translate(evs)
         local mv = moveOf(f.currentMove)
         local nxt = evs[i + 1]
         local e = { kind = "move", side = self:sideName(atk.side), move = self:moveKey(mv) or mv,
-          text = Strings(T.usedMove, self:N(f.atk), self:moveName(mv)) }
+          text = self:usedMoveText(f.atk, mv) }
         lastUser, hitSince = atk.side, false
         if nxt and nxt.kind == "move" and nxt.user == atk.side then
           e.move = self:moveKey(nxt.moveId) or nxt.moveId
@@ -710,7 +746,7 @@ function Facade:translate(evs)
       elseif ev.id == "STRINGID_TARGETFAINTED" or ev.id == "STRINGID_ATTACKERFAINTED" then
         local r = ev.id == "STRINGID_TARGETFAINTED" and f.def or f.atk
         if not (type(r) == "table" and fainted[r.side]) then
-          out[#out + 1] = { kind = "message", text = Strings(T.fainted, self:N(r)) }
+          out[#out + 1] = { kind = "message", text = self:faintText(r.side, self:ref(r)) }
         end
       elseif ev.id == "STRINGID_PKMNTRANSFORMEDINTO" then
         local v = self:ref(f.atk)
@@ -724,7 +760,8 @@ function Facade:translate(evs)
           out[#out + 1] = { kind = "transform", side = self:sideName(f.atk.side), mon = v, from = from }
         end
         out[#out + 1] = { kind = "message",
-          text = Strings("%s TRANSFORMED into %s!", self:N(f.atk), sp and self:speciesName(sp) or "?") }
+          text = romLine(self, "TransformedText",
+            { USER = self:N(f.atk), STRBUF = sp and self:speciesName(sp) or "?" }) }
       elseif not SILENT[ev.id] then
         local text = self:msgText(ev.id, f)
         if text then out[#out + 1] = { kind = "message", text = text } end
@@ -898,7 +935,7 @@ function Facade:hooks()
   local hooks = {}
   hooks.submit = function(s, action)
     if facade.over then return end
-    if action.kind == "item" then return s:refuseMenu(T.noItems) end
+    if action.kind == "item" then return s:refuseMenu(romLine(facade, "BattleText_ItemsCantBeUsedHere")) end
     if action.kind == "run" then return hooks.menuChoice(s, "run") end
     local act = facade.awaiting == "move" and facade:actionFor(action) or nil
     if not act or not facade.bs:choose(act) then return s:refuseMenu(T.cantNow) end
@@ -909,7 +946,7 @@ function Facade:hooks()
   hooks.menuChoice = function(s, choice)
     if choice == "item" then
       facade.runArmed = nil
-      s:refuseMenu(T.noItems)
+      s:refuseMenu(romLine(facade, "BattleText_ItemsCantBeUsedHere"))
       return true
     end
     if choice == "run" then

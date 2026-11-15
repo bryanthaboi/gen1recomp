@@ -3,7 +3,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local GameVersion = require("src.core.GameVersion")
 GameVersion.set("emerald")
 require("src.import.gba.versions").select("emerald")
-require("tests.game3_cache").mountOrSkip("game3_frontier_obedience_2638", "pokemon/battle_moves.lua")
+require("tests.game3_cache").mountOrSkip("game3_frontier_obedience_2638", "emerald", "pokemon/battle_moves.lua")
 require("tests.fixture_data.game3_items").install()
 
 local Battle = require("src.core.game3.battle.init")

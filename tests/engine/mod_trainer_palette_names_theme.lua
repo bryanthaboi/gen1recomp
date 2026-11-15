@@ -89,7 +89,7 @@ T.eq(named.trainer.name, "FIX YOUNGSTER TAKESHI",
      "the class name and the personal name are shown together")
 T.eq(named.trainer.className, "FIX YOUNGSTER", "the class name stays reachable")
 T.eq(named.trainer.personalName, "TAKESHI", "so does the personal name")
-T.eq(named.introText, "FIX YOUNGSTER TAKESHI wants\nto fight!",
+T.eq(named.introText, "FIX YOUNGSTER TAKESHI wants\nto fight!{PROMPT}",
      "the intro text uses the composed name")
 T.eq(Data.trainers.OPP_FIX_YOUNGSTER.name, "FIX YOUNGSTER",
      "the shim never writes the composed name back onto the record")

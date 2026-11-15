@@ -1,10 +1,10 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
 local T = require("tests.harness").suite("Emerald summary stats #2642")
-local root = os.getenv("POKEPORT_EMERALD_CACHE") or os.getenv("POKEPORT_GBA_CACHE")
-if not root then print("SKIP #2642 set POKEPORT_EMERALD_CACHE or POKEPORT_GBA_CACHE"); T.finish(); return end
-local manifestFile = loadfile(root .. "/rse/summary/manifest.lua")
-if not manifestFile then print("SKIP #2642 requires a read-only Emerald summary cache"); T.finish(); return end
+local Cache = require("tests.game3_cache")
+local root = Cache.root("emerald", "rse/summary/manifest.lua")
+if not root then print("[skip] #2642 summary: " .. tostring(Cache.reason)); T.finish(); return end
+local manifestFile = assert(loadfile(root .. "/rse/summary/manifest.lua"))
 local before = os.getenv("SUMMARY2642_BEFORE")
 if before then
   for _, path in ipairs({ "src/core/game3/battle_bridge", "src/ui/game3/rse/summary_menu" }) do

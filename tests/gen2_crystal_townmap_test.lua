@@ -14,6 +14,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 crystal town map")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -179,11 +180,14 @@ do
   local goldLast = gold:cursorLimits()
   eq(goldLast, 0x2d, "a Gold landmark table still answers $2d")
 
-  -- A dataset with no landmark records at all keeps the pokegold numbers.
   local bare = townMapScreen({ landmarks = { landmarks = {}, order = {} } })
-  local bareLast, bareFirst = bare:cursorLimits()
-  eq(bareLast, 0x2d, "and so does a dataset with no records")
-  eq(bareFirst, 0x01, "with NEW BARK TOWN still the floor")
+  check(not pcall(bare.cursorLimits, bare), "a dataset with no landmark records is an error")
+  local noPallet = require("tests.fixture_data.gen2_landmarks_s7_d").table("crystal")
+  noPallet.landmarks.LANDMARK_PALLET_TOWN = nil
+  local orphan = townMapScreen({ landmarks = noPallet })
+  local ok, err = pcall(orphan.region, orphan)
+  check(not ok and tostring(err):find("LANDMARK_PALLET_TOWN", 1, true) ~= nil,
+    "and a landmarks table without LANDMARK_PALLET_TOWN is an error")
 end
 
 -- `cp KANTO_LANDMARK` is the region test, and KANTO_LANDMARK is PALLET_TOWN's
@@ -263,11 +267,10 @@ do
   check(#card.cards > 1, "and it keeps its card strip")
 end
 
--- Drawing with no town-map art at all: a crash check on the unstyled fallback.
 do
   local screen = townMapScreen()
   check(not screen:styled(), "this harness has no gear sheet")
-  check(pcall(function() screen:draw() end), "the poster still draws")
+  check(not pcall(function() screen:draw() end), "and a cache without the art is an error")
 end
 
 -- ================================================= 5. the specials

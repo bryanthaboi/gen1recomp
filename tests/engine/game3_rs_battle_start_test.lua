@@ -16,6 +16,7 @@ package.loaded["src.core.game3.field"]={lock=function() end}
 package.loaded["src.core.game3.battle"]={start=function(opts) started=opts;return true end,getState=function() return nil end}
 local Bridge=require("src.core.game3.battle_bridge")
 Bridge._interceptInstalled=true
+require("tests.fixture_data.game3_battle_moves").install()
 local Rse=require("src.core.game3.rse.init")
 Rse.register("tv",{incrementDailyWildBattles=function() end})
 for _,game in ipairs({"ruby","sapphire"}) do

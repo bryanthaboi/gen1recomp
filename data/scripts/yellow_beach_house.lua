@@ -29,7 +29,7 @@ local function poster(n)
     local t = game.data.text
     local key = ("_SummerBeachHousePoster%dText%d"):format(
       n, surfingPikachu(game) and 1 or 2)
-    push(game, t[key] or "A surfing poster.", done)
+    push(game, t[key], done)
   end
 end
 
@@ -39,20 +39,17 @@ return {
       TEXT_SUMMERBEACHHOUSE_SURFINDUDE = function(game, ow, npc, done)
         local t = game.data.text
         if not surfingPikachu(game) then
-          push(game, t._SummerBeachHouseSurfinDudeText4
-            or "Dogs and burgers\non special today!", done)
+          push(game, t._SummerBeachHouseSurfinDudeText4, done)
           return
         end
         -- Text1 on the first ask each visit, the short Text3 after
         local ask = ow.surfinDudeAsked
-          and (t._SummerBeachHouseSurfinDudeText3 or "Wanna go SURF?")
-          or (t._SummerBeachHouseSurfinDudeText1
-              or "Whoa!\nYour PIKACHU knows\nhow to SURF!\fGive it a go?")
+          and t._SummerBeachHouseSurfinDudeText3
+          or t._SummerBeachHouseSurfinDudeText1
         ow.surfinDudeAsked = true
         push(game, ask, nil, { choice = function(yes)
             if not yes then
-              push(game, t._SummerBeachHouseSurfinDudeText2
-                or "Come SURF anytime,\nmy friend!", done)
+              push(game, t._SummerBeachHouseSurfinDudeText2, done)
               return
             end
             local SurfingMinigame = require("src.ui.SurfingMinigame")
@@ -67,7 +64,7 @@ return {
       TEXT_SUMMERBEACHHOUSE_PIKACHU = function(game, ow, npc, done)
         local t = game.data.text
         -- scripts/SummerBeachHouse.asm:68
-        push(game, t._SummerBeachHousePikachuText or "PIKACHU: Pikaa!",
+        push(game, t._SummerBeachHousePikachuText,
           done, { auto = { wait = true, delay = 0, sound = function()
             return require("src.core.Sound").playCry(game.data, "PIKACHU")
           end } })

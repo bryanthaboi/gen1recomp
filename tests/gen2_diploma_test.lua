@@ -219,7 +219,9 @@ local fakeGfx = {
                 { 0, 0, 0 } },
 }
 
-local screen = Diploma.new(nil, { playerName = "GOLD", gfx = fakeGfx })
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
+local TEXT_GAME = { data = { text = Fixture.text() } }
+local screen = Diploma.new(TEXT_GAME, { playerName = "GOLD", gfx = fakeGfx })
 eq(screen.playerName, "GOLD", "the screen takes the player's name")
 local palette = screen:palette()
 check(palette == fakeGfx.bgPalette,
@@ -258,14 +260,18 @@ local okDraw, drawErr = pcall(function() screen:draw() end)
 Chrome.printThrough = realPrintThrough
 check(okDraw, "the screen draws: " .. tostring(drawErr))
 eq(#placed, 7, "PLAYER, the name and the five certification lines")
-eq(placed[1].text, "PLAYER", "hlcoord 2, 5 is .Player")
+eq(placed[1].text, TEXT_GAME.data.text["PlaceDiplomaOnScreen.Player"],
+  "hlcoord 2, 5 is .Player")
 eq(placed[1].x, 2, "at column 2")
 eq(placed[1].y, 5, "on row 5")
 eq(placed[2].text, "GOLD", "hlcoord 9, 5 is wPlayerName")
 eq(placed[2].x, 9, "at column 9")
 eq(placed[2].y, 5, "on the same row")
-local CERTIFICATION = { "This certifies", "that you have", "completed the",
-                        "new #DEX.", "Congratulations!" }
+local CERTIFICATION = {}
+for line in (TEXT_GAME.data.text["PlaceDiplomaOnScreen.Certification"] .. "\n"):gmatch("(.-)\n") do
+  CERTIFICATION[#CERTIFICATION + 1] = line
+end
+eq(#CERTIFICATION, 5, "the cache's .Certification is five `next` lines")
 for index, line in ipairs(CERTIFICATION) do
   local entry = placed[index + 2]
   eq(entry.text, line, ".Certification line " .. index)
@@ -276,10 +282,11 @@ end
 check(placed[1].palette ~= nil,
   "and every string goes through the page's own palette, not a black print")
 
--- A cache without the stage still opens the screen: the placeholder frame.
-local bare = Diploma.new(nil, { playerName = "GOLD" })
-check(bare:batch() == nil, "no gen2Diploma in the cache means no tilemap")
-local okBare = pcall(function() bare:draw() end)
-check(okBare, "and the screen still draws its placeholder frame")
+check(not pcall(Diploma.new, { data = { text = Fixture.without(
+  "PlaceDiplomaOnScreen.Certification") } }, { playerName = "GOLD", gfx = fakeGfx }),
+  "a cache without .Certification is an error")
+local bare = Diploma.new(TEXT_GAME, { playerName = "GOLD" })
+check(not pcall(bare.batch, bare), "no gen2Diploma in the cache errors")
+check(not pcall(bare.draw, bare), "and the screen does not draw a placeholder")
 
 S.finish()

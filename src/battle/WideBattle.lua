@@ -15,6 +15,7 @@ local Font = require("src.render.Font")
 local HudTiles = require("src.render.HudTiles")
 local PaletteFX = require("src.render.PaletteFX")
 local Runtime = require("src.mods.Runtime")
+local RomText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 local TypeChart = require("src.battle.TypeChart")
 
@@ -200,19 +201,39 @@ local function drawMessageBox(battle)
   end
 end
 
+local function menuCells(text, at)
+  local rows = {}
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    local chars = {}
+    for ch in line:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
+    rows[#rows + 1] = {
+      (table.concat(chars, "", 1, math.min(at, #chars)):gsub("%s+$", "")),
+      (table.concat(chars, "", at + 1, #chars):gsub("^%s+", "")),
+    }
+  end
+  return rows
+end
+
+WideBattle.menuCells = menuCells
+
+local function drawMenuCells(text, at, x1, x2)
+  for i, cells in ipairs(menuCells(text, at)) do
+    Font.draw(cells[1], x1, 96 + i * 16)
+    Font.draw(cells[2], x2, 96 + i * 16)
+  end
+end
+
 local function drawCommandMenu(battle)
   local col = (battle.menuIndex - 1) % 2
   local row = math.floor((battle.menuIndex - 1) / 2)
   if battle.safari then
     Font.drawBox(0, 13, 38, 5)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(Strings("BALL") .. "\xc3\x97", 16, 112) -- data/text_boxes.asm:73
+    -- data/text_boxes.asm:72
+    drawMenuCells(RomText(battle.data, "SafariZoneBattleMenuText", nil), 12, 16, 168)
     -- wNumSafariBalls immediately after the label, as at hlcoord 7,14
     -- (engine/battle/core.asm:2074-2079) (#540)
     Font.draw(("%2d"):format(battle.safari.balls), 56, 112)
-    Font.draw(Strings("BAIT"), 168, 112)
-    Font.draw(Strings("THROW ROCK"), 16, 128)
-    Font.draw(Strings("RUN"), 168, 128)
     Font.drawCode(0xED, col == 0 and 8 or 160, 112 + row * 16)
     return
   end
@@ -228,21 +249,16 @@ local function drawCommandMenu(battle)
   -- "What will PIKACHU do?" over Oak's scripted throw (#557).  Leave the
   -- prompt side blank and run the same scripted hand the classic does.
   if battle.demo then
-    Font.draw(Strings("FIGHT"), 176, 112)
-    Font.drawCode(0xE1, 240, 112); Font.drawCode(0xE2, 248, 112)
-    Font.draw(Strings("ITEM"), 176, 128)
-    Font.draw(Strings("RUN"), 240, 128)
+    -- data/text_boxes.asm:68
+    drawMenuCells(RomText(battle.data, "BattleMenuText", nil), 6, 176, 240)
     Font.drawCode(0xED, 168, (battle.demoTimer or 0) <= battle:demoDelays() and 112 or 128)
     return
   end
   Font.draw(Strings("What will"), 8, 112)
   local who = battle.player and battle.player.name or ""
   Font.draw(fitName(who, 112) .. Strings(" do?"), 8, 128)
-  Font.draw(Strings("FIGHT"), 176, 112)
-  Font.drawCode(0xE1, 240, 112) -- 'PK'
-  Font.drawCode(0xE2, 248, 112) -- 'MN'
-  Font.draw(Strings("ITEM"), 176, 128)
-  Font.draw(Strings("RUN"), 240, 128)
+  -- data/text_boxes.asm:68
+  drawMenuCells(RomText(battle.data, "BattleMenuText", nil), 6, 176, 240)
   Font.drawCode(0xED, col == 0 and 168 or 232, 112 + row * 16)
 end
 

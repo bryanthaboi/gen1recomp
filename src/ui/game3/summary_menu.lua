@@ -133,9 +133,6 @@ local function moves_for_mon(mon)
       maxPp = tonumber(mon.maxPp and mon.maxPp[i]) or (mdef and mdef.pp) or 5
       if not pp then pp = maxPp end
       local name = Pokemon.moveName(moveId)
-      if not name or name == "" or name:match("^MOVE ") then
-        name = (mdef and mdef.name) or name or Strings("MOVE %s", tostring(moveId))
-      end
       local mType = (mdef and (mdef.type or mdef.kind)) or "NORMAL"
       local power, acc = power_accuracy(mdef)
       out[i] = {
@@ -162,9 +159,6 @@ local function moves_for_mon(mon)
     newId = newId or SummaryMenu._moveToLearn
     local mdef = Pokemon.battleMove(newId)
     local name = Pokemon.moveName(newId)
-    if not name or name == "" or name:match("^MOVE ") then
-      name = (mdef and mdef.name) or name or Strings("MOVE %s", tostring(newId))
-    end
     local maxPp = (mdef and mdef.pp) or 5
     local mType = (mdef and (mdef.type or mdef.kind)) or "NORMAL"
     local power, acc = power_accuracy(mdef)

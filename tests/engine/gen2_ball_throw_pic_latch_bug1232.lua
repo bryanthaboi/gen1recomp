@@ -22,6 +22,7 @@ end
 -- steps (stepAnim) are allowed to latch the enemy pic box.
 do
   local self1 = setmetatable({
+    game = { data = { text = require("tests.gen2_capture_text_fixture")() } },
     battle = {}, tutorial = true, save = nil,
     queue = {}, picHidden = { player = false, enemy = false },
   }, { __index = UI })

@@ -21,11 +21,24 @@ love.filesystem.write("data/generated/tilesets.lua", "return { TEST = {} }")
 love.filesystem.write("data/generated/landmarks.lua", [[
 return { spawns = { SPAWN_NEW_BARK = { map = "ELMS_LAB", x = 1, y = 1 } } }
 ]])
+love.filesystem.write("data/generated/marts.lua",
+  "return { lists = {}, bargain = {} }")
+love.filesystem.write("data/generated/initial_events.lua",
+  "return { flags = {}, engineFlags = {}, sprites = {} }")
+love.filesystem.write("data/generated/menu_gfx.lua", [[
+return { emotes = { grassRustle = "r.png", jumpShadow = "j.png",
+  cutGrass = "c.png", fishing = "f.png" },
+  healMachine = { sheet = "h.png", palette = { 0, 0, 0, 0 } } }
+]])
 
 local saved = { Runtime.events, Runtime.hooks, Runtime.errors }
 Runtime.install(Events.new(), Hooks.new(), {})
 
-local world = World.new({ data = {}, save = { party = {}, inventory = {} },
+local PHONE = require("tests.fixtures.gen2_phone_events")
+PHONE.install()
+local world = World.new({ data = { gen2EventTables = PHONE.events,
+  gen2Constants = { engineFlagOrder = require("tests.fixture_data.gen2_engine_flags").order("gold") } },
+  save = { party = {}, inventory = {} },
   stack = { top = function() end, push = function() end, pop = function() end } })
 world.setMap = function(self, mapId)
   self.map = { id = mapId, def = self.maps[mapId] }

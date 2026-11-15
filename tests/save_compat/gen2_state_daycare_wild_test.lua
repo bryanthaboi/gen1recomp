@@ -16,8 +16,14 @@ local Save = require("src.core.gen2.Save")
 local Mon = require("src.battle.gen2.Mon")
 local Breeding = require("src.core.gen2.Breeding")
 local Roamers = require("src.core.gen2.Roamers")
+local RoamFixture = require("tests.fixtures.gen2_roamers")
 local BugContest = require("src.core.gen2.BugContest")
 local Specials = require("src.script.gen2.Specials")
+local KARP_TABLES = { magikarpLengths = {
+  { 110, 1 }, { 310, 2 }, { 710, 4 }, { 2710, 20 }, { 7710, 50 },
+  { 17710, 100 }, { 32710, 150 }, { 47710, 150 }, { 57710, 100 },
+  { 62710, 50 }, { 64710, 20 }, { 65210, 5 }, { 65410, 2 }, { 65510, 1 },
+}, magikarpRecordHolder = "RALPH" }
 
 local VERSIONS = { "gold", "silver", "crystal" }
 local REGIONS = { "dayCare", "roamers", "magikarpRecord", "dailyFlags" }
@@ -40,9 +46,12 @@ local function species(id, index, o)
     genderRatio = o.genderRatio or 127, eggGroups = o.eggGroups or { "EGG_GROUND", "EGG_GROUND" },
     eggGroupsRaw = o.eggGroupsRaw, eggSteps = o.eggSteps or 20, evolutions = {},
     levelMoves = o.levelMoves or { { level = 1, move = "TACKLE" } }, tmhm = {},
+    eggMoves = o.eggMoves or {},
   }
 end
+-- data/pokemon/egg_moves.asm:5 BulbasaurEggMoves
 species("BULBASAUR", 1, { genderRatio = 31, eggGroups = { "EGG_MONSTER", "EGG_PLANT" }, eggGroupsRaw = 0x17,
+  eggMoves = { "LIGHT_SCREEN", "SKULL_BASH", "SAFEGUARD", "CHARM", "RAZOR_WIND", "PETAL_DANCE" },
   levelMoves = { { level = 1, move = "TACKLE" }, { level = 4, move = "GROWL" }, { level = 7, move = "LEECH_SEED" } } })
 species("CATERPIE", 10, { levelMoves = { { level = 1, move = "TACKLE" }, { level = 1, move = "STRING_SHOT" } } })
 species("MAGIKARP", 129, { levelMoves = { { level = 1, move = "SPLASH" } } })
@@ -494,8 +503,7 @@ local function engineSave(v)
   for _ = 1, 37 do Breeding.step(data, save, rng) end
   BugContest.start(save, { day = 33, hour = 9, minute = 30, second = 5 })
   BugContest.catch(save, Mon.new(data, "CATERPIE", 9, { dvs = { attack = 1, defense = 2, speed = 3, special = 4 } }))
-  local enc = v == "crystal" and { roamMons = { { species = "RAIKOU", level = 40, map = "ROUTE_42" },
-    { species = "ENTEI", level = 40, map = "ROUTE_37" } } } or nil
+  local enc = RoamFixture.encounters(v)
   Roamers.init(save, { encounters = enc })
   Roamers.beginBattle(save, 1, data)
   Roamers.endBattle(save, 1, "run", 77, "ROUTE_29", pick(5), enc)
@@ -506,7 +514,8 @@ local function engineSave(v)
   local karp = save.party[1]
   karp.otId = 0
   Specials.HANDLERS.CheckMagikarpLength({ scriptVar = 0, setStringBuffer = function() end,
-    specials = { save = function() return save end, selectPartyMon = function(_, done) done(1, karp) end } })
+    specials = { save = function() return save end, selectPartyMon = function(_, done) done(1, karp) end,
+      data = function() return { gen2EventTables = KARP_TABLES } end } })
   if v == "crystal" then
     save.engineFlags = save.engineFlags or {}
     save.engineFlags[160], save.engineFlags[97] = true, true
@@ -597,6 +606,7 @@ end
 
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local label = "change " .. v
   local syms = S(v)
   local bytes = G2.build({ version = v, patch = realistic(v) })
@@ -613,8 +623,10 @@ for _, v in ipairs(VERSIONS) do
   local karp = Mon.new(data, "MAGIKARP", 10, { dvs = { attack = 15, defense = 15, speed = 15, special = 15 } })
   karp.otId = 0
   Specials.HANDLERS.CheckMagikarpLength({ scriptVar = 0, setStringBuffer = function() end,
-    specials = { save = function() return save end, selectPartyMon = function(_, done) done(1, karp) end } })
-  local feet, inches = Specials.magikarpLength(karp.otId, Specials.dvWord(karp.dvs))
+    specials = { save = function() return save end, selectPartyMon = function(_, done) done(1, karp) end,
+      data = function() return { gen2EventTables = KARP_TABLES } end } })
+  local feet, inches = Specials.magikarpLength(KARP_TABLES.magikarpLengths, karp.otId,
+    Specials.dvWord(karp.dvs))
   if v == "crystal" then save.engineFlags[96] = nil; save.engineFlags[161] = true end
   local out, err = encode(save, v, bytes)
   check(out ~= nil, label .. ": exports -- " .. tostring(err))

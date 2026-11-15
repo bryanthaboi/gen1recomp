@@ -3,6 +3,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = T.check, T.eq
 
 love = require("tests.love_stub")
@@ -63,30 +64,24 @@ eq(World.mapMusicLabel(audio, 72, true, true), nil,
 eq(World.mapMusicLabel(audio, nil, true, true), nil,
   "a missing music byte resolves to nothing")
 
-local function newWorld(engineFlagOrder)
+local function newWorld(version)
+  require("tests.fixture_data.gen2_engine_flags").bind(version)
   local maps = { MAHOGANY_MART_1F = { music = MUSIC_MAHOGANY_MART } }
   for floor = 1, 5 do
     maps["RADIO_TOWER_" .. floor .. "F"] = { music = RADIO_TOWER_SENTINEL }
   end
   return setmetatable({
-    constants = { engineFlagOrder = engineFlagOrder },
     maps = maps,
     game = { save = { engineFlags = {} }, data = { audio = audio } },
   }, { __index = World })
 end
 
 -- pokecrystal/constants/engine_flags.asm:25
-local crystalOrder = {
-  [19] = "ENGINE_SAFARI_ZONE",
-  [20] = "ENGINE_ROCKETS_IN_RADIO_TOWER",
-  [23] = "ENGINE_REACHED_GOLDENROD",
-  [24] = "ENGINE_ROCKETS_IN_MAHOGANY",
-}
 for _, version in ipairs({
-  { name = "Gold", tower = 18, mahogany = 22 },
-  { name = "Crystal", tower = 19, mahogany = 23, order = crystalOrder },
+  { name = "Gold", tower = 18, mahogany = 22, id = "gold" },
+  { name = "Crystal", tower = 19, mahogany = 23, id = "crystal" },
 }) do
-  local world = newWorld(version.order)
+  local world = newWorld(version.id)
   world.game.save.engineFlags[version.tower] = true
   world.game.save.engineFlags[version.mahogany] = true
   for floor = 1, 5 do
@@ -107,7 +102,7 @@ for _, version in ipairs({
     version.name .. " cleared Mahogany restores Cherrygrove music")
 end
 
-local crystal = newWorld(crystalOrder)
+local crystal = newWorld("crystal")
 crystal.game.save.engineFlags[18] = true
 crystal.game.save.engineFlags[22] = true
 eq(crystal:mapMusicSong("RADIO_TOWER_1F"), "Music_GoldenrodCity",

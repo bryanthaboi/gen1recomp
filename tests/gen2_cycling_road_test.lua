@@ -24,6 +24,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 cycling road")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local Bike = require("src.world.gen2.Bike")
@@ -179,6 +180,7 @@ local function fieldSelf(onBike, badge)
     engineFlags = World.engineFlags,
     engineFlag = World.engineFlag,
     alwaysOnBike = World.alwaysOnBike,
+    engineFlagId = World.engineFlagId,
     blockIndexAt = World.blockIndexAt,
     cellCollisionAcross = World.cellCollisionAcross,
     escapeRopeTarget = function() return nil end,

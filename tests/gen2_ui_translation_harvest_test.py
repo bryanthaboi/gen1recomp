@@ -17,7 +17,7 @@ from tools.modkit import STRINGS_CALL, harvest_engine_strings  # noqa: E402
 OWNED = [
     "OptionsMenu", "GenderSelect", "TrainerCard", "CenterPcMenu", "PcMenu",
     "ItemPcMenu", "InitClock", "CardFlip", "MailMenu", "PackMenu",
-    "PrizeMenu", "SlotMachine", "ContestMenu", "TradeMenu", "MartMenu",
+    "SlotMachine", "ContestMenu", "TradeMenu", "MartMenu",
     "MailboxMenu", "StartMenu", "DayCareMenu", "HeldItemMenu",
     "BoxMenu", "EvolutionAnim", "BankOfMom", "NamePick", "MoveDeleter",
     "MailCompose",
@@ -30,15 +30,6 @@ REQUIRED = {
     "AUTO", "HIGH", "BALANCED", "LOW", "FIT", "OUT%d", "IN%d", "%dX",
     "GEN 2", "DMG", "CLASSIC", "PALETTE", "SKIN", "STRONG", "ADAPTIVE",
     "DISPLAY", "DISPLAY (%dHZ)", "GREEN", "MONO", "1X", "2X", "3X",
-    # Center PC labels, prompts and flows.
-    "BILL's PC", "%s's PC", "PROF.OAK's PC", "HALL OF FAME", "TURN OFF",
-    "Bzzzzt! You must\nhave a #MON to\nuse this!",
-    "{PLAYER} turned on\nthe PC.",
-    "The link to PROF.\nOAK's PC closed.", "…\nLink closed…",
-    "BILL's PC\naccessed.\n\n#MON Storage\nSystem opened.",
-    "Accessed own PC.\n\nItem Storage\nSystem opened.",
-    "PROF.OAK's PC\naccessed.\n\n#DEX Rating\nSystem opened.",
-    "Want to get your\n#DEX rated?", "Access whose PC?",
     # Item PC menu and all item-operation messages.
     "WITHDRAW ITEM", "DEPOSIT ITEM", "TOSS ITEM", "MAIL BOX", "LOG OFF",
     "DECORATION", "There's no room\nfor more items.",
@@ -77,7 +68,7 @@ REQUIRED = {
     "What? %s\nis evolving!", "Huh? %s\nstopped evolving!",
     "Congratulations!\nYour %s", "evolved into\n%s!",
     "%s learned\n%s!", "%s wants to\nlearn %s!",
-    "SAVED", "HELD", "NAME", "NEW NAME", "PP", "lower", "UPPER",
+    "NAME", "NEW NAME", "PP", "lower", "UPPER",
     "DEL", "END",
     # Game Corner engine text.
     "Play with\n3 coins?", "Choose a\ncard.", "Place\nyour bet",
@@ -161,7 +152,7 @@ class Gen2UiTranslationHarvestTest(unittest.TestCase):
     def test_reviewed_modules_have_no_raw_player_facing_sinks(self):
         modules = {
             "BoxMenu", "EvolutionAnim", "BankOfMom", "NamePick",
-            "MoveDeleter", "MailCompose", "PrizeMenu", "CardFlip",
+            "MoveDeleter", "MailCompose", "CardFlip",
             "SlotMachine", "PackMenu", "StartMenu",
         }
         direct_print = re.compile(

@@ -24,8 +24,15 @@ local staleBytes = string.rep("\255", 240 * 160 * 4)
 files[stalePath] = staleBytes
 
 local okRead, got = pcall(CacheFs.readAt, stalePath)
-check(okRead, "undecodable blob read does not raise: " .. tostring(got))
-check(okRead and got == nil, "undecodable blob reads as a cache miss")
+check(not okRead, "undecodable ROM-derived blob raises")
+check(not okRead and tostring(got):find(stalePath, 1, true) ~= nil,
+  "the undecodable blob error names the file: " .. tostring(got))
+
+local atlasPath = "firered/data/generated/gba/native/harbor/atlas_flat_0123abcd.rgba"
+files[atlasPath] = staleBytes
+local okAtlas, atlas = pcall(CacheFs.readAt, atlasPath)
+check(okAtlas and atlas == nil, "an undecodable derived atlas reads as a miss so it is rebaked: " .. tostring(atlas))
+files[atlasPath] = nil
 
 local okStrict = pcall(CacheBlob.decode, stalePath, staleBytes)
 check(not okStrict, "CacheBlob.decode stays strict for runtime readers")
@@ -48,9 +55,9 @@ local cache = {
   exists = function(_, rel) return CacheFs.exists(rel) end,
 }
 local PokedexChromeExtract = require("src.import.gba.pokedex_chrome_extract")
-local okProbe, ready = pcall(PokedexChromeExtract.ready, cache, probeRoot)
-check(okProbe, "import readiness probe over a stale blob does not raise: " .. tostring(ready))
-check(okProbe and ready == false, "stale blob makes the extractor not ready, so it rewrites it")
+local okProbe, probeErr = pcall(PokedexChromeExtract.ready, cache, probeRoot)
+check(not okProbe and tostring(probeErr):find("%.rgba") ~= nil,
+  "a readiness probe over a stale blob raises with the file name: " .. tostring(probeErr))
 
 local SaveData = require("src.core.SaveData")
 local tmpBase = (os.getenv("TMPDIR") or "/tmp"):gsub("/+$", "")

@@ -96,9 +96,16 @@ function Encounter.fish(encounters, fishGroup, rod, daytime, random)
   for _, row in ipairs(list) do
     if value < (row.chance or 0) then
       local slot = row[todKey]
-      if not slot and row.timeGroup and encounters and encounters.timeFishGroups then
-        local tg = encounters.timeFishGroups[row.timeGroup]
+      if not slot and row.timeGroup then
+        local groups = encounters.timeFishGroups
+        if type(groups) ~= "table" then
+          error("encounters.lua has no timeFishGroups")
+        end
+        local tg = groups[row.timeGroup]
         slot = tg and tg[todKey]
+        if not slot then
+          error("encounters.lua has no time fish group " .. tostring(row.timeGroup))
+        end
       end
       slot = slot or row
       if not slot.species or slot.species == 0 or slot.species == "NO_ITEM" then return nil end
@@ -129,15 +136,15 @@ local FISH_SWARM_GROUPS = {
   },
 }
 
--- A cache built before the extractor carried the two swarm rows has no such
--- group at all, and Fish on a missing group is a bite of nothing; falling back
--- to the map's own group keeps those rods rolling their ordinary list.
+-- engine/events/fish.asm:92 GetFishGroupIndex
 function Encounter.fishGroupFor(encounters, group, fishSwarm)
   local swap = FISH_SWARM_GROUPS[fishSwarm or Encounter.FISHSWARM_NONE]
   local swarmed = swap and swap[group]
   if not swarmed then return group end
   local groups = encounters and encounters.fishGroups
-  if not (groups and groups[swarmed]) then return group end
+  if not (groups and groups[swarmed]) then
+    error("encounters.lua has no fish group " .. swarmed)
+  end
   return swarmed
 end
 
@@ -202,8 +209,12 @@ function Encounter.treeSlot(encounters, mapId, cx, cy, random, opts)
   opts = opts or {}
   local setName = Encounter.treeSet(encounters, mapId)
   if not Encounter.treeSetUsable(setName, opts.engine) then return nil end
-  local set = encounters and encounters.treeSets and encounters.treeSets[setName]
-  if not set then return nil end
+  local sets = encounters and encounters.treeSets
+  if type(sets) ~= "table" then error("encounters.lua has no treeSets") end
+  local set = sets[setName]
+  if type(set) ~= "table" then
+    error("encounters.lua has no tree set " .. tostring(setName))
+  end
   local score = Encounter.treeScore(cx, cy, opts.otId)
   local list, gate = set.common, 1
   if score == Encounter.TREEMON_SCORE_GOOD then
@@ -225,17 +236,6 @@ function Encounter.treeSlot(encounters, mapId, cx, cy, random, opts)
   return nil
 end
 
--- ../pokecrystal/data/wild/treemons_asleep.asm:3 AsleepTreeMonsNite / Day / Morn
-Encounter.ASLEEP_TREEMONS = {
-  NITE = { CATERPIE = true, METAPOD = true, BUTTERFREE = true, WEEDLE = true,
-           KAKUNA = true, BEEDRILL = true, SPEAROW = true, EKANS = true,
-           EXEGGCUTE = true, LEDYBA = true, AIPOM = true },
-  DAY = { VENONAT = true, HOOTHOOT = true, NOCTOWL = true, SPINARAK = true,
-          HERACROSS = true },
-}
-Encounter.ASLEEP_TREEMONS.MORN = Encounter.ASLEEP_TREEMONS.DAY
-Encounter.ASLEEP_TREEMONS.DARK = Encounter.ASLEEP_TREEMONS.NITE
-
 -- ../pokecrystal/constants/battle_constants.asm:15 TREEMON_SLEEP_TURNS
 Encounter.TREEMON_SLEEP_TURNS = 7
 
@@ -244,16 +244,19 @@ function Encounter.treeMonAsleep(species, daytime, engine, encounters)
   if engine ~= "crystal" then return false end
   daytime = daytime or "DAY"
   local extracted = encounters and encounters.treeMonsAsleep
-  if type(extracted) == "table" then
-    local key = (daytime == "MORN" and "MORN") or (daytime == "DAY" and "DAY")
-      or "NITE"
-    for _, name in ipairs(extracted[key] or {}) do
-      if name == species then return true end
-    end
-    return false
+  if type(extracted) ~= "table" then
+    error("encounters.lua has no treeMonsAsleep")
   end
-  local list = Encounter.ASLEEP_TREEMONS[daytime]
-  return (list and list[species]) == true
+  local key = (daytime == "MORN" and "MORN") or (daytime == "DAY" and "DAY")
+    or "NITE"
+  local list = extracted[key]
+  if type(list) ~= "table" then
+    error("encounters.lua has no treeMonsAsleep." .. key)
+  end
+  for _, name in ipairs(list) do
+    if name == species then return true end
+  end
+  return false
 end
 
 return Encounter

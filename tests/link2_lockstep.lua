@@ -85,7 +85,14 @@ local ITEMS = {
     pocket = "ITEM", heldEffect = "HELD_FLINCH", heldParameter = 30 },
 }
 
+local function engineFlagOrder()
+  local order = {}
+  for id, name in pairs(require("src.save_convert.data.gen2_engine_flags").gs) do order[id + 1] = name end
+  return order
+end
+
 local DATA = {
+  gen2Constants = { engineFlagOrder = engineFlagOrder() },
   pokemon = POKEMON,
   moves = MOVES,
   text = require("tests.gen2_battle_text_fixture")(), type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },

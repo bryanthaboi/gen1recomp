@@ -170,6 +170,8 @@ return function(game)
   local rate = Encounter.grassRate(world:wildTables(), world.map.id,
     world.daytime)
   assert(rate and rate > 0, "ROUTE_29 has no grass encounter rate to gate on")
+  -- engine/overworld/events.asm:357
+  world.wildCooldown = 0
   Encounter.triggers = function() return false end
   local gated = world:tryWildEncounter()
   Encounter.triggers = function(r) return realTriggers(r, function() return 0 end) end
@@ -206,5 +208,5 @@ return function(game)
       battle.battle.roaming, beasts[1].hp))
 
   U.log("PASS gold_roamers in " .. out)
-  love.event.quit()
+  love.event.quit(0)
 end

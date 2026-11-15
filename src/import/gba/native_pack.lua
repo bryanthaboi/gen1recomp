@@ -344,10 +344,14 @@ local DYNAMIC_MIDS_BY_PAIR = {
 }
 
 -- pokefirered/src/field_specials.c:283
-NativePack.PC_ON_BY_OFF = {
-  [0x062] = 0x063, -- pokefirered/include/constants/metatile_labels.h:6
-  [0x28F] = 0x28A, -- pokefirered/include/constants/metatile_labels.h:75
-}
+function NativePack.pcOnByOff()
+  local C = require("src.core.game3.constants").of("firered")
+  local out = {}
+  for _, row in pairs(require("src.core.game3.pc_anim").PC_LABELS) do
+    out[C:require("metatile_labels", row.off)] = C:require("metatile_labels", row.on)
+  end
+  return out
+end
 
 function NativePack.addDynamicMids(seen, pairName)
   local spec = Versions.TILESET_PAIRS and Versions.TILESET_PAIRS[pairName]
@@ -364,7 +368,7 @@ function NativePack.addDynamicMids(seen, pairName)
 end
 
 function NativePack.addPcOnMids(seen)
-  for off, on in pairs(NativePack.PC_ON_BY_OFF) do
+  for off, on in pairs(NativePack.pcOnByOff()) do
     if seen[off] then seen[on] = true end
   end
   return seen

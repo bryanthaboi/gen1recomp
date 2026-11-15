@@ -45,6 +45,7 @@ local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Palettes = require("src.world.gen2.Palettes")
 local Sprites = require("src.pokemon.Sprites")
+local RomText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 
 local PhotoStudio = {}
@@ -72,6 +73,7 @@ function PhotoStudio.new(game, opts)
   self.pokemon = opts.pokemon or data.pokemon
   self.moves = opts.moves or data.moves
   self.palettes = opts.palettes or data.gen2Palettes
+  self.data = data
   self.onClose = opts.onClose
   self.done = false
   self.picCache = {}
@@ -151,7 +153,8 @@ end
 function PhotoStudio:moveName()
   local mon = self.mon
   local entry = mon and mon.moves and mon.moves[1]
-  if not entry then return "-" end
+  -- engine/printer/print_party.asm:303
+  if not entry then return RomText(self.data, "PrintParty_NoMoveString", nil) end
   local def = self.moves and self.moves[entry.id]
   return (def and def.name) or entry.id
 end
@@ -192,13 +195,13 @@ function PhotoStudio:drawPanel()
 
   Chrome.textbox(0, 7, 18, 9)
 
-  Chrome.print(Strings("OT/"), 1, 9)
+  Chrome.print(RomText(self.data, "PrintParty_OTString", nil), 1, 9)
   Chrome.print(mon.ot or self.playerName, 4, 9)
 
-  Chrome.print(Strings("<ID>№"), 1, 11)
+  Chrome.print(RomText(self.data, "PrintParty_IDNoString", nil), 1, 11)
   Chrome.print(num(mon.otId or 0, 5, true), 4, 11)
 
-  Chrome.print(Strings("MOVE"), 1, 14)
+  Chrome.print(RomText(self.data, "PrintParty_MoveString", nil), 1, 14)
   Chrome.print(self:moveName(), 7, 14)
   Font.useBattleExtra(wasBattle)
 end

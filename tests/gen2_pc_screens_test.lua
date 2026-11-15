@@ -58,6 +58,7 @@ love.timer = love.timer or { getTime = function() return 0 end }
 require("src.core.Logger").warn = function() end
 
 local S = require("tests.harness").suite("gen2 pc screens")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local Bag = require("src.inventory.Bag")
@@ -105,7 +106,10 @@ local function newGame(save, items)
   return {
     input = input,
     save = save,
-    data = { audio = {}, pokemon = {}, items = items or ITEMS },
+    data = { audio = {}, pokemon = {}, items = items or ITEMS,
+      gen2EventTables = require("tests.fixture_data.gen2_rom_text_s7_f1").events(),
+      text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(
+        require("tests.fixture_data.gen2_rom_text_s7_e")) },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -166,9 +170,6 @@ do
     ["BILL's PC"] = "PC DE LEO",
     ["%s's PC"] = "PC DE %s",
     ["TURN OFF"] = "ETEINDRE",
-    ["WITHDRAW <PK><MN>"] = "RETIRER <PK><MN>",
-    ["WITHDRAW ITEM"] = "RETIRER OBJET",
-    ["LOG OFF"] = "DECONNEXION",
   } })
 
   local save = newSave(1)
@@ -179,20 +180,24 @@ do
   -- gate); this check is about label translation, not the boot animation.
   center.booted = true
   center:drawPanel()
+  game.data.text["_BillsPC.strings#1"] = "RETIRER <PK><MN>"
   local pc = PcMenu.new(game, { save = save, bills = true })
   pc:drawPanel()
+  game.data.text["PlayersPCMenuData.WithdrawItem"] = "RETIRER OBJET"
+  game.data.text["PlayersPCMenuData.LogOff"] = "DECONNEXION"
   local items = ItemPcMenu.new(game, { save = save })
   items:drawPanel()
   local all = table.concat(printed, "|")
-  check(all:find("PC DE LEO", 1, true) ~= nil, "BILL's PC is translated")
-  check(all:find("PC DE GOLD", 1, true) ~= nil,
-    "the player name stays raw inside a translated PC label")
+  check(all:find(game.data.text["PokemonCenterPC.String_BillsPC"], 1, true) ~= nil,
+    "BILL's PC is the cache's PokemonCenterPC.String_BillsPC, not a catalog key")
+  check(all:find("GOLD's PC", 1, true) ~= nil,
+    "the player name fills String_PlayersPC's <PLAYER>")
   check(all:find("RETIRER <PK><MN>", 1, true) ~= nil,
-    "the storage PC action is translated")
+    "the storage PC action is the cache's _BillsPC.strings#1")
   check(all:find("RETIRER OBJET", 1, true) ~= nil,
-    "the item PC action is translated")
+    "the item PC action is the cache's PlayersPCMenuData.WithdrawItem")
   check(all:find("DECONNEXION", 1, true) ~= nil,
-    "the item PC exit is translated")
+    "the item PC exit is the cache's PlayersPCMenuData.LogOff")
 
   Strings.load({})
   Chrome.print = priorPrint
@@ -205,9 +210,6 @@ do
     ["{PLAYER} turned on\nthe PC."] = "{PLAYER} ACTIVE\nPC-FR.",
     ["BILL's PC\naccessed.\n\n#MON Storage\nSystem opened."] =
       "PC LEO OUVERT.\n\nSTOCKAGE OUVERT.",
-    ["What do you want\nto do?"] = "QUE FAIRE?",
-    ["Withdrew %d\n%s(S)."] = "PRIS %d\n%s.",
-    ["Toss out how many\n%s(S)?"] = "JETER COMBIEN\n%s?",
     POTION = "INTERDIT",
   } })
   local save = newSave(1)
@@ -215,18 +217,20 @@ do
   local game = newGame(save)
 
   local center = CenterPcMenu.new(game, { save = save })
-  eq(center.message.pages[1][1], "{PLAYER} ACTIVE",
-    "the Center PC boot message is translated as a whole key")
+  eq(center.message.pages[1][1], "{PLAYER} turned on",
+    "the Center PC boot message is the cache's _PokecenterPCTurnOnText")
   center.message = nil
   center.index = 1
   center:choose()
-  eq(center.message.pages[1][1], "PC LEO OUVERT.",
-    "the Center PC access flow is translated")
+  eq(center.message.pages[1][1], "BILL's PC",
+    "the Center PC access flow is the cache's _PokecenterBillsPCText")
 
+  game.data.text._PlayersPCWithdrewItemsText = "PRIS {NUM}\n{STRBUF}.{PROMPT}"
+  game.data.text._ItemsTossOutHowManyText = "JETER COMBIEN\n{STRBUF}?{DONE}"
   local itemPc = ItemPcMenu.new(game, { save = save, items = ITEMS })
   itemPc:withdraw({ id = "POTION", name = "POTION" }, 1)
   eq(itemPc.message.pages[1][1], "PRIS 1",
-    "the item PC quantity template is translated")
+    "the item PC quantity line is the cache's _PlayersPCWithdrewItemsText")
   eq(itemPc.message.pages[1][2], "POTION.",
     "an item name remains a raw template argument")
   itemPc.message = nil
@@ -234,7 +238,7 @@ do
   itemPc.listIndex = 1
   itemPc:chooseToss()
   eq(itemPc.qtyState.prompt[1], "JETER COMBIEN",
-    "the item PC toss prompt is translated")
+    "the item PC toss prompt is the cache's _ItemsTossOutHowManyText")
   eq(itemPc.qtyState.prompt[2], "POTION?",
     "the toss prompt also preserves the item name argument")
   Strings.load({})
@@ -252,11 +256,6 @@ do
   local priorPrint = Chrome.print
   local printed = {}
   Chrome.print = function(text) printed[#printed + 1] = text end
-  Strings.load({ strings = {
-    ["WITHDRAW <PK><MN>"] = "RETIRER MON",
-    ["WITHDRAW ITEM"] = "RETIRER OBJET",
-  } })
-
   local function hookedWith(label)
     local hooks = Hooks.new()
     hooks:wrap("ui.pc.items", function(nextFn, game, entries)
@@ -270,6 +269,7 @@ do
   local save = newSave(1)
   local game = newGame(save)
   hookedWith("WITHDRAW <PK><MN>")
+  game.data.text["_BillsPC.strings#1"] = "RETIRER MON"
   PcMenu.new(game, { save = save, bills = true }):drawPanel()
   local all = table.concat(printed, "|")
   check(all:find("RETIRER MON", 1, true) ~= nil,
@@ -279,6 +279,7 @@ do
 
   printed = {}
   hookedWith("WITHDRAW ITEM")
+  game.data.text["PlayersPCMenuData.WithdrawItem"] = "RETIRER OBJET"
   ItemPcMenu.new(game, { save = save }):drawPanel()
   all = table.concat(printed, "|")
   check(all:find("RETIRER OBJET", 1, true) ~= nil,
@@ -309,7 +310,7 @@ end
 -- PCPC_BEFORE_HOF: PROF.OAK's PC appears with CheckReceivedDex.
 do
   local save = newSave(1)
-  save.engineFlags = { [CenterPcMenu.ENGINE_POKEDEX] = true }
+  save.engineFlags = { [require("src.core.gen2.EngineFlags").id("ENGINE_POKEDEX")] = true }
   local game = newGame(save)
   local pc = CenterPcMenu.new(game, { save = save })
   eq(entryIds(pc.entries), "bills,players,oaks,turnoff",
@@ -319,7 +320,7 @@ end
 -- PCPC_POSTGAME: HALL OF FAME appears once wHallOfFameCount is non-zero.
 do
   local save = newSave(1)
-  save.engineFlags = { [CenterPcMenu.ENGINE_POKEDEX] = true }
+  save.engineFlags = { [require("src.core.gen2.EngineFlags").id("ENGINE_POKEDEX")] = true }
   save.hallOfFame.count = 1
   local game = newGame(save)
   local pc = CenterPcMenu.new(game, { save = save })
@@ -384,7 +385,7 @@ end
 -- PROF.OAK's PC: the yes/no, the counts, the rating, the link-closed line.
 do
   local save = newSave(1)
-  save.engineFlags = { [CenterPcMenu.ENGINE_POKEDEX] = true }
+  save.engineFlags = { [require("src.core.gen2.EngineFlags").id("ENGINE_POKEDEX")] = true }
   save.pokedex = { seen = { A = true, B = true, C = true },
     caught = { A = true, B = true } }
   local game, input = newGame(save)
@@ -400,8 +401,8 @@ do
     if not pc.message then break end
     local page = pc.message.pages[pc.message.page]
     for _, line in ipairs(page) do
-      if line == "3 #MON seen" then sawCounts = true end
-      if line == "Look for #MON" then sawRating = true end
+      if line == "3 POKéMON seen" then sawCounts = true end
+      if line == "Look for POKéMON" then sawRating = true end
     end
     press(pc, input, "a")
   end
@@ -415,7 +416,7 @@ end
 do
   local function ratingPages(caught)
     local save = newSave(1)
-    save.engineFlags = { [CenterPcMenu.ENGINE_POKEDEX] = true }
+    save.engineFlags = { [require("src.core.gen2.EngineFlags").id("ENGINE_POKEDEX")] = true }
     local dex = {}
     for i = 1, caught do dex["SPECIES" .. i] = true end
     save.pokedex = { seen = dex, caught = dex }
@@ -447,17 +448,17 @@ do
     "every band pages exactly two lines, the box's two rows")
 
   local pages = ratingPages(205)
-  eq(table.concat(pages[1], "/"), "Current #DEX/completion level:",
+  eq(table.concat(pages[1], "/"), "Current POKéDEX/completion level:",
     "_OakPCText2 opens the flow")
-  eq(table.concat(pages[2], "/"), "205 #MON seen/205 #MON owned",
+  eq(table.concat(pages[2], "/"), "205 POKéMON seen/205 POKéMON owned",
     "then the two counts")
   eq(table.concat(pages[3], "/"), "PROF.OAK's/Rating:",
     "and the para clears the box for the rating header")
 
   local at = indexOf(pages, "Wow! You've hit")
   check(at ~= nil, "205 owned lands on _OakRating15")
-  eq(pages[at][2], "200! Your #DEX", "page 1 is text + line")
-  eq(pages[at + 1][1], "200! Your #DEX", "the cont scroll keeps line 2 on top")
+  eq(pages[at][2], "200! Your POKéDEX", "page 1 is text + line")
+  eq(pages[at + 1][1], "200! Your POKéDEX", "the cont scroll keeps line 2 on top")
   eq(pages[at + 1][2], "is looking great!", "with the cont line under it")
   eq(pages[at + 2], nil, "and that is the last page")
 
@@ -1040,40 +1041,39 @@ do
   eq(census(save), 5, "and releases nothing")
 end
 
--- Box-screen labels and complete prompts are translated at draw/use time;
--- box names and nicknames remain save content even when they collide with a
--- catalog key.
 do
   local BoxMenu = require("src.ui.gen2.BoxMenu")
   local Boxes = require("src.core.gen2.Boxes")
   local Strings = require("src.core.Strings")
-  Strings.load({ strings = {
-    ["PARTY <PK><MN>"] = "EQUIPE <PK><MN>",
-    ["Choose a <PK><MN>."] = "Choisissez un <PK><MN>.",
-    ["What's up?"] = "Que faire ?",
-    ["Release <PK><MN>?"] = "Relacher le <PK><MN> ?",
-    ["BOX CUSTOM"] = "NE PAS TRADUIRE",
-  } })
+  Strings.load({ strings = { ["BOX CUSTOM"] = "NE PAS TRADUIRE" } })
   local save = newSave(3)
   save.boxNames = save.boxNames or {}
   save.boxNames[1] = "BOX CUSTOM"
   Boxes.box(save, 1)[1] = { species = "PIDGEY", nickname = "BOX CUSTOM",
     hp = 10, maxHp = 10, level = 3 }
   local game = newGame(save)
+  game.data.text["BillsPC_BoxName.PartyPKMN"] = "EQUIPE <PK><MN>"
+  game.data.text.PCString_ChooseaPKMN = "Choisissez un <PK><MN>."
+  game.data.text.PCString_WhatsUp = "Que faire ?"
+  game.data.text.PCString_ReleasePKMN = "Relacher le <PK><MN> ?"
   local move = BoxMenu.new(game, { save = save, mode = "move" })
   eq(move:prompt(), "Choisissez un <PK><MN>.",
-    "the complete choose-mon prompt passes through Strings")
+    "the choose-mon prompt is the cache's PCString_ChooseaPKMN")
   move.phase = "submenu"
-  eq(move:prompt(), "Que faire ?", "the complete submenu prompt is translated")
+  eq(move:prompt(), "Que faire ?", "the submenu prompt is PCString_WhatsUp")
   move.boxIndex = 0
-  eq(move:title(), "EQUIPE <PK><MN>", "the built-in PARTY title is translated")
+  eq(move:title(), "EQUIPE <PK><MN>", "the PARTY title is BillsPC_BoxName.PartyPKMN")
   move.boxIndex = 1
   eq(move:title(), "BOX CUSTOM", "a user-defined box name remains raw")
 
   local withdraw = BoxMenu.new(game, { save = save, mode = "withdraw" })
   withdraw:askRelease()
   eq(withdraw.message, "Relacher le <PK><MN> ?",
-    "the complete release prompt passes through Strings")
+    "the release prompt is PCString_ReleasePKMN")
+  game.data.text.PCString_ChooseaPKMN = nil
+  move.phase = nil
+  check(not pcall(move.prompt, move),
+    "a cache without PCString_ChooseaPKMN is an error")
   Strings.load({})
 end
 

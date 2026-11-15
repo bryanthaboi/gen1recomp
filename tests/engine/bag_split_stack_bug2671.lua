@@ -76,10 +76,10 @@ local function newGame(money, inventory, order)
         X_ACCURACY = { name = "X ACCURACY", price = 950, index = 46 },
         POTION = { name = "POTION", price = 300, index = 20 },
       },
-      text = {
+      text = setmetatable({
         _PokemartItemBagFullText = BAG_FULL,
         _PokemartBoughtItemText = BOUGHT,
-      },
+      }, { __index = dofile("tests/fixture_data/text.lua") }),
       constants = {},
       field = {},
     },

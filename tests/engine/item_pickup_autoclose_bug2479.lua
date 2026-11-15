@@ -42,7 +42,8 @@ for _, version in ipairs({"red", "yellow"}) do
       T.eq(game.stack.box,box,label.." held")
       if full then
         T.eq(save.inventory.FIX_BALL,nil,label.." no award")
-        T.check(box:arrowVisible(),label.." arrow")
+        -- home/joypad2.asm:60-61, home/window.asm:247-250
+        T.check(not box:arrowVisible(),label.." done: no arrow")
         T.check(hidden and not (save.hiddenTaken or {}).FIX_TOWN_3_3 or not hidden and #ow.npcs==1,label.." retained")
       else
         T.eq(save.inventory.FIX_BALL,1,label.." one award")

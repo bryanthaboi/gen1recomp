@@ -4,6 +4,7 @@ if not _G.love then _G.love = require("tests.love_stub") end
 require("src.core.Logger").warn = function() end
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = T.check, T.eq
 
 local Save = require("src.core.gen2.Save")
@@ -34,7 +35,7 @@ eq(row and row.port, true, "marked as a port option")
 
 do
   local menuGame = { input = { wasPressed = function() return false end },
-    save = Save.newGame(), stack = newStack() }
+    save = Save.newGame(), stack = newStack(), data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
   local menu = OptionsMenu.new(menuGame, { options = Save.defaultOptions() })
   local page = menu:focusRow("uiLayout")
   eq(page and page:row().key, "uiLayout", "UI LAYOUT sits on a group page")
@@ -139,7 +140,8 @@ end
 local DOCK = { dx = 48, dy = 7, dt = -3, clipRow = nil }
 local save = Save.newGame()
 save.options = Save.defaultOptions()
-local menuGame = { input = { wasPressed = function() return false end }, save = save }
+local menuGame = { input = { wasPressed = function() return false end }, save = save,
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
 local menu = StartMenu.new(menuGame, { save = save })
 
 drawn, Chrome.dock = {}, nil

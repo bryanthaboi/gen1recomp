@@ -58,7 +58,7 @@ for _, osName in ipairs({ "Android", "iOS", "OS X" }) do
   options.orientation = "landscape"
   local stack = setmetatable({}, { __index = StateStack })
   stack:init()
-  local game = { options = options, stack = stack }
+  local game = { options = options, stack = stack, data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
   local menu = OptionsMenu.new(game, { options = options })
   stack:push(menu)
   local row

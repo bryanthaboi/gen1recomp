@@ -87,12 +87,8 @@ function Events.status(save,row)
     if row.id=="eon" then return "Available" end
     local family=save.version=="emerald" and "rse" or "frlg"
     local key=family=="rse" and (row.rseCard or row.card) or row.card
-    for _,candidate in ipairs(Gift.builtins(family)) do
-      if candidate.key==key then
-        for _,flag in ipairs(candidate.card.gift and candidate.card.gift.haveFlags or {}) do
-          if Gift.getFlag(s,flag) then return "Event already completed" end
-        end
-      end
+    for _,flag in ipairs(assert(Gift.cardHaveFlags(family)[key],key)) do
+      if Gift.getFlag(s,flag) then return "Event already completed" end
     end
     local card=Gift.getSavedCard(s)
     if card and card.gift and card.gift.item==item then return "Ticket pending" end

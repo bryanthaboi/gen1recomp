@@ -116,18 +116,21 @@ eq(all.mom.savedMoney, 900, "and Mom banks the lot")
 
 -- data/text/battle.asm.  The half and all lines really do replace the money
 -- line rather than following it.
-local plain = Prize.message({ total = 900, mode = 0 }, "GOLD")
-check(plain:find("900", 1, true) ~= nil, "the money line names the figure")
+local TEXT = { text = require("tests.fixture_data.gen2_rom_text_s7_b").text() }
+local plain = Prize.message(TEXT, { total = 900, mode = 0 }, "GOLD")
+eq(plain, "GOLD got \xc2\xa5900\nfor winning!", "GotMoneyForWinningText from the cache")
 check(plain:find("MOM", 1, true) == nil, "and does not mention MOM")
-local some = Prize.message({ total = 900, mode = 1 }, "GOLD")
-check(some:find("900", 1, true) ~= nil, "SentSomeToMomText keeps the figure")
-check(some:find("Sent some to MOM!", 1, true) ~= nil, "and adds the line")
-eq(Prize.message({ total = 900, mode = 2 }, "GOLD"), "Sent half to MOM!",
+local some = Prize.message(TEXT, { total = 900, mode = 1 }, "GOLD")
+eq(some, "GOLD got \xc2\xa5900\nfor winning!\vSent some to MOM!",
+  "SentSomeToMomText keeps the figure and adds the line")
+eq(Prize.message(TEXT, { total = 900, mode = 2 }, "GOLD"), "Sent half to MOM!",
   "SentHalfToMomText is the whole text")
-eq(Prize.message({ total = 900, mode = 3 }, "GOLD"), "Sent all to MOM!",
+eq(Prize.message(TEXT, { total = 900, mode = 3 }, "GOLD"), "Sent all to MOM!",
   "and so is SentAllToMomText")
-check(plain:find("\n", 1, true) == nil,
-  "no line marker: Chrome.wrap breaks a battle message itself")
+eq(Prize.payDayMessage(TEXT, 240, "GOLD"), "GOLD picked up\n\xc2\xa5240!",
+  "BattleText_PlayerPickedUpPayDayMoney from the cache")
+check(not pcall(Prize.message, { text = {} }, { total = 900, mode = 0 }, "GOLD"),
+  "a cache without GotMoneyForWinningText is an error")
 
 -- ------------------------------------------------- reached from a battle
 
@@ -146,6 +149,7 @@ local DATA = {
       types = { "NORMAL", "FLYING" } },
   },
   moves = {},
+  text = require("tests.fixture_data.gen2_rom_text_s7_a").text(TEXT.text),
 }
 
 local function mon(species, level, hp, item)
@@ -339,12 +343,17 @@ eq(noService.mom.triggerBalance, MomShopping.MOM_MONEY,
   "and leaves the threshold alone")
 
 -- Mom_GetScriptPointer's two scripts.
-local itemPages = MomShopping.pages({ kind = "item" })
-local dollPages = MomShopping.pages({ kind = "doll" })
+local MOM_TEXT = require("tests.fixture_data.gen2_rom_text_s7_g").text()
+local itemPages = MomShopping.pages({ kind = "item" }, { text = MOM_TEXT })
+local dollPages = MomShopping.pages({ kind = "doll" }, { text = MOM_TEXT })
 eq(#itemPages, 4, ".ItemScript is four writetexts")
 eq(#dollPages, 4, "and so is .DollScript")
-check(itemPages[4]:find("PC", 1, true) ~= nil, "the item ends up in the PC")
-check(dollPages[4]:find("room", 1, true) ~= nil, "and the doll in your room")
+eq(itemPages[4], (MOM_TEXT._MomItsInPCText:gsub("{DONE}", "")),
+  "the item ends up in the PC")
+eq(dollPages[4], (MOM_TEXT._MomItsInYourRoomText:gsub("{DONE}", "")),
+  "and the doll in your room")
+check(not pcall(MomShopping.pages, { kind = "item" }, { text = {} }),
+  "a dataset without Mom's lines is an error")
 check(itemPages[1] == dollPages[1], "both open on the same greeting")
 
 -- A doll cannot fail; an item into a full PC can, and then nothing is
@@ -376,6 +385,7 @@ local function battleWorld(save)
   local game = {
     data = {
       pokemon = DATA.pokemon, moves = DATA.moves,
+      text = require("tests.fixture_data.gen2_rom_text_s7_g").text(),
       screens = {
         Gen2BattleState = function(_, opts)
           captured.opts = opts

@@ -24,6 +24,8 @@
 -- one-line call.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
@@ -60,25 +62,23 @@ local TIME_X, TIME_Y = 13, 8
 
 local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 
--- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
--- SavingDontTurnOffThePower's own line -- one \n-joined translatable key
--- each, used both by this screen's own prompt() below and, through the
--- SOURCE/pagesOf() exports at the bottom of this file, by the PC's CHANGE
--- BOX save (src/ui/gen2/PcMenu.lua:savePrompt()), which shares these exact
--- same two cart messages. One key per prompt lets a translation write one
--- whole, freely reordered sentence instead of two fragments translated in
--- isolation, and lets a cart whose own text is a single line (German's
--- SAVING prompt) say so directly by simply omitting the "\n" -- the
--- per-line override style used elsewhere requires a non-empty value for
--- every line, so it can't express "this line is blank".
---
--- Written as a literal, not built from a table: the translation tooling's
--- string harvester only recognizes a literal inside Strings.source(...),
--- not a computed expression, so a concat call here would quietly never
--- reach a translator.
--- ../pokecrystal/data/text/common_3.asm:202 _AlreadyASaveFileText
-local OVERWRITE_PROMPT_SOURCE = Strings.source("There is already a\nsave file. Is it\vOK to overwrite?")
-local SAVING_PROMPT_SOURCE = Strings.source("SAVING… DON'T TURN\nOFF THE POWER.")
+-- data/text/common_2.asm:1274-1293
+local CONFIRM_PROMPT_LABEL = "_WouldYouLikeToSaveTheGameText"
+local OVERWRITE_PROMPT_LABEL = "_AlreadyASaveFileText"
+local SAVING_PROMPT_LABEL = "_SavingDontTurnOffThePowerText"
+local SAVED_PROMPT_LABEL = "_SavedTheGameText"
+
+-- engine/menus/intro_menu.asm:423 .MenuData_NoDex, :409 .MenuData_Dex
+local PANEL_LABELS = {
+  "Continue_LoadMenuHeader.MenuData_NoDex#1",
+  "Continue_LoadMenuHeader.MenuData_Dex#2",
+  "Continue_LoadMenuHeader.MenuData_Dex#3",
+  "Continue_LoadMenuHeader.MenuData_Dex#4",
+}
+
+local function romPrompt(data, label, values)
+  return CommonText.plain(RomText(data, label, nil, values))
+end
 
 -- ../pokecrystal/home/text.asm:630 LoadBlinkingCursor
 local DOWN_ARROW = "\xe2\x96\xbc"
@@ -162,7 +162,18 @@ function SaveMenu:finish(saved)
 end
 
 function SaveMenu:playerName()
-  return (self.save and self.save.player and self.save.player.name) or "GOLD"
+  local player = self.save and self.save.player
+  return (player and player.name)
+    or Save.presetNames(self.game and self.game.data, player and player.gender)[1]
+end
+
+-- engine/menus/intro_menu.asm:388 Continue_LoadMenuHeader
+function SaveMenu.panelLabels(data, name)
+  local out = {}
+  for i, label in ipairs(PANEL_LABELS) do
+    out[i] = i == 1 and RomText(data, label, nil, { PLAYER = name }) or RomText(data, label)
+  end
+  return out
 end
 
 -- The write itself, which the cart does between the two messages.
@@ -267,21 +278,22 @@ end
 -- the second one on the box's lower line; `cont` scrolls, which the overwrite
 -- prompt uses for its third line and which this shows as a second page.
 function SaveMenu:promptText()
+  local data = self.game and self.game.data
   if self.phase == "overwrite" then
     -- AlreadyASaveFileText when the file is this player's; AnotherSaveFileText
     -- when the ID differs.  Only the first can happen here.
-    return Strings(OVERWRITE_PROMPT_SOURCE)
+    return romPrompt(data, OVERWRITE_PROMPT_LABEL)
   end
   if self.phase == "saving" then
-    return Strings(SAVING_PROMPT_SOURCE)
+    return romPrompt(data, SAVING_PROMPT_LABEL)
   end
   if self.phase == "done" then
     if self.saved then
-      return Strings("%s saved\nthe game.", self:playerName())
+      return romPrompt(data, SAVED_PROMPT_LABEL, { PLAYER = self:playerName() })
     end
     return Strings("Could not save.")
   end
-  return Strings("Would you like to\nsave the game?")
+  return romPrompt(data, CONFIRM_PROMPT_LABEL)
 end
 
 function SaveMenu:prompt()
@@ -303,10 +315,9 @@ function SaveMenu:drawPanel()
   local docked = Chrome.dockPush("topright")
   Chrome.box(PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
   if summary then
-    Chrome.print(Strings("PLAYER %s", summary.name), LABEL_X, LABEL_Y)
-    Chrome.print(Strings("BADGES"), LABEL_X, LABEL_Y + 2)
-    Chrome.print(Strings("POKéDEX"), LABEL_X, LABEL_Y + 4)
-    Chrome.print(Strings("TIME"), LABEL_X, LABEL_Y + 6)
+    for i, line in ipairs(SaveMenu.panelLabels(self.game and self.game.data, summary.name)) do
+      Chrome.print(line, LABEL_X, LABEL_Y + (i - 1) * 2)
+    end
     -- PrintNum fills its field from the left, space padded.
     Chrome.print(Chrome.number(summary.badges, 2), BADGES_X, BADGES_Y)
     Chrome.print(Chrome.number(summary.caught, 3), DEX_X, DEX_Y)
@@ -332,8 +343,9 @@ function SaveMenu:drawPanel()
 
   if self:yesNoVisible() then
     Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-    Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-    Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+    local data = self.game and self.game.data
+    Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+    Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
     Chrome.cursor(YESNO_X + 1, YESNO_Y + (self.choice == 1 and 1 or 3))
   end
   Chrome.dockPop(docked)
@@ -361,8 +373,10 @@ SaveMenu.SAVING_FRAMES = SAVING_FRAMES
 SaveMenu.SAVED_GAP_FRAMES = SAVED_GAP_FRAMES
 SaveMenu.SAVED_TAIL_FRAMES = SAVED_TAIL_FRAMES
 SaveMenu.SAVED_FRAMES = SAVED_FRAMES
-SaveMenu.OVERWRITE_PROMPT_SOURCE = OVERWRITE_PROMPT_SOURCE
-SaveMenu.SAVING_PROMPT_SOURCE = SAVING_PROMPT_SOURCE
+SaveMenu.OVERWRITE_PROMPT_LABEL = OVERWRITE_PROMPT_LABEL
+SaveMenu.SAVING_PROMPT_LABEL = SAVING_PROMPT_LABEL
+SaveMenu.SAVED_PROMPT_LABEL = SAVED_PROMPT_LABEL
+SaveMenu.romPrompt = romPrompt
 SaveMenu.pagesOf = pagesOf
 SaveMenu.DOWN_ARROW = DOWN_ARROW
 SaveMenu.ARROW_X, SaveMenu.ARROW_Y = ARROW_X, ARROW_Y

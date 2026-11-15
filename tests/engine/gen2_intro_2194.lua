@@ -13,6 +13,12 @@ local GenderSelect = require("src.ui.gen2.GenderSelect")
 local IntroFade = require("src.ui.gen2.IntroFade")
 local OakSpeech = require("src.ui.gen2.OakSpeech")
 
+local S7C_TEXT = require("tests.fixture_data.gen2_rom_text_s7_c").text(nil, "crystal")
+local function withS7Text(game)
+  game.data = game.data or { text = S7C_TEXT }
+  return game
+end
+
 local function fakeInput()
   return {
     pressed = {},
@@ -27,7 +33,7 @@ end
 
 do
   local input = fakeInput()
-  local gender = GenderSelect.new({ input = input }, { save = { player = {} } })
+  local gender = GenderSelect.new(withS7Text({ input = input }), { save = { player = {} } })
   check(gender.typer ~= nil and not gender.typer:done(),
     "the prompt opens mid-typewriter")
   check(not gender:menuOpen(),

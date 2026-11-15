@@ -1,17 +1,4 @@
--- Gold's naming/keyboard screen (src/ui/gen2/NamingScreen.lua) had zero
--- Strings() calls: every prompt (YOUR NAME?/RIVAL'S NAME?/MOTHER'S NAME?/
--- BOX NAME?/NICKNAME?), the on-screen keyboard's own letters, and the
--- lower/UPPER/DEL/END bottom-row labels were bare literals, invisible to a
--- translation mod's `strings` registry (reported against a real Gold build,
--- gen1recomp#1642). The Gen 1 naming screen (src/ui/NamingScreen.lua) already
--- routes its title and every keyboard cell through Strings().
---
--- GbcPalette.available() is false headless (no real shader compiles), so
--- Chrome.printThrough already falls back to the plain, unshaded Chrome.print
--- -- this drives that path directly and checks the translated text reaches
--- Font.draw, the same technique
--- tests/engine/gen2_options_menu_translation_test.lua uses for the OPTION
--- screen.
+-- engine/menus/naming_screen.asm:119-181, data/text/name_input_chars.asm:3-31
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
@@ -30,7 +17,11 @@ package.loaded["src.render.Font"] = {
 }
 
 local NamingScreen = require("src.ui.gen2.NamingScreen")
-local Strings = require("src.core.Strings")
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
+
+local function namingGame(text)
+  return { data = require("tests.fixtures.gen2_naming").fill({ text = text or Fixture.text() }) }
+end
 
 local function drawnAt(x, y)
   for _, d in ipairs(drawn) do
@@ -46,7 +37,7 @@ local FIRST_CELL_X, FIRST_CELL_Y = 2 * 8, 8 * 8
 
 -- ---------------------------------------------- vanilla: no mod catalog
 do
-  local screen = NamingScreen.new({}, { type = "player" })
+  local screen = NamingScreen.new(namingGame(), { type = "player" })
   drawn = {}
   screen:drawPanel()
   T.eq(drawnAt(PROMPT_X, PROMPT_Y), "YOUR NAME?",
@@ -55,46 +46,44 @@ do
     "and the keyboard's first cell too")
 end
 
--- ------------------------------------------------- a translation mod's turn
 do
-  Strings.load({
-    strings = {
-      ["YOUR NAME?"] = "TON NOM?",
-      ["A"] = "À",
-      ["lower"] = "minusc",
-      ["END"] = "FIN",
-      ["%s'S"] = "DE %s",
-      ["NICKNAME?"] = "SURNOM?",
-    },
+  local localized = Fixture.text({
+    ["NamingScreenJumptable.PlayerNameString"] = "TON NOM?",
+    ["NamingScreenJumptable.NicknameStrings#1"] = "_FR",
+    ["NamingScreenJumptable.NicknameStrings#2"] = "SURNOM?",
+    ["NameInputUpper#1"] = "À B C D E F G H I",
+    ["NameInputUpper#5"] = "minus  DEL   FIN ",
   })
 
-  local screen = NamingScreen.new({}, { type = "player" })
+  local screen = NamingScreen.new(namingGame(localized), { type = "player" })
   drawn = {}
   screen:drawPanel()
   T.eq(drawnAt(PROMPT_X, PROMPT_Y), "TON NOM?",
-    "a mod catalog reaches the prompt")
+    "the cache's .PlayerNameString is the prompt")
   T.eq(drawnAt(FIRST_CELL_X, FIRST_CELL_Y), "À",
-    "and a keyboard cell")
+    "and NameInputUpper#1 the first keyboard row")
 
   -- The bottom row: lower/DEL/END at tile y = keyboardTop + bottom*2.
   local bottomY = (screen:keyboardTop() + screen:bottomRow() * 2) * 8
-  T.eq(drawnAt(2 * 8, bottomY), "minusc", "the case-switch label is translated")
-  T.eq(drawnAt(15 * 8, bottomY), "FIN", "and END, the way out of the screen")
+  T.eq(drawnAt(2 * 8, bottomY), "minus", "the case-switch label is NameInputUpper#5's")
+  T.eq(drawnAt(15 * 8, bottomY), "FIN", "and END sits where that row puts it")
 
-  -- The nickname header: two lines, the mon name folded into the first.
-  local nickScreen = NamingScreen.new({}, { type = "nickname", monName = "BULBASAUR" })
+  -- engine/menus/naming_screen.asm:97-106
+  local nickScreen = NamingScreen.new(namingGame(localized),
+    { type = "nickname", monName = "BULBASAUR" })
   drawn = {}
   nickScreen:drawPanel()
-  T.eq(drawnAt(PROMPT_X, PROMPT_Y), "DE BULBASAUR",
-    "the nickname header's first line takes the mod's own word order")
-  T.eq(drawnAt(PROMPT_X, 4 * 8), "SURNOM?", "and its second line")
+  T.eq(drawnAt(PROMPT_X, PROMPT_Y), "BULBASAUR_FR",
+    "the nickname header's first line is the name then .NicknameStrings#1")
+  T.eq(drawnAt(PROMPT_X, 4 * 8), "SURNOM?", "and its second line #2")
 
-  -- Module state is process-global (see tests/gen2_clock_test.lua's own
-  -- note); this suite gets its own process from tests/tier_runner.lua, but
-  -- leaving the catalog loaded past this point would still mistranslate
-  -- every check below it in this file.
-  Strings.load({})
-  T.check(not Strings.active(), "the catalog is unloaded for the checks after this one")
+  T.raises(function()
+    NamingScreen.new(namingGame(Fixture.without("NameInputUpper#5")), { type = "player" })
+  end, "NameInputUpper#5", "a cache without the bottom row is an error")
+  T.raises(function()
+    NamingScreen.new(namingGame(Fixture.without("NamingScreenJumptable.PlayerNameString")),
+      { type = "player" })
+  end, "PlayerNameString", "a cache without the prompt is an error")
 end
 
 T.finish("gen2_naming_screen_translation_test")

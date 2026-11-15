@@ -109,11 +109,18 @@ return function(game)
   if played then U.shot(game, DIR .. "/3117_01_played_flute.png") end
   local fanfare = wait_for(function() return Audio._fanfareActive == true end, 300)
   result(fanfare, "the POKe FLUTE fanfare plays (battle_scripts_2.s:202)")
+  local notTheTime = tostring(require("src.core.game3.item_use").notTheTimeText(session) or "")
+  local notTheTimeHead = ""
+  for line in notTheTime:gmatch("[^\n\f]+") do
+    if #line > #notTheTimeHead then notTheTimeHead = line end
+  end
+  result(#notTheTimeHead >= 8, "the not-the-time text resolves from the ROM: " .. notTheTimeHead)
   local cantUse = false
   for _, line in ipairs(Ui.log() or {}) do
-    if tostring(line):find("can't be used", 1, true) then cantUse = true end
+    local s = tostring(line)
+    if s == notTheTime or (#notTheTimeHead >= 8 and s:find(notTheTimeHead, 1, true)) then cantUse = true end
   end
-  result(not cantUse, "no 'This can't be used right now.' line")
+  result(not cantUse, "the flute did not fall through to the not-the-time line")
 
   local awoke = wait_for(function() return page():find("awoke", 1, true) ~= nil end, 3000)
   result(awoke, "the battle prints the hearing the FLUTE awoke line (battle_scripts_2.s:204)")

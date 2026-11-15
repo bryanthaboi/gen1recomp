@@ -269,16 +269,16 @@ for _, version in ipairs({ "firered", "leafgreen", "ruby", "sapphire", "emerald"
     mon, slot = FieldMoves.partyMoveUser(party, 57)
     T.eq(mon, party[2], version .. " selected public mon restores native identity")
     T.eq(slot, 1, version .. " selected mon drives native slot")
-    for _, mode in ipairs({ "suppress", "invalid" }) do
+    out.mode = "suppress"
+    mon, slot = FieldMoves.partyMoveUser(party, 57)
+    T.eq(mon, nil, version .. " rejected eligibility returns no mon")
+    T.eq(slot, 6, version .. " rejected eligibility uses native sentinel")
+    for _, mode in ipairs({ "invalid", "malformed" }) do
       out.mode = mode
       mon, slot = FieldMoves.partyMoveUser(party, 57)
-      T.eq(mon, nil, version .. " rejected eligibility returns no mon")
-      T.eq(slot, 6, version .. " rejected eligibility uses native sentinel")
+      T.eq(mon, party[1], version .. " " .. mode .. " record keeps native eligibility fallback")
+      T.eq(slot, 0, version .. " " .. mode .. " record keeps native fallback slot")
     end
-    out.mode = "malformed"
-    mon, slot = FieldMoves.partyMoveUser(party, 57)
-    T.eq(mon, party[1], version .. " malformed record keeps native eligibility fallback")
-    T.eq(slot, 0, version .. " malformed record keeps native fallback slot")
     remove()
     party[1].isEgg = true
     mon, slot = FieldMoves.partyMoveUser(party, 57)

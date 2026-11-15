@@ -270,9 +270,10 @@ function ScriptMenu:drawBalance()
   local player = self.save and self.save.player
   local money = (player and player.money) or 0
   if kind == "coins" then
-    Chrome.coinBalanceBox(CoinCase.coins(self.save))
+    Chrome.coinBalanceBox(self.game and self.game.data, CoinCase.coins(self.save))
   elseif kind == "moneycoins" then
-    Chrome.moneyAndCoinBalanceBox(money, CoinCase.coins(self.save))
+    Chrome.moneyAndCoinBalanceBox(self.game and self.game.data, money,
+      CoinCase.coins(self.save))
   else
     Chrome.moneyBalanceBox(money)
   end

@@ -16,6 +16,7 @@ local Runtime = require("src.mods.Runtime")
 local Sound = require("src.core.Sound")
 local Theme = require("src.ui.Theme")
 local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local NamingScreen = { isMenu = true }
 NamingScreen.__index = NamingScreen
@@ -89,7 +90,9 @@ function NamingScreen.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, NamingScreen)
   self.game = game
-  self.title = opts.title or Strings("YOUR NAME?")
+  -- engine/menus/naming_screen.asm:456, :481
+  self.title = opts.title or (RomText(game.data, "YourTextString", nil)
+    .. RomText(game.data, "NameTextString", nil))
   self.presets = opts.presets
   self.introBox = opts.introBox
   self.maxLen = opts.maxLen or 7

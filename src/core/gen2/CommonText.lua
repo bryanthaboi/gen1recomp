@@ -7,7 +7,7 @@
 -- symbols by name and writes text.labels[label] -> that key.  This is the
 -- lookup on the other side of that table: a screen asks for
 -- "_MartWelcomeText" and never for an address, so a repointed string still
--- resolves and a cache built before the seed simply answers nil.
+-- resolves.
 --
 -- `pages` puts the decoded stream back into the shape the Gen 2 speech box
 -- draws it in -- up to two lines per screenful -- following home/text.asm:
@@ -26,14 +26,17 @@
 
 local CommonText = {}
 
--- The decoded string for a pokegold label, or nil when this cache predates
--- the seed (or the string is genuinely empty, like _DaycareDummyText).
 function CommonText.get(text, label)
-  if type(text) ~= "table" or not label then return nil end
+  if type(text) ~= "table" then error("text.lua is missing", 2) end
   local labels = text.labels
-  local key = type(labels) == "table" and labels[label]
-  local body = key and text[key]
-  if type(body) ~= "string" or body == "" then return nil end
+  if type(labels) ~= "table" then error("text.lua has no labels", 2) end
+  local key = labels[tostring(label)]
+  if not key then error("text.lua has no label " .. tostring(label), 2) end
+  local body = text[key]
+  if type(body) ~= "string" then
+    error("text.lua has no string for " .. tostring(label), 2)
+  end
+  if body == "" then return nil end
   return body
 end
 
@@ -58,7 +61,7 @@ function CommonText.pages(body)
   end
   local i = 1
   while i <= #body do
-    local marker = body:find("[\n\f\v]", i)
+    local marker = body:find("[\n\f\v\r]", i)
     local chunk = body:sub(i, (marker or (#body + 1)) - 1)
     if bottom then
       bottom = bottom .. chunk
@@ -72,7 +75,7 @@ function CommonText.pages(body)
     elseif m == "\f" then
       flush()
       top, bottom = "", nil
-    else -- "\v"
+    else
       flush()
       top, bottom = bottom or "", ""
     end
@@ -112,13 +115,28 @@ function CommonText.fill(pages, values)
   return out
 end
 
--- The whole lookup in one call: nil when the cache has no such label, which
--- is every call site's cue to fall back to its own transcription.
 function CommonText.of(text, label, values)
   local pages = CommonText.pages(CommonText.get(text, label))
   if not pages then return nil end
   if values then return CommonText.fill(pages, values) end
   return pages
+end
+
+function CommonText.texts(text, labels, fill, single)
+  local out = {}
+  for key, label in pairs(labels) do
+    local list = CommonText.of(text, label)
+    if not list then error("text.lua has an empty " .. label, 2) end
+    local f = fill and (fill[key] or fill[label])
+    if f then
+      out[key] = function(...) return CommonText.fill(list, f(...)) end
+    elseif single and single[key] then
+      out[key] = list[1]
+    else
+      out[key] = list
+    end
+  end
+  return out
 end
 
 return CommonText

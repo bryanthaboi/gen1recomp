@@ -79,8 +79,13 @@ for _, version in ipairs({ "gold", "silver", "crystal" }) do
     raw[15].trainerClass, raw[15].number = 1, 1
     local data = { gen2Constants = { phoneContactOrder = order,
       trainerClassOrder = { "TRAINER_NONE", "YOUNGSTER" },
-      trainerClassMembers = { YOUNGSTER = { "JOEY1" } } },
-      gen2EventTables = { phone = raw }, gen2Maps = { FIX_ROUTE = {} },
+      trainerClassMembers = { YOUNGSTER = { "JOEY1" } },
+      rematchFlags = { { 15, "event", 628 } } },
+      gen2EventTables = { phone = raw, phoneNames = { [0] = "----------" },
+        specialCalls = {}, permanentNumbers = { 1, 4 }, phoneScripts = {
+        JoeyPhoneCalleeScript = { script = "native:callee" },
+        JoeyPhoneCallerScript = { script = "native:caller" } } },
+      gen2Maps = { FIX_ROUTE = {} },
       gen2Trainers = { classes = { YOUNGSTER = { name = "YOUNGSTER", trainers = {
         { id = "JOEY1", name = "JOEY", party = {} },
       } } } }, gen2Scripts = {},

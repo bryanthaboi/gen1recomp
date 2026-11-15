@@ -12,7 +12,10 @@ local bodies, images, draws, quads = {}, {}, {}, 0
 local previousRead, previousArt = CacheFs.readAt, Catalog.art
 local previousData = Data._cache
 Data._cache = { sentinel = true }
-CacheFs.readAt = function(path) return bodies[path] end
+CacheFs.readAt = function(path)
+  if bodies[path] == false then error("cache blob " .. path .. " is not deflated (stale cache, reimport)", 0) end
+  return bodies[path]
+end
 local front = {
   functions = { [0] = "Anim_VerticalSquishBounce" },
   animIds = { [1] = 0, [308] = 0 }, animDelays = { [1] = 2 },
@@ -102,6 +105,12 @@ artVersion = "sapphire"
 T.eq(Animation.new(mon), nil, "non-Emerald fallback artwork stays valid and static")
 artVersion = "emerald"
 T.eq(Animation.new(entry(999)), nil, "unsupported animation species safely stays static")
+local sheet = bodies["emerald/data/generated/gba/pokemon/front_anim/1.rgba"]
+bodies["emerald/data/generated/gba/pokemon/front_anim/1.rgba"] = false
+local okCorrupt, corrupt = pcall(Animation.new, mon)
+T.check(okCorrupt and corrupt ~= nil and next(corrupt.frames) == nil,
+  "an undecodable Emerald animation sheet leaves the box on its still front: " .. tostring(corrupt))
+bodies["emerald/data/generated/gba/pokemon/front_anim/1.rgba"] = sheet
 Animation.reset()
 bodies["emerald/data/generated/gba/pokemon/front_anims.lua"] = nil
 T.eq(Animation.new(mon), nil, "older imported caches without animation metadata safely stay static")

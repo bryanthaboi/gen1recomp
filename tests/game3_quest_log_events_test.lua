@@ -24,6 +24,7 @@ Runtime.active=true;Runtime.session=s;Runtime._game={session=s}
 R.capture=function()return {x=0,y=0,actors={}}end
 R.tiles=function()return {}end
 local function last()local scene=s.questLog.scenes[#s.questLog.scenes];return scene.events[#scene.events]end
+R.event(s,'ArrivedInLocation',{'VIRIDIAN CITY'})
 Bag.add(s.bag,13,2)
 assert(Items.useField(s,s.bag,13,1))
 assert(last().key=='UsedItemOnMonAtThisLocation')
@@ -37,6 +38,9 @@ assert(Storage.moveMon(s,'party',1,'box',1,nil,1));assert(last().key=='Deposited
 assert(Storage.moveMon(s,'box',1,'box',2,1,1));assert(last().key=='MovedMonWithinBox')
 local N=require('src.core.game3.scripting.natives')
 local Std=require('src.core.game3.scripting.stdscripts')
+N.ALLOW['special:'..Std.SPECIAL.SetUsedPkmnCenterQuestLogEvent]()
+assert(last().key=='MovedMonWithinBox','nurse special started a scene on a full one')
+R.event(s,'ArrivedInLocation',{'VIRIDIAN CITY'})
 N.ALLOW['special:'..Std.SPECIAL.SetUsedPkmnCenterQuestLogEvent]()
 assert(last().key=='MonsWereFullyRestoredAtCenter')
 local old=s.questLog;s.map='FR_TRAINER_TOWER_1F';R.event(s,'ArrivedInLocation',{'TOWER'})

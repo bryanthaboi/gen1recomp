@@ -15,7 +15,7 @@ local g = setmetatable({
   save = { party = {}, player = { name = "RED" }, inventory = {},
     flags = {}, pcItems = {}, pokedex = { seen = {}, owned = {} },
     options = { speedOverworld = 4, speedBattle = 10, speedMenu = 2 } },
-  data = { pokemon = {}, items = {}, maps = {}, text = {}, field = {} },
+  data = { pokemon = {}, items = {}, maps = {}, text = dofile("tests/fixture_data/text.lua"), field = {} },
   input = { wasPressed = function() return false end },
 }, { __index = Game })
 g.stack = setmetatable({}, { __index = StateStack })

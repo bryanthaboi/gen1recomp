@@ -251,6 +251,9 @@ end
 
 -- than on the tile grid (../pokecrystal/engine/sprite_anims/core.asm:547-608).
 function BattleHud:drawExpBarEnd(x, y, colors)
+  if self.gfx and not self.gfx.expBarEnd then
+    error("menu_gfx.lua battleHud has no expBarEnd", 2)
+  end
   local image = self:image("expBarEnd")
   if not image then return false end
   local G = love.graphics
@@ -355,7 +358,9 @@ end
 -- PAL_BATTLE_OB_YELLOW (engine/battle/trainer_huds.asm:213-214).
 function BattleHud:ballColors()
   local pals = self.palettes and self.palettes.battleObjects
-  return pals and pals.PAL_BATTLE_OB_YELLOW or nil
+  if not pals then error("palettes.lua has no battleObjects", 2) end
+  return pals.PAL_BATTLE_OB_YELLOW
+    or error("battleObjects has no PAL_BATTLE_OB_YELLOW", 2)
 end
 
 -- LoadTrainerHudOAM (engine/battle/trainer_huds.asm:203-223): six sprites

@@ -14,6 +14,7 @@ GameVersion.set("emerald")
 local session
 package.loaded["src.core.game3.runtime"] = { getSession = function() return session end }
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local overlay = {}
 local realCache = Dataset.cache

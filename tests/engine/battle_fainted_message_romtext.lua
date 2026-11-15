@@ -36,29 +36,39 @@ end
 -- enemy: translated _EnemyMonFaintedText reaches onFaint, raw name only
 do
   local battle = mkbattle()
+  local vanilla = Data.text._EnemyMonFaintedText
   Data.text._EnemyMonFaintedText = "FAKE-ENEMY {RAM:wEnemyMonNick} FAKE!"
   battle:onFaint(battle.enemy)
   T.eq(findText(battle), "FAKE-ENEMY " .. battle.enemy.name .. " FAKE!",
     "a translated _EnemyMonFaintedText reaches the enemy faint message")
-  Data.text._EnemyMonFaintedText = nil
+  Data.text._EnemyMonFaintedText = vanilla
 end
 
--- enemy vanilla: the English literal already carries "Enemy " itself
 do
   local battle = mkbattle()
   battle:onFaint(battle.enemy)
-  T.eq(findText(battle), "Enemy " .. battle.enemy.name .. "\nfainted!",
-    "no catalog entry falls back to the English literal, Enemy included")
+  T.eq(findText(battle), "Enemy " .. battle.enemy.name .. "\nfainted!{PROMPT}",
+    "the cached label already carries Enemy")
 end
 
 -- player: translated _PlayerMonFaintedText reaches onFaint
 do
   local battle = mkbattle()
+  local vanilla = Data.text._PlayerMonFaintedText
   Data.text._PlayerMonFaintedText = "FAKE-PLAYER {RAM:wBattleMonNick} FAKE!"
   battle:onFaint(battle.player)
   T.eq(findText(battle), "FAKE-PLAYER " .. battle.player.name .. " FAKE!",
     "a translated _PlayerMonFaintedText reaches the player faint message")
-  Data.text._PlayerMonFaintedText = nil
+  Data.text._PlayerMonFaintedText = vanilla
+end
+
+do
+  local battle = mkbattle()
+  local vanilla = Data.text._EnemyMonFaintedText
+  Data.text._EnemyMonFaintedText = nil
+  T.check(not pcall(battle.onFaint, battle, battle.enemy),
+    "a cache without _EnemyMonFaintedText is an error, not an English literal")
+  Data.text._EnemyMonFaintedText = vanilla
 end
 
 T.finish("battle_fainted_message_romtext")

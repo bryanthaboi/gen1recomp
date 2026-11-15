@@ -163,6 +163,7 @@ local ORDER = {
  "ENGINE_YANMA_SWARM",
 }
 package.path="./?.lua;./?/init.lua;"..package.path
+local EngineFlagsFixture=require("tests.fixture_data.gen2_engine_flags")
 love=require("tests.love_stub")
 local Apr=require("src.core.gen2.Apricorns")
 local Swarm=require("src.core.gen2.Roamers").Swarm
@@ -175,6 +176,7 @@ local function test(ok,label,detail)
 end
 local function world(save,offset)
  local order={};for i,name in ipairs(ORDER) do order[i+(offset or 0)]=name end
+ require("src.world.gen2.FieldMoves").bindEngineFlags(order)
  return setmetatable({game={save=save},constants={engineFlagOrder=order}}, {__index=World})
 end
 local function seed(version,offset)
@@ -208,7 +210,8 @@ for _,offset in ipairs({0,400}) do
  test(not poll(s,res,58) and s.crystal.kenjiBreak==after,"second same-day poll leaves Kenji unchanged")
 end
 for _,version in ipairs({"gold","silver"}) do
- local s,_,res=seed(version)
+ local s=seed(version)
+ EngineFlagsFixture.bind("gold")
  s.cartTimers={daily="0123456789abcdef"};s.cartDayCareWild="abcdef"
  s.engineFlags[79]=true;s.dailyFlags.swarm=true;s.swarmMap="DARK_CAVE";s.swarmMaps={DUNSPARCE="DARK_CAVE"};s.dailyFlags.fishingSwarm=1
  test(poll(s,nil,58),version.." expiry still runs")

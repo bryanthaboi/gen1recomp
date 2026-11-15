@@ -22,12 +22,14 @@ local Damage = require("src.battle.gen2.Damage")
 
 local restore = GameVersion.get()
 
--- One NORMAL physical hit with no type table, no STAB and the damage roll
+local TYPES = { NORMAL = { category = "physical" } }
+
+-- One NORMAL physical hit with no STAB and the damage roll
 -- pinned at 100%, so the only moving part is the truncated defence.
 local function hit(version, defense, screen)
   GameVersion.set(version)
   return (Damage.calc({
-    level = 50, power = 100, moveType = "NORMAL",
+    level = 50, power = 100, moveType = "NORMAL", types = TYPES,
     attacker = { attack = 200 },
     defender = { defense = defense },
     screen = screen, variation = 255,
@@ -148,14 +150,14 @@ end
 do
   GameVersion.set("crystal")
   local bugged = Damage.calc({
-    level = 50, power = 100, moveType = "NORMAL",
+    level = 50, power = 100, moveType = "NORMAL", types = TYPES,
     attacker = { attack = 200 }, defender = { defense = 512 },
     screen = true, variation = 255, reflectOverflowFixed = false,
   })
   eq(bugged, 999, "Crystal forced onto the bugged arm matches Gold")
   GameVersion.set("gold")
   local fixed = Damage.calc({
-    level = 50, power = 100, moveType = "NORMAL",
+    level = 50, power = 100, moveType = "NORMAL", types = TYPES,
     attacker = { attack = 200 }, defender = { defense = 512 },
     screen = true, variation = 255, reflectOverflowFixed = true,
   })

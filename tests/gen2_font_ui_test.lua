@@ -250,7 +250,9 @@ end
 -- "lower  DEL   END" and the last row of NameInputLower is
 -- "UPPER  DEL   END".  The case target names the board it switches TO.
 
-local naming = NamingScreen.new({}, { type = "player" })
+local naming = NamingScreen.new({ data = require("tests.fixtures.gen2_naming").fill({
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text() }) },
+  { type = "player" })
 eq(naming.lower, false, "the keyboard opens on the uppercase board")
 
 startRecording()
@@ -289,7 +291,8 @@ local CYNDA = {
   maxHp = 50, stats = {}, otName = "GOLD", otId = 52049,
   moves = { { id = "LEER", pp = 27, maxPp = 30 } },
 }
-local summary = SummaryMenu.new({ data = { moves = MOVES } },
+local summary = SummaryMenu.new({ data = { moves = MOVES,
+  text = require("tests.fixture_data.gen2_rom_text_s7_e") } },
   { party = { CYNDA }, index = 1, moves = MOVES })
 summary.moveDetail = true
 
@@ -329,8 +332,8 @@ check(coveringFill(1, 3, 8, 1) == nil, "the move rows are not blanked")
 -- five closes under the fifth.
 
 local function pcRows(opts)
-  local menu = PcMenu.new({ save = { party = { { species = "CYNDAQUIL" } } } },
-    opts)
+  local menu = PcMenu.new({ save = { party = { { species = "CYNDAQUIL" } } },
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_e") } }, opts)
   startRecording()
   menu:drawPanel()
   stopRecording()
@@ -369,6 +372,7 @@ check(findPrint("What?") ~= nil, "and its one word still prints")
 
 local hof = HallOfFame.new({ data = {} }, {
   mode = "induct",
+  text = require("tests.fixtures.gen2_common_text").text(),
   save = { player = { name = "GOLD", id = 52049 }, playTime = {} },
   entry = { winCount = 1, mons = { {
     species = "TYPHLOSION", nickname = "BLAZE", level = 50, otId = 52049,
@@ -400,7 +404,8 @@ eq(Font.battleExtraActive(), false,
 -- PrintPartyMonPage1 (engine/printer/print_party.asm) opens with
 -- LoadFontsBattleExtra before it writes any of them.
 local PhotoStudio = require("src.ui.gen2.PhotoStudio")
-local photo = PhotoStudio.new({ data = {} }, {
+local PHOTO_TEXT = require("tests.fixture_data.gen2_rom_text_s7_f1").text()
+local photo = PhotoStudio.new({ data = { text = PHOTO_TEXT } }, {
   mon = { species = "CYNDAQUIL", nickname = "CYNDAQUIL", level = 22,
     maxHp = 55, otId = 52049, moves = { { id = "TACKLE" } } },
   playerName = "GOLD",
@@ -411,7 +416,7 @@ photo:draw()
 stopRecording()
 
 local photoDex = findPrint("№.")
-local photoId = findPrint("<ID>№")
+local photoId = findPrint(PHOTO_TEXT.PrintParty_IDNoString)
 if not fontDef then
   check(true, "no Gold cache (SKIP the photo card's battle-sheet routing)")
 else

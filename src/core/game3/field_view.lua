@@ -1216,14 +1216,13 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH, prepareOnly
         mid, srcPair = fill, pair
       end
     end
-    if not NativeTileset.ready(srcPair) then srcPair = pair end
     local info = { pair = srcPair, draw = not skip }
     if not skip then
       local key = (isVoid and voidMode == "map") and voidKeys[srcPair] or srcPair
       info.key = key
       local ts = nativeAtlas(NativeTileset, srcPair)
-      if ts and ts.image then
-        local slot = NativeTileset.slotFor(ts, mid)
+      local slot = ts and ts.image and NativeTileset.slotFor(ts, mid)
+      if slot then
         local q = NativeTileset.quad(ts, slot)
         if q then
           info.under = acquireNativeSprite(underStore,

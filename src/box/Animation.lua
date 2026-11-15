@@ -67,9 +67,9 @@ function Animation.new(entry)
     local Pokemon = require("src.core.game3.pokemon")
     local pic = Pokemon.picSpecies(species, mon.personality)
     local path = (entry.display.shiny and MonAnim.Data.SHEET_SHINY or MonAnim.Data.SHEET):format(pic)
-    local rgba = Sprites.readBytes("emerald", path)
+    local read, rgba = pcall(Sprites.readBytes, "emerald", path)
     local size = 64 * 64 * 4
-    if rgba then
+    if read and rgba then
       for frame = 1, math.min(15, math.floor(#rgba / size) - 1) do
         local made, image = pcall(function()
           local pixels = love.image.newImageData(64, 64, "rgba8", rgba:sub(size * frame + 1, size * (frame + 1)))

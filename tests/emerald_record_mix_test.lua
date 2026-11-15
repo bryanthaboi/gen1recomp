@@ -10,6 +10,7 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local emCache = Dataset.cache()
 local meta = emCache and emCache.read and emCache:read("data/generated/gba/meta.json")

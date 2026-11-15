@@ -53,27 +53,14 @@ M.VIRIDIAN_CITY = {
       end
     end,
 
-    -- ViridianCityYoungster2Text (scripts/ViridianCity.asm): asks if
-    -- you want to know about the two kinds of caterpillar Pokemon;
-    -- YES -> CATERPIE/WEEDLE description, NO -> "Oh, OK then!".
-    -- ViridianCityYoungster2OkThenText and
-    -- ViridianCityYoungster2CaterpieAndWeedleDescriptionText are defined
-    -- without a leading underscore in pokered/text/ViridianCity.asm, but
-    -- tools/extract/text.py now collects them regardless -- the literal
-    -- strings below are only the fallback for a catalog without them.
-    -- Those fallbacks have to carry the extractor's markers, not plain
-    -- newlines: line -> \n, cont -> \v, para -> \f.  Spelling cont/para as
-    -- \n and \n\n put all six lines on one page with nothing to wait on,
-    -- so the whole speech scrolled past without a button press (#250).
+    -- scripts/ViridianCity.asm:171
     TEXT_VIRIDIANCITY_YOUNGSTER2 = function(game, ow, npc, done)
       local t = text(game)
-      ask(game, t._ViridianCityYoungster2YouWantToKnowAboutText
-        or "You want to know\nabout the 2 kinds\vof caterpillar\vPOKéMON?", function(yes)
+      ask(game, t._ViridianCityYoungster2YouWantToKnowAboutText, function(yes)
         if yes then
-          push(game, t.ViridianCityYoungster2CaterpieAndWeedleDescriptionText
-            or "CATERPIE has no\npoison, but\vWEEDLE does.\fWatch out for its\nPOISON STING!", done)
+          push(game, t.ViridianCityYoungster2CaterpieAndWeedleDescriptionText, done)
         else
-          push(game, t.ViridianCityYoungster2OkThenText or "Oh, OK then!", done)
+          push(game, t.ViridianCityYoungster2OkThenText, done)
         end
       end)
     end,
@@ -85,11 +72,9 @@ M.VIRIDIAN_CITY = {
     TEXT_VIRIDIANCITY_GIRL = function(game, ow, npc, done)
       local t = text(game)
       if game.save.flags and game.save.flags.EVENT_GOT_POKEDEX then
-        push(game, t._ViridianCityGirlWhenIGoShopText
-          or "When I go shop in\nPEWTER CITY, I\nhave to take the\nwinding trail in\nVIRIDIAN FOREST.", done)
+        push(game, t._ViridianCityGirlWhenIGoShopText, done)
       else
-        push(game, t._ViridianCityGirlHasntHadHisCoffeeYetText
-          or "Oh Grandpa! Don't\nbe so mean!\nHe hasn't had his\ncoffee yet.", done)
+        push(game, t._ViridianCityGirlHasntHadHisCoffeeYetText, done)
       end
     end,
 

@@ -42,17 +42,12 @@
 --
 --   * The queue is cleared by the called script itself (`specialphonecall
 --     SPECIALCALL_NONE` is the first or second line of every special caller
---     script), not by the engine.  See Phone.endCall for the fallback a cache
---     with no bank $41 scripts still gets.
+--     script), not by the engine.
 --
 -- The call scripts live in ROM bank $41, which the extractor reaches by
 -- seeding its queue from PhoneContacts and SpecialPhoneCallList (no map
 -- points into that bank, so those two tables are the only way in), and
--- Phone.useExtracted overlays the cache's own rows below.  Every contact
--- still names its pokegold script LABEL and the "bank:addr" key from the
--- symbol file: Phone.scriptKey resolves a label to that key, a call
--- descriptor carries both, and the pair is what lets a repointed cache be
--- caught by test rather than call the wrong script.  A call's presentation
+-- Phone.useExtracted builds every contact row from the cache.  A call's presentation
 -- (the ring, the Click!, the countdown restart) is src/core/gen2/PhoneRing.lua.
 
 local Runtime = require("src.mods.Runtime")
@@ -64,7 +59,6 @@ local Phone = {}
 
 -- constants/phone_constants.asm
 Phone.CONTACT_LIST_SIZE = 10
-Phone.NUM_PHONE_CONTACTS = 36
 Phone.SPECIALCALL_NONE = 0
 Phone.NUM_SPECIALCALLS = 8
 
@@ -102,191 +96,100 @@ Phone.PHONECONTACT_BIKESHOP = 2
 Phone.PHONECONTACT_BILL = 3
 Phone.PHONECONTACT_ELM = 4
 
--- data/phone/non_trainer_names.asm, in table order (index = the row's trainer
--- NUMBER byte, which for a non-trainer is its PHONECONTACT_* constant).
-Phone.NON_TRAINER_NAMES = {
-  [0] = "----------",
-  [1] = "MOM",
-  [2] = "BIKE SHOP",
-  [3] = "BILL",
-  [4] = "PROF.ELM",
-}
+-- data/phone/non_trainer_names.asm:1
+Phone.NON_TRAINER_NAMES = {}
+Phone.NON_TRAINER_TITLES = {}
 
--- data/phone/permanent_numbers.asm.  GetRemainingSpaceInPhoneList reserves a
--- slot for each of these you do not have yet, so a player who has not met Elm
--- can only fill eight of the ten slots.
-Phone.PERMANENT_NUMBERS = { Phone.PHONECONTACT_MOM, Phone.PHONECONTACT_ELM }
+-- data/phone/permanent_numbers.asm:1
+Phone.PERMANENT_NUMBERS = {}
 
 -- ------------------------------------------------------- the contact table
---
--- data/phone/phone_contacts.asm, one row per PHONE_* constant
--- (constants/phone_constants.asm).  The macro's argument order is
---   trainer class, trainer id, map, callee time, callee script,
---   caller time, caller script
--- and the struct order is TRAINER_CLASS, TRAINER_NUMBER, MAP_GROUP,
--- MAP_NUMBER, SCRIPT1_TIME/BANK/ADDR, SCRIPT2_TIME/BANK/ADDR -- so SCRIPT1 is
--- the callee pair and SCRIPT2 the caller pair.
---
--- `map` is the map's id string; the cart stores a group/number pair and
--- compares it against wMapGroup/wMapNumber, and data/generated/maps.lua keys
--- every map by exactly that id, so the string compare is the same test.  N_A
--- is group $ff / map $ff, which no real map ever equals: nil here.
---
--- The table is indexed from ZERO: PHONE_00 is a real row (the wrong-number
--- filler that LoadCallerScript falls back to) and three of its siblings sit in
--- the middle of the table as const_skip holes.
---
--- The non-trainer rows also carry their own `name`, copied verbatim from
--- NON_TRAINER_NAMES rather than left for Phone.contactName() to look up
--- there: the phone_contacts registry overrides `name` directly (see
--- Phone.contactName below), so a row needs its vanilla value sitting in the
--- same field a patch would replace, not in a separate table a patched row
--- would silently keep falling through to.
-Phone.CONTACTS = {
-  [0]  = { number = 0, name = "----------", map = nil,
-           calleeTime = 0, callee = "UnusedPhoneScript",
-           callerTime = 0, caller = "UnusedPhoneScript" },
-  [1]  = { number = Phone.PHONECONTACT_MOM, name = "MOM",
-           map = "PLAYERS_HOUSE_1F",
-           calleeTime = Phone.ANYTIME, callee = "MomPhoneCalleeScript",
-           callerTime = 0, caller = "UnusedPhoneScript" },
-  [2]  = { number = Phone.PHONECONTACT_BIKESHOP, name = "BIKE SHOP",
-           map = "OAKS_LAB",
-           calleeTime = 0, callee = "UnusedPhoneScript",
-           callerTime = 0, caller = "UnusedPhoneScript" },
-  [3]  = { number = Phone.PHONECONTACT_BILL, name = "BILL", map = nil,
-           calleeTime = Phone.ANYTIME, callee = "BillPhoneCalleeScript",
-           callerTime = 0, caller = "BillPhoneCallerScript" },
-  [4]  = { number = Phone.PHONECONTACT_ELM, name = "PROF.ELM",
-           map = "ELMS_LAB",
-           calleeTime = Phone.ANYTIME, callee = "ElmPhoneCalleeScript",
-           callerTime = 0, caller = "ElmPhoneCallerScript" },
-  [5]  = { class = "SCHOOLBOY", member = "JACK1", map = "NATIONAL_PARK",
-           callee = "JackPhoneCalleeScript", caller = "JackPhoneCallerScript" },
-  [6]  = { class = "POKEFANF", member = "BEVERLY1", map = "NATIONAL_PARK",
-           callee = "BeverlyPhoneCalleeScript",
-           caller = "BeverlyPhoneCallerScript" },
-  [7]  = { class = "SAILOR", member = "HUEY1", map = "OLIVINE_LIGHTHOUSE_2F",
-           callee = "HueyPhoneCalleeScript", caller = "HueyPhoneCallerScript" },
-  -- const_skip x3
-  [8]  = false, [9] = false, [10] = false,
-  [11] = { class = "COOLTRAINERM", member = "GAVEN3", map = "ROUTE_26",
-           callee = "GavenPhoneCalleeScript",
-           caller = "GavenPhoneCallerScript" },
-  [12] = { class = "COOLTRAINERF", member = "BETH1", map = "ROUTE_26",
-           callee = "BethPhoneCalleeScript", caller = "BethPhoneCallerScript" },
-  [13] = { class = "BIRD_KEEPER", member = "JOSE2", map = "ROUTE_27",
-           callee = "JosePhoneCalleeScript", caller = "JosePhoneCallerScript" },
-  [14] = { class = "COOLTRAINERF", member = "REENA1", map = "ROUTE_27",
-           callee = "ReenaPhoneCalleeScript",
-           caller = "ReenaPhoneCallerScript" },
-  [15] = { class = "YOUNGSTER", member = "JOEY1", map = "ROUTE_30",
-           callee = "JoeyPhoneCalleeScript", caller = "JoeyPhoneCallerScript" },
-  [16] = { class = "BUG_CATCHER", member = "WADE1", map = "ROUTE_31",
-           callee = "WadePhoneCalleeScript", caller = "WadePhoneCallerScript" },
-  [17] = { class = "FISHER", member = "RALPH1", map = "ROUTE_32",
-           callee = "RalphPhoneCalleeScript",
-           caller = "RalphPhoneCallerScript" },
-  [18] = { class = "PICNICKER", member = "LIZ1", map = "ROUTE_32",
-           callee = "LizPhoneCalleeScript", caller = "LizPhoneCallerScript" },
-  [19] = { class = "HIKER", member = "ANTHONY2", map = "ROUTE_33",
-           callee = "AnthonyPhoneCalleeScript",
-           caller = "AnthonyPhoneCallerScript" },
-  [20] = { class = "CAMPER", member = "TODD1", map = "ROUTE_34",
-           callee = "ToddPhoneCalleeScript", caller = "ToddPhoneCallerScript" },
-  [21] = { class = "PICNICKER", member = "GINA1", map = "ROUTE_34",
-           callee = "GinaPhoneCalleeScript", caller = "GinaPhoneCallerScript" },
-  [22] = { class = "JUGGLER", member = "IRWIN1", map = "ROUTE_35",
-           callee = "IrwinPhoneCalleeScript",
-           caller = "IrwinPhoneCallerScript" },
-  [23] = { class = "BUG_CATCHER", member = "ARNIE1", map = "ROUTE_35",
-           callee = "ArniePhoneCalleeScript",
-           caller = "ArniePhoneCallerScript" },
-  [24] = { class = "SCHOOLBOY", member = "ALAN1", map = "ROUTE_36",
-           callee = "AlanPhoneCalleeScript", caller = "AlanPhoneCallerScript" },
-  -- const_skip
-  [25] = false,
-  [26] = { class = "LASS", member = "DANA1", map = "ROUTE_38",
-           callee = "DanaPhoneCalleeScript", caller = "DanaPhoneCallerScript" },
-  [27] = { class = "SCHOOLBOY", member = "CHAD1", map = "ROUTE_38",
-           callee = "ChadPhoneCalleeScript", caller = "ChadPhoneCallerScript" },
-  [28] = { class = "POKEFANM", member = "DEREK1", map = "ROUTE_39",
-           callee = "DerekPhoneCalleeScript",
-           caller = "DerekPhoneCallerScript" },
-  [29] = { class = "FISHER", member = "CHRIS1", map = "ROUTE_42",
-           callee = "ChrisPhoneCalleeScript",
-           caller = "ChrisPhoneCallerScript" },
-  [30] = { class = "POKEMANIAC", member = "BRENT1", map = "ROUTE_43",
-           callee = "BrentPhoneCalleeScript",
-           caller = "BrentPhoneCallerScript" },
-  [31] = { class = "PICNICKER", member = "TIFFANY3", map = "ROUTE_43",
-           callee = "TiffanyPhoneCalleeScript",
-           caller = "TiffanyPhoneCallerScript" },
-  [32] = { class = "BIRD_KEEPER", member = "VANCE1", map = "ROUTE_44",
-           callee = "VancePhoneCalleeScript",
-           caller = "VancePhoneCallerScript" },
-  [33] = { class = "FISHER", member = "WILTON1", map = "ROUTE_44",
-           callee = "WiltonPhoneCalleeScript",
-           caller = "WiltonPhoneCallerScript" },
-  [34] = { class = "BLACKBELT_T", member = "KENJI3", map = "ROUTE_45",
-           callee = "KenjiPhoneCalleeScript",
-           caller = "KenjiPhoneCallerScript" },
-  [35] = { class = "HIKER", member = "PARRY1", map = "ROUTE_45",
-           callee = "ParryPhoneCalleeScript",
-           caller = "ParryPhoneCallerScript" },
-  [36] = { class = "PICNICKER", member = "ERIN1", map = "ROUTE_46",
-           callee = "ErinPhoneCalleeScript", caller = "ErinPhoneCallerScript" },
-}
 
--- Every trainer row in the table is `ANYTIME, <callee>, ANYTIME, <caller>`;
--- only the five non-trainer rows above spell their masks out.  Fill the rest
--- in rather than repeating ANYTIME twenty-eight times, and turn the const_skip
--- holes into copies of row 0 so an out-of-range id can never index nil.
-for index = 0, Phone.NUM_PHONE_CONTACTS do
-  local row = Phone.CONTACTS[index]
-  if row == false or row == nil then
-    row = { number = 0, name = "----------", map = nil,
-            calleeTime = 0, callee = "UnusedPhoneScript",
-            callerTime = 0, caller = "UnusedPhoneScript" }
-    Phone.CONTACTS[index] = row
-  end
-  row.index = index
-  if row.class then
-    row.calleeTime = row.calleeTime or Phone.ANYTIME
-    row.callerTime = row.callerTime or Phone.ANYTIME
-  end
-end
+-- data/phone/phone_contacts.asm:1
+Phone.CONTACTS = {}
 
--- pokegold/data/phone/phone_contacts.asm:12
 local registryRows, registryOrder, registryConstants
-local defaultContacts = Merge.deepCopy(Phone.CONTACTS)
-local nativeContacts = Merge.deepCopy(defaultContacts)
+local nativeContacts = {}
 
-local function overlayExtracted(book, events, constants)
-  local count = 0
-  for index, row in pairs(type(events) == "table" and events.phone or {}) do
-    if type(index) == "number" and type(row) == "table" then
-      local dest = book[index] or { index = index }
-      dest.map, dest.calleeTime, dest.callerTime = row.map, row.calleeTime, row.callerTime
-      dest.calleeKey, dest.callerKey = row.callee, row.caller
-      if constants and row.trainerClass then
-        local class = (constants.trainerClassOrder or {})[row.trainerClass + 1]
-        if row.trainerClass ~= 0 and class then
-          dest.class = class
-          dest.member = ((constants.trainerClassMembers or {})[class] or {})[row.number]
-        end
-      end
-      if not dest.class and row.number ~= nil then dest.number = row.number end
-      book[index] = dest
-      count = count + 1
-    end
+local function required(events)
+  if type(events) ~= "table" then error("events.lua is missing", 3) end
+  for _, key in ipairs({ "phone", "phoneScripts", "phoneNames", "specialCalls",
+      "permanentNumbers" }) do
+    if type(events[key]) ~= "table" then error("events.lua has no " .. key, 3) end
   end
-  return count
 end
 
-local function nativeBook(data)
-  local book = Merge.deepCopy(defaultContacts)
-  overlayExtracted(book, data and data.gen2EventTables, data and data.gen2Constants)
+local function scriptLabels(events)
+  local byKey = {}
+  for label, row in pairs(events.phoneScripts) do
+    local key = row.script
+    if key and (byKey[key] == nil or label < byKey[key]) then byKey[key] = label end
+  end
+  return byKey
+end
+
+-- data/phone/non_trainer_names.asm:1
+local function splitName(raw)
+  local head, tail = raw:match("^(.-)<LF>%s*(.*)$")
+  head = (head or raw):gsub(":$", "")
+  if tail == "" then tail = nil end
+  return head, tail
+end
+
+local function readNames(events)
+  for key in pairs(Phone.NON_TRAINER_NAMES) do Phone.NON_TRAINER_NAMES[key] = nil end
+  for key in pairs(Phone.NON_TRAINER_TITLES) do Phone.NON_TRAINER_TITLES[key] = nil end
+  for number, raw in pairs(events.phoneNames) do
+    Phone.NON_TRAINER_NAMES[number], Phone.NON_TRAINER_TITLES[number] = splitName(raw)
+  end
+end
+
+local function rematchFlags(constants)
+  local out = {}
+  if type(constants) ~= "table" then return out end
+  if type(constants.rematchFlags) ~= "table" then
+    error("constants.lua has no rematchFlags", 4)
+  end
+  for _, row in ipairs(constants.rematchFlags) do
+    out[row[1]] = { kind = row[2], flag = row[3] }
+  end
+  return out
+end
+
+local function bookFrom(events, constants)
+  required(events)
+  readNames(events)
+  for i = #Phone.PERMANENT_NUMBERS, 1, -1 do Phone.PERMANENT_NUMBERS[i] = nil end
+  for i, id in ipairs(events.permanentNumbers) do Phone.PERMANENT_NUMBERS[i] = id end
+  local labels = scriptLabels(events)
+  local rematch = rematchFlags(constants)
+  local book = {}
+  for index, row in pairs(events.phone) do
+    local dest = {
+      index = index, map = row.map,
+      calleeTime = row.calleeTime, callerTime = row.callerTime,
+      calleeKey = row.callee, callerKey = row.caller,
+      callee = labels[row.callee], caller = labels[row.caller],
+    }
+    local flag = rematch[index]
+    if flag and flag.kind == "event" then
+      dest.rematchEvent = flag.flag
+    elseif flag then
+      dest.rematchEngineFlag = flag.flag
+    end
+    if row.trainerClass ~= 0 then
+      local order = constants and constants.trainerClassOrder
+      if type(order) ~= "table" then
+        error("PhoneContacts row " .. index .. " needs constants.trainerClassOrder", 3)
+      end
+      dest.class = order[row.trainerClass + 1]
+      dest.member = ((constants.trainerClassMembers or {})[dest.class] or {})[row.number]
+    else
+      dest.number = row.number
+      dest.name = Phone.NON_TRAINER_NAMES[row.number]
+    end
+    book[index] = dest
+  end
   return book
 end
 
@@ -313,7 +216,7 @@ end
 function Phone.registerInto(registry, data, owner)
   local order = data and data.gen2Constants and data.gen2Constants.phoneContactOrder
   if type(order) ~= "table" then return 0 end
-  local book = nativeBook(data)
+  local book = bookFrom(data.gen2EventTables, data.gen2Constants)
   local count = 0
   for index = 0, #order - 1 do
     local id = order[index + 1]
@@ -332,200 +235,46 @@ function Phone.useRegistry(data)
   registryRows = data and data.gen2PhoneContacts or nil
   registryConstants = data and data.gen2Constants
   registryOrder = registryConstants and registryConstants.phoneContactOrder
-  nativeContacts = data and nativeBook(data) or Merge.deepCopy(defaultContacts)
+  nativeContacts = data and bookFrom(data.gen2EventTables, registryConstants) or {}
   return applyRegistryRows()
 end
 
 -- ------------------------------------------------------- script keys
---
--- ../pokegold-symbols/pokegold.sym.  scripts.lua keys a command list by
--- "<bank hex>:<addr hex>", the same form the extractor writes for a map
--- script, so these become live the moment bank $41 (the phone scripts) and
--- bank $24 (the phone engine's own little scripts) are extracted.
-Phone.SCRIPT_KEYS = {
-  UnusedPhoneScript = "41:4000",
-  MomPhoneCalleeScript = "41:4004",
-  MomPhoneLectureScript = "41:4124",
-  BillPhoneCalleeScript = "41:4137",
-  BillPhoneCallerScript = "41:4172",
-  ElmPhoneCalleeScript = "41:4177",
-  ElmPhoneCallerScript = "41:41e1",
-  JackPhoneCalleeScript = "41:422a",
-  JackPhoneCallerScript = "41:4234",
-  BeverlyPhoneCalleeScript = "41:4256",
-  BeverlyPhoneCallerScript = "41:4260",
-  HueyPhoneCalleeScript = "41:4282",
-  HueyPhoneCallerScript = "41:428c",
-  GavenPhoneCalleeScript = "41:42a7",
-  GavenPhoneCallerScript = "41:42b1",
-  BethPhoneCalleeScript = "41:42d3",
-  BethPhoneCallerScript = "41:42dd",
-  JosePhoneCalleeScript = "41:42ff",
-  JosePhoneCallerScript = "41:4309",
-  ReenaPhoneCalleeScript = "41:4332",
-  ReenaPhoneCallerScript = "41:433c",
-  JoeyPhoneCalleeScript = "41:435e",
-  JoeyPhoneCallerScript = "41:4368",
-  WadePhoneCalleeScript = "41:4390",
-  WadePhoneCallerScript = "41:43b5",
-  RalphPhoneCalleeScript = "41:43f8",
-  RalphPhoneCallerScript = "41:4402",
-  LizPhoneCalleeScript = "41:4446",
-  LizPhoneCallerScript = "41:4450",
-  AnthonyPhoneCalleeScript = "41:4478",
-  AnthonyPhoneCallerScript = "41:4482",
-  ToddPhoneCalleeScript = "41:44c4",
-  ToddPhoneCallerScript = "41:44ce",
-  GinaPhoneCalleeScript = "41:44f6",
-  GinaPhoneCallerScript = "41:4506",
-  IrwinPhoneCalleeScript = "41:4534",
-  IrwinPhoneCallerScript = "41:4544",
-  ArniePhoneCalleeScript = "41:456c",
-  ArniePhoneCallerScript = "41:4576",
-  AlanPhoneCalleeScript = "41:45b2",
-  AlanPhoneCallerScript = "41:45bc",
-  DanaPhoneCalleeScript = "41:45de",
-  DanaPhoneCallerScript = "41:45e8",
-  ChadPhoneCalleeScript = "41:460a",
-  ChadPhoneCallerScript = "41:4614",
-  DerekPhoneCalleeScript = "41:4650",
-  DerekPhoneCallerScript = "41:4675",
-  ChrisPhoneCalleeScript = "41:46b2",
-  ChrisPhoneCallerScript = "41:46bc",
-  BrentPhoneCalleeScript = "41:46de",
-  BrentPhoneCallerScript = "41:46e8",
-  TiffanyPhoneCalleeScript = "41:4711",
-  TiffanyPhoneCallerScript = "41:471b",
-  VancePhoneCalleeScript = "41:4744",
-  VancePhoneCallerScript = "41:474e",
-  WiltonPhoneCalleeScript = "41:4770",
-  WiltonPhoneCallerScript = "41:477a",
-  KenjiPhoneCalleeScript = "41:47b8",
-  KenjiPhoneCallerScript = "41:47c2",
-  ParryPhoneCalleeScript = "41:47e4",
-  ParryPhoneCallerScript = "41:47ee",
-  ErinPhoneCalleeScript = "41:482a",
-  ErinPhoneCallerScript = "41:4834",
-  BikeShopPhoneCallerScript = "41:4a80",
-  -- bank $24: the engine's own scripts, reached without a contact row.
-  WrongNumberScript = "24:4240",
-  PhoneOutOfAreaScript = "24:4626",
-  PhoneScript_JustTalkToThem = "24:462f",
-}
+
+Phone.SCRIPT_KEYS = {}
 
 function Phone.scriptKey(label)
   return label and Phone.SCRIPT_KEYS[label] or nil
 end
 
+-- ------------------------------------------------------- special calls
+
+-- data/phone/special_calls.asm:1
+Phone.SPECIAL_CALLS = {}
+Phone.SPECIALCALL = { SPECIALCALL_NONE = 0 }
+
 -- pokegold/data/phone/phone_contacts.asm:12
 function Phone.useExtracted(events)
-  local rows = type(events) == "table" and events.phone
-  if type(rows) ~= "table" then return false end
-  local applied = overlayExtracted(nativeContacts, events, registryConstants)
-  for _, row in ipairs(events.specialCalls or {}) do
-    local dest = Phone.SPECIAL_CALLS[row.id]
-    if dest then
-      dest.contact = row.contact
-      dest.scriptKey = row.script
-    end
+  required(events)
+  nativeContacts = bookFrom(events, registryConstants)
+  local labels = scriptLabels(events)
+  for key in pairs(Phone.SPECIAL_CALLS) do Phone.SPECIAL_CALLS[key] = nil end
+  for key in pairs(Phone.SPECIALCALL) do Phone.SPECIALCALL[key] = nil end
+  Phone.SPECIALCALL.SPECIALCALL_NONE = Phone.SPECIALCALL_NONE
+  for _, row in ipairs(events.specialCalls) do
+    Phone.SPECIAL_CALLS[row.id] = {
+      name = row.call, condition = row.when, contact = row.contact,
+      script = labels[row.script], scriptKey = row.script,
+    }
+    Phone.SPECIALCALL[row.call] = row.id
   end
-  -- The three scripts the engine runs without a contact row.  These stay in
-  -- SCRIPT_KEYS because Phone.call names them by label.
-  for label, row in pairs(events.phoneScripts or {}) do
-    if row.script then Phone.SCRIPT_KEYS[label] = row.script end
+  for label in pairs(Phone.SCRIPT_KEYS) do Phone.SCRIPT_KEYS[label] = nil end
+  for label, row in pairs(events.phoneScripts) do
+    Phone.SCRIPT_KEYS[label] = row.script
   end
-  -- Last word to the `phone_contacts` merge: this routine overwrites six
-  -- fields on every row it has a cache entry for, and it runs from
-  -- src/world/gen2/World.lua:load -- after src/core/Game2.lua:load has
-  -- already folded the merged rows in.  Re-applying them here is what
-  -- keeps the order literal -> cache -> registry whichever way round the two
-  -- calls land.
   applyRegistryRows()
-  Phone.extracted = applied > 0
-  return Phone.extracted
+  return true
 end
-
--- ------------------------------------------------------- special calls
---
--- data/phone/special_calls.asm, indexed by SPECIALCALL_* (which starts at
--- SPECIALCALL_NONE = 0, so the first real entry is 1 and the table is read as
--- `SpecialPhoneCallList + (id - 1) * SPECIALCALL_SIZE`).
---
--- Each row is `condition, contact, script`: the condition decides WHEN the
--- queued call is allowed to fire, the contact names whose textbox and name it
--- wears, and the script REPLACES that contact's SCRIPT2 for this one call.
-Phone.SPECIAL_CALLS = {
-  [1] = { name = "SPECIALCALL_POKERUS", condition = "outside",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-  [2] = { name = "SPECIALCALL_ROBBED", condition = "outside",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-  [3] = { name = "SPECIALCALL_ASSISTANT", condition = "outside",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-  [4] = { name = "SPECIALCALL_WEIRDBROADCAST", condition = "outside",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-  [5] = { name = "SPECIALCALL_SSTICKET", condition = "anywhere",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-  [6] = { name = "SPECIALCALL_BIKESHOP", condition = "anywhere",
-          contact = Phone.PHONECONTACT_BIKESHOP,
-          script = "BikeShopPhoneCallerScript" },
-  [7] = { name = "SPECIALCALL_WORRIED", condition = "anywhere",
-          contact = Phone.PHONECONTACT_MOM,
-          script = "MomPhoneLectureScript" },
-  [8] = { name = "SPECIALCALL_MASTERBALL", condition = "outside",
-          contact = Phone.PHONECONTACT_ELM, script = "ElmPhoneCallerScript" },
-}
-
--- Name -> id, so a caller can queue by the constant it reads in the decomp.
-Phone.SPECIALCALL = { SPECIALCALL_NONE = 0 }
-for id, entry in pairs(Phone.SPECIAL_CALLS) do
-  Phone.SPECIALCALL[entry.name] = id
-end
-
--- ------------------------------------------------------- rematch flags
---
--- engine/phone/scripts/trainers.asm: every caller script has a .WantsBattle
--- branch whose `setevent EVENT_<NAME>_READY_FOR_REMATCH` is the whole rematch
--- mechanic -- the trainer's own map script then reads that flag and offers the
--- second party.  So the flag is set by the extracted script, not by this
--- module; what lives here is the contact -> flag mapping, for the callers that
--- want to ask "is this contact waiting?" and for the fallback in
--- Phone.setRematchReady while bank $41 is unextracted.
---
--- The numbers are wEventFlags bit indexes, counted through
--- constants/event_flags.asm's const_def / const_skip / const_next chain (the
--- same chain that gives EVENT_ROUTE_30_BATTLE = 1812, which is the eventFlag
--- the extracted Route 30 object already carries -- that match is what verifies
--- this counting).
-Phone.REMATCH_EVENTS = {
-  [5]  = 608, -- EVENT_JACK_READY_FOR_REMATCH
-  [6]  = 610, -- EVENT_BEVERLY_READY_FOR_REMATCH
-  [7]  = 612, -- EVENT_HUEY_READY_FOR_REMATCH
-  [11] = 620, -- EVENT_GAVEN_READY_FOR_REMATCH
-  [12] = 622, -- EVENT_BETH_READY_FOR_REMATCH
-  [13] = 624, -- EVENT_JOSE_READY_FOR_REMATCH
-  [14] = 626, -- EVENT_REENA_READY_FOR_REMATCH
-  [15] = 628, -- EVENT_JOEY_READY_FOR_REMATCH
-  [16] = 630, -- EVENT_WADE_READY_FOR_REMATCH
-  [17] = 632, -- EVENT_RALPH_READY_FOR_REMATCH
-  [18] = 634, -- EVENT_LIZ_READY_FOR_REMATCH
-  [19] = 636, -- EVENT_ANTHONY_READY_FOR_REMATCH
-  [20] = 638, -- EVENT_TODD_READY_FOR_REMATCH
-  [21] = 640, -- EVENT_GINA_READY_FOR_REMATCH
-  [22] = 642, -- EVENT_IRWIN_READY_FOR_REMATCH
-  [23] = 644, -- EVENT_ARNIE_READY_FOR_REMATCH
-  [24] = 646, -- EVENT_ALAN_READY_FOR_REMATCH
-  [26] = 650, -- EVENT_DANA_READY_FOR_REMATCH
-  [27] = 652, -- EVENT_CHAD_READY_FOR_REMATCH
-  [28] = 654, -- EVENT_DEREK_READY_FOR_REMATCH
-  [29] = 656, -- EVENT_CHRIS_READY_FOR_REMATCH
-  [30] = 658, -- EVENT_BRENT_READY_FOR_REMATCH
-  [31] = 660, -- EVENT_TIFFANY_READY_FOR_REMATCH
-  [32] = 662, -- EVENT_VANCE_READY_FOR_REMATCH
-  [33] = 664, -- EVENT_WILTON_READY_FOR_REMATCH
-  [34] = 666, -- EVENT_KENJI_READY_FOR_REMATCH
-  [35] = 668, -- EVENT_PARRY_READY_FOR_REMATCH
-  [36] = 670, -- EVENT_ERIN_READY_FOR_REMATCH
-}
 
 -- ------------------------------------------------------- save state
 --
@@ -760,12 +509,14 @@ function Phone.contactName(id, trainerData)
       local class = trainerData and trainerData.classes
         and trainerData.classes[contact.class]
       className = (class and class.name) or contact.class
+    else
+      className = Phone.NON_TRAINER_TITLES[contact.number or 0]
     end
     return contact.name, className
   end
   if not contact.class then
     return Phone.NON_TRAINER_NAMES[contact.number or 0]
-      or Phone.NON_TRAINER_NAMES[0], nil
+      or Phone.NON_TRAINER_NAMES[0], Phone.NON_TRAINER_TITLES[contact.number or 0]
   end
   local class = trainerData and trainerData.classes
     and trainerData.classes[contact.class]
@@ -1008,9 +759,6 @@ local function descriptor(id, direction, scriptField)
     number = contact.number,
     map = contact.map,
     script = label,
-    -- The extracted key wins over the label lookup: Phone.useExtracted put the
-    -- cart's own pointer here, and the SCRIPT_KEYS table behind
-    -- Phone.scriptKey is a transcription of the symbol file.
     scriptKey = contact[scriptField .. "Key"] or Phone.scriptKey(label),
   }
 end
@@ -1169,44 +917,44 @@ end
 
 -- ------------------------------------------------------- rematches
 
+-- ../pokegold/constants/event_flags.asm:268
 function Phone.rematchEvent(id)
   local contact = Phone.CONTACTS[id or -1]
-  if contact and contact.rematchEvent ~= nil then return contact.rematchEvent end
-  return Phone.REMATCH_EVENTS[id or -1]
+  return contact and contact.rematchEvent or nil
 end
 
--- The caller script's own `setevent EVENT_<NAME>_READY_FOR_REMATCH`.  With
--- bank $41 extracted the VM runs that setevent itself and nothing in the
--- engine calls this; it stays as the one named seam for a test or a cache
--- without the scripts to land the same flag.
-function Phone.setRematchReady(events, id, value)
-  local flag = Phone.rematchEvent(id)
-  if not (flag and events) then return false end
-  events:set(flag, value ~= false)
-  return true
+-- ../pokecrystal/constants/engine_flags.asm:125
+function Phone.rematchEngineFlag(id)
+  local contact = Phone.CONTACTS[id or -1]
+  return contact and contact.rematchEngineFlag or nil
 end
 
-function Phone.isReadyForRematch(events, id)
+function Phone.setRematchReady(events, id, value, engineFlags)
   local flag = Phone.rematchEvent(id)
-  if not (flag and events) then return false end
-  return events:get(flag) and true or false
+  if flag and events then
+    events:set(flag, value ~= false)
+    return true
+  end
+  local engine = Phone.rematchEngineFlag(id)
+  if engine and engineFlags then
+    engineFlags[engine] = (value ~= false) or nil
+    return true
+  end
+  return false
+end
+
+function Phone.isReadyForRematch(events, id, engineFlags)
+  local flag = Phone.rematchEvent(id)
+  if flag and events then return events:get(flag) and true or false end
+  local engine = Phone.rematchEngineFlag(id)
+  if engine and engineFlags then return engineFlags[engine] and true or false end
+  return false
 end
 
 -- ------------------------------------------------------- ending a call
 
--- Script_ReceivePhoneCall's tail: HangUp, closetext, InitCallReceiveDelay.
---
--- The special-call queue is cleared by the CALLED SCRIPT on the cart
--- (`specialphonecall SPECIALCALL_NONE`, the line right after the writetext in
--- every one of them), not by the engine, and with bank $41 extracted that
--- line runs through the VM's own specialphonecall arm.  The fallback here
--- covers a cache built before the extractor reached that bank: a caller that
--- reports no script ran (`ranScript` unset) has its queue cleared so the
--- call cannot ring forever.
-function Phone.endCall(save, call, ctx)
-  if call and call.special and call.special ~= 0 and not call.ranScript then
-    Phone.clearSpecialCall(save)
-  end
+-- engine/phone/phone.asm:431
+function Phone.endCall(save, _, ctx)
   Phone.initReceiveDelay(save, ctx)
   return true
 end

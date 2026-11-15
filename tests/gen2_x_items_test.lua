@@ -179,7 +179,9 @@ do
     "the foe's GROWL is turned away by the Mist")
   local shielded = false
   for _, event in ipairs(battle:takeEvents()) do
-    if event.text == "CYNDAQUIL's protected by MIST." then shielded = true end
+    if event.text == battle:romText("ProtectedByMistText", wild, player) then
+      shielded = true
+    end
   end
   check(shielded, "with ProtectedByMistText")
 

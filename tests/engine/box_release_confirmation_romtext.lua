@@ -1,12 +1,3 @@
--- BoxMenu's RELEASE confirmation ("Once released,\n%s is\ngone forever.
--- OK?") used to be a bare Lua literal. tests/engine/pc_release.lua only
--- ever runs with an empty Data.text, so it can't tell a properly-wired
--- t._OnceReleasedText or "..." fallback apart from a literal that never
--- looked at t at all -- every assertion there passes either way. This
--- test drives the same interactive release flow with a faked
--- Data.text._OnceReleasedText and checks the pushed TextBox's raw text
--- (captured via a TextBox.new spy, so real pagination/choice behavior is
--- untouched) uses the translated value, not the English literal.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -112,16 +103,25 @@ do
   local text = releaseFirstMon(game)
   T.eq(text, "FAKE " .. name .. " released!",
     "a translated _OnceReleasedText reaches the release confirmation")
-  Data.text._OnceReleasedText = nil
 end
 
--- vanilla: with no catalog entry, the English literal still substitutes
 do
   local game, box = mkGame()
   local name = monName(box)
+  Data.text._OnceReleasedText = "Once released,\n{RAM:wStringBuffer} is\vgone forever. OK?{DONE}"
   local text = releaseFirstMon(game)
-  T.eq(text, "Once released,\n" .. name .. " is\ngone forever. OK?",
-    "no catalog entry still falls back to the English literal")
+  T.eq(text, "Once released,\n" .. name .. " is\vgone forever. OK?{DONE}",
+    "the cached label prints with the cart's line breaks")
+end
+
+do
+  local game = mkGame()
+  Data.text._OnceReleasedText = nil
+  stack:push(BoxMenu.new(game))
+  press("down"); press("down"); press("a")
+  local ok, err = pcall(press, "a")
+  T.check(not ok and tostring(err):find("_OnceReleasedText", 1, true) ~= nil,
+    "a cache without _OnceReleasedText is an error, not an English literal")
 end
 
 TextBox.new = realNew

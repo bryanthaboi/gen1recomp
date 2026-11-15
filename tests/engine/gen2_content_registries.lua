@@ -128,11 +128,20 @@ local function goldData()
   -- the fixture maps under the key Gold keeps them at, so a contact's `map`
   -- resolves against the same id space src/world/gen2/World.lua walks
   data.gen2Maps = data.maps
-  data.gen2Constants = { phoneContactOrder = PHONE_ORDER }
+  local PHONE = require("tests.fixtures.gen2_phone_events")
+  data.gen2Constants = { phoneContactOrder = PHONE_ORDER,
+    trainerClassOrder = PHONE.constants.trainerClassOrder,
+    trainerClassMembers = PHONE.constants.trainerClassMembers,
+    rematchFlags = PHONE.constants.rematchFlags }
+  data.gen2EventTables = require("src.mods.Merge").deepCopy(PHONE.events)
   data.gen2Landmarks = landmarkTable()
   -- src/core/Game2.lua:load builds this before mods:load; the harness
   -- stands in for that boot step
   data.gen2HeldItems = ItemEffects.heldItemsFrom(data.items)
+  data.text = data.text or {}
+  for label, body in pairs(require("tests.fixture_data.gen2_rom_text_s7_g").text()) do
+    data.text[label] = body
+  end
   return data
 end
 
@@ -185,6 +194,8 @@ do
 
   local contacts = run.data.gen2PhoneContacts
   T.check(contacts ~= nil, "the phone_contacts merge target appears")
+  Phone.useRegistry({ gen2EventTables = run.data.gen2EventTables,
+    gen2Constants = run.data.gen2Constants })
   sameRecord(contacts.PHONE_YOUNGSTER_JOEY, Phone.CONTACTS[15],
     "vanilla contact is the PhoneContacts row: PHONE_YOUNGSTER_JOEY")
   sameRecord(contacts.PHONE_MOM, Phone.CONTACTS[1],
@@ -273,9 +284,12 @@ do
   -- the cache overlay runs from src/world/gen2/World.lua AFTER this, and must
   -- not undo it
   Phone.useExtracted({ phone = { [15] = { map = "ROUTE_30",
+                                          trainerClass = 22, number = 1,
                                           calleeTime = 7, callerTime = 7,
                                           callee = "41:0001",
-                                          caller = "41:0002" } } })
+                                          caller = "41:0002" } },
+                       phoneScripts = {}, phoneNames = {}, specialCalls = {},
+                       permanentNumbers = { 1, 4 } })
   T.eq(Phone.CONTACTS[15].map, "FIX_ROUTE",
     "and the cache overlay does not undo it")
 

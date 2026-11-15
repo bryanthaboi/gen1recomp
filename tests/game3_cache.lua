@@ -17,24 +17,61 @@ local function push(list, seen, path)
   end
 end
 
-local SUFFIX = "/firered/data/generated/gba"
+local IS_GBA = { firered = true, leafgreen = true, ruby = true, sapphire = true, emerald = true }
+local LABEL = { firered = "FireRed", leafgreen = "LeafGreen", ruby = "Ruby", sapphire = "Sapphire", emerald = "Emerald" }
+
+M.pinned = nil
+
+function M.use(version)
+  if not IS_GBA[version] then
+    error("tests.game3_cache: not a GBA version id: " .. tostring(version), 2)
+  end
+  M.pinned = version
+  return M
+end
+
+function M.version()
+  return M.pinned or "firered"
+end
+
+local function takeVersion(marker, opts, extra)
+  if IS_GBA[marker] then
+    M.use(marker)
+    return opts, extra
+  end
+  return marker, opts
+end
+
+local function saveRoots()
+  local home = os.getenv("HOME")
+  if not home then return {} end
+  return {
+    home .. "/Library/Application Support/LOVE",
+    home .. "/.local/share/love",
+  }
+end
+
+local function identityNames()
+  local names = {}
+  local identity = os.getenv("POKEPORT_IDENTITY")
+  if identity and identity ~= "" then names[#names + 1] = identity end
+  if M.pinned then names[#names + 1] = "g1r-" .. M.pinned end
+  return names
+end
 
 local function candidates()
   local list, seen = {}, {}
-  local home = os.getenv("HOME")
-  local saveRoots = home and {
-    home .. "/Library/Application Support/LOVE",
-    home .. "/.local/share/love",
-  } or {}
-
-  local identity = os.getenv("POKEPORT_IDENTITY")
-  if identity and identity ~= "" then
-    for _, saveRoot in ipairs(saveRoots) do
-      push(list, seen, saveRoot .. "/" .. identity .. SUFFIX)
+  local version = M.version()
+  local suffix = "/" .. version .. "/data/generated/gba"
+  for _, name in ipairs(identityNames()) do
+    for _, saveRoot in ipairs(saveRoots()) do
+      push(list, seen, saveRoot .. "/" .. name .. suffix)
     end
   end
-  push(list, seen, os.getenv("POKEPORT_GBA_CACHE"))
-  push(list, seen, "data/generated/gba")
+  if version == "firered" then
+    push(list, seen, os.getenv("POKEPORT_GBA_CACHE"))
+    push(list, seen, "data/generated/gba")
+  end
   return list
 end
 
@@ -47,8 +84,12 @@ local function metaVersions(root)
     tonumber(src:match('"native_version"%s*:%s*(%d+)')) or 0
 end
 
+local function gameVersions()
+  return require("src.import.gba.versions").forGame(M.version())
+end
+
 local function isCurrent(root, needNative)
-  local Versions = require("src.import.gba.versions")
+  local Versions = gameVersions()
   local cacheV, nativeV = metaVersions(root)
   if not cacheV then return false, "no meta.json" end
   if cacheV ~= Versions.CACHE_VERSION then
@@ -64,9 +105,11 @@ M._roots = {}
 M.reason = nil
 
 function M.root(marker, opts)
+  marker, opts = takeVersion(marker, opts)
   marker = marker or "meta.json"
   local needNative = type(opts) == "table" and opts.native == true
-  local memoKey = marker .. (needNative and "|native" or "")
+  local label = LABEL[M.version()]
+  local memoKey = M.version() .. "|" .. marker .. (needNative and "|native" or "")
   local memo = M._roots[memoKey]
   if memo ~= nil then
     if memo == false then return nil end
@@ -88,21 +131,31 @@ function M.root(marker, opts)
     M.reason = nil
     return root
   end
-  local Versions = require("src.import.gba.versions")
+  local Versions = gameVersions()
   if stale > 0 then
-    M.reason = ("%d imported FireRed cache(s) found, none at cache v%d%s"):format(
-      stale, Versions.CACHE_VERSION,
+    M.reason = ("%d imported %s cache(s) found, none at cache v%d%s"):format(
+      stale, label, Versions.CACHE_VERSION,
       needNative and (" / native v" .. tostring(Versions.NATIVE_VERSION)) or "")
   else
-    M.reason = "no imported FireRed cache found"
+    M.reason = "no imported " .. label .. " cache found"
   end
   M._roots[memoKey] = false
   return nil
 end
 
-function M.cache()
+function M.gameDir(marker, opts)
+  local root = M.root(marker, opts)
+  return root and (root:gsub("/data/generated/gba$", "")) or nil
+end
+
+function M.cache(root)
+  local function path(rel)
+    if root then return root .. "/" .. (rel:gsub("^data/generated/gba/", "")) end
+    return rel
+  end
   return {
     read = function(_, rel)
+      rel = path(rel)
       local f = io.open(rel, "rb")
       if not f then return nil end
       local data = CacheBlob.decode(rel, f:read("*a"))
@@ -111,7 +164,7 @@ function M.cache()
       return nil
     end,
     exists = function(_, rel)
-      return readable(rel)
+      return readable(path(rel))
     end,
   }
 end
@@ -126,8 +179,15 @@ function M.rootOrSkip(label, marker, opts)
 end
 
 function M.mount(marker, opts)
+  marker, opts = takeVersion(marker, opts)
   local root = M.root(marker, opts)
   if not root then return nil end
+  if M.pinned then
+    local GameVersion = require("src.core.GameVersion")
+    if GameVersion.current ~= M.pinned then GameVersion.set(M.pinned) end
+    require("src.import.gba.versions").selectCache(M.pinned, M.cache(root))
+    require("src.core.game3.profile").reset()
+  end
   local Dataset = require("src.core.game3.dataset")
   Dataset.cacheRootOverride = root
   Dataset.mountExtractRoots()
@@ -140,28 +200,28 @@ function M.mountOrSkip(label, marker, opts)
     print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason))
     os.exit(0)
   end
-  print("[info] FireRed cache at " .. root)
+  print("[info] " .. LABEL[M.version()] .. " cache at " .. root)
   return root
 end
 
 local function datasetRoots()
   local roots = { "." }
-  local home = os.getenv("HOME")
-  local identity = os.getenv("POKEPORT_IDENTITY") or ""
-  if home and identity ~= "" then
-    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. identity .. "/firered"
-    roots[#roots + 1] = home .. "/.local/share/love/" .. identity .. "/firered"
+  for _, name in ipairs(identityNames()) do
+    for _, saveRoot in ipairs(saveRoots()) do
+      roots[#roots + 1] = saveRoot .. "/" .. name .. "/" .. M.version()
+    end
   end
   return roots
 end
 
 function M.requireData(label, marker)
+  marker = takeVersion(marker)
   marker = marker or "meta.json"
   if M.mount(marker) then return end
   for _, root in ipairs(datasetRoots()) do
     if readable(root .. "/data/generated/gba/" .. marker) then return end
   end
-  print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason or "no imported FireRed cache found"))
+  print("[skip] " .. tostring(label) .. ": " .. tostring(M.reason or ("no imported " .. LABEL[M.version()] .. " cache found")))
   os.exit(0)
 end
 

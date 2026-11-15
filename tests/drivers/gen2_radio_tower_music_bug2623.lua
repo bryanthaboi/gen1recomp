@@ -1,6 +1,6 @@
 local U = require("tests.drivers.util")
 local Music = require("src.core.Music")
-local FlagNames = require("src.core.gen2.FlagNames")
+local FlagIds = require("src.core.gen2.FlagIds")
 
 return function(game)
   U.wait(60)
@@ -21,8 +21,9 @@ return function(game)
   check(type(tower) == "number" and type(mahogany) == "number",
     "2623 Rocket engine flags resolve")
   if not (tower and mahogany) then return love.event.quit(1) end
-  world.events:set(FlagNames.events.EVENT_RADIO_TOWER_ROCKET_TAKEOVER, false)
-  world.events:set(FlagNames.events.EVENT_RADIO_TOWER_CIVILIANS_AFTER, true)
+  local events = FlagIds.events(game.data.gen2Constants)
+  world.events:set(events.EVENT_RADIO_TOWER_ROCKET_TAKEOVER, false)
+  world.events:set(events.EVENT_RADIO_TOWER_CIVILIANS_AFTER, true)
   world.mapScenes.RADIO_TOWER_5F = 2
   world.mapScenes.MAHOGANY_MART_1F = 0
   local dir = os.getenv("POKEPORT_SHOT_DIR")

@@ -45,7 +45,7 @@ return function(game)
   Flags.setFlag(Space.store, Space.vm and Space.vm.ctx, FLAG_SYS_MYSTERY_GIFT_ENABLED, true)
 
   local mystic
-  for _, entry in ipairs(MysteryGift.builtins()) do
+  for _, entry in ipairs(require("tests.fixtures.game3_gift_cards").cards()) do
     if entry.key == "mystic_ticket" then mystic = entry end
   end
   result(mystic ~= nil, "the built-in set carries the MYSTIC TICKET card")

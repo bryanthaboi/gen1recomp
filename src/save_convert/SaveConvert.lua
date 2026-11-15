@@ -213,6 +213,10 @@ function SaveConvert.setGen2DataStub(stub)
   gen2Data = {}
 end
 
+function SaveConvert.gen2Constants(gameVersion)
+  return loadCacheTable(gameVersion, "data/generated/constants.lua")
+end
+
 function SaveConvert.gen2DataFromDir(dir)
   local out = {}
   for _, name in ipairs(GEN2_TABLES) do

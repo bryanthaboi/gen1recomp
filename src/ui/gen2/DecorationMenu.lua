@@ -20,8 +20,9 @@
 -- and is the only thing that makes a placement visible.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local Decorations = require("src.core.gen2.Decorations")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 local Typer = require("src.ui.gen2.Typer")
 
 local DecorationMenu = {}
@@ -29,14 +30,24 @@ DecorationMenu.__index = DecorationMenu
 -- ../pokecrystal/engine/overworld/decorations.asm:8
 DecorationMenu.isOpaque = false
 
--- .category_pointers' eighth row, which is not a category and is always shown.
-local EXIT = Strings.source("EXIT")
--- DecoSideMenuHeader's three items, in its order.
-local SIDES = {
-  { id = "right", label = Strings.source("RIGHT SIDE") },
-  { id = "left", label = Strings.source("LEFT SIDE") },
-  { id = nil, label = Strings.source("CANCEL") },
+-- engine/overworld/decorations.asm:50
+local CATEGORY_LABELS = {
+  [1] = "_PlayerDecorationMenu.bed",
+  [6] = "_PlayerDecorationMenu.carpet",
+  [11] = "_PlayerDecorationMenu.plant",
+  [15] = "_PlayerDecorationMenu.poster",
+  [20] = "_PlayerDecorationMenu.game",
+  [29] = "_PlayerDecorationMenu.ornament",
+  [25] = "_PlayerDecorationMenu.big_doll",
 }
+local EXIT = "_PlayerDecorationMenu.exit"
+-- engine/overworld/decorations.asm:882
+local SIDES = {
+  { id = "right", rom = "DecoSideMenuHeader.MenuData#1" },
+  { id = "left", rom = "DecoSideMenuHeader.MenuData#2" },
+  { id = nil, rom = "DecoSideMenuHeader.MenuData#3" },
+}
+DecorationMenu.CATEGORY_LABELS = CATEGORY_LABELS
 
 -- The scrolling list shows eight rows (.ScrollingMenuData's `db 8, 0`).
 local VISIBLE = 8
@@ -86,7 +97,9 @@ function DecorationMenu:openCategory(category)
     -- PopulateDecoCategoryMenu .empty.  Cannot happen from the filtered
     -- category list, but the routine is reachable from a driver that sets a
     -- flag by hand, and the cart answers rather than opening an empty menu.
-    self:say({ Strings(Decorations.NOTHING_TO_CHOOSE) })
+    -- engine/overworld/decorations.asm:392
+    self:say({ CommonText.plain(RomText(self.game and self.game.data,
+      "_NothingToChooseText")) })
     return
   end
   self.category = category
@@ -235,9 +248,12 @@ end
 
 function DecorationMenu:drawPanel()
   if self.mode == "category" then
+    local data = self.game and self.game.data
     local labels = {}
-    for i, category in ipairs(self.categories) do labels[i] = category.label end
-    labels[#labels + 1] = Strings(EXIT)
+    for i, category in ipairs(self.categories) do
+      labels[i] = RomText(data, CATEGORY_LABELS[category.id])
+    end
+    labels[#labels + 1] = RomText(data, EXIT)
     -- menu_coords 5, 0, 19, 17: the list hugs the right edge and the room
     -- stays visible down the left, which is the whole point of the offset.
     self:drawList(5, 0, 15, 18, labels, self.index, 0)
@@ -249,7 +265,9 @@ function DecorationMenu:drawPanel()
 
   if self.mode == "side" then
     local labels = {}
-    for i, side in ipairs(SIDES) do labels[i] = Strings(side.label) end
+    for i, side in ipairs(SIDES) do
+      labels[i] = RomText(self.game and self.game.data, side.rom)
+    end
     -- menu_coords 0, 0, 12, 7
     self:drawList(0, 0, 13, 8, labels, self.sideIndex, 0)
   end

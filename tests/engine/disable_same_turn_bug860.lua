@@ -108,8 +108,8 @@ end
 -- "X's / MOVE is / disabled!" (PrintMoveIsDisabledText) versus
 -- DisableEffect's own "MOVE was / disabled!" -- the two lines differ only
 -- in that verb, so match on it
-local function blocked(rows) return saidWith(rows, "is\ndisabled!") end
-local function landed(rows) return saidWith(rows, "was\ndisabled!") end
+local function blocked(rows) return saidWith(rows, "is\vdisabled!") end
+local function landed(rows) return saidWith(rows, "was\vdisabled!") end
 local function usedTackle(rows) return saidWith(rows, "used FIX TACKLE!") end
 
 -- ---------------------------------------------------------------------

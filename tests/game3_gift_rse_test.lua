@@ -45,7 +45,7 @@ local function newSession(version)
 end
 
 local function builtin(family, key)
-  for _, entry in ipairs(MysteryGift.builtins(family)) do
+  for _, entry in ipairs(require("tests.fixtures.game3_gift_cards").cards(family)) do
     if entry.key == key then return entry end
   end
   return nil
@@ -94,7 +94,7 @@ do
   eq(pichu.gift.doneFlag, F("FLAG_MYSTERY_GIFT_DONE"), "FLAG_MYSTERY_GIFT_DONE")
   eq(MysteryGift.normalizeCard({ flagId = 1000, idNumber = 1, gift = { kind = "item", item = "ITEM_NOPE" } }, "emerald"),
     nil, "an unknown constant name drops the card")
-  for _, entry in ipairs(MysteryGift.builtins("rse")) do
+  for _, entry in ipairs(require("tests.fixtures.game3_gift_cards").cards("rse")) do
     local c = MysteryGift.normalizeCard(entry.card, "emerald")
     check(c ~= nil and MysteryGift.validateCard(c), "rse preset " .. entry.key .. " is a valid Wonder Card")
   end

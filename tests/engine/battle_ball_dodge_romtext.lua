@@ -61,6 +61,7 @@ end
 -- with it, and it can't)
 do
   local battle = mkbattle()
+  local vanilla = Data.text._ItemUseBallText00
   Data.text._ItemUseBallText00 = "FAKE-DODGE!\fFAKE-CANTCATCH!"
   battle:throwBall("FIX_BALL")
   runThrowBallAct(battle)
@@ -70,18 +71,27 @@ do
   for _, t in ipairs(texts) do
     T.check(not t:find("\f", 1, true), "no queued message still carries a raw \\f")
   end
-  Data.text._ItemUseBallText00 = nil
+  Data.text._ItemUseBallText00 = vanilla
 end
 
--- vanilla: no catalog entry still falls back to the two English pages,
--- split the same way
 do
   local battle = mkbattle()
   battle:throwBall("FIX_BALL")
   runThrowBallAct(battle)
   local texts = textEntries(battle)
   T.eq(texts[1], "It dodged the\nthrown BALL!", "vanilla page 1")
-  T.eq(texts[2], "This POKéMON\ncan't be caught!", "vanilla page 2")
+  T.eq(texts[2], "This POKéMON\ncan't be caught!{PROMPT}", "vanilla page 2")
+end
+
+do
+  local battle = mkbattle()
+  local vanilla = Data.text._ItemUseBallText00
+  Data.text._ItemUseBallText00 = nil
+  T.check(not pcall(function()
+    battle:throwBall("FIX_BALL")
+    runThrowBallAct(battle)
+  end), "a cache without _ItemUseBallText00 is an error, not built-in pages")
+  Data.text._ItemUseBallText00 = vanilla
 end
 
 T.finish("battle_ball_dodge_romtext")

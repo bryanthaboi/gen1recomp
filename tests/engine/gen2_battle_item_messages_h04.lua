@@ -6,7 +6,6 @@ local BattleState=require('src.ui.gen2.BattleState')
 local Stack=require('src.core.StateStack')
 local Save=require('src.core.gen2.Save')
 local ItemEffects=require('src.core.gen2.ItemEffects')
-local Strings=require('src.core.Strings')
 local GameVersion=require('src.core.GameVersion')
 local checks,failures=0,0
 local function eq(got,want,name)
@@ -25,6 +24,7 @@ for _,version in ipairs({'gold','silver','crystal'}) do
     GameVersion.set(version)
     local data={}
     for _,name in ipairs({'pokemon','moves','items','type_chart'}) do data[name]=assert(loadfile(root..'/'..name..'.lua'))() end
+    data.text=assert(loadfile(root..'/rom_text.lua'))()
     local function make()
       local function new(id)
         return assert(Mon.new(data,id,20,{dvs={attack=15,defense=15,speed=15,special=15}}))
@@ -65,7 +65,7 @@ for _,version in ipairs({'gold','silver','crystal'}) do
       local messages=0
       for _,event in ipairs(captured) do if event.kind=='message' then messages=messages+1 end end
       eq(messages,1,version..' '..id..' source UseItemText only')
-      eq(captured[1].text:find('Used the ',1,true),1,version..' '..id..' item-used line retained')
+      eq(captured[1].text,battle:romLine('ItemUsedText',{PLAYER=battle:playerName(),STRBUF=game.data.items[id].name}),version..' '..id..' item-used line is ItemUsedText')
       eq(screen.message,captured[1].text,version..' '..id..' actual queued first dialog')
       eq(game.save.inventory[id],1,version..' '..id..' actual bag decremented once')
       eq(battle.turn,turn+1,version..' '..id..' actual turn spent once')
@@ -76,7 +76,7 @@ for _,version in ipairs({'gold','silver','crystal'}) do
       eq(battle.turn,turn,version..' '..id..' refusal does not spend turn')
       eq(battle:volatile(battle.player)[field],true,version..' '..id..' refusal retains effect')
       eq(#captured,0,version..' '..id..' refusal emits no success events')
-      eq(screen.message,Strings(ItemEffects.TEXT_NO_EFFECT),version..' '..id..' actual refusal dialog')
+      eq(screen.message,screen:rom(ItemEffects.TEXT_NO_EFFECT),version..' '..id..' actual refusal dialog')
     end
     for id,stat in pairs(Battle.X_ITEM_STATS) do
       local game,battle,screen=make();game.save.inventory[id]=2
@@ -99,7 +99,7 @@ for _,version in ipairs({'gold','silver','crystal'}) do
       for _,event in ipairs(events) do if event.kind=='move' and event.move==move then used=true end end
       eq(used,true,version..' '..move..' distinct move dispatch retained')
       local itemLine=false
-      for _,event in ipairs(events) do if event.kind=='message' and event.text:find('Used the ',1,true) then itemLine=true end end
+      for _,event in ipairs(events) do if event.kind=='message' and event.text:find(' used the',1,true) then itemLine=true end end
       eq(itemLine,false,version..' '..move..' does not dispatch item text')
     end
   end

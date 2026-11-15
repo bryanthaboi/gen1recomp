@@ -16,6 +16,7 @@
 --
 -- Shots land in /tmp/gold-heal-mart.
 local U = require("tests.drivers.util")
+local Typer = require("src.ui.gen2.Typer")
 
 return function(game)
   local out = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/gold-heal-mart"
@@ -33,6 +34,14 @@ return function(game)
     U.wait(2)
     game.input.state[button] = false
     U.wait(frames or 4)
+  end
+
+  local function waitFor(pred, frames)
+    for _ = 1, frames or 600 do
+      if pred() then return true end
+      U.wait(1)
+    end
+    return pred() and true or false
   end
 
   U.wait(45)
@@ -67,11 +76,11 @@ return function(game)
       sawAnim = true
       if ha.lit > sawBalls then
         sawBalls = ha.lit
-        U.shot(game, ("%s/01-ball-%d.png"):format(out, ha.lit))
+        U.still(game, ("%s/01-ball-%d.png"):format(out, ha.lit))
       end
       if ha.phase == "flash" and not sawFlash and ha.rotation ~= 0 then
         sawFlash = true
-        U.shot(game, out .. "/02-flash.png")
+        U.still(game, out .. "/02-flash.png")
       end
       if Music.current() == "Music_HealPokemon" then sawJingle = true end
       U.wait(1)
@@ -124,16 +133,40 @@ return function(game)
     and mart.entries[1].price == 300,
     "POTION at the ROM's own 300 leads the shelf")
 
-  tap("a", 6) -- BUY
+  tap("a", 2) -- BUY
+  ok(waitFor(function() return mart.phase == "buy" end),
+    "BUY opened the shelf")
   U.shot(game, out .. "/06-buy-list.png")
-  tap("a", 6) -- pick POTION -> quantity
-  tap("up", 4) -- x2
+  tap("a", 2) -- pick POTION -> quantity
+  ok(waitFor(function() return mart.phase == "buyQuantity" end),
+    "POTION opened the quantity box")
+  tap("up", 2) -- x2
+  ok(waitFor(function() return mart.qty == 2 end), "the quantity stepped to 2")
   U.shot(game, out .. "/07-quantity.png")
-  tap("a", 6) -- how many -> confirm
+  tap("a", 2) -- how many -> confirm
+  local function onYesNo()
+    local c = mart.confirm
+    return c and c.page >= #c.pages and not Typer.typing(mart)
+  end
+  for _ = 1, 20 do
+    if onYesNo() or not mart.confirm then break end
+    waitFor(function() return not Typer.typing(mart) end)
+    if onYesNo() then break end
+    tap("a", 2)
+  end
+  ok(onYesNo() and mart.confirm.choice == 1,
+    "the final-price line sits on its YES/NO with YES lit")
   U.shot(game, out .. "/08-confirm.png")
-  tap("a", 8) -- YES
-  tap("a", 8) -- "Here you are" page
+  tap("a", 2) -- YES
+  ok(waitFor(function()
+    return mart.message ~= nil and not Typer.typing(mart)
+  end), "the clerk's here-you-are line finished printing")
   U.shot(game, out .. "/09-bought.png")
+  for _ = 1, 20 do
+    if not mart.message then break end
+    waitFor(function() return not Typer.typing(mart) end)
+    tap("a", 2)
+  end
 
   ok((save.inventory and save.inventory.POTION) == 2,
     "two POTIONs landed in the PACK")
@@ -141,10 +174,17 @@ return function(game)
     "the till took 600 (money " .. tostring(save.player.money) .. ")")
 
   -- Leave: B out of the list, then QUIT + the come-again line.
-  tap("b", 6)
-  tap("b", 6)
-  tap("a", 6)
-  tap("a", 10)
+  tap("b", 2)
+  ok(waitFor(function() return mart.phase == "top" end),
+    "B left the shelf for BUY/SELL/QUIT")
+  tap("b", 2)
+  for _ = 1, 20 do
+    if game.stack:top() ~= mart then break end
+    waitFor(function() return not Typer.typing(mart) end)
+    tap("a", 2)
+  end
+  ok(waitFor(function() return game.stack:top() ~= mart end),
+    "the come-again line closed the mart")
   U.shot(game, out .. "/10-outside.png")
 
   print(("[healmart] %d failures"):format(fails))

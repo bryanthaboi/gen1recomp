@@ -38,8 +38,8 @@ love.graphics.newQuad = function(x, y, w, h)
   return q
 end
 love.graphics.draw = function(img, quad, x, y)
-  if type(img) == "table" and img.path then
-    blits[#blits + 1] = { path = img.path, qy = quad and quad.y, x = x, y = y }
+  if type(img) == "table" and img.path and type(quad) == "table" then
+    blits[#blits + 1] = { path = img.path, qy = quad.y, x = x, y = y }
   end
 end
 
@@ -69,8 +69,10 @@ local game = {
       },
     },
     gen2Palettes = { partyMenu = { { { 1, 2, 3 }, { 4, 5, 6 } } } },
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text(),
   },
 }
+require("tests.fixtures.gen2_naming").fill(game.data)
 
 do
   local mon = { species = "CHIKORITA", name = "CHIKORITA", gender = "male" }

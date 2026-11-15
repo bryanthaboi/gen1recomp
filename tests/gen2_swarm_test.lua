@@ -18,6 +18,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 swarm")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local World = require("src.world.gen2.World")
@@ -60,6 +61,7 @@ local ENCOUNTERS = {
       slots = { MORN = slots("YANMA", 14), DAY = slots("YANMA", 14),
         NITE = slots("YANMA", 14) } },
   },
+  swarmWater = {},
 }
 
 local function swarmWorld()

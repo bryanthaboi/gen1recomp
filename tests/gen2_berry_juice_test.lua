@@ -59,8 +59,8 @@ end
 
 -- ---- the battle-exit call site --------------------------------------------
 do
-  -- convertAfterBattle mirrors Pokerus.giveAfterBattle: the flag comes off
-  -- save.engineFlags[21].
+  local EngineFlagsFixture = require("tests.fixture_data.gen2_engine_flags")
+  EngineFlagsFixture.bind("gold")
   local save = { engineFlags = { [21] = true },
     party = { shuckle("BERRY") } }
   eq(BerryJuice.convertAfterBattle(save, nil,
@@ -72,6 +72,17 @@ do
   eq(BerryJuice.convertAfterBattle(save, nil,
     { random = function() return 0 end }), nil,
     "no flag, no ferment")
+
+  EngineFlagsFixture.bind("crystal")
+  local crystal = { engineFlags = { [22] = true }, party = { shuckle("BERRY") } }
+  eq(BerryJuice.convertAfterBattle(crystal, nil,
+    { random = function() return 0 end }), 1,
+    "Crystal's ENGINE_REACHED_GOLDENROD is flag 22")
+  local goldId = { engineFlags = { [21] = true }, party = { shuckle("BERRY") } }
+  eq(BerryJuice.convertAfterBattle(goldId, nil,
+    { random = function() return 0 end }), nil,
+    "and Gold's 21 is not it on Crystal")
+  EngineFlagsFixture.bind("gold")
 
   -- The wire into the battle exit: GivePokerusAndConvertBerries runs the
   -- conversion FIRST, and BattleState:givePokerus is the port's copy of

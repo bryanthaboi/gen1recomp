@@ -9,7 +9,6 @@ local MoveEffects = require("src.battle.MoveEffects")
 local Runtime = require("src.mods.Runtime")
 local StatusRegistry = require("src.battle.StatusRegistry")
 local romText = require("src.core.RomText")
-local Strings = require("src.core.Strings")
 local Timing = require("src.core.Timing")
 
 local EffectRegistry = {}
@@ -46,10 +45,13 @@ local function explodeMissRage(battle, record, target)
   if record and record.explode then battle:handleBuildingRage(target) end
 end
 
--- pokered's <USER>/<TARGET> text macros print "Enemy " before the enemy
--- mon's nickname (home/text.asm PlaceMoveUsersName)
-local function displayName(b)
-  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
+local function romLine(data, label, ...)
+  return romText(data, label, nil, ...)
+end
+
+-- home/text.asm:185
+local function displayName(data, b)
+  return b.isPlayer and b.name or romLine(data, "EnemyText") .. b.name
 end
 EffectRegistry.displayName = displayName
 
@@ -62,7 +64,7 @@ function EffectRegistry.makeCtx(battle, user, target, move, moveInst, isCalled)
     user = user, target = target, move = move, moveInst = moveInst,
     isCalled = isCalled or false,
     field = battle.field,
-    displayName = displayName,
+    displayName = function(b) return displayName(battle.data, b) end,
     say = function(text) battle:sayNext(text) end,
     sayNext = function(text) battle:sayNext(text) end,
     anim = function(animName, isPlayer)
@@ -145,7 +147,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     -- Explosion/Selfdestruct still animate on a miss (HandleIfPlayerMoveMissed)
     if not (record and record.explode) then battle:cancelMoveAnim() end
     missBeat(battle, record)
-    battle:sayNext(romText(battle.data, "_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+    battle:sayNext(romLine(battle.data, "_AttackMissedText", displayName(battle.data, user)))
     -- MoveHitTest's INVULNERABLE branch sets the same wMoveMissed as a
     -- failed accuracy roll (core.asm:5260), and the miss handler still
     -- runs the explode effect ("even if Explosion or Selfdestruct
@@ -173,7 +175,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
       -- Explosion/Selfdestruct still animate on a miss (HandleIfPlayerMoveMissed)
       if not (record and record.explode) then battle:cancelMoveAnim() end
       missBeat(battle, record)
-      battle:sayNext(romText(battle.data, "_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+      battle:sayNext(romLine(battle.data, "_AttackMissedText", displayName(battle.data, user)))
       explodeMissRage(battle, record, target)
       -- Jump Kick crash, Explode self-destruct
       if record and record.onMiss then record.onMiss(ctx, "accuracy") end
@@ -202,7 +204,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     if not counterable or (battle.lastDamage or 0) == 0 then
       battle:cancelMoveAnim()
       missBeat(battle, record)
-      battle:sayNext(romText(battle.data, "_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+      battle:sayNext(romLine(battle.data, "_AttackMissedText", displayName(battle.data, user)))
       return
     end
     dmg = math.min(65535, battle.lastDamage * 2)
@@ -226,7 +228,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     -- type immunity zeros damage and sets wMoveMissed in Gen 1, so no anim
     if not (record and record.explode) then battle:cancelMoveAnim() end
     missBeat(battle, record)
-    battle:sayNext(romText(battle.data, "_DoesntAffectMonText", "It doesn't affect\n%s!", displayName(target)))
+    battle:sayNext(romLine(battle.data, "_DoesntAffectMonText", displayName(battle.data, target)))
     explodeMissRage(battle, record, target)
     if record and record.onMiss then record.onMiss(ctx, "immune") end
     return
@@ -235,7 +237,7 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     -- 0.25x floored the damage to zero: the original registers a miss
     if not (record and record.explode) then battle:cancelMoveAnim() end
     missBeat(battle, record)
-    battle:sayNext(romText(battle.data, "_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+    battle:sayNext(romLine(battle.data, "_AttackMissedText", displayName(battle.data, user)))
     explodeMissRage(battle, record, target)
     if record and record.onMiss then record.onMiss(ctx, "floored") end
     return
@@ -325,11 +327,11 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     -- PrintCriticalOHKOText zeroes wCriticalHitOrOHKO after printing
     -- (core.asm:3809-3811); DisplayEffectiveness re-reads its own flag (#1720)
     if critPending then
-      battle:sayNext(romText(battle.data, "_CriticalHitText", "Critical hit!"))
+      battle:sayNext(romLine(battle.data, "_CriticalHitText"))
       critPending = false
     end
     if ohkoPending then
-      battle:sayNext(romText(battle.data, "_OHKOText", "One-hit KO!"))
+      battle:sayNext(romLine(battle.data, "_OHKOText"))
       ohkoPending = false
     end
     -- PrintCriticalOHKOText closes with `ld c, 20 / jp DelayFrames` at its
@@ -341,9 +343,9 @@ function EffectRegistry.runDamaging(battle, ctx, record)
     battle:waitNext(Timing.CRIT_OHKO_TEXT)
     -- engine/battle/display_effectiveness.asm:1
     if info.typeMult > 10 then
-      battle:sayNext(romText(battle.data, "_SuperEffectiveText", "It's super\neffective!"))
+      battle:sayNext(romLine(battle.data, "_SuperEffectiveText"))
     elseif info.typeMult < 10 then
-      battle:sayNext(romText(battle.data, "_NotVeryEffectiveText", "It's not very\neffective..."))
+      battle:sayNext(romLine(battle.data, "_NotVeryEffectiveText"))
     end
     if Runtime.wants("battle.damage_dealt") then
       Runtime.emit("battle.damage_dealt", {
@@ -364,9 +366,9 @@ function EffectRegistry.runDamaging(battle, ctx, record)
   if hits > 1 and target.mon.hp > 0 then
     -- player: _MultiHitText; enemy: _HitXTimesText (always plural)
     if user.isPlayer then
-      battle:sayNext(romText(battle.data, "_MultiHitText", "Hit the enemy\n%d times!", hits))
+      battle:sayNext(romLine(battle.data, "_MultiHitText", hits))
     else
-      battle:sayNext(romText(battle.data, "_HitXTimesText", "Hit %d times!", hits))
+      battle:sayNext(romLine(battle.data, "_HitXTimesText", hits))
     end
   end
 

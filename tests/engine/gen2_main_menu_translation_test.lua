@@ -1,11 +1,5 @@
--- Gold's title/main menu (src/ui/gen2/MainMenu.lua) drew every row label
--- or NO SAVE FILE) as bare literals, invisible to a translation mod's
--- `strings` registry -- unlike the Gen 1 port's own title menu
--- (src/ui/TitleState.lua/StartMenu.lua), which already routes the same rows
--- through Strings(). Drives MainMenu:drawPanel()/:drawSavePanel() with a
--- mod-loaded Strings catalog and checks the translated text reaches
--- Font.draw, same technique as
--- tests/engine/gen2_naming_screen_translation_test.lua.
+-- engine/menus/main_menu.asm:67 MainMenu.Strings,
+-- engine/menus/intro_menu.asm:409 Continue_LoadMenuHeader
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
@@ -26,6 +20,8 @@ package.loaded["src.render.Font"] = {
 
 local MainMenu = require("src.ui.gen2.MainMenu")
 local Strings = require("src.core.Strings")
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
+local CART = { text = Fixture.text() }
 
 local function drawnAt(x, y)
   for _, d in ipairs(drawn) do
@@ -46,7 +42,7 @@ local CLOCK = { hour = 13, minute = 5, weekday = 1 }
 
 -- ---------------------------------------------- vanilla: no mod catalog
 do
-  local menu = MainMenu.new({}, { hasSave = true, save = SAVE, clock = CLOCK })
+  local menu = MainMenu.new({ data = CART }, { hasSave = true, save = SAVE, clock = CLOCK })
   drawn = {}
   menu:drawPanel()
   T.eq(drawnAt(FIRST_ITEM_X, FIRST_ITEM_Y), "CONTINUE",
@@ -59,31 +55,33 @@ do
   T.eq(drawnAt(PANEL_PLAYER_X, PANEL_PLAYER_Y), "PLAYER GOLD",
     "the CONTINUE save-summary panel too")
 
-  local noSaveMenu = MainMenu.new({}, { hasSave = false, save = false, clock = CLOCK })
+  local noSaveMenu = MainMenu.new({ data = CART }, { hasSave = false, save = false,
+    clock = CLOCK })
   drawn = {}
   noSaveMenu:drawSavePanel()
   T.eq(drawnAt(PANEL_PLAYER_X, PANEL_PLAYER_Y), "NO SAVE FILE",
     "and its no-summary fallback")
 end
 
--- ------------------------------------------------- a translation mod's turn
 do
+  local localized = { text = Fixture.text({
+    ["MainMenu.Strings#1"] = "CONTINUAR",
+    ["MainMenu.Strings#2"] = "NUEVA PARTIDA",
+    ["MainMenu.Strings#3"] = "OPCIÓN",
+    ["GetTimeOfDayString.day_string"] = "DIA_ES",
+    ["Continue_LoadMenuHeader.MenuData_NoDex#1"] = "JUGADOR {PLAYER}",
+    ["Continue_LoadMenuHeader.MenuData_Dex#2"] = "MEDALLAS",
+    ["Continue_LoadMenuHeader.MenuData_Dex#3"] = "POKéDEX_ES",
+    ["Continue_LoadMenuHeader.MenuData_Dex#4"] = "TIEMPO",
+  }) }
   Strings.load({
     strings = {
-      ["CONTINUE"] = "CONTINUAR",
-      ["NEW GAME"] = "NUEVA PARTIDA",
-      ["OPTION"] = "OPCIÓN",
       ["EXIT GAME"] = "SALIR",
-      ["DAY"] = "DIA_ES",
-      ["PLAYER %s"] = "JUGADOR %s",
-      ["BADGES"] = "MEDALLAS",
-      ["POKéDEX"] = "POKéDEX_ES",
-      ["TIME"] = "TIEMPO",
       ["NO SAVE FILE"] = "SIN PARTIDA",
     },
   })
 
-  local menu = MainMenu.new({}, { hasSave = true, save = SAVE, clock = CLOCK })
+  local menu = MainMenu.new({ data = localized }, { hasSave = true, save = SAVE, clock = CLOCK })
   drawn = {}
   menu:drawPanel()
   T.eq(drawnAt(FIRST_ITEM_X, FIRST_ITEM_Y), "CONTINUAR",
@@ -99,7 +97,9 @@ do
   T.eq(drawnAt(5 * 8, 14 * 8), "POKéDEX_ES", "and POKéDEX")
   T.eq(drawnAt(5 * 8, 16 * 8), "TIEMPO", "and TIME")
 
-  local noSaveMenu = MainMenu.new({}, { hasSave = false, save = false, clock = CLOCK })
+  local noSaveMenu = MainMenu.new({ data = localized }, { hasSave = false, save = false,
+    clock = CLOCK })
+  T.eq(noSaveMenu.list.items[3].label, "SALIR", "the port's EXIT GAME row stays a catalog string")
   drawn = {}
   noSaveMenu:drawSavePanel()
   T.eq(drawnAt(PANEL_PLAYER_X, PANEL_PLAYER_Y), "SIN PARTIDA",
@@ -111,6 +111,10 @@ do
   -- every check below it in this file.
   Strings.load({})
   T.check(not Strings.active(), "the catalog is unloaded for the checks after this one")
+  T.raises(function()
+    MainMenu.new({ data = { text = Fixture.without("MainMenu.Strings#1") } },
+      { hasSave = true, save = SAVE, clock = CLOCK })
+  end, "MainMenu.Strings#1", "a cache without the CONTINUE label is an error")
 end
 
 T.finish("gen2_main_menu_translation_test")

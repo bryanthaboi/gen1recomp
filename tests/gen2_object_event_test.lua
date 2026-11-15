@@ -61,16 +61,14 @@ end
 
 -- ---- the extractor half ----------------------------------------------------
 -- Read as source: the walk itself needs the ROM, so what is checked here is
--- that the ROM0 arm is still wired, both as a seed from the symbol and as the
--- normalisation an object_event pointer goes through.
+-- that the ROM0 arm is still wired as the normalisation an object_event
+-- pointer goes through.
 do
   local f = assert(io.open("src/import/RomExtractorGen2.lua", "r"))
   local src = f:read("*a")
   f:close()
   check(src:find("local function enqueueHome(address)", 1, true) ~= nil,
     "the extractor has a ROM0 queue arm")
-  check(src:find("self.symbols.ObjectEvent", 1, true) ~= nil,
-    "and seeds ObjectEvent from the symbol table")
   check(src:find("obj.scriptKey = enqueueHome(obj.script)", 1, true) ~= nil,
     "an object_event pointer goes through it before its map bank")
   -- enqueue proper must keep refusing bank 0: a farscall or a map pointer that

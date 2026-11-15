@@ -85,11 +85,14 @@ end
 
 -- DIG's own announcement. Same effect as FLY, different line.
 do
-  local src = io.open("src/battle/gen2/Battle.lua"):read("*a")
-  check(src:find('moveId == "DIG"', 1, true) ~= nil,
-        "DIG's charge text is chosen off the move, not the effect")
-  check(src:find("dug a hole", 1, true) ~= nil,
-        "and it is the burrow line")
+  local Effects = require("src.battle.gen2.Effects")
+  local data = { text = require("tests.fixture_data.gen2_rom_text_s7_b").text() }
+  eq(Effects.chargeText(data, "EFFECT_FLY", "DIG", "DIGLETT"),
+     "DIGLETT\ndug a hole!",
+     "DIG's charge text is chosen off the move, not the effect")
+  eq(Effects.chargeText(data, "EFFECT_FLY", "FLY", "PIDGEY"),
+     "PIDGEY\nflew up high!",
+     "and FLY keeps the effect's own _BattleFlewText")
 end
 
 -- ---------------------------------------------------------------------------

@@ -522,7 +522,7 @@ local function draw_object_icon(id, x, y)
       local slot = NT.slotFor(ts, tile + Decor.PRIMARY)
       -- pokeemerald/src/data/decoration/tilemaps.h:112
       local img = Decor.layerType(tile) == 1 and ts.midImage or ts.overImage
-      local q = img and NT.quad(ts, slot)
+      local q = img and slot and NT.quad(ts, slot)
       if q then love.graphics.draw(img, q, x0 + i * 16, y0 + j * 16) end
     end
   end

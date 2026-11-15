@@ -73,18 +73,20 @@ do
 
   -- the four boot cards still run their moment with nobody listening
   CopyrightSplash.new(fakeGame(), {}):enter()
-  GameFreakPresents.new(fakeGame(), {}):enter()
+  GameFreakPresents.new(fakeGame(),
+    { oakSpeech = require("tests.fixtures.gen2_oak_speech").data() }):enter()
   local movie = GoldSilverIntro.new(fakeGame(), {})
   movie:enter()
   movie:finish()
-  TitleState.new(fakeGame(), {}):enter()
+  TitleState.new(fakeGame(), { title = require("tests.fixture_data.gen2_title_s7_c").gold }):enter()
   T.check(true, "the boot cinema runs unsubscribed")
 end
 
 -- ------- 2. the Oak speech step list
 
 do
-  local speech = OakSpeech.new(fakeGame(), {})
+  local speech = OakSpeech.new(fakeGame(),
+    { data = require("tests.fixtures.gen2_oak_speech").data() })
   local steps = OakSpeech.defaultSteps(speech)
   T.eq(#steps, 9, "Gold's vanilla speech has nine beats")
   T.eq(steps[1].id, "init_clock",
@@ -110,7 +112,8 @@ end
 
 do
   Runtime.events, Runtime.hooks = Events.new(), Hooks.new()
-  local speech = OakSpeech.new(fakeGame(), {})
+  local speech = OakSpeech.new(fakeGame(),
+    { data = require("tests.fixtures.gen2_oak_speech").data() })
 
   Runtime.hooks:wrap("intro.oak_speech.build", function(nextFn, steps, sp)
     steps = nextFn(steps, sp)
@@ -137,7 +140,8 @@ end
 
 do
   Runtime.events, Runtime.hooks = Events.new(), Hooks.new()
-  local speech = OakSpeech.new(fakeGame(), {})
+  local speech = OakSpeech.new(fakeGame(),
+    { data = require("tests.fixtures.gen2_oak_speech").data() })
 
   -- Replace the beats with two that need no stack, so the lifecycle can be
   -- driven headlessly: `fn` is the escape hatch a build wrapper gets.
@@ -207,7 +211,8 @@ do
   T.check(seen["intro.boot.copyright"].screen ~= nil,
     "with the screen in the payload")
 
-  GameFreakPresents.new(game, {}):enter()
+  GameFreakPresents.new(game,
+    { oakSpeech = require("tests.fixtures.gen2_oak_speech").data() }):enter()
   T.check(seen["intro.boot.gamefreak"] ~= nil,
     "the GAME FREAK splash announces itself")
 
@@ -228,7 +233,7 @@ do
   T.eq(seen["intro.boot.movie_ended"].skipped, false,
     "and reports a movie that was watched to the end")
 
-  TitleState.new(game, {}):enter()
+  TitleState.new(game, { title = require("tests.fixture_data.gen2_title_s7_c").gold }):enter()
   T.check(seen["intro.boot.title"] ~= nil, "the title screen announces itself")
 
   Runtime.events:removeOwner("fixture")

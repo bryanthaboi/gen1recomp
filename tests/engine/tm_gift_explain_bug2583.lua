@@ -49,7 +49,8 @@ local function newGame(item, received, explain)
   boxes = {}
   return {
     data = {
-      text = { [received] = "RECEIVED", [explain] = "EXPLAIN" },
+      text = setmetatable({ [received] = "RECEIVED", [explain] = "EXPLAIN" },
+        { __index = function(_, k) return k end }),
       items = { [item] = { name = "TMXX" } },
     },
     save = { flags = {}, inventory = {}, player = { name = "RED" } },

@@ -334,12 +334,14 @@ local function engineBuilt(v)
   NpcTrade.markDone(save, 1)
   NpcTrade.markDone(save, 4)
   local deco = Decorations.state(save)
+  Decorations.useRegistry({ text = require("tests.fixture_data.gen2_rom_text_s7_g").text() })
   Decorations.apply(deco, 4)
   Decorations.apply(deco, 8)
   Decorations.apply(deco, 15)
   Decorations.apply(deco, 30, "left")
   Decorations.clearOtherSide(deco, 30, "left")
   Decorations.apply(deco, 26)
+  Decorations.useRegistry(nil)
   check(World.registerItem(fakeWorld(save), "BICYCLE"), v .. " World:registerItem accepts the BICYCLE")
   local w = fakeWorld(save)
   World.setBlackoutMap(w, 3, 1)
@@ -366,7 +368,11 @@ local function engineBuilt(v)
   save.scriptMem = vm:serializeMem()
   local oldPlay, oldStop = Music.play, Music.stop
   Music.play, Music.stop = function() end, function() end
-  local gear = Pokegear.new({ save = save, data = {}, input = { wasPressed = function() return false end } },
+  local gear = Pokegear.new({ save = save,
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
+      gen2Landmarks = require("tests.fixture_data.gen2_landmarks_s7_d").table(
+        crystal and "crystal" or "gold") },
+    input = { wasPressed = function() return false end } },
     { clock = { hour = 14, minute = 0, weekday = 1 } })
   gear.tuningKnob = 28
   gear:tuneRadio()
@@ -396,6 +402,7 @@ local function engineBuilt(v)
 end
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local save = engineBuilt(v)
   local out = export(v, save, nil)
   local back = out and import(v, out)

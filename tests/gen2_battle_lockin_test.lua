@@ -225,7 +225,7 @@ do
     "the seeding arm reaches AnimateCurrentMove")
   battle:useMove(player, wild, "LEECH_SEED")
   local events = battle:takeEvents()
-  check(findText(events, "Enemy MACHOP evaded the attack!"), "EvadedText")
+  check(findText(events, battle:romText("EvadedText", player, wild)), "EvadedText")
   eq(moveEvent(events).missed, true, "and the repeat plays nothing")
 end
 
@@ -238,8 +238,8 @@ do
   battle.stages.enemy.attack = -Effects.MAX_STAGE
   battle:useMove(player, wild, "GROWL")
   local events = battle:takeEvents()
-  check(findText(events, "Enemy MACHOP's ATTACK won't drop anymore!"),
-    "the refusal line")
+  check(findText(events, battle:romText("WontDropAnymoreText", player, wild,
+    battle.data.text["StatNames#1"])), "the refusal line")
   eq(moveEvent(events).missed, true, "a capped drop plays no animation")
 end
 
@@ -355,7 +355,8 @@ do
   -- 99 against ROLLOUT's 90 accuracy is a miss on every roll of the turn.
   battle.random = rolls({}, 255)
   battle:useMove(player, wild, "ROLLOUT")
-  check(findText(battle:takeEvents(), "MACHOP's attack missed!"), "a miss")
+  check(findText(battle:takeEvents(), battle:romText("AttackMissedText", player)),
+    "a miss")
   eq(battle:forcedMove(player), nil, "and the miss releases the lock")
 end
 

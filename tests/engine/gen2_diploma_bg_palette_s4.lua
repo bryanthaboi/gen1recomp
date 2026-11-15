@@ -15,11 +15,16 @@ local SET0 = { { 222, 255, 222 }, { 173, 173, 173 }, { 107, 107, 107 }, { 0, 0, 
 local PREDEF = { { 255, 255, 255 }, { 247, 181, 140 }, { 132, 115, 156 }, { 0, 0, 0 } }
 local gfx = { palettes = { SET0 }, bgPalette = PREDEF }
 
-local naming = NamingScreen.new({ data = { gen2Diploma = gfx } }, { type = "player" })
+local S7C_TEXT = require("tests.fixture_data.gen2_rom_text_s7_c").text()
+local naming = NamingScreen.new({ data = require("tests.fixtures.gen2_naming").fill({ gen2Diploma = gfx,
+  text = S7C_TEXT }) },
+  { type = "player" })
 eq(naming.palette, PREDEF, "naming screen BG uses PREDEFPAL_DIPLOMA, not DiplomaPalettes set 0")
-local box = NamingScreen.new({ data = { gen2Diploma = gfx } }, { type = "box" })
+local box = NamingScreen.new({ data = require("tests.fixtures.gen2_naming").fill({ gen2Diploma = gfx,
+  text = S7C_TEXT }) },
+  { type = "box" })
 eq(box.palette, PREDEF, "box naming path uses the same layout")
-local diploma = Diploma.new(nil, { playerName = "GOLD", gfx = gfx })
+local diploma = Diploma.new({ data = { text = S7C_TEXT } }, { playerName = "GOLD", gfx = gfx })
 eq(diploma:palette(), PREDEF, "diploma page uses PREDEFPAL_DIPLOMA")
 
 for _, version in ipairs({ "gold", "silver", "crystal" }) do

@@ -11,7 +11,7 @@ local ItemEffects = require("src.inventory.ItemEffects")
 local data = {
   items = { POKE_FLUTE = { id = "POKE_FLUTE", index = 49, name = "POKé FLUTE" },
             POTION = { id = "POTION", index = 1, name = "POTION", price = 300 } },
-  text = {},
+  text = dofile("tests/fixture_data/text.lua"),
 }
 
 local function newSave(status)

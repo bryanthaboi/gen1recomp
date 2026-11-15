@@ -77,6 +77,71 @@ for id, row in pairs(BASE) do
 end
 for id, pp in pairs(MOVE_PP) do DATA.moves[id] = { id = id, pp = pp } end
 
+-- pokecrystal/data/events/odd_eggs.asm:14-33 run through the macro at :5:
+-- cumulative percent * $ffff / 100.
+local ODD_EGG_PROBABILITIES = { 5242, 5898, 16383, 18349, 28835, 30801, 39976,
+  41287, 47840, 49151, 57015, 58326, 64879, 65535 }
+
+-- pokecrystal/data/events/odd_eggs.asm:37 OddEggs, row by row.
+local ODD_EGG_ROWS = {
+  { "PICHU", 8, { 0, 0, 0, 0 }, { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
+    { 17, 9, 6, 11, 8, 8 } },
+  { "PICHU", 1, { 2, 10, 10, 10 }, { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
+    { 17, 9, 7, 12, 9, 9 } },
+  { "CLEFFA", 16, { 0, 0, 0, 0 }, { "POUND", "CHARM", "DIZZY_PUNCH" },
+    { 20, 7, 7, 6, 9, 10 } },
+  { "CLEFFA", 3, { 2, 10, 10, 10 }, { "POUND", "CHARM", "DIZZY_PUNCH" },
+    { 20, 7, 8, 7, 10, 11 } },
+  { "IGGLYBUFF", 16, { 0, 0, 0, 0 }, { "SING", "CHARM", "DIZZY_PUNCH" },
+    { 24, 8, 6, 6, 9, 7 } },
+  { "IGGLYBUFF", 3, { 2, 10, 10, 10 }, { "SING", "CHARM", "DIZZY_PUNCH" },
+    { 24, 8, 7, 7, 10, 8 } },
+  { "SMOOCHUM", 14, { 0, 0, 0, 0 }, { "POUND", "LICK", "DIZZY_PUNCH" },
+    { 19, 8, 6, 11, 13, 11 } },
+  { "SMOOCHUM", 2, { 2, 10, 10, 10 }, { "POUND", "LICK", "DIZZY_PUNCH" },
+    { 19, 8, 7, 12, 14, 12 } },
+  { "MAGBY", 10, { 0, 0, 0, 0 }, { "EMBER", "DIZZY_PUNCH" },
+    { 19, 12, 8, 13, 12, 10 } },
+  { "MAGBY", 2, { 2, 10, 10, 10 }, { "EMBER", "DIZZY_PUNCH" },
+    { 19, 12, 9, 14, 13, 11 } },
+  { "ELEKID", 12, { 0, 0, 0, 0 }, { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
+    { 19, 11, 8, 14, 11, 10 } },
+  { "ELEKID", 2, { 2, 10, 10, 10 }, { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
+    { 19, 11, 9, 15, 12, 11 } },
+  { "TYROGUE", 10, { 0, 0, 0, 0 }, { "TACKLE", "DIZZY_PUNCH" },
+    { 18, 8, 8, 8, 8, 8 } },
+  { "TYROGUE", 1, { 2, 10, 10, 10 }, { "TACKLE", "DIZZY_PUNCH" },
+    { 18, 8, 9, 9, 9, 9 } },
+}
+
+local function oddEggTable()
+  local rows = {}
+  for index, row in ipairs(ODD_EGG_ROWS) do
+    local pp = {}
+    for slot, id in ipairs(row[4]) do pp[slot] = MOVE_PP[id] end
+    rows[index] = {
+      probability = ODD_EGG_PROBABILITIES[index], species = row[1],
+      otId = row[2], moves = row[4], pp = pp, experience = 125, level = 5,
+      eggSteps = 20, hp = 0, nickname = "EGG",
+      dvs = { attack = row[3][1], defense = row[3][2], speed = row[3][3],
+        special = row[3][4] },
+      stats = { hp = row[5][1], attack = row[5][2], defense = row[5][3],
+        speed = row[5][4], specialAttack = row[5][5],
+        specialDefense = row[5][6] },
+    }
+  end
+  return { ot = "ODD", rows = rows }
+end
+
+-- pokecrystal/engine/events/dratini.asm:72 .Moveset0, :79 .Moveset1.
+DATA.gen2EventTables = {
+  oddEggs = oddEggTable(),
+  dratiniMovesets = {
+    { "WRAP", "THUNDER_WAVE", "TWISTER", "EXTREMESPEED" },
+    { "WRAP", "LEER", "THUNDER_WAVE", "TWISTER" },
+  },
+}
+
 local ITEM_INDEX = { EGG_TICKET = 129, GS_BALL = 115 }
 
 -- The World hook table a handler sees, with only the rows these five need.
@@ -219,43 +284,6 @@ end
 -- ---- GiveOddEgg -----------------------------------------------------------
 -- pokecrystal/engine/events/odd_egg.asm:1
 
--- pokecrystal/data/events/odd_eggs.asm:14-33 run through the macro at :5:
--- cumulative percent * $ffff / 100.
-local ODD_EGG_PROBABILITIES = { 5242, 5898, 16383, 18349, 28835, 30801, 39976,
-  41287, 47840, 49151, 57015, 58326, 64879, 65535 }
-
--- pokecrystal/data/events/odd_eggs.asm:37 OddEggs, row by row.
-local ODD_EGG_ROWS = {
-  { "PICHU", 2048, { 0, 0, 0, 0 }, { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
-    { 17, 9, 6, 11, 8, 8 } },
-  { "PICHU", 256, { 2, 10, 10, 10 }, { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
-    { 17, 9, 7, 12, 9, 9 } },
-  { "CLEFFA", 4096, { 0, 0, 0, 0 }, { "POUND", "CHARM", "DIZZY_PUNCH" },
-    { 20, 7, 7, 6, 9, 10 } },
-  { "CLEFFA", 768, { 2, 10, 10, 10 }, { "POUND", "CHARM", "DIZZY_PUNCH" },
-    { 20, 7, 8, 7, 10, 11 } },
-  { "IGGLYBUFF", 4096, { 0, 0, 0, 0 }, { "SING", "CHARM", "DIZZY_PUNCH" },
-    { 24, 8, 6, 6, 9, 7 } },
-  { "IGGLYBUFF", 768, { 2, 10, 10, 10 }, { "SING", "CHARM", "DIZZY_PUNCH" },
-    { 24, 8, 7, 7, 10, 8 } },
-  { "SMOOCHUM", 3584, { 0, 0, 0, 0 }, { "POUND", "LICK", "DIZZY_PUNCH" },
-    { 19, 8, 6, 11, 13, 11 } },
-  { "SMOOCHUM", 512, { 2, 10, 10, 10 }, { "POUND", "LICK", "DIZZY_PUNCH" },
-    { 19, 8, 7, 12, 14, 12 } },
-  { "MAGBY", 2560, { 0, 0, 0, 0 }, { "EMBER", "DIZZY_PUNCH" },
-    { 19, 12, 8, 13, 12, 10 } },
-  { "MAGBY", 512, { 2, 10, 10, 10 }, { "EMBER", "DIZZY_PUNCH" },
-    { 19, 12, 9, 14, 13, 11 } },
-  { "ELEKID", 3072, { 0, 0, 0, 0 }, { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
-    { 19, 11, 8, 14, 11, 10 } },
-  { "ELEKID", 512, { 2, 10, 10, 10 }, { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
-    { 19, 11, 9, 15, 12, 11 } },
-  { "TYROGUE", 2560, { 0, 0, 0, 0 }, { "TACKLE", "DIZZY_PUNCH" },
-    { 18, 8, 8, 8, 8, 8 } },
-  { "TYROGUE", 256, { 2, 10, 10, 10 }, { "TACKLE", "DIZZY_PUNCH" },
-    { 18, 8, 9, 9, 9, 9 } },
-}
-
 -- Specials.random(n) is 1..n, so `roll` is the Random WORD the routine reads.
 local function pinRoll(roll)
   Specials.random = function(n)
@@ -324,11 +352,11 @@ do
   pinRoll(ODD_EGG_PROBABILITIES[1])
   local edge = newSave()
   H.GiveOddEgg(makeVm({ save = edge }))
-  eq(edge.party[1].otId, 2048, "a roll EQUAL to the probability stays in row 1")
+  eq(edge.party[1].otId, 8, "a roll EQUAL to the probability stays in row 1")
   pinRoll(ODD_EGG_PROBABILITIES[1] + 1)
   local over = newSave()
   H.GiveOddEgg(makeVm({ save = over }))
-  eq(over.party[1].otId, 256, "and one past it falls into row 2")
+  eq(over.party[1].otId, 1, "and one past it falls into row 2")
 
   -- The last entry is $ffff, which is the loop's own break: every roll above
   -- the 99% mark lands there.
@@ -336,7 +364,7 @@ do
   local last = newSave()
   H.GiveOddEgg(makeVm({ save = last }))
   eq(last.party[1].species, "TYROGUE", "the $ffff row takes the top of the range")
-  eq(last.party[1].otId, 256, "and it is the shiny Tyrogue")
+  eq(last.party[1].otId, 1, "and it is the shiny Tyrogue")
 end
 
 do
@@ -349,7 +377,7 @@ do
   eq(egg.nickname, "EGG", "wOddEggName is its nickname")
   eq(egg.ot, "ODD", "and wTempOddEggNickname is its OT name")
   eq(egg.otName, "ODD", "on both OT fields")
-  eq(egg.otId, 2048, "the OT ID is the struct's, not the player's")
+  eq(egg.otId, 8, "the OT ID is the struct's, not the player's")
   eq(egg.eggSteps, 20, "20 step cycles to hatch")
   eq(egg.hp, 0, "an egg is carried at zero HP")
   eq(egg.level, 5, "at level 5")
@@ -383,6 +411,19 @@ do
   H.GiveOddEgg(vmFull)
   eq(#full.party, 6, "a full party gets no Odd Egg")
   eq(#vmFull.tossed, 0, "and keeps its EGG TICKET")
+end
+
+do
+  local saved = DATA.gen2EventTables
+  DATA.gen2EventTables = {}
+  pinRoll(0)
+  local ok, err = pcall(H.GiveOddEgg, makeVm({ save = newSave() }))
+  check(not ok and tostring(err):find("oddEggs", 1, true) ~= nil,
+    "an events.lua without oddEggs is an error, not a silent no-op")
+  local okD, errD = pcall(H.GiveDratini, makeVm({ save = newSave() }))
+  check(not okD and tostring(errD):find("dratiniMovesets", 1, true) ~= nil,
+    "and so is one without dratiniMovesets")
+  DATA.gen2EventTables = saved
 end
 
 Specials.random = priorRandom
@@ -481,7 +522,7 @@ end
 local cache = os.getenv("CRYSTAL_CACHE")
 if not cache then
   local home = os.getenv("HOME") or ""
-  for _, dir in ipairs({ "crystal-dev", "lead-card" }) do
+  for _, dir in ipairs({ "g1r-crystal", "crystal-dev", "lead-card" }) do
     local candidate = home .. "/Library/Application Support/LOVE/" .. dir
       .. "/crystal"
     local probe = io.open(candidate .. "/data/generated/constants.lua", "r")
@@ -551,5 +592,46 @@ for _, row in ipairs((encounters and encounters.roamMons) or {}) do
 end
 eq(table.concat(roamNames, ","), "RAIKOU,ENTEI",
   "Raikou and Entei, with Suicune off the roam list")
+
+-- pokecrystal/data/events/odd_eggs.asm:37, engine/events/dratini.asm:72,79
+do
+  local events = loadLua("data/generated/events.lua")
+  local odd = events and events.oddEggs
+  check(odd ~= nil, "events.lua carries oddEggs")
+  if odd then
+    eq(#odd.rows, 14, "fourteen OddEggs rows")
+    eq(odd.rows[#odd.rows].probability, 0xffff, "the last probability is $ffff")
+    eq(odd.ot, "ODD", "_GiveOddEgg.Odd is the OT name")
+    local wrong = {}
+    local previous = 0
+    for index, row in ipairs(odd.rows) do
+      if row.nickname ~= "EGG" then wrong[#wrong + 1] = index .. " nickname" end
+      local percent = math.floor((row.probability - previous) * 100 / 0xffff + 0.5)
+      if row.otId ~= percent then
+        wrong[#wrong + 1] = index .. " otId " .. tostring(row.otId)
+      end
+      previous = row.probability
+    end
+    eq(table.concat(wrong, " | "), "",
+      "every row is named EGG and carries its own percent as MON_ID")
+
+    local saved = DATA.gen2EventTables
+    DATA.gen2EventTables = events
+    pinRoll(0)
+    local record = newSave()
+    H.GiveOddEgg(makeVm({ save = record }))
+    eq(record.party[1] and record.party[1].species, "PICHU",
+      "roll 0 gives the cache's row 1")
+    eq(record.party[1] and record.party[1].otId, 8,
+      "with MON_ID 8, the big-endian read of `dw 02048`")
+    local dratiniSave = newSave()
+    dratiniSave.party = { dratini("ONLY") }
+    H.GiveDratini(makeVm({ save = dratiniSave, scriptVar = 0 }))
+    eq(moveIds(dratiniSave.party[1]), "WRAP,THUNDER_WAVE,TWISTER,EXTREMESPEED",
+      "the cache's .Moveset0")
+    Specials.random = priorRandom
+    DATA.gen2EventTables = saved
+  end
+end
 
 S.finish()

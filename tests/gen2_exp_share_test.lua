@@ -102,6 +102,12 @@ end
 -- The wild PIDGEY: baseExp 55, level 14 -> floor(55 * 14 / 7) = 110.
 local BASE = 110
 
+local function expLine(label, amount)
+  local strip = require("src.render.TextBox").strip
+  return (strip(DATA.text.Text_Gained):gsub("{STRBUF}", "MACHOP"))
+    .. (strip(DATA.text[label]):gsub("{NUM}", tostring(amount)))
+end
+
 -- ---- the native baseline --------------------------------------------------
 do
   local gained, events = award({ { otId = PLAYER_ID, participant = true } })
@@ -125,7 +131,7 @@ do
   for _, event in ipairs(events) do
     if event.kind == "experience" then line = event.text end
   end
-  eq(line, "MACHOP gained a boosted 165 EXP. Points!",
+  eq(line, expLine("BoostedExpPointsText", 165),
     "with BoostedExpPointsText's own wording")
 end
 
@@ -293,7 +299,7 @@ do
   end)
   eq(#expLines(quietEvents), 1,
     "an explicit nil third argument pays the mon silently")
-  eq(expLines(quietEvents)[1], "MACHOP gained 110 EXP. Points!",
+  eq(expLines(quietEvents)[1], expLine("ExpPointsText", 110),
     "and the announced participant keeps its own line")
   check(quietGained[2] > 0, "the silent mon is still paid the same exp")
   eq(quietGained[1], gained[1], "and the announced mon's exp is untouched")

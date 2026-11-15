@@ -33,13 +33,26 @@ for _, version in ipairs(GameVersion.ORDER) do
   for _, name in ipairs(UnifiedCallbacks.nativeVersions("hooks", "render.letterbox") or {}) do
     T.eq(GameVersion.generation(name) >= 1, true, "nativeVersions lists real versions")
   end
-  local ok = UnifiedCallbacks.supports("hooks", "battle.style", generation, version)
-  T.eq(ok, generation == 1, version .. " battle.style support follows its Gen 1 only site")
-  T.eq(UnifiedCallbacks.supports("hooks", "catch.nickname", generation, version), true,
-    version .. " catch.nickname has a call site")
+  for _, name in ipairs({ "battle.style", "catch.nickname", "catch.party_full" }) do
+    T.eq(UnifiedCallbacks.supports("hooks", name, generation, version), true,
+      version .. " " .. name .. " has a call site")
+  end
+  T.eq(UnifiedCallbacks.supports("events", "pokemon.before_give", generation, version), true,
+    version .. " pokemon.before_give has a call site")
 end
 for gen = 1, 3 do
-  T.eq(found.hooks["catch.nickname"] and found.hooks["catch.nickname"][gen], true,
-    "catch.nickname is called in Gen " .. gen)
+  for _, name in ipairs({ "battle.style", "catch.nickname", "catch.party_full" }) do
+    T.eq(found.hooks[name] and found.hooks[name][gen], true, name .. " is called in Gen " .. gen)
+  end
+  T.eq(found.events["pokemon.before_give"] and found.events["pokemon.before_give"][gen], true,
+    "pokemon.before_give is emitted in Gen " .. gen)
+end
+for _, name in ipairs({ "link.connected", "link.ended", "trade.completed" }) do
+  for _, version in ipairs(GameVersion.ORDER) do
+    local generation = GameVersion.generation(version)
+    T.eq(UnifiedCallbacks.supports("events", name, generation, version) == true, generation ~= 2,
+      version .. " " .. name .. " support follows its Gen 1 and Gen 3 sites")
+  end
+  T.eq(found.events[name] and found.events[name][2], nil, name .. " has no Gen 2 call site")
 end
 T.finish("callback catalog sites")

@@ -39,7 +39,11 @@ local POKEMON = {
   },
 }
 
-local DATA = { pokemon = POKEMON, moves = MOVES, items = {} }
+local DATA = { pokemon = POKEMON, moves = MOVES, items = {},
+  text = require("tests.fixture_data.gen2_rom_text_s7_g").text() }
+for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_e")) do
+  if DATA.text[label] == nil then DATA.text[label] = text end
+end
 
 local function broken()
   return {
@@ -222,6 +226,8 @@ do
       GEODUDE = { id = "GEODUDE", name = "GEODUDE", types = { "ROCK", "GROUND" } },
     },
     items = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_a").text(
+      require("tests.fixture_data.gen2_rom_text_s7_g").text()),
   }
   local function transformed(transformPp)
     local ditto = { species = "DITTO", hp = 30, maxHp = 30, stats = {},

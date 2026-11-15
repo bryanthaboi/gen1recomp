@@ -95,27 +95,21 @@ local function se(id)
 end
 
 local function read_bytes(rel)
-  local okD, Dataset = pcall(require, "src.core.game3.dataset")
-  if okD and Dataset and Dataset.cache then
-    local ok, d = pcall(function() return Dataset.cache():read(rel) end)
-    if ok and type(d) == "string" and #d > 0 then return d end
-  end
-  local okC, CacheFs = pcall(require, "src.import.CacheFs")
-  if okC and CacheFs and CacheFs.readActive then
-    local ok, d = pcall(CacheFs.readActive, rel)
-    if ok and type(d) == "string" and #d > 0 then return d end
-  end
+  local d = require("src.core.game3.dataset").cache():read(rel)
+  if type(d) == "string" and #d > 0 then return d end
+  d = require("src.import.CacheFs").readActive(rel)
+  if type(d) == "string" and #d > 0 then return d end
   if love and love.filesystem and love.filesystem.read then
-    local ok, d = pcall(CacheBlob.readFs, rel)
-    if ok and type(d) == "string" and #d > 0 then return d end
+    d = CacheBlob.readFs(rel)
+    if type(d) == "string" and #d > 0 then return d end
   end
   local f = io.open(rel, "rb")
   if f then
-    local d = CacheBlob.decode(rel, f:read("*a"))
+    d = CacheBlob.decode(rel, f:read("*a"))
     f:close()
     if d and #d > 0 then return d end
   end
-  return nil
+  error(rel .. " is not in the cache", 0)
 end
 
 local function cache_root()
@@ -128,13 +122,13 @@ local function art_root()
   return cache_root() .. "/" .. CACHE_SUB
 end
 
-local function rgba_to_image(rgba, w, h)
+local function rgba_to_image(rel, w, h)
   if not (love and love.image and love.graphics) then return nil end
-  if not rgba or #rgba < w * h * 4 then return nil end
-  local okI, data = pcall(love.image.newImageData, w, h, "rgba8", rgba)
-  if not (okI and data) then return nil end
-  local okG, img = pcall(love.graphics.newImage, data)
-  if not okG then return nil end
+  local rgba = read_bytes(rel)
+  if #rgba < w * h * 4 then
+    error(("%s is %d bytes, not %dx%d"):format(rel, #rgba, w, h), 0)
+  end
+  local img = love.graphics.newImage(love.image.newImageData(w, h, "rgba8", rgba))
   if img.setFilter then img:setFilter("nearest", "nearest") end
   return img
 end
@@ -143,8 +137,7 @@ FameCheckerUi._images = {}
 
 local function art(key, rel, w, h)
   if FameCheckerUi._images[key] == nil then
-    local bytes = read_bytes(art_root() .. "/" .. rel)
-    FameCheckerUi._images[key] = (bytes and rgba_to_image(bytes, w, h)) or false
+    FameCheckerUi._images[key] = rgba_to_image(art_root() .. "/" .. rel, w, h) or false
   end
   return FameCheckerUi._images[key] or nil
 end
@@ -156,13 +149,11 @@ end
 function FameCheckerUi.pack()
   if FameCheckerUi._packTried then return FameCheckerUi._pack end
   FameCheckerUi._packTried = true
-  local src = read_bytes(art_root() .. "/pack.lua")
-  if not src then return nil end
-  local chunk = load(src, "@fame_checker/pack.lua", "t", {})
-  if not chunk then return nil end
-  local ok, pack = pcall(chunk)
-  if ok and type(pack) == "table" then FameCheckerUi._pack = pack end
-  return FameCheckerUi._pack
+  local rel = art_root() .. "/pack.lua"
+  local pack = assert(load(read_bytes(rel), "@" .. rel, "t", {}))()
+  if type(pack) ~= "table" then error(rel .. " is not a table", 0) end
+  FameCheckerUi._pack = pack
+  return pack
 end
 
 function FameCheckerUi.reloadAssets()
@@ -189,8 +180,7 @@ function FameCheckerUi.portrait(person)
   if not source then return nil, nil end
   local key = source .. rel
   if FameCheckerUi._images[key] == nil then
-    local bytes = read_bytes(rel)
-    FameCheckerUi._images[key] = (bytes and rgba_to_image(bytes, PORTRAIT, PORTRAIT)) or false
+    FameCheckerUi._images[key] = rgba_to_image(rel, PORTRAIT, PORTRAIT) or false
   end
   local img = FameCheckerUi._images[key] or nil
   if img then return img, source end
@@ -218,7 +208,7 @@ end
 
 function FameCheckerUi._personName(p)
   local pack = FameCheckerUi.pack()
-  local fromPack = pack and pack.listNames and pack.listNames[p]
+  local fromPack = pack.listNames and pack.listNames[p]
   if type(fromPack) == "string" and fromPack ~= "" then return fromPack end
   local trainerId = FameChecker.TRAINER_IDS[p]
   if trainerId and trainerId < FameChecker.NON_TRAINER_START then
@@ -269,7 +259,7 @@ end
 -- pokefirered/src/fame_checker.c:246 sFameCheckerFlavorTextPointers
 function FameCheckerUi.flavorText(person, slot)
   local pack = FameCheckerUi.pack()
-  local rows = pack and pack.flavorText and pack.flavorText[tonumber(person)]
+  local rows = pack.flavorText and pack.flavorText[tonumber(person)]
   if type(rows) ~= "table" then return nil end
   local text = rows[tonumber(slot)]
   if type(text) ~= "string" or text == "" then return nil end
@@ -281,7 +271,6 @@ function FameCheckerUi.pickModeText(person)
   local p = tonumber(person)
   if not p then return nil end
   local pack = FameCheckerUi.pack()
-  if not pack then return nil end
   local all = FameChecker.hasUnlockedAllFlavorTexts(FameCheckerUi._session, p)
   local rows = all and pack.quotes or pack.names
   local text = type(rows) == "table" and rows[p] or nil
@@ -292,7 +281,6 @@ end
 -- pokefirered/src/fame_checker.c:1395 UpdateIconDescriptionBox
 function FameCheckerUi.iconDescription(person, slot)
   local pack = FameCheckerUi.pack()
-  if not pack then return nil, nil end
   local p, s = tonumber(person), tonumber(slot)
   local loc = pack.originLocation and pack.originLocation[p] and pack.originLocation[p][s]
   local obj = pack.originObject and pack.originObject[p] and pack.originObject[p][s]
@@ -675,14 +663,9 @@ local function draw_icons(person, selected)
       end
     else
       local mark = art("question", "question_mark.rgba", 16, 32)
-      if mark then
-        local qx, qy = questionCenter(slot)
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(mark, qx - 8, qy - 16)
-      else
-        local cx, cy = iconCenter(slot)
-        FrlgFont.draw("?", cx - 4, cy - 7, { colors = FrlgFont.COLOR.WHITE })
-      end
+      local qx, qy = questionCenter(slot)
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(mark, qx - 8, qy - 16)
     end
   end
 end
@@ -692,14 +675,6 @@ local function draw_portrait(person)
   local x, y = PERSON_X - PORTRAIT / 2, PERSON_Y - PORTRAIT / 2
   local silhouette =
     FameChecker.pickState(FameCheckerUi._session, person) == PICK.SILHOUETTE
-  if not img then
-    love.graphics.setColor(0.13, 0.16, 0.22, 1)
-    love.graphics.rectangle("fill", x, y, PORTRAIT, PORTRAIT)
-    love.graphics.setColor(1, 1, 1, 1)
-    FrlgFont.draw(FameCheckerUi.personName(person), x + 2, y + PORTRAIT / 2 - 7,
-      { maxWidth = PORTRAIT - 4, colors = FrlgFont.COLOR.WHITE })
-    return source
-  end
   -- pokefirered/src/fame_checker.c:1374 sSilhouettePalette
   if silhouette then
     local PokedexChrome = pokedexChrome()
@@ -753,7 +728,6 @@ local function view()
     msg = msg and FrlgFont.wrap(msg, 200) or nil,
     loc = loc,
     obj = obj,
-    listWin = Window.template(LIST_WIN[1], LIST_WIN[2], LIST_WIN[3], LIST_WIN[4]),
   }
   FameCheckerUi._view = v
   return v
@@ -780,16 +754,8 @@ function FameCheckerUi.draw()
 
   local v = view()
 
-  local bg = FameCheckerUi.background()
-  if bg then
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(bg, 0, 0)
-  else
-    love.graphics.setColor(0.16, 0.24, 0.38, 1)
-    love.graphics.rectangle("fill", 0, 0, 240, 160)
-    love.graphics.setColor(1, 1, 1, 1)
-    Window.stdFrame(v.listWin)
-  end
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(FameCheckerUi.background(), 0, 0)
 
   for i = 1, MAX_SHOWED do
     local idx = FameCheckerUi.scroll + i
@@ -812,23 +778,14 @@ function FameCheckerUi.draw()
       draw_icons(person, FameCheckerUi.mode == "flavor" and FameCheckerUi.iconCursor or nil)
     else
       -- pokefirered/src/fame_checker.c:669 sFameCheckerTilemap
-      local panel = assert(art("pick_panel", "pick_panel.rgba", 240, 160),
-        "fame_checker/pick_panel.rgba is not in the cache")
       love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(panel, 0, 0)
+      love.graphics.draw(art("pick_panel", "pick_panel.rgba", 240, 160), 0, 0)
       draw_portrait(person)
     end
     if FameCheckerUi.mode == "flavor" then
       local cx, cy = selectorCenter(FameCheckerUi.iconCursor)
-      local cursorArt = art("cursor", "cursor.rgba", 32, 32)
-      if cursorArt then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(cursorArt, cx - 16, cy - 16)
-      else
-        love.graphics.setColor(1, 0.85, 0.24, 1)
-        love.graphics.rectangle("line", cx - 16.5, cy - 4.5, 33, 33)
-        love.graphics.setColor(1, 1, 1, 1)
-      end
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(art("cursor", "cursor.rgba", 32, 32), cx - 16, cy - 16)
     end
   end
 

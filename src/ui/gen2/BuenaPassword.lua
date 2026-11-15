@@ -12,8 +12,8 @@
 -- BEFORE the list goes up over it, and the password menu stands on the map.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 
 local BuenaPassword = {}
 BuenaPassword.__index = BuenaPassword
@@ -42,7 +42,8 @@ local ARROW_UP_Y, ARROW_DOWN_Y = LIST_BOX_Y, LIST_BOX_Y + LIST_BOX_H - 1
 local BALANCE_BOX_X, BALANCE_BOX_Y, BALANCE_BOX_W, BALANCE_BOX_H = 0, 11, 12, 3
 local BALANCE_LABEL_X, BALANCE_LABEL_Y = 1, 12
 local BALANCE_NUM_X = 8
-local POINTS_LABEL = Strings.source("Points")
+-- engine/events/buena.asm:205
+local POINTS_LABEL = "PrintBlueCardBalance.Points_string"
 
 local UP_ARROW = "\xe2\x96\xb2"
 local DOWN_ARROW = "\xe2\x96\xbc"
@@ -153,7 +154,7 @@ function BuenaPassword:drawPrizePanel()
   Chrome.print(DOWN_ARROW, ARROW_X, ARROW_DOWN_Y)
 
   Chrome.box(BALANCE_BOX_X, BALANCE_BOX_Y, BALANCE_BOX_W, BALANCE_BOX_H)
-  Chrome.print(Strings(POINTS_LABEL), BALANCE_LABEL_X, BALANCE_LABEL_Y)
+  Chrome.print(RomText(self.data, POINTS_LABEL), BALANCE_LABEL_X, BALANCE_LABEL_Y)
   Chrome.print(Chrome.number(self.balance, 2), BALANCE_NUM_X, BALANCE_LABEL_Y)
 end
 

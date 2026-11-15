@@ -87,7 +87,7 @@ if version then
   GameVersion.set(version)
   Versions.select(version)
   local Cache = require("tests.game3_cache")
-  local root = Cache.mount()
+  local root = Cache.mount(version)
   if not root then
     print("[skip] disguise2763 cache integration: " .. tostring(Cache.reason))
     os.exit(0)

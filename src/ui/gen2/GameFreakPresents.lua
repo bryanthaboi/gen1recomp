@@ -77,11 +77,6 @@ local OBP1_START = 0x24 -- %00100100, the logo before the rotation runs
 local OBP1_FINAL = 0x90 -- %10010000, where UpdateLogoPal stops
 
 local BLACK = { 0, 0, 0 }
-local WHITE = { 255, 255, 255 }
-local YELLOW = { 206, 247, 0 } -- RGB 25,30,00 out of gfx/sgb/predef.pal
-
-local DEFAULT_OB = { WHITE, WHITE, YELLOW, YELLOW }
-local DEFAULT_BG = { BLACK, { 66, 90, 90 }, { 173, 173, 173 }, WHITE }
 
 local function permute(colors, byte)
   local out = {}
@@ -101,21 +96,23 @@ function GameFreakPresents.new(game, opts)
   local self = setmetatable({}, GameFreakPresents)
   self.game = game
   self.onDone = opts.onDone
-  local splash = (opts.oakSpeech or {}).splash or {}
-  self.obColors = splash.obPalette or DEFAULT_OB
-  self.bgColors = splash.bgPalette or DEFAULT_BG
+  local splash = (opts.oakSpeech or {}).splash
+  if type(splash) ~= "table" then error("oak_speech.lua has no splash", 2) end
+  local function need(key)
+    local value = splash[key]
+    if value == nil then error("oak_speech.lua splash has no " .. key, 3) end
+    return value
+  end
+  self.obColors = need("obPalette")
+  self.bgColors = need("bgPalette")
 
   -- One sheet per INCBIN, each addressed by the VRAM id its tiles were
   -- loaded at, so an OAM entry's tile id picks its own sheet.
   self.sheets = {
-    TileSheet.new({ path = splash.presents
-      or "assets/generated/splash/presents.png", wide = 13, firstTile = 0x80 }),
-    TileSheet.new({ path = splash.logo
-      or "assets/generated/splash/logo.png", wide = 3, firstTile = 0x8d }),
-    TileSheet.new({ path = splash.star
-      or "assets/generated/splash/star.png", wide = 1, firstTile = 0x9c }),
-    TileSheet.new({ path = splash.sparkle
-      or "assets/generated/splash/sparkle.png", wide = 3, firstTile = 0x9e }),
+    TileSheet.new({ path = need("presents"), wide = 13, firstTile = 0x80 }),
+    TileSheet.new({ path = need("logo"), wide = 3, firstTile = 0x8d }),
+    TileSheet.new({ path = need("star"), wide = 1, firstTile = 0x9c }),
+    TileSheet.new({ path = need("sparkle"), wide = 3, firstTile = 0x9e }),
   }
 
   self.anims = SpriteAnims.new()

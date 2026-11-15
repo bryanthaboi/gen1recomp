@@ -458,7 +458,7 @@ end
 print("[test] 9. Replacing a held card asks first")
 do
   local st2, d, sess2 = freshScreen(okFeed())
-  MysteryGift.receiveCard(sess2, MysteryGift.builtins()[2].card)
+  MysteryGift.receiveCard(sess2, require("tests.fixtures.game3_gift_cards").cards()[2].card)
   openWireless(st2, d, false)
   eq(st2.state, Ui.STATE.SEARCHING, "WONDER CARDS fetches the list")
   searchResult(st2, d)
@@ -655,7 +655,7 @@ do
   local st2 = Ui.new({ session = sess2, fetch = { transport = okFeed() },
     onSave = function(s) saves = saves + 1 return MysteryGift.applyToSave(s, save) end })
   local d = driver(st2)
-  check(MysteryGift.receiveCard(sess2, MysteryGift.builtins()[2].card), "an uncollected AURORA card is held")
+  check(MysteryGift.receiveCard(sess2, require("tests.fixtures.game3_gift_cards").cards()[2].card), "an uncollected AURORA card is held")
   d.step("a")
   eq(st2.state, Ui.STATE.SAVED_VIEW, "the held card shows")
   d.step("a")
@@ -683,7 +683,7 @@ do
   local sess2 = giftSession({})
   local st2 = Ui.new({ session = sess2, onSave = function() return true end })
   local d = driver(st2)
-  check(MysteryGift.receiveCard(sess2, MysteryGift.builtins()[4].card), "a shareable STAMP CARD is held")
+  check(MysteryGift.receiveCard(sess2, require("tests.fixtures.game3_gift_cards").cards()[4].card), "a shareable STAMP CARD is held")
   d.step("a")
   d.step("a")
   eq(#st2.rows, 3, "the menu is RECEIVE, TOSS and CANCEL")

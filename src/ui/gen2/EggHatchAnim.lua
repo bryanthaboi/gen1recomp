@@ -25,11 +25,6 @@
 -- every other caller of _InitSpriteAnimStruct uses (engine/sprite_anims/
 -- core.asm:113, "at pixel x=e, y=d"), and OAM's own -8 / -16 bias is applied
 -- at draw time exactly as src/ui/gen2/GoldSilverIntro.lua does it.
---
--- Every asset is optional.  A cache built before the extractor grew
--- menu_gfx.eggHatch has no egg pic and no shell tiles, and the screen then
--- runs the same clock with whatever it does have -- which is the timing beat
--- src/world/gen2/World.lua's hatch path used to stand in for on its own.
 
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
@@ -132,7 +127,11 @@ function EggHatchAnim.new(game, opts)
   self.species = opts.species or (self.mon and self.mon.species)
   self.onDone = opts.onDone
 
-  local gfx = (opts.menuGfx or self.data.gen2MenuGfx or {}).eggHatch or {}
+  local menuGfx = opts.menuGfx or self.data.gen2MenuGfx
+  local gfx = menuGfx and menuGfx.eggHatch
+  if not gfx then error("menu_gfx.lua has no eggHatch") end
+  if gfx.egg == nil then error("menu_gfx.lua eggHatch has no egg") end
+  if gfx.shell == nil then error("menu_gfx.lua eggHatch has no shell") end
   self.eggPath = gfx.egg
   self.shellPath = gfx.shell
   self.picCache = {}
@@ -357,6 +356,15 @@ function EggHatchAnim:image(path)
   return cached or nil
 end
 
+function EggHatchAnim:art(path)
+  local cached = self.picCache[path]
+  if not cached then
+    cached = Assets.image(path)
+    self.picCache[path] = cached
+  end
+  return cached
+end
+
 function EggHatchAnim:picCtx(kind)
   return {
     species = self.species,
@@ -381,7 +389,7 @@ function EggHatchAnim:pic()
     local path, trueColor = self:picPath()
     return self:image(path), trueColor
   end
-  return self:image(self.eggPath)
+  return self:art(self.eggPath)
 end
 
 -- Hatch_LoadFrontpicPal is SCGB_EVOLUTION with c = 0, i.e. the pic's own
@@ -433,8 +441,7 @@ end
 -- (SPRITE_ANIM_OAMSET_EGG_CRACK's `spriteanimoam $00`) and tile $01 the shell
 -- fragment (`spriteanimoam $01`), both 1x1 on OBJ palette 0.
 function EggHatchAnim:shellQuad(index)
-  local image = self:image(self.shellPath)
-  if not image then return nil, nil end
+  local image = self:art(self.shellPath)
   if not self.shellQuads then
     self.shellQuads = {
       love.graphics.newQuad(0, 0, 8, 8, image:getDimensions()),
@@ -451,20 +458,18 @@ function EggHatchAnim:drawSprites()
   for _, sprite in ipairs(self.sprites) do
     local slot = sprite.kind == "crack" and 1 or 2
     local image, quad = self:shellQuad(slot)
-    if image and quad then
-      -- OAM_X / OAM_Y carry both the hardware bias and .OAMData_1x1_Palette0's
-      -- own -4, and the draw call below adds the flip origin correction.
-      local x = sprite.x + (sprite.xOffset or 0) + OAM_X
-      local y = sprite.y + (sprite.yOffset or 0) + OAM_Y
-      -- The two offsets are the bytes the ASM leaves in a, i.e. two's
-      -- complement, so anything past $7f is a negative drift.
-      if (sprite.xOffset or 0) > 0x7f then x = x - 256 end
-      if (sprite.yOffset or 0) > 0x7f then y = y - 256 end
-      local flipX, flipY = sprite.flipX, sprite.flipY
-      G.draw(image, quad,
-        x + (flipX and 8 or 0), y + (flipY and 8 or 0), 0,
-        flipX and -1 or 1, flipY and -1 or 1)
-    end
+    -- OAM_X / OAM_Y carry both the hardware bias and .OAMData_1x1_Palette0's
+    -- own -4, and the draw call below adds the flip origin correction.
+    local x = sprite.x + (sprite.xOffset or 0) + OAM_X
+    local y = sprite.y + (sprite.yOffset or 0) + OAM_Y
+    -- The two offsets are the bytes the ASM leaves in a, i.e. two's
+    -- complement, so anything past $7f is a negative drift.
+    if (sprite.xOffset or 0) > 0x7f then x = x - 256 end
+    if (sprite.yOffset or 0) > 0x7f then y = y - 256 end
+    local flipX, flipY = sprite.flipX, sprite.flipY
+    G.draw(image, quad,
+      x + (flipX and 8 or 0), y + (flipY and 8 or 0), 0,
+      flipX and -1 or 1, flipY and -1 or 1)
   end
 end
 

@@ -7,8 +7,8 @@ local Bag = require("src.inventory.Bag")
 local Buena = require("src.core.gen2.Buena")
 local Mon = require("src.battle.gen2.Mon")
 local Nests = require("src.core.gen2.Nests")
+local RomText = require("src.core.RomText")
 local Specials = require("src.script.gen2.Specials")
-local Strings = require("src.core.Strings")
 
 local S = Specials.shared
 
@@ -22,6 +22,14 @@ local BLUE_CARD_POINT_CAP = 30
 
 local function hooks(vm)
   return (vm and vm.specials) or {}
+end
+
+local function eventTable(vm, key)
+  local data = S.data(vm)
+  local tables = data and data.gen2EventTables
+  local value = tables and tables[key]
+  if value == nil then error("events.lua has no " .. key, 2) end
+  return value
 end
 
 --------------------------------------------------------------------------
@@ -99,27 +107,14 @@ M.BuenasPassword = function(vm)
   S.answer(vm, (picked == answer) and 1 or 0)
 end
 
--- data/items/buena_prizes.asm.
-local BUENA_PRIZES = {
-  { item = "ULTRA_BALL", cost = 2 },
-  { item = "FULL_RESTORE", cost = 2 },
-  { item = "NUGGET", cost = 3 },
-  { item = "RARE_CANDY", cost = 3 },
-  { item = "PROTEIN", cost = 5 },
-  { item = "IRON", cost = 5 },
-  { item = "CARBOS", cost = 5 },
-  { item = "CALCIUM", cost = 5 },
-  { item = "HP_UP", cost = 5 },
-}
-
--- ../pokecrystal/data/text/common_3.asm:1082-1116, the six pages BuenaPrintText cycles.
+-- ../pokecrystal/engine/events/buena.asm:147-169
 local PRIZE_TEXT = {
-  which = Strings.source("Which prize would\nyou like?"),
-  confirm = Strings.source("{STRBUF}?\nIs that right?"),
-  hereYouGo = Strings.source("Here you go!"),
-  notEnough = Strings.source("You don't have\nenough points."),
-  noRoom = Strings.source("You have no room\nfor it."),
-  comeAgain = Strings.source("Oh. Please come\nback again!"),
+  which = "_BuenaAskWhichPrizeText",
+  confirm = "_BuenaIsThatRightText",
+  hereYouGo = "_BuenaHereYouGoText",
+  notEnough = "_BuenaNotEnoughPointsText",
+  noRoom = "_BuenaNoRoomText",
+  comeAgain = "_BuenaComeAgainText",
 }
 
 -- wBlueCardBalance is a RETVAR_ADDR_DE var, so the point the script awards at
@@ -151,7 +146,7 @@ M.BuenaPrize = function(vm)
   local d = S.data(vm)
   local items = d and d.items
   local rows = {}
-  for i, prize in ipairs(BUENA_PRIZES) do
+  for i, prize in ipairs(eventTable(vm, "buenaPrizes")) do
     local def = items and items[prize.item]
     rows[i] = {
       item = prize.item,
@@ -163,7 +158,7 @@ M.BuenaPrize = function(vm)
   while true do
     -- ../pokecrystal/engine/events/buena.asm:71-83: the page is printed and the menu opens
     -- over it, so the box is held the way a `yesorno` page is held.
-    S.showRawHeld(vm, Strings(PRIZE_TEXT.which))
+    S.showRawHeld(vm, RomText(d, PRIZE_TEXT.which))
     local pick = Specials.block(vm, function(done)
       local ok = h.pushScreen("Gen2BuenaPassword", {
         mode = "prize",
@@ -178,138 +173,105 @@ M.BuenaPrize = function(vm)
 
     local row = rows[pick]
     vm:setStringBuffer(row.name)
-    S.showRawHeld(vm, Strings(PRIZE_TEXT.confirm))
+    S.showRawHeld(vm, RomText(d, PRIZE_TEXT.confirm))
     local sure = coroutine.yield({ kind = "yesorno" })
     if sure then
       -- ../pokecrystal/engine/events/buena.asm:95-119: the cost is checked, then ReceiveItem,
       -- and only a delivered item spends the points.
       local balance = blueCardBalance(vm)
       if balance < row.cost then
-        vm:showRaw(Strings(PRIZE_TEXT.notEnough))
+        vm:showRaw(RomText(d, PRIZE_TEXT.notEnough))
       else
         if not receiveItem(vm, row.item) then
-          vm:showRaw(Strings(PRIZE_TEXT.noRoom))
+          vm:showRaw(RomText(d, PRIZE_TEXT.noRoom))
         else
           setBlueCardBalance(vm, balance - row.cost)
           if h.playSfxNamed then h.playSfxNamed("Sfx_Transaction") end
-          vm:showRaw(Strings(PRIZE_TEXT.hereYouGo))
+          vm:showRaw(RomText(d, PRIZE_TEXT.hereYouGo))
         end
       end
     end
   end
   -- ../pokecrystal/engine/events/buena.asm:138-145 .done.
-  vm:showRaw(Strings(PRIZE_TEXT.comeAgain))
+  vm:showRaw(RomText(d, PRIZE_TEXT.comeAgain))
 end
 
 --------------------------------------------------------------------------
 -- PokeSeer -- ../pokecrystal/engine/events/poke_seer.asm:18
 --------------------------------------------------------------------------
 
--- data/text/common_3.asm:281-445, SeerTexts (../pokecrystal/engine/events/poke_seer.asm:289)
--- in jumptable order, with each text_ram buffer spelled as a directive.
+-- ../pokecrystal/engine/events/poke_seer.asm:289-297 SeerTexts
 local SEER_TEXT = {
-  intro = Strings.source("I see all.\nI know all…\fCertainly, I know\nof your #MON!"),
-  cantTell = Strings.source(
-    "Whaaaat? I can't\ntell a thing!\fHow could I not\nknow of this?"),
-  nameLocation = Strings.source("Hm… I see you met\n%s here:\v%s!"),
-  timeLevel = Strings.source(
-    "The time was\n%s!\fIts level was %s!\fAm I good or what?"),
-  trade = Strings.source(
-    "Hm… %s\ncame from %s\vin a trade?\f%s\nwas where %s\vmet %s!"),
-  noLocation = Strings.source(
-    "What!? Incredible!\fI don't understand\nhow, but it is\fincredible!\n"
-    .. "You are special.\fI can't tell where\nyou met it, but it\v"
-    .. "was at level %s.\fAm I good or what?"),
-  egg = Strings.source("Hey!\fThat's an EGG!\fYou can't say that\nyou've met it yet…"),
-  doNothing = Strings.source("Fufufu! I saw that\nyou'd do nothing!"),
+  intro = "_SeerSeeAllText",
+  cantTell = "_SeerCantTellAThingText",
+  nameLocation = "_SeerNameLocationText",
+  timeLevel = "_SeerTimeLevelText",
+  trade = "_SeerTradeText",
+  doNothing = "_SeerDoNothingText",
+  egg = "_SeerEggText",
+  noLocation = "_SeerNoLocationText",
 }
-
--- SeerAdviceTexts (../pokecrystal/engine/events/poke_seer.asm:357), `dbw level, text`.  Field
--- three marks the rows that splice the nickname in.
-local SEER_ADVICE = {
-  { 9, Strings.source(
-    "Incidentally…\fIt would be wise\nto raise your\f#MON with a\nlittle more care.") },
-  { 29, Strings.source(
-    "Incidentally…\fIt seems to have\ngrown a little.\f%s seems\nto be becoming\v"
-    .. "more confident."), true },
-  { 59, Strings.source(
-    "Incidentally…\f%s has\ngrown. It's gained\vmuch strength."), true },
-  { 89, Strings.source(
-    "Incidentally…\fIt certainly has\ngrown mighty!\fThis %s\nmust have come\f"
-    .. "through numerous\n#MON battles.\fIt looks brimming\nwith confidence."), true },
-  { 100, Strings.source(
-    "Incidentally…\fI'm impressed by\nyour dedication.\fIt's been a long\n"
-    .. "time since I've\fseen a #MON as\nmighty as this\v%s.\fI'm sure that\n"
-    .. "seeing %s\fin battle would\nexcite anyone."), true },
-  { 255, Strings.source(
-    "Incidentally…\fIt would be wise\nto raise your\f#MON with a\nlittle more care.") },
-}
-
--- GetCaughtTime's .times (../pokecrystal/engine/events/poke_seer.asm:203) and
--- UnknownCaughtData's "Unknown@" (:215).
-local SEER_TIMES = {
-  Strings.source("Morning"), Strings.source("Day"), Strings.source("Night"),
-}
-local SEER_UNKNOWN = Strings.source("Unknown")
-local SEER_NO_LEVEL = Strings.source("???")
 
 -- constants/pokemon_data_constants.asm:130 CAUGHT_EGG_LEVEL and
 -- constants/battle_constants.asm:4 EGG_LEVEL.
 local CAUGHT_EGG_LEVEL, EGG_LEVEL = 1, 5
 
 -- GetCaughtLevel (../pokecrystal/engine/events/poke_seer.asm:148-179).
-local function caughtLevel(byte0)
+local function caughtLevel(seer, byte0)
   local level = byte0 % 0x40
-  if level == 0 then return nil, Strings(SEER_NO_LEVEL) end
+  if level == 0 then return nil, seer.unknownLevel end
   if level == CAUGHT_EGG_LEVEL then level = EGG_LEVEL end
   return level, tostring(level)
 end
 
 -- GetCaughtLocation (../pokecrystal/engine/events/poke_seer.asm:217-249); the second answer
 -- is the SEERACTION_* its two sentinel arms override wSeerAction with.
-local function caughtLocation(vm, byte1)
+local function caughtLocation(vm, seer, byte1)
   local landmark = byte1 % 0x80
-  if landmark == 0 then return Strings(SEER_UNKNOWN), nil end
+  if landmark == 0 then return seer.unknown, nil end
   if landmark == Mon.LANDMARK_EVENT then return nil, "level_only" end
   if landmark == Mon.LANDMARK_GIFT then return nil, "cant_tell" end
   local record = Nests.landmark(S.data(vm), landmark)
   local name = record and record.name
-  if not name then return Strings(SEER_UNKNOWN), nil end
+  if not name then return seer.unknown, nil end
   -- engine/overworld/landmarks.asm:16 GetLandmarkName copies the break byte
   -- through; engine/pokegear/townmap_convertlinebreakcharacters.asm:1 is it.
   return (tostring(name):gsub("\n", " ")), nil
 end
 
 -- SeerAdvice (../pokecrystal/engine/events/poke_seer.asm:331-355); `sub c` is one byte.
-local function seerAdvice(vm, mon, level)
+-- ../pokecrystal/data/text/common_3.asm:372-445 text_ram wSeerNickname
+local function seerAdvice(vm, seer, mon, level)
   local diff = ((mon.level or 0) - (level or 0)) % 256
   local name = Mon.displayName(mon)
-  for _, row in ipairs(SEER_ADVICE) do
-    if diff <= row[1] then
-      if row[3] then return vm:showRaw(Strings(row[2], name, name)) end
-      return vm:showRaw(Strings(row[2]))
+  for _, row in ipairs(seer.advice) do
+    if diff <= row.level then
+      local text = RomText(S.data(vm), row.label)
+      return vm:showRaw((text:gsub("{STRBUF}", function() return name end)))
     end
   end
 end
 
 M.PokeSeer = function(vm)
-  vm:showRaw(Strings(SEER_TEXT.intro))
+  local data = S.data(vm)
+  local seer = eventTable(vm, "pokeSeer")
+  vm:showRaw(RomText(data, SEER_TEXT.intro))
   local _, mon = S.selectMon(vm, "choose")
   -- ../pokecrystal/engine/events/poke_seer.asm:38 .cancel.
   if not mon then
-    vm:showRaw(Strings(SEER_TEXT.doNothing))
+    vm:showRaw(RomText(data, SEER_TEXT.doNothing))
     return
   end
   -- :28-29 `cp EGG / jr z, .egg`, plus the IsAPokemon test at :31.
   if mon.isEgg then
-    vm:showRaw(Strings(SEER_TEXT.egg))
+    vm:showRaw(RomText(data, SEER_TEXT.egg))
     return
   end
 
   local byte0, byte1 = Mon.packCaughtData(mon)
   -- ReadCaughtData's `.error` (../pokecrystal/engine/events/poke_seer.asm:104-105, :133).
   if byte0 == 0 and byte1 == 0 then
-    vm:showRaw(Strings(SEER_TEXT.cantTell))
+    vm:showRaw(RomText(data, SEER_TEXT.cantTell))
     return
   end
 
@@ -320,34 +282,34 @@ M.PokeSeer = function(vm)
   local traded = math.floor((mon.otId or 0) / 256) % 256
     ~= math.floor(playerId / 256) % 256
 
-  local level, levelText = caughtLevel(byte0)
-  local place, override = caughtLocation(vm, byte1)
+  local level, levelText = caughtLevel(seer, byte0)
+  local place, override = caughtLocation(vm, seer, byte1)
   local name = Mon.displayName(mon)
 
   -- SeerAction2 / SeerAction3 (../pokecrystal/engine/events/poke_seer.asm:81-89).
   if override == "cant_tell" then
-    vm:showRaw(Strings(SEER_TEXT.cantTell))
+    vm:showRaw(RomText(data, SEER_TEXT.cantTell))
     return
   end
   -- SeerAction4 (../pokecrystal/engine/events/poke_seer.asm:91-95).
   if override == "level_only" then
-    vm:showRaw(Strings(SEER_TEXT.noLocation, levelText))
-    return seerAdvice(vm, mon, level)
+    vm:showRaw(RomText(data, SEER_TEXT.noLocation, nil, levelText))
+    return seerAdvice(vm, seer, mon, level)
   end
 
   local time = math.floor(byte0 / 0x40)
-  local timeText = (time > 0 and Strings(SEER_TIMES[time])) or Strings(SEER_UNKNOWN)
+  local timeText = (time > 0 and seer.times[time]) or seer.unknown
 
   if traded then
     -- SeerAction1 (../pokecrystal/engine/events/poke_seer.asm:72-79).
-    local ot = mon.otName or mon.ot or Strings(SEER_UNKNOWN)
-    vm:showRaw(Strings(SEER_TEXT.trade, name, ot, place, ot, name))
+    local ot = mon.otName or mon.ot or seer.unknown
+    vm:showRaw(RomText(data, SEER_TEXT.trade, nil, name, ot, place, ot, name))
   else
     -- SeerAction0 (../pokecrystal/engine/events/poke_seer.asm:64-70).
-    vm:showRaw(Strings(SEER_TEXT.nameLocation, name, place))
+    vm:showRaw(RomText(data, SEER_TEXT.nameLocation, nil, name, place))
   end
-  vm:showRaw(Strings(SEER_TEXT.timeLevel, timeText, levelText))
-  seerAdvice(vm, mon, level)
+  vm:showRaw(RomText(data, SEER_TEXT.timeLevel, nil, timeText, levelText))
+  seerAdvice(vm, seer, mon, level)
 end
 
 --------------------------------------------------------------------------

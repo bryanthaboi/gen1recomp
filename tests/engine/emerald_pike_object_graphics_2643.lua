@@ -1,8 +1,9 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
 local T = require("tests.harness").suite("Pike spawned object graphics #2643")
-local root = os.getenv("POKEPORT_EMERALD_CACHE") or os.getenv("POKEPORT_GBA_CACHE")
-if not root then print("SKIP #2643 Pike requires explicit Emerald cache"); T.finish(); return end
+local Cache = require("tests.game3_cache")
+local root = Cache.root("emerald")
+if not root then print("[skip] #2643 Pike: " .. tostring(Cache.reason)); T.finish(); return end
 require("src.core.GameVersion").set("emerald")
 require("src.import.gba.versions").select("emerald")
 local Dataset = require("src.core.game3.dataset"); Dataset.cacheRootOverride = root

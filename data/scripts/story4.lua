@@ -60,46 +60,41 @@ local function oaksAide(threshold, itemId, repeatText, flagName)
     local portFlag = "EVENT_GOT_" .. itemId
     -- ../pokered/scripts/Route2Gate.asm:28-30
     local function explain()
-      push(game, t[repeatText] or
-        fill("I already gave\nyou the {RAM:}!", { ram = itemName }), done)
+      push(game, t[repeatText], done)
     end
     if flags[flag] or flags[portFlag] then
       explain()
       return
     end
-    ask(game, fill(t._OaksAideHiText or
-      "Have you caught\n{NUM:} kinds of\nPOKéMON?",
+    ask(game, fill(t._OaksAideHiText,
       { num = threshold, ram = itemName, player = game.save.player.name }),
       function(yes)
         if not yes then
-          push(game, fill(t._OaksAideComeBackText or "Come back later!",
+          push(game, fill(t._OaksAideComeBackText,
             { num = threshold, ram = itemName }), done)
           return
         end
         local owned = countOwned(game.save)
         if owned >= threshold then
           -- ../pokered/engine/events/oaks_aide.asm:18-29
-          push(game, fill(t._OaksAideHereYouGoText or "Here you go!",
+          push(game, fill(t._OaksAideHereYouGoText,
               { num = owned, ram = itemName }),
             function()
               if not require("src.inventory.Bag").add(
                   game.save, itemId, 1, game.data) then
-                push(game, fill(t._OaksAideNoRoomText or
-                  "No room for the\n{RAM:}!", { ram = itemName }), done)
+                push(game, fill(t._OaksAideNoRoomText, { ram = itemName }), done)
                 return
               end
               flags[flag] = true
               -- ../pokered/engine/events/oaks_aide.asm:64-67
-              push(game, fill(t._OaksAideGotItemText or
-                  "{PLAYER} got the\n{RAM:}!",
+              push(game, fill(t._OaksAideGotItemText,
                   { ram = itemName, player = game.save.player.name }),
                 explain,
                 require("src.render.TextBox").soundOpts(game, "Get_Item1"))
             end)
         else
           -- .notEnoughOwnedMons prints owned then requirement, two counts
-          push(game, fill(t._OaksAideUhOhText or
-            "You have only\ncaught {NUM:}!",
+          push(game, fill(t._OaksAideUhOhText,
             { num = owned, ram = itemName,
               hOaksAideNumMonsOwned = owned,
               hOaksAideRequirement = threshold }), done)
@@ -176,12 +171,7 @@ local function dojoBall(species, ownBall, otherBall, askKey)
     -- (FightingDojo.asm .gotThePokemon / _FightingDojoBetterNotGetGreedyText),
     -- not a silent no-op (#197).
     if flags.EVENT_GOT_HITMONLEE or flags.EVENT_GOT_HITMONCHAN then
-      push(game, t._FightingDojoBetterNotGetGreedyText
-        or "Better not get\ngreedy...", done)
-      return
-    end
-    if not flags.EVENT_BEAT_KARATE_MASTER then
-      push(game, "You'll have to\nbeat the master\nfirst!", done)
+      push(game, t._FightingDojoBetterNotGetGreedyText, done)
       return
     end
     -- Examining a ball shows that species' POKéDEX entry first
@@ -192,7 +182,7 @@ local function dojoBall(species, ownBall, otherBall, askKey)
     Commands.mark_seen(ctx, species)
     local DexEntryMenu = require("src.ui.DexEntryMenu")
     game.stack:push(DexEntryMenu.new(game, species, function()
-      ask(game, t[askKey] or ("You want\n" .. species .. "?"), function(yes)
+      ask(game, t[askKey], function(yes)
         if not yes then done() return end
         -- ../pokered/scripts/FightingDojo.asm:238-252
         ow.runner:run({
@@ -243,14 +233,12 @@ local function dojoMaster(game, ow, npc, done)
   local flags = game.save.flags
   -- ../pokered/scripts/FightingDojo.asm:108
   if flags.EVENT_DEFEATED_FIGHTING_DOJO then
-    push(game, t._FightingDojoKarateMasterStayAndTrainWithUsText
-      or "Ho!\fStay and train at\nKarate with us!", done)
+    push(game, t._FightingDojoKarateMasterStayAndTrainWithUsText, done)
     return
   end
   -- ../pokered/scripts/FightingDojo.asm:110
   if flags.EVENT_BEAT_KARATE_MASTER or ow:trainerDefeated(npc) then
-    push(game, t._FightingDojoKarateMasterIWillGiveYouAPokemonText
-      or "Indeed, I have\nlost!", done)
+    push(game, t._FightingDojoKarateMasterIWillGiveYouAPokemonText, done)
     return
   end
   -- ../pokered/scripts/FightingDojo.asm:122
@@ -275,19 +263,17 @@ M.FIGHTING_DOJO = {
     if ow.player.facing ~= "up" then return false end
     -- ../pokered/data/events/hidden_events.asm:527-528
     if fy == 9 and (fx == 3 or fx == 6) then
-      push(game, text(game)._FightingDojoText or "FIGHTING DOJO")
+      push(game, text(game)._FightingDojoText)
       return true
     end
     -- ../pokered/data/events/hidden_events.asm:529
     if fy == 0 and fx == 4 then
-      push(game, text(game)._EnemiesOnEverySideText
-        or "Enemies on every\nside!")
+      push(game, text(game)._EnemiesOnEverySideText)
       return true
     end
     -- ../pokered/data/events/hidden_events.asm:530
     if fy == 0 and fx == 5 then
-      push(game, text(game)._WhatGoesAroundComesAroundText
-        or "What goes around\ncomes around!")
+      push(game, text(game)._WhatGoesAroundComesAroundText)
       return true
     end
     return false
@@ -375,22 +361,18 @@ M.MR_PSYCHICS_HOUSE = {
       local t = text(game)
       local tmName = (game.data.items.TM_PSYCHIC_M or {}).name or "TM29"
       if game.save.flags.EVENT_GOT_TM29 then
-        push(game, t._MrPsychicsHouseMrPsychicTM29ExplanationText
-          or "TM29 is PSYCHIC!", done)
+        push(game, t._MrPsychicsHouseMrPsychicTM29ExplanationText, done)
         return
       end
-      push(game, t._MrPsychicsHouseMrPsychicYouWantedThisText
-        or "...Wait! Don't\nsay a word!\fYou wanted this!", function()
+      push(game, t._MrPsychicsHouseMrPsychicYouWantedThisText, function()
         if not require("src.inventory.Bag").add(
             game.save, "TM_PSYCHIC_M", 1, game.data) then
-          push(game, t._MrPsychicsHouseMrPsychicTM29NoRoomText
-            or "Where do you plan\nto put this?", done)
+          push(game, t._MrPsychicsHouseMrPsychicTM29NoRoomText, done)
           return
         end
         game.save.flags.EVENT_GOT_TM29 = true
         -- ../pokered/scripts/MrPsychicsHouse.asm:35-38
-        push(game, fill(t._MrPsychicsHouseMrPsychicReceivedTM29Text
-            or "{PLAYER} received\n{RAM:}!",
+        push(game, fill(t._MrPsychicsHouseMrPsychicReceivedTM29Text,
             { player = game.save.player.name, ram = tmName }),
           done, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
       end)
@@ -407,21 +389,17 @@ M.ROUTE_16_FLY_HOUSE = {
     TEXT_ROUTE16FLYHOUSE_BRUNETTE_GIRL = function(game, ow, npc, done)
       local t = text(game)
       if game.save.flags.EVENT_GOT_HM02 then
-        push(game, t._Route16FlyHouseBrunetteGirlHM02ExplanationText
-          or "HM02 is FLY.\nIt will take you\vback to any town.\fPut it to good\nuse!", done)
+        push(game, t._Route16FlyHouseBrunetteGirlHM02ExplanationText, done)
         return
       end
-      push(game, t._Route16FlyHouseBrunetteGirlText
-        or "Oh, you found my\nsecret retreat!", function()
+      push(game, t._Route16FlyHouseBrunetteGirlText, function()
         if not require("src.inventory.Bag").add(game.save, "HM_FLY", 1) then
-          push(game, t._Route16FlyHouseBrunetteGirlHM02NoRoomText
-            or "You don't have any\nroom for this.", done)
+          push(game, t._Route16FlyHouseBrunetteGirlHM02NoRoomText, done)
           return
         end
         game.save.flags.EVENT_GOT_HM02 = true
         -- scripts/Route16FlyHouse.asm:32-35
-        push(game, fill(t._Route16FlyHouseBrunetteGirlReceivedHM02Text
-          or "{PLAYER} received\nHM02!", { player = game.save.player.name }),
+        push(game, fill(t._Route16FlyHouseBrunetteGirlReceivedHM02Text, { player = game.save.player.name }),
           done, require("src.render.TextBox").soundOpts(game, "Get_Key_Item"))
       end)
     end,
@@ -489,21 +467,20 @@ local function vendingMachine(game, ow, npc, done)
     game.stack:push(box)
   end
   local function notThirsty()
-    result(t._VendingMachineText7 or "Not thirsty!")
+    result(t._VendingMachineText7)
   end
   local function buy(d)
     -- engine/events/vending_machine.asm:39-45
     if game.save.money < 200 then
-      result(t._VendingMachineText4 or "Oops, not enough\nmoney!")
+      result(t._VendingMachineText4)
       return
     end
     if not require("src.inventory.Bag").add(game.save, d.id, 1, game.data) then
-      result(t._VendingMachineText6 or "There's no more\nroom for stuff!")
+      result(t._VendingMachineText6)
       return
     end
     game.stack:push(deliveryRumble(game, function()
-      result(fill(t._VendingMachineText5
-                  or "{RAM:wStringBuffer}\npopped out!",
+      result(fill(t._VendingMachineText5,
                   { ram = game.data.items[d.id].name }), d.price)
     end))
   end
@@ -517,7 +494,7 @@ local function vendingMachine(game, ow, npc, done)
   end
   items[#items + 1] = { label = "CANCEL", keepOpen = true, onSelect = notThirsty }
   greeting = TextBox.new(game,
-    t._VendingMachineText1 or "A vending machine!\nHere's the menu!",
+    t._VendingMachineText1,
     nil, {
       money = money,
       moneyOnShown = true,
@@ -576,12 +553,10 @@ M.CELADON_MART_ROOF = {
         end
       end
       if #have == 0 then
-        push(game, t._CeladonMartRoofLittleGirlImThirstyText
-          or "I'm thirsty!\nI want something\nto drink!", done)
+        push(game, t._CeladonMartRoofLittleGirlImThirstyText, done)
         return
       end
-      ask(game, t._CeladonMartRoofLittleGirlGiveHerADrinkText
-        or "I'm thirsty!\nI want something\nto drink!\fGive her a drink?",
+      ask(game, t._CeladonMartRoofLittleGirlGiveHerADrinkText,
         function(yes)
           if not yes then done() return end
           local Menu = require("src.ui.Menu")
@@ -595,26 +570,22 @@ M.CELADON_MART_ROOF = {
           end
           local function give(g)
             if game.save.flags[g.flag] then
-              push(game, t._CeladonMartRoofLittleGirlImNotThirstyText
-                or "No thank you!\nI'm not thirsty\nafter all!", closeAll)
+              push(game, t._CeladonMartRoofLittleGirlImNotThirstyText, closeAll)
               return
             end
-            push(game, t[g.yay]
-              or "Yay!\fThank you!\fYou can have this\nfrom me!", function()
+            push(game, t[g.yay], function()
               local Bag = require("src.inventory.Bag")
               Bag.remove(game.save, g.drink, 1)
               if not Bag.add(game.save, g.tm, 1) then
-                push(game, t._CeladonMartRoofLittleGirlNoRoomText
-                  or "You don't have\nspace for this!", closeAll)
+                push(game, t._CeladonMartRoofLittleGirlNoRoomText, closeAll)
                 return
               end
               game.save.flags[g.flag] = true
               local subs = { player = game.save.player.name,
                              ram = game.data.items[g.tm].name }
-              local explain = fill(t[g.explain] or "", subs)
+              local explain = fill(t[g.explain], subs)
                 :gsub("^\f", "")
-              push(game, fill(t[g.received]
-                or "{PLAYER} received\n{RAM:}!", subs), function()
+              push(game, fill(t[g.received], subs), function()
                 if #explain > 0 then
                   push(game, explain, closeAll)
                 else
@@ -633,8 +604,7 @@ M.CELADON_MART_ROOF = {
           end
           -- scripts/CeladonMartRoof.asm:45
           whichBox = TextBox.new(game,
-            t._CeladonMartRoofLittleGirlGiveHerWhichDrinkText
-            or "Give her which\ndrink?", nil, {
+            t._CeladonMartRoofLittleGirlGiveHerWhichDrinkText, nil, {
             instant = true,
             stay = { onShown = function()
               -- scripts/CeladonMartRoof.asm:56
@@ -781,15 +751,12 @@ M.NAME_RATERS_HOUSE = {
     TEXT_NAMERATERSHOUSE_NAME_RATER = function(game, ow, npc, done)
       local t = text(game)
       local function bye()
-        push(game, t._NameRatersHouseNameRaterComeAnyTimeYouLikeText
-          or "Fine! Come any\ntime you like!", done)
+        push(game, t._NameRatersHouseNameRaterComeAnyTimeYouLikeText, done)
       end
-      ask(game, t._NameRatersHouseNameRaterWantMeToRateText
-        or "Hello, hello!\nI am the official\nNAME RATER!\fWant me to rate\nthe nicknames of\nyour POKéMON?",
+      ask(game, t._NameRatersHouseNameRaterWantMeToRateText,
         function(yes)
           if not yes then bye() return end
-          push(game, t._NameRatersHouseNameRaterWhichPokemonText
-            or "Which POKéMON\nshould I look at?", function()
+          push(game, t._NameRatersHouseNameRaterWhichPokemonText, function()
             local PartyMenu = require("src.ui.PartyMenu")
             game.stack:push(PartyMenu.new(game, {
               pickOnly = true,
@@ -807,17 +774,14 @@ M.NAME_RATERS_HOUSE = {
                   or (mon.otId ~= nil and player.id ~= nil
                       and mon.otId ~= player.id)
                 if foreign then
-                  push(game, fill(t._NameRatersHouseNameRaterATrulyImpeccableNameText
-                    or "{RAM:}, is it?\nThat is a truly\nimpeccable name!\fTake good care of\n{RAM:}!",
+                  push(game, fill(t._NameRatersHouseNameRaterATrulyImpeccableNameText,
                     { ram = curName }), done)
                   return
                 end
-                ask(game, fill(t._NameRatersHouseNameRaterGiveItANiceNameText
-                  or "{RAM:}, is it?\nThat is a decent\nnickname!\fBut, would you\nlike me to give\nit a nicer name?\fHow about it?",
+                ask(game, fill(t._NameRatersHouseNameRaterGiveItANiceNameText,
                   { ram = curName }), function(rename)
                   if not rename then bye() return end
-                  push(game, t._NameRatersHouseNameRaterWhatShouldWeNameItText
-                    or "Fine! What should\nwe name it?", function()
+                  push(game, t._NameRatersHouseNameRaterWhatShouldWeNameItText, function()
                     local NamingScreen = require("src.ui.NamingScreen")
                     -- engine/menus/naming_screen.asm:56
                     game.stack:push(NamingScreen.new(game, {
@@ -832,8 +796,7 @@ M.NAME_RATERS_HOUSE = {
                         else
                           mon.nickname = nil
                         end
-                        push(game, fill(t._NameRatersHouseNameRaterPokemonHasBeenRenamedText
-                          or "OK! This POKéMON\nhas been renamed\n{RAM:}!\fThat's a better\nname than before!",
+                        push(game, fill(t._NameRatersHouseNameRaterPokemonHasBeenRenamedText,
                           { ram = mon.nickname or def.name }), done)
                       end,
                     }))
@@ -914,7 +877,7 @@ local function e4ExitSeal(flag, closedBlock, openBlock, dontRunText, autoFlag)
       if y < 10 or x < 4 or x > 5 then return false end
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        game.data.text[dontRunText] or "Don't run away!", function()
+        game.data.text[dontRunText], function()
         ow:scriptMove(ow.player, "up", 1, nil, { collide = true })
       end))
       return true
@@ -1071,7 +1034,5 @@ M.LANCES_ROOM = {
     return false
   end,
 }
-
-M.CELADON_CHIEF_HOUSE = require("data.scripts.celadon_chief_house")
 
 return M

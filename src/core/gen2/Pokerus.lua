@@ -35,7 +35,8 @@
 local BugContest = require("src.core.gen2.BugContest")
 local Runtime = require("src.mods.Runtime")
 
-local Pokerus = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local Pokerus = EngineFlags.expose({}, { "ENGINE_REACHED_GOLDENROD" })
 
 -- pokerus.infected, a Gen 2 invention: Gen 1 has no Pokerus byte, so there is
 -- no name to share.  Raised from the two -- and only two -- writes that turn a
@@ -58,10 +59,6 @@ local function emitInfected(party, slot, source)
     source = source,
   })
 end
-
--- constants/engine_flags.asm index 21, ENGINE_REACHED_GOLDENROD, backed by
--- wStatusFlags2 bit STATUSFLAGS2_REACHED_GOLDENROD_F.
-Pokerus.ENGINE_REACHED_GOLDENROD = 21
 
 -- `percent` is `* $ff / 100` (macros/data.asm), so these are 85 and 128 out of
 -- 256 rather than 33 and 50 out of 100.

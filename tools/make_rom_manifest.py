@@ -535,11 +535,14 @@ DIRECT_SYMBOLS = {
     "AttackAnimationPointers",
     "BadgeNumbersTileGraphics",
     "BaseStats",
+    "BattleMenuText",
+    "BillsPCText",
     "BugIconFrame1",
     "BugIconFrame2",
     "CancelTextString",
     "CircleTile",
     "CryData",
+    "DisabledText",
     "DisplayBattleMenu.oldManName",
     "DrawText",
     "DoBlizzardSpecialEffects",
@@ -547,6 +550,7 @@ DIRECT_SYMBOLS = {
     "DoRockSlideSpecialEffects",
     "DoorTileIDPointers",
     "ED_Tile",
+    "EnemyText",
     "EvosMovesPointerTable",
     "FallingObjects_DeltaXs",
     "FlashScreenEveryEightFrameBlocks",
@@ -561,10 +565,12 @@ DIRECT_SYMBOLS = {
     "FossilKabutopsPic",
     "GhostPic",
     "GymLeaderFaceAndBadgeTileGraphics",
+    "HowToLinkText",
     "ItemNames",
     "ItemPrices",
     "ItemUseMedicine.emptyPartyText",
     "KeyItemFlags",
+    "LogOffPCText",
     "MewBaseStats",
     "MonPartyData",
     "MonsterNames",
@@ -576,23 +582,34 @@ DIRECT_SYMBOLS = {
     "MoveAnimationTilesPointers",
     "MoveSoundTable",
     "Moves",
+    "NameTextString",
+    "NicknameTextString",
     "NothingWildMons",
+    "NowSavingString",
+    "OaksPCText",
     "OldManPicBack",
+    "PKMNLeaguePCText",
     "PTile",
     "PlantIconFrame1",
     "PlantIconFrame2",
+    "PlayersPCText",
     "PokeballTileGraphics",
     "PokedexEntryPointers",
     "PokedexTileGraphics",
+    "PrintStatsBox.StatsText",
     "QuadrupedIconFrame1",
     "QuadrupedIconFrame2",
     "RedBikeSprite",
     "RedPicBack",
     "RedPicFront",
+    "RivalsTextString",
+    "SafariZoneBattleMenuText",
     "SnakeIconFrame1",
     "SnakeIconFrame2",
+    "SomeonesPCText",
     "SpinnerArrowAnimTiles",
     "SpriteSheetPointerTable",
+    "StatModTextStrings",
     "SubanimationPointers",
     "SuperPalettes",
     "TechnicalMachinePrices",
@@ -607,13 +624,18 @@ DIRECT_SYMBOLS = {
     "TrainerInfoTextBoxTileGraphics",
     "TrainerNames",
     "TrainerPicAndMoneyPointers",
+    "TwoOptionMenuStrings.HealCancelMenu",
     "TwoOptionMenuStrings.TradeCancelMenu",
     "TypeEffects",
+    "TypeText",
+    "VitaminStats",
     "WaitingText",
     "WarpTileIDPointers",
+    "WhichTechniqueString",
     "WildDataPointers",
     "YouLoseText",
     "YouWinText",
+    "YourTextString",
 }
 
 FIELD_ASSET_SYMBOLS = {
@@ -687,27 +709,6 @@ def embedded_symbols(data, symbols):
         name: [symbols[name].bank, symbols[name].address]
         for name in sorted(names)
     }
-
-
-# Trainer parties this project reimplements that have no data to extract:
-# CeladonChiefHouse's CHIEF is a talk-only NPC in the ROM (the Celadon Chief
-# battle is unused/cut content -- pokered's data/trainers/parties.asm has
-# `ChiefData:` followed by `; none`, zero Pokemon).  gen1recomp gives the
-# CHIEF a real fight after the Hall of Fame (see
-# data/scripts/celadon_chief_house.lua and src/import/RomExtractor.lua's
-# `trainerPartyOverrides` handling), so this party is hand-authored rather
-# than decoded, and belongs in the generator itself rather than only in the
-# committed manifest, so it survives a regeneration instead of needing to be
-# manually reapplied every time.
-TRAINER_PARTY_OVERRIDES = {
-    "OPP_CHIEF": [
-        {"species": "MACHOKE", "level": 41},
-        {"species": "GOLBAT", "level": 41},
-        {"species": "MAROWAK", "level": 43},
-        {"species": "WEEZING", "level": 43},
-        {"species": "PERSIAN", "level": 46},
-    ],
-}
 
 
 def apply_known_nonreproducible_overrides(texts, field_data):
@@ -873,7 +874,6 @@ def generate(pokered, symbols_path):
         "field": field_data,
         "audio": audio_data,
         "battleAnimations": battle_animation_metadata(pokered),
-        "trainerPartyOverrides": TRAINER_PARTY_OVERRIDES,
     }
     data["symbols"] = embedded_symbols(data, symbols)
     return data

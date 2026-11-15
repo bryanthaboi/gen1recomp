@@ -106,7 +106,7 @@ end
 -- ------- ui.naming.grid (digits in names)
 
 do
-  local game = { data = {}, stack = { pop = function() end },
+  local game = { data = { text = dofile("tests/fixture_data/text.lua") }, stack = { pop = function() end },
                  input = { wasPressed = function() return false end } }
   local unsub = wrap("ui.naming.grid", function(next, grid, ctx)
     grid = next(grid, ctx)
@@ -210,13 +210,16 @@ do
     "Gold battle bottom UI returns when the hook is removed")
 
   local Chrome = require("src.ui.gen2.Chrome")
-  local clear, box, print = Chrome.clear, Chrome.box, Chrome.print
+  local clear, box, print = Chrome.clear, Chrome.paletteBox, Chrome.print
   local boxes = 0
   Chrome.clear = function() end
-  Chrome.box = function() boxes = boxes + 1 end
+  Chrome.paletteBox = function() boxes = boxes + 1 end
   Chrome.print = function() end
   local panel = setmetatable({
     battle = { player = {}, enemy = {} }, phase = "resolving",
+    palettes = { battleText = {
+      { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+    } },
     drawHud = function() end,
   }, { __index = Gen2BattleState })
   unsub = wrap("battle.bottom_ui_visible", function() return false end)
@@ -225,7 +228,7 @@ do
   unsub()
   panel:drawPanel()
   check(boxes == 1, "Gold draws its battle box again without the hook")
-  Chrome.clear, Chrome.box, Chrome.print = clear, box, print
+  Chrome.clear, Chrome.paletteBox, Chrome.print = clear, box, print
 
   check(BattleState.statusHUDVisible({}),
     "battle status HUD is visible without a mod")

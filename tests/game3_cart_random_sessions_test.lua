@@ -10,6 +10,7 @@ local GAME
 if os.getenv("POKEPORT_RANDOM_GAME") == "emerald" then
   GameVersion.set("emerald")
   require("src.import.gba.versions").select("emerald")
+  require("tests.game3_cache").mount("emerald")
   local Dataset = require("src.core.game3.dataset")
   local cache = Dataset.cache()
   if not cache:read("data/generated/gba/native/manifest.lua") or not cache:read("data/generated/gba/pokemon/national.lua") then

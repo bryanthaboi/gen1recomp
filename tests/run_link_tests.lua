@@ -72,6 +72,54 @@ eq(Protocol.unpackMon(Data, otPack).otId, 0, "under-range OT ID clamped")
 local legacy = Protocol.packMon(Pokemon.new(Data, "PIDGEY", 10))
 check(Protocol.unpackMon(Data, legacy).ot == nil, "missing OT stays nil (legacy peer)")
 
+-- ../pokered/data/text/alphabets.asm:13-14
+do
+  local Wire = require("src.link.Wire")
+  local function validUtf8(s)
+    local i, n = 1, #s
+    while i <= n do
+      local b = s:byte(i)
+      local len = b < 0x80 and 1 or (b >= 0xC2 and b <= 0xDF) and 2
+        or (b >= 0xE0 and b <= 0xEF) and 3 or (b >= 0xF0 and b <= 0xF4) and 4 or nil
+      if not len or i + len - 1 > n then return false end
+      for j = i + 1, i + len - 1 do
+        local c = s:byte(j)
+        if c < 0x80 or c > 0xBF then return false end
+      end
+      i = i + len
+    end
+    return true
+  end
+  local function overTheWire(mon)
+    local line = Json.encode({ type = "party", mons = { Protocol.packMon(mon) } })
+    return Protocol.unpackMon(Data, Wire.sanitize(Json.decode(line)).mons[1])
+  end
+  local male, female = "\226\153\130", "\226\153\128"
+  for _, c in ipairs({
+    { "seven male signs", male:rep(7) },
+    { "ASH and three female signs", "ASH" .. female:rep(3) },
+    { "PK MN PK", "<PK><MN><PK>" },
+    { "seven times signs", ("\195\151"):rep(7) },
+  }) do
+    local mon = Pokemon.new(Data, "KADABRA", 30)
+    mon.ot, mon.otId = c[2], 4321
+    local got = overTheWire(mon).ot
+    eq(got, c[2], "grid-legal OT survives the wire: " .. c[1])
+    check(validUtf8(got or ""), "received OT is valid UTF-8: " .. c[1])
+  end
+  local nick = "A" .. ("<DOT>"):rep(9)
+  local nickMon = Pokemon.new(Data, "KADABRA", 30)
+  nickMon.nickname = nick
+  eq(overTheWire(nickMon).nickname, nick, "a ten-glyph 46-byte nickname survives the wire")
+  nickMon.nickname = nick .. "A"
+  eq(overTheWire(nickMon).nickname, nick, "an eleventh nickname glyph is clipped whole")
+  local broken = Pokemon.new(Data, "KADABRA", 30)
+  broken.ot = male:rep(3) .. "\226"
+  local packedBroken = Protocol.packMon(broken)
+  eq(packedBroken.ot, male:rep(3), "a saved dangling OT byte packs as valid UTF-8")
+  check(validUtf8(overTheWire(broken).ot), "and arrives valid")
+end
+
 -- ---------------------------------------------------------------- transport
 local Net = require("src.link.Net")
 

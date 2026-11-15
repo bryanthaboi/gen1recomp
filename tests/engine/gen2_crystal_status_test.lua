@@ -56,7 +56,8 @@ local function fixture(roll)
       } },
     stages = { player = Battle.newStages(), enemy = Battle.newStages() },
     screens = { player = {}, enemy = {} } }, Battle)
-  battle.data.text = {}
+  battle.data.text = require("tests.fixture_data.gen2_rom_text_s7_a").text(
+    require("tests.fixture_data.gen2_rom_text_s7_b").text(nil, "crystal"), "crystal")
   for _, label in ipairs({ "FrozenSolidText", "FullyParalyzedText", "MustRechargeText",
       "FlinchedText", "DisabledNoMoreText", "ConfusedNoMoreText", "IsConfusedText",
       "DisabledMoveText", "DefrostedOpponentText", "HurtItselfText", "InLoveWithText",

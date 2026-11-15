@@ -29,7 +29,7 @@ do
   local screen = setmetatable({
     phase = "moveSelect",
     player = { curMoves = { { id = "TACKLE", pp = 35 } } },
-    data = { moves = { TACKLE = { name = "TACKLE", pp = 35, type = "NORMAL" } } },
+    data = { text = require("tests.fixture_data.text"), moves = { TACKLE = { name = "TACKLE", pp = 35, type = "NORMAL" } } },
     moveIndex = 1, frame = 0,
   }, { __index = BattleState })
   local ok, err = pcall(function() screen:drawTextArea() end)
@@ -56,7 +56,7 @@ do
       { id = "TACKLE", pp = 35 }, { id = "GROWL", pp = 40 },
       { id = "TACKLE", pp = 35 }, { id = "GROWL", pp = 40 },
     } },
-    data = { moves = {
+    data = { text = require("tests.fixture_data.text"), moves = {
       TACKLE = { name = "TACKLE", pp = 35, type = "NORMAL" },
       GROWL = { name = "GROWL", pp = 40, type = "NORMAL" },
     } },
@@ -81,7 +81,7 @@ do
   local screen = setmetatable({
     phase = "mimicSelect",
     mimicMoves = { { id = "TACKLE" }, { id = "GROWL" } },
-    data = { moves = {
+    data = { text = require("tests.fixture_data.text"), moves = {
       TACKLE = { name = "TACKLE" }, GROWL = { name = "GROWL" },
     } },
     mimicIndex = 1, frame = 0,

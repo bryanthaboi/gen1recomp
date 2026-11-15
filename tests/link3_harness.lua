@@ -47,11 +47,21 @@ local function clear()
   for name in pairs(H.known) do package.loaded[name] = nil end
 end
 
+local function useCacheRoot(w)
+  if not w.cacheRoot then return end
+  local Dataset = require("src.core.game3.dataset")
+  if Dataset.cacheRootOverride ~= w.cacheRoot then
+    Dataset.cacheRootOverride = w.cacheRoot
+    Dataset.mountExtractRoots()
+  end
+end
+
 function H.enter(w)
   if H.current == w then return end
   if H.current then capture(H.current) end
   for name in pairs(H.known) do package.loaded[name] = w.mods[name] end
   H.current = w
+  useCacheRoot(w)
 end
 
 function H.run(w, fn, ...)
@@ -73,11 +83,13 @@ function H.mountCache()
   return H.bundle
 end
 
-function H.newWorld(name, session)
+function H.newWorld(name, session, opts)
   if H.current then capture(H.current) end
   clear()
   H.current = nil
-  local w = { name = name, mods = {}, session = session, reports = {} }
+  local w = { name = name, mods = {}, session = session, reports = {},
+    cacheRoot = type(opts) == "table" and opts.cacheRoot or nil }
+  useCacheRoot(w)
   session.store = session.store or { flags = {}, vars = {} }
   local game = { data = { maps = {} }, session = session }
   w.game = game

@@ -417,18 +417,32 @@ do
   eq(back[1].qy, 8, "and receiving draws TradeArrowLeftGFX")
 end
 
--- A cache without the stage still runs the animation: the shapes, not a crash.
 do
   local bare = newView(nil)
   check(bare.gfx == nil, "no gen2Trade in the cache means no sheets")
-  local ok = pcall(function()
-    bare:drawTube(0)
-    bare:drawScene(0)
-    bare:drawBall(80, 68, true)
-    bare:drawPoof(80, 68, 0)
-    bare:drawBulge(80, 24, 0)
-  end)
-  check(ok, "and every routine falls back to the shape it used to draw")
+  for _, name in ipairs({ "drawTube", "drawScene", "drawBall", "drawPoof",
+                          "drawBulge", "drawGameBoy" }) do
+    check(not pcall(bare[name], bare, 0, 0, 0),
+      name .. " errors without trade.lua instead of drawing a shape")
+  end
+  for _, key in ipairs({ "ball", "poof", "bulge", "bubble", "arrows", "tube",
+                         "gameBoy" }) do
+    local partial = {}
+    for k, v in pairs(FAKE) do partial[k] = v end
+    partial[key] = nil
+    local view = newView(partial)
+    local ok, err = pcall(function()
+      view:drawTube(0)
+      view:drawScene(0)
+      view:drawBall(80, 68, true)
+      view:drawPoof(80, 68, 0)
+      view:drawBulge(80, 24, 0)
+      view:drawBubble(GIVEN, 80, 68)
+      view:drawTubeStrip(true)
+    end)
+    check(not ok and tostring(err):find("trade.lua has no " .. key, 1, true)
+      ~= nil, "a trade.lua without " .. key .. " errors naming it")
+  end
 end
 
 -- ../pokegold/engine/movie/trade_animation.asm:784-789

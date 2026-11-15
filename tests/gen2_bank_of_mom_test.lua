@@ -9,6 +9,7 @@ local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
 local Specials = require("src.script.gen2.Specials")
 local Save = require("src.core.gen2.Save")
+local MOM_DATA = { text = require("tests.fixture_data.gen2_rom_text_s7_f1").text() }
 
 check(Specials.STUBS.BankOfMom == nil,
   "BankOfMom is a HANDLER: the six-digit keypad it needed now exists")
@@ -34,6 +35,7 @@ local function bankVm(rec, amounts)
   local vm = Vm.new({}, {}, Events.new(), {
     specials = {
       save = function() return rec end,
+      data = function() return MOM_DATA end,
       money = function(account)
         return account == 1 and rec.mom.savedMoney or rec.player.money
       end,
@@ -258,7 +260,8 @@ do
   local World = require("src.world.gen2.World")
   local healed, warped = false, false
   local fakeSelf = setmetatable({
-    game = { save = { player = { money = 5001 } } },
+    game = { save = { player = { money = 5001 } },
+      data = { text = require("tests.fixture_data.gen2_rom_text_s7_g").text() } },
     showText = function(_self, _text, onDone) onDone() end,
     healParty = function() healed = true end,
     warpToSpawn = function(self)

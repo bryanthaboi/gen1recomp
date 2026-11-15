@@ -52,7 +52,53 @@ local H = Specials.HANDLERS
 -- The cache tables the handlers read, plus the landmark registry
 -- GetLandmarkName walks (../pokecrystal/engine/overworld/landmarks.asm:16).
 local DATA = {
-  gen2EventTables = require("tests.fixtures.gen2_buena").gen2EventTables,
+  gen2EventTables = {
+    buenaPassword = require("tests.fixtures.gen2_buena").gen2EventTables.buenaPassword,
+    -- pokecrystal/data/items/buena_prizes.asm:1
+    buenaPrizes = {
+      { item = "ULTRA_BALL", cost = 2 }, { item = "FULL_RESTORE", cost = 2 },
+      { item = "NUGGET", cost = 3 }, { item = "RARE_CANDY", cost = 3 },
+      { item = "PROTEIN", cost = 5 }, { item = "IRON", cost = 5 },
+      { item = "CARBOS", cost = 5 }, { item = "CALCIUM", cost = 5 },
+      { item = "HP_UP", cost = 5 },
+    },
+    -- pokecrystal/engine/events/poke_seer.asm:178,203,214,357
+    pokeSeer = {
+      times = { "Morning", "Day", "Night" },
+      unknown = "Unknown",
+      unknownLevel = "???",
+      advice = {
+        { level = 9, label = "_SeerMoreCareText" },
+        { level = 29, label = "_SeerMoreConfidentText" },
+        { level = 59, label = "_SeerMuchStrengthText" },
+        { level = 89, label = "_SeerMightyText" },
+        { level = 100, label = "_SeerImpressedText" },
+        { level = 255, label = "_SeerMoreCareText" },
+      },
+    },
+  },
+  -- pokecrystal/data/text/common_3.asm:281-445, 1082-1116
+  text = {
+    _BuenaAskWhichPrizeText = "Which prize would\nyou like?{DONE}",
+    _BuenaComeAgainText = "Oh. Please come\nback again!{DONE}",
+    _BuenaHereYouGoText = "Here you go!\f{DONE}",
+    _BuenaIsThatRightText = "{STRBUF}?\nIs that right?{DONE}",
+    _BuenaNoRoomText = "You have no room\nfor it.\f{DONE}",
+    _BuenaNotEnoughPointsText = "You don't have\nenough points.\f{DONE}",
+    _SeerCantTellAThingText = "Whaaaat? I can't\ntell a thing!\fHow could I not\nknow of this?{DONE}",
+    _SeerDoNothingText = "Fufufu! I saw that\nyou'd do nothing!{DONE}",
+    _SeerEggText = "Hey!\fThat's an EGG!\fYou can't say that\nyou've met it yet…{DONE}",
+    _SeerImpressedText = "Incidentally…\fI'm impressed by\nyour dedication.\fIt's been a long\ntime since I've\fseen a POKéMON as\nmighty as this\v{STRBUF}.\fI'm sure that\nseeing {STRBUF}\fin battle would\nexcite anyone.{DONE}",
+    _SeerMightyText = "Incidentally…\fIt certainly has\ngrown mighty!\fThis {STRBUF}\nmust have come\fthrough numerous\nPOKéMON battles.\fIt looks brimming\nwith confidence.{DONE}",
+    _SeerMoreCareText = "Incidentally…\fIt would be wise\nto raise your\fPOKéMON with a\nlittle more care.{DONE}",
+    _SeerMoreConfidentText = "Incidentally…\fIt seems to have\ngrown a little.\f{STRBUF} seems\nto be becoming\vmore confident.{DONE}",
+    _SeerMuchStrengthText = "Incidentally…\f{STRBUF} has\ngrown. It's gained\vmuch strength.{DONE}",
+    _SeerNameLocationText = "Hm… I see you met\n{STRBUF} here:\v{STRBUF}!{PROMPT}",
+    _SeerNoLocationText = "What!? Incredible!\fI don't understand\nhow, but it is\fincredible!\nYou are special.\fI can't tell where\nyou met it, but it\vwas at level {STRBUF}.\fAm I good or what?{PROMPT}",
+    _SeerSeeAllText = "I see all.\nI know all…\fCertainly, I know\nof your POKéMON!{DONE}",
+    _SeerTimeLevelText = "The time was\n{STRBUF}!\fIts level was {STRBUF}!\fAm I good or what?{PROMPT}",
+    _SeerTradeText = "Hm… {STRBUF}\ncame from {STRBUF}\vin a trade?\f{STRBUF}\nwas where {STRBUF}\vmet {STRBUF}!{PROMPT}",
+  },
   pokemon = {
     tutorMoves = { "FLAMETHROWER", "THUNDERBOLT", "ICE_BEAM" },
     TYPHLOSION = { index = 157, name = "TYPHLOSION",
@@ -354,7 +400,7 @@ do
   eq(save.inventory.ULTRA_BALL, 1, "one ULTRA BALL leaves the counter")
   eq(hooks.vars[0x18], 3, "and the two points come off the card")
   eq(hooks.log.sfx[1], "Sfx_Transaction", "SFX_TRANSACTION rings the sale")
-  eq(pages[#pages], "Oh. Please come\nback again!",
+  eq(pages[#pages], "Oh. Please come\nback again!{DONE}",
     ".done prints _BuenaComeAgainText after the loop")
 end
 
@@ -377,7 +423,7 @@ do
   local pages = run(vm, H.BuenaPrize, { true })
   eq(save.inventory.ULTRA_BALL, nil, "one point cannot buy a two point ball")
   eq(hooks.vars[0x18], 1, "the balance is untouched")
-  check(pages[3] == "You don't have\nenough points.",
+  check(pages[3] == "You don't have\nenough points.\f{DONE}",
     "_BuenaNotEnoughPointsText is the refusal")
 
   -- ReceiveItem's own refusal: a stack already at 99.
@@ -388,7 +434,7 @@ do
   local fullPages = run(fullVm, H.BuenaPrize, { true })
   eq(full.inventory.ULTRA_BALL, 99, "a full stack takes no more")
   eq(fullHooks.vars[0x18], 9, "a full bag spends nothing either")
-  check(fullPages[3] == "You have no room\nfor it.",
+  check(fullPages[3] == "You have no room\nfor it.\f{DONE}",
     "_BuenaNoRoomText is that refusal")
 end
 
@@ -415,13 +461,13 @@ end
 do
   local pages = runSeer(seerMon(), true)
   eq(#pages, 2, "the intro and then the refusal")
-  eq(pages[2], "Fufufu! I saw that\nyou'd do nothing!", "_SeerDoNothingText")
+  eq(pages[2], "Fufufu! I saw that\nyou'd do nothing!{DONE}", "_SeerDoNothingText")
 end
 
 -- engine/events/poke_seer.asm:28-29 `cp EGG / jr z, .egg`.
 do
   local pages = runSeer(seerMon({ isEgg = true }))
-  eq(pages[2], "Hey!\fThat's an EGG!\fYou can't say that\nyou've met it yet…",
+  eq(pages[2], "Hey!\fThat's an EGG!\fYou can't say that\nyou've met it yet…{DONE}",
     "_SeerEggText")
 end
 
@@ -437,9 +483,9 @@ do
   local mon = seerMon({ caughtTime = 1, caughtLevel = 10,
     caughtLocation = 1, caughtByGender = "boy" })
   local pages = runSeer(mon)
-  eq(pages[2], "Hm… I see you met\nROCKY here:\vNEW BARK TOWN!",
+  eq(pages[2], "Hm… I see you met\nROCKY here:\vNEW BARK TOWN!{PROMPT}",
     "_SeerNameLocationText, with the town map's line break spent as a space")
-  eq(pages[3], "The time was\nMorning!\fIts level was 10!\fAm I good or what?",
+  eq(pages[3], "The time was\nMorning!\fIts level was 10!\fAm I good or what?{PROMPT}",
     "_SeerTimeLevelText")
   check(pages[4]:find("more confident", 1, true) ~= nil,
     "a 20 level gain is SeerMoreConfidentText, the 29 row")
@@ -452,8 +498,8 @@ do
     caughtTime = 3, caughtLevel = 5, caughtLocation = 2 })
   local pages = runSeer(traded)
   eq(pages[2], "Hm… ROCKY\ncame from SILVER\vin a trade?\fROUTE 29\n"
-    .. "was where SILVER\vmet ROCKY!", "_SeerTradeText")
-  eq(pages[3], "The time was\nNight!\fIts level was 5!\fAm I good or what?",
+    .. "was where SILVER\vmet ROCKY!{PROMPT}", "_SeerTradeText")
+  eq(pages[3], "The time was\nNight!\fIts level was 5!\fAm I good or what?{PROMPT}",
     "the same time/level page follows")
 
   local sameHigh = seerMon({ otId = 0x12ff, caughtTime = 2, caughtLevel = 5,
@@ -487,7 +533,7 @@ do
   -- byte1 is set, so ReadCaughtData's `or [hl]` misses its `.error` arm
   -- (engine/events/poke_seer.asm:105).
   local pages = runSeer(unknown)
-  eq(pages[3], "The time was\nUnknown!\fIts level was ???!\fAm I good or what?",
+  eq(pages[3], "The time was\nUnknown!\fIts level was ???!\fAm I good or what?{PROMPT}",
     "no time and no level print Unknown and ???")
 
   local hatched = seerMon({ caughtLevel = 1, caughtLocation = 1, caughtTime = 2,
@@ -532,6 +578,30 @@ do
     "90 is the 100 row")
   check(adviceFor(5, 10):find("little more care", 1, true) ~= nil,
     "and `sub c` underflowing lands on the 255 row, which repeats the first")
+end
+
+-- engine/events/poke_seer.asm:357 SeerAdviceTexts
+do
+  local advice = DATA.gen2EventTables.pokeSeer.advice
+  local saved = advice[1].level
+  advice[1].level = 1
+  local mon = seerMon({ level = 12, caughtLevel = 10, caughtLocation = 1,
+    caughtTime = 2 })
+  check(runSeer(mon)[4]:find("more confident", 1, true) ~= nil,
+    "the advice thresholds are the cache's, not the handler's")
+  advice[1].level = saved
+
+  local tables = DATA.gen2EventTables
+  DATA.gen2EventTables = { buenaPassword = tables.buenaPassword }
+  local ok, err = pcall(runSeer, seerMon({ caughtLevel = 10, caughtLocation = 1 }))
+  check(not ok and tostring(err):find("pokeSeer", 1, true) ~= nil,
+    "an events.lua without pokeSeer is an error")
+  local save = newSave()
+  local okP, errP = pcall(run, newVm(newHooks(save, { answers = { 0 } })),
+    H.BuenaPrize)
+  check(not okP and tostring(errP):find("buenaPrizes", 1, true) ~= nil,
+    "and so is one without buenaPrizes")
+  DATA.gen2EventTables = tables
 end
 
 -- ================================================ UnusedFindItemInPCOrBag

@@ -2225,18 +2225,14 @@ function Engine.canSwitch(st, adapter, battler)
   if battler.expTrapped or battler.escapePrevention or (battler.expTrapTurns or 0) > 0 or battler.expIngrain then
     -- src/party_menu.c:5964
     local name = (adapter and adapter.displayName and adapter:displayName(battler)) or "POKéMON"
-    local ok, txt = pcall(RomText.ascii, "gText_PkmnCantSwitchOut", { stringVars = { name } })
-    if ok and txt then return false, txt end
-    return false, name .. " can't be switched out!"
+    return false, RomText.ascii("gText_PkmnCantSwitchOut", { stringVars = { name } })
   end
   local holder, ab = Abilities.escapeBlocker(adapter, battler)
   if holder then
     -- src/pokemon.c:6029
-    local ok, txt = pcall(State.text, st, "gText_PkmnsXPreventsSwitching", {
+    return false, State.text(st, "gText_PkmnsXPreventsSwitching", {
       buff1 = State.prefixedName(st, holder), lastAbility = Abilities.id(ab),
     })
-    if ok and txt then return false, txt end
-    return false, "Can't escape!"
   end
   return true
 end

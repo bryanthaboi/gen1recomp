@@ -47,17 +47,13 @@
 
 local Trainers = require("src.world.gen2.Trainers")
 
-local TrainerHouse = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local TrainerHouse = EngineFlags.expose({}, { "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY" })
 
 -- constants/trainer_constants.asm: the CAL class and its three members.  CAL1
 -- is the Route 27 battle, CAL2 the Mystery Gift visitor, CAL3 the house's own.
 TrainerHouse.CAL = 12
 TrainerHouse.CAL1, TrainerHouse.CAL2, TrainerHouse.CAL3 = 1, 2, 3
-
--- constants/engine_flags.asm index 86, wDailyFlags1 bit
--- DAILYFLAGS1_FOUGHT_IN_TRAINER_HALL_TODAY.  Cleared by
--- Apricorns.dailyReset, which wipes both daily bytes whole.
-TrainerHouse.ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY = 86
 
 -- sMysteryGiftTrainerHouseFlag (ram/sram.asm), the byte a completed Mystery
 -- Gift trade leaves behind.  STUB, and a deliberate one: nothing in this port

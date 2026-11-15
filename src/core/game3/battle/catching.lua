@@ -288,9 +288,27 @@ local function emit_caught(res)
     battle = battle_state(nil), mon = mon, species = G3.speciesName(res.species),
     speciesId = tonumber(res.species), isNew = res.firstTimeCaught,
     ball = G3.itemName(mon.pokeball), ballId = mon.pokeball,
-    destination = res.location == "pc" and "box" or "party",
+    destination = res.location == "pc" and "box" or res.location == "mod" and "mod" or "party",
     box = res.box, slot = res.slot, game = R and R._game or nil,
   })
+end
+
+local function never_claim() return false end
+
+-- pokefirered/src/battle_script_commands.c:9619
+-- pokeemerald/src/battle_script_commands.c:10057
+function Catching.partyFullDestination(mon, species)
+  if not ModRuntime.wantsHook("catch.party_full") then return "box" end
+  local G3 = require("src.mods.Gen3Compat")
+  local R = package.loaded["src.core.game3.runtime"]
+  local name = (mon.nickname ~= nil and mon.nickname ~= "" and mon.nickname) or mon.name
+    or Pokemon.name(species)
+  local claimed = ModRuntime.call("catch.party_full", never_claim, {
+    battle = battle_state(nil), mon = mon, name = name, game = R and R._game or nil,
+    species = G3.speciesName(species), speciesId = tonumber(species),
+  })
+  if claimed then return "mod" end
+  return "box"
 end
 
 --- Store a caught Pokémon into session party or PC.
@@ -342,6 +360,8 @@ function Catching.storeCaught(session, foeBattler, ballId, opts)
   if #session.party < 6 then
     session.party[#session.party + 1] = mon
     location = "party"
+  elseif Catching.partyFullDestination(mon, species) == "mod" then
+    location = "mod"
   else
     local Storage = require("src.core.game3.storage")
     local ok, bId, sId

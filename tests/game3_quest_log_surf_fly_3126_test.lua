@@ -27,6 +27,7 @@ package.loaded['src.core.game3.runtime']={
   getSession=function() return session end,
   uiBusy=function() return false end,
 }
+package.loaded['src.ui.game3.quest_log']={pack={worldMapFlags={2193,2194}}}
 local R=require('src.core.game3.quest_log_recorder')
 
 local fails=0
@@ -44,8 +45,12 @@ check(R.capture(game,session).actors[1].surf==nil,'walking capture records no bl
 P.surfing=true
 
 for _=1,30 do R.update(game) end
+check(session.questLog==nil,'no arrival on a map change without a new world map flag')
+R.recordEnteredMap(session,2193,false)
+R.update(game)
 local scenes=session.questLog.scenes
-check(#scenes==1 and scenes[1].events[1].key=='ArrivedInLocation','arrival recorded on first tick')
+check(#scenes==1 and scenes[1].events[1].key=='ArrivedInLocation','arrival recorded on the first tick after a new world map flag')
+for _=1,29 do R.update(game) end
 local frames=#scenes[1].frames
 check(frames>1,'surfing frames sampled')
 check(scenes[1].frames[frames].actors[1].surf~=nil,'sampled surfing frame carries the blob')
@@ -70,14 +75,16 @@ check(#scenes[1].frames==before,'no samples while fly-out runs')
 session.map='FR_PALLET_TOWN'
 FE._anims={{kind='fly_in'}}
 for _=1,60 do R.update(game) end
-check(#scenes==1,'arrival held while fly-in runs')
+check(#scenes==1,'no arrival while fly-in runs')
 FE._anims={}
 package.loaded['src.core.game3.field']={_flyLanding=true}
 for _=1,12 do R.update(game) end
-check(#scenes==1,'arrival held while fly landing is pending')
+check(#scenes==1,'no arrival while fly landing is pending')
 package.loaded['src.core.game3.field']._flyLanding=false
-R.update(game)
-check(#scenes==2 and scenes[2].map=='FR_PALLET_TOWN','arrival fires once the fly animation ends')
+session.map='FR_VIRIDIAN_CITY'
+R.recordEnteredMap(session,2193,true)
+for _=1,30 do R.update(game) end
+check(#scenes==1,'no arrival after fly lands in an already visited town')
 package.loaded['src.core.game3.field']=nil
 
 local noop=function() end

@@ -321,10 +321,28 @@ do
       { "wPlayerTrademonSenderName", "wPlayerTrademonSpeciesName" }),
     "For SILVER's DROWZEE,", "and the reply names them the other way round")
 
-  -- The screen itself, with no cache behind it: the transcribed fallbacks have
-  -- to come out as the lines the cart prints.
+  local bare = TradeAnimView.new({ data = DATA, save = save }, {
+    row = MIKE, given = given, received = received, save = save,
+  })
+  check(not pcall(bare.lines, bare, "sent_text"),
+    "an events.lua without tradeTexts is an error, not a transcription")
   local view = TradeAnimView.new({ data = DATA, save = save }, {
     row = MIKE, given = given, received = received, save = save,
+    eventTables = {
+      tradeTexts = {
+        _MonWasSentToText = "{STRBUF} was\nsent to {STRBUF}.",
+        _BidsFarewellToMonText = "{STRBUF} bids\nfarewell to",
+        _MonNameBidsFarewellText = "{STRBUF}.",
+        _TakeGoodCareOfMonText = "Take good care of\n{STRBUF}.",
+      },
+      tradeBuffers = {
+        _MonWasSentToText = { "wPlayerTrademonSpeciesName",
+                              "wOTTrademonSenderName" },
+        _BidsFarewellToMonText = { "wOTTrademonSenderName" },
+        _MonNameBidsFarewellText = { "wOTTrademonSpeciesName" },
+        _TakeGoodCareOfMonText = { "wOTTrademonSpeciesName" },
+      },
+    },
   })
   local sent = view:lines("sent_text")
   eq(sent[1], "DROWZEE was", "line 1 of the sent text")
@@ -348,12 +366,10 @@ do
   eq(ElevatorMenu.scrollFor(2, 7, 3), 1, "going back up drags it with you")
   eq(ElevatorMenu.scrollFor(1, 3, 0), 0, "a list that fits never scrolls")
 
-  -- FloorToString: the cache's ElevatorFloorNames, with the transcribed list
-  -- as the fallback for a cache that predates it.
   local names = { "B4F", "B3F", "B2F", "B1F", "1F" }
   eq(ElevatorMenu.floorName(names, 3), "B1F", "FLOOR_B1F is row 3")
-  eq(ElevatorMenu.floorName(nil, 4), "1F", "and FLOOR_1F row 4 without a cache")
-  eq(ElevatorMenu.floorName(nil, 15), "ROOF", "FLOOR_ROOF is the last row")
+  eq(pcall(ElevatorMenu.floorName, nil, 4), false, "no floorNames is an error")
+  eq(pcall(ElevatorMenu.floorName, names, 15), false, "a row past the cache is an error")
 end
 
 -- ---- against the cache ----------------------------------------------------

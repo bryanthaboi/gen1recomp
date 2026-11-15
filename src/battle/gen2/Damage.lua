@@ -61,13 +61,7 @@ end
 function Damage.isPhysical(moveType, types)
   local record = types and types[moveType]
   if record and record.category then return record.category == "physical" end
-  -- Without the table, fall back to the Gen 1/2 boundary: the physical block
-  -- runs NORMAL..GROUND, and the special block starts at FIRE.
-  local PHYSICAL = {
-    NORMAL = true, FIGHTING = true, FLYING = true, POISON = true,
-    GROUND = true, ROCK = true, BUG = true, GHOST = true, STEEL = true,
-  }
-  return PHYSICAL[moveType] == true
+  error("type_chart.lua has no category for type " .. tostring(moveType), 2)
 end
 
 -- engine/battle/effect_commands.asm:1120

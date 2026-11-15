@@ -17,6 +17,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 battle end")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -172,7 +173,8 @@ do
   battle:useMove(wild, player, "TACKLE")
   local events = battle:takeEvents()
   eq(player.hp, 1, "FalseSwipe's clamp leaves the holder on its last point")
-  check(saidSomethingLike(events, "endured the hit!"), "with EnduredText")
+  check(saidSomethingLike(events, battle:romText("EnduredText", wild, player)),
+    "with EnduredText")
 
   -- The same brace at 2 HP still ends on 1: the clamp is MonHP - 1 either way.
   local other = mon("CYNDAQUIL", 10, { "ENDURE", "TACKLE" })

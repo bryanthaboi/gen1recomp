@@ -153,6 +153,8 @@ local DATA = {
   },
   gen2MenuGfx = {},
 }
+DATA.text = setmetatable({},
+  { __index = require("tests.fixture_data.gen2_rom_text_s7_e") })
 
 local function mergedGen2Statuses()
   local registry = Registry.new("statuses", Schemas.REGISTRIES.statuses)
@@ -327,12 +329,16 @@ check("max HP at hlcoord 5,10", at(pink, 5, 10),
 check("STATUS/ at hlcoord 0,12", at(pink, 0, 12), "STATUS/")
 check("TYPE/ two rows below it, not one", at(pink, 0, 14), "TYPE/")
 check("nothing sits between them", at(pink, 0, 13), nil)
-check("a healthy mon reads OK at hlcoord 6,13", at(pink, 6, 13), "OK")
+check("a healthy mon reads OK at hlcoord 6,13", at(pink, 6, 13),
+  DATA.text["LoadPinkPage.OK_str"])
 -- PrintMonTypes writes type 2 two rows down, and LoadPinkPage then copies row
 -- 17 up onto row 16 -- so the second type ends one row under the first.
 check("type 1 at hlcoord 1,15", at(pink, 1, 15), "FIRE")
 check("a single-typed mon has no second type", at(pink, 1, 16), nil)
 DATA.text = require("tests.gen2_battle_text_fixture")()
+for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_e")) do
+  if DATA.text[label] == nil then DATA.text[label] = text end
+end
 DATA.type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = { FIRE = { name = "FEU" } } }
 check("the Gen 2 summary uses the type registry's display name",
   at(screen:pinkPlacements(), 1, 15), "FEU")
@@ -395,7 +401,8 @@ local cured = newSummary()
 cured.mon = mon("TOTODILE", 10, { fields = { pokerus = 0x30 } })
 local curedPink = cured:pinkPlacements()
 check("a cured mon shows the dot at hlcoord 8,8", at(curedPink, 8, 8), ".")
-check("and is otherwise OK", at(curedPink, 6, 13), "OK")
+check("and is otherwise OK", at(curedPink, 6, 13),
+  DATA.text["LoadPinkPage.OK_str"])
 
 -- ------------------------------------------------------------ green page
 
@@ -405,21 +412,25 @@ check("ITEM at hlcoord 0,8", at(green, 0, 8), "ITEM")
 check("the held item at hlcoord 6,8", at(green, 6, 8), "BERRY")
 check("MOVE at hlcoord 0,10", at(green, 0, 10), "MOVE")
 
--- These labels are engine strings rather than ROM text records.  Resolve at
--- placement time so a catalog loaded after the module still reaches them.
-Strings.load({ strings = {
-  ["STATUS/"] = "ÉTAT/", ["TYPE/"] = "GENRE/",
-  ["EXP POINTS"] = "POINTS EXP", ["LEVEL UP"] = "NIVEAU +",
-  ITEM = "OBJET", MOVE = "CAPACITÉ", ["Where?"] = "Où ?",
-  FNT = "K.O.", OK = "BIEN", ["POKéRUS"] = "POKéVIRUS", TO = "À",
-  PP = "PC", ["ATTK/"] = "ATQ/", ["OT/"] = "DO/",
-  ["<ID>№."] = "<ID>N°", ["№."] = "N°", EGG = "ŒUF",
-  ATTACK = "ATTAQUE",
-  DEFENSE = "DÉFENSE", ["SPCL.ATK"] = "ATQ.SPÉ",
-  ["SPCL.DEF"] = "DÉF.SPÉ", SPEED = "VITESSE",
-  ["This EGG needs a<NEXT>lot more time to<NEXT>hatch."] =
-    "Cet ŒUF demande<NEXT>encore beaucoup de<NEXT>temps.",
-} })
+local TRANSLATED = {
+  ["LoadPinkPage.Status_Type"] = "ÉTAT/\nGENRE/",
+  ["LoadPinkPage.ExpPointStr"] = "POINTS EXP",
+  ["LoadPinkPage.LevelUpStr"] = "NIVEAU +",
+  ["LoadGreenPage.Item"] = "OBJET", ["LoadGreenPage.Move"] = "CAPACITÉ",
+  String_MoveWhere = "Où ?", FntString = "K.O.",
+  ["LoadPinkPage.OK_str"] = "BIEN", ["LoadPinkPage.PkrsStr"] = "POKéVIRUS",
+  ["LoadPinkPage.ToStr"] = "À", String_MoveAtk = "ATQ/", OTString = "DO/",
+  IDNoString = "<ID>N°", EggString = "ŒUF",
+  ["PrintTempMonStats.StatNames"] =
+    "ATTAQUE\nDÉFENSE\nATQ.SPÉ\nDÉF.SPÉ\nVITESSE\n",
+  EggALotMoreTimeString = "Cet ŒUF demande\nencore beaucoup de\ntemps.",
+}
+local UNTRANSLATED = {}
+for label, text in pairs(TRANSLATED) do
+  UNTRANSLATED[label] = DATA.text[label]
+  DATA.text[label] = text
+end
+Strings.load({ strings = { PP = "PC", ["№."] = "N°" } })
 local translatedPink = screen:pinkPlacements()
 check("STATUS/ is localizable", at(translatedPink, 0, 12), "ÉTAT/")
 check("TYPE/ is localizable", at(translatedPink, 0, 14), "GENRE/")
@@ -446,11 +457,12 @@ check("the dex number label is localizable",
 check("stat labels are localizable",
   at(screen:bluePlacements(), 11, 8), "ATTAQUE")
 check("ATTK is localizable",
-  at(screen:moveDetailPlacements(), 11, 12), "ATQ/")
+  at(screen:moveDetailPlacements(), 12, 12), "ATQ/")
 screen.mon = { isEgg = true, eggSteps = 41 }
 check("EGG is localizable", at(screen:eggPlacements(), 8, 1), "ŒUF")
 check("complete egg prose is localizable",
   at(screen:eggPlacements(), 1, 9), "Cet ŒUF demande")
+for label in pairs(TRANSLATED) do DATA.text[label] = UNTRANSLATED[label] end
 Strings.load(nil)
 -- ListMoves runs at (8,10) with wListMovesLineSpacing = SCREEN_WIDTH * 2.
 check("move 1 at hlcoord 8,10", at(green, 8, 10), "TACKLE")
@@ -476,7 +488,7 @@ screen = newSummary()
 local blue = screen:bluePlacements()
 -- IDNoString is "<ID>№." -- three single tiles, not the six letters it looks
 -- like -- and both it and OTString are placed at column 0.
-check("<ID>№. at hlcoord 0,9", at(blue, 0, 9), "<ID>№.")
+check("IDNoString at hlcoord 0,9", at(blue, 0, 9), DATA.text.IDNoString)
 check("the ID number at hlcoord 2,10", at(blue, 2, 10), "12345")
 check("OT/ at hlcoord 0,12", at(blue, 0, 12), "OT/")
 -- .PlaceOTInfo pads an ordinary name by two columns.
@@ -548,6 +560,14 @@ check("the type plaque's top at hlcoord 0,10", at(detail, 0, 10), "┌───�
 check("its bottom at hlcoord 0,11", at(detail, 0, 11), "│TYPE/└")
 check("the move's type at hlcoord 2,12", at(detail, 2, 12), "NORMAL")
 check("ATTK/ at hlcoord 11,12", at(detail, 11, 12), "ATTK/")
+do
+  local gold = DATA.text.String_MoveAtk
+  DATA.text.String_MoveAtk = "ATK/"
+  local crystal = screen:moveDetailPlacements()
+  check("Crystal ATK/ at hlcoord 12,12", at(crystal, 12, 12), "ATK/")
+  check("Crystal leaves column 11 blank", at(crystal, 11, 12), nil)
+  DATA.text.String_MoveAtk = gold
+end
 check("the move's power at hlcoord 16,12", at(detail, 16, 12), " 35")
 -- PrintMoveDescription writes at (1,14) and its lines join with <NEXT>, which
 -- is two rows down -- so line two is on row 16, not row 15.
@@ -681,13 +701,7 @@ check("and opens no submenu", party.submenu, nil)
 
 -- ------------------------------------------------------------- the EGG page
 --
--- EggStatsScreen's pic (engine/pokemon/stats_screen.asm:786) is EggPic, which
--- the extractor writes as menu_gfx.eggHatch.egg -- and every cache imported
--- before that stage has no such entry, which is the whole of "the summary
--- shows no egg picture": the 7x7 block was left empty and nothing said why.
--- ICON_EGG has been in icons.lua since the party list existed
--- (ReadMonMenuIcon's `cp EGG / jr z, .egg`, engine/gfx/mon_icons.asm), so it
--- stands in and the page is never blank.
+-- engine/pokemon/stats_screen.asm:786
 do
   local Assets = require("src.render.Assets")
   local realImage = Assets.image
@@ -720,21 +734,15 @@ do
   check("straight off menu_gfx.eggHatch.egg", asked[1], "egg-pic.png")
   check("and asks for nothing else", #asked, 1)
 
-  -- A cache from before that stage: the page still shows an egg.
   asked, drawn = {}, 0
   screen = SummaryMenu.new(newGame(SAVE), { mon = egg, save = SAVE,
     menuGfx = {}, icons = icons })
-  screen:drawEggPic()
-  check("a cache with no EggPic still draws an egg", drawn, 1)
-  check("falling back to ICON_EGG", asked[#asked], "egg-icon.png")
-
-  -- Neither: nothing is drawn and nothing raises.
-  asked, drawn = {}, 0
-  screen = SummaryMenu.new(newGame(SAVE), { mon = egg, save = SAVE,
-    menuGfx = {}, icons = {} })
-  local ok = pcall(function() screen:drawEggPic() end)
-  check("no egg art at all is survivable", ok, true)
-  check("and draws nothing", drawn, 0)
+  local ok, err = pcall(function() screen:drawEggPic() end)
+  check("a cache with no EggPic errors", ok, false)
+  check("naming menu_gfx.eggHatch",
+    tostring(err):find("menu_gfx.lua has no eggHatch", 1, true) ~= nil, true)
+  check("and never reaches for ICON_EGG", #asked, 0)
+  check("or draws anything", drawn, 0)
 
   Assets.image = realImage
   love.graphics.draw = realDraw

@@ -7,7 +7,7 @@ local T = require("tests.modkit")
 local check, eq = T.check, T.eq
 local Data = T.fixtures.fresh()
 require("src.render.Font").load(Data)
-Data.text = {}
+Data.text = setmetatable({}, { __index = function(_, k) return k end })
 
 local Sound = require("src.core.Sound")
 local Music = require("src.core.Music")

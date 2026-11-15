@@ -21,7 +21,7 @@ local function cacheRoot()
   return nil
 end
 
-local ROOT = cacheRoot()
+local ROOT = cacheRoot() or require("tests.game3_cache").gameDir("emerald", "chrome/manifest.lua")
 if not ROOT then
   print("emerald_text_chrome_test: skipped (set POKEPORT_IDENTITY to an identity with an Emerald cache)")
   os.exit(0)

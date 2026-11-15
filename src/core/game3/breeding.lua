@@ -603,6 +603,11 @@ function Breeding.giveEggFromDaycare(session)
   local species, mother, father = Breeding.parentSlots(dc)
   if (species or SPECIES_NONE) == SPECIES_NONE then return nil end
   species = Breeding.alterEggSpeciesWithIncenseItem(species, dc)
+  if ModRuntime.wants("pokemon.before_give") then
+    local Gift = require("src.core.game3.gift")
+    species = Gift.beforeGive(require("src.core.game3.scripting.ctx").modCtx(nil),
+      species, Gift.EGG_LEVEL, { isEgg = true })
+  end
   local egg = Breeding.setInitialEggData(session, species, dc)
   if not egg then return nil end
   Breeding.inheritIVs(egg, dc, session)

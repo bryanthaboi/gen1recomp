@@ -8,7 +8,6 @@ local IntroFade = require("src.ui.gen2.IntroFade")
 local Music = require("src.core.Music")
 local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local GenderSelect = {}
@@ -18,8 +17,8 @@ GenderSelect.isOpaque = true
 -- .MenuData's two items (../pokecrystal/engine/menus/init_gender.asm:50-53),
 -- and the wPlayerGender byte each writes (`ld a, [wMenuCursorY] / dec a`).
 GenderSelect.OPTIONS = {
-  { label = Strings.source("Boy"), gender = "male" },
-  { label = Strings.source("Girl"), gender = "female" },
+  { label = "InitGender.MenuData#1", gender = "male" },
+  { label = "InitGender.MenuData#2", gender = "female" },
 }
 
 -- menu_coords 6, 4, 12, 9 -- inclusive, so 7 columns by 6 rows.
@@ -50,8 +49,6 @@ local FADE_CONTROL = 0x10
 -- (../pokecrystal/engine/menus/init_gender.asm:39-40).
 local EXIT_FRAMES = 10
 
-local FALLBACK = Strings.source("Are you a boy?\nOr are you a girl?")
-
 function GenderSelect:wantsFillScale() return true end
 function GenderSelect:drawsWidescreen() return true end
 
@@ -67,8 +64,7 @@ function GenderSelect.new(game, opts)
   self.cursor = 1
   self.exit = nil
   self.fades = opts.fades and true or false
-  self.text = CommonText.plain(RomText(self.data,
-    "_AreYouABoyOrAreYouAGirlText", FALLBACK))
+  self.text = CommonText.plain(RomText(self.data, "_AreYouABoyOrAreYouAGirlText"))
   -- ../pokecrystal/home/print_text.asm:5, ../pokecrystal/engine/menus/init_gender.asm:30-34
   self.typer = Typer.new(game, {})
   self.typer:start(self.text)
@@ -162,7 +158,7 @@ function GenderSelect:drawPanel()
   Chrome.paletteBox(BOX_X, BOX_Y, BOX_W, BOX_H, palette)
   for i, option in ipairs(GenderSelect.OPTIONS) do
     local row = TEXT_Y + (i - 1) * ROW_STEP
-    Chrome.printThrough(Strings(option.label), TEXT_X, row, palette)
+    Chrome.printThrough(RomText(self.data, option.label), TEXT_X, row, palette)
     if i == self.cursor then
       Chrome.cursorThrough(CURSOR_X, row, palette)
     end

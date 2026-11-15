@@ -40,7 +40,8 @@ save.options = save.options or {}
 save.options.textSpeed = "FAST"
 local game = {
   input = input, save = save,
-  data = { audio = { sfxOrder = order, sfx = { Sfx_Save = true } } },
+  data = { audio = { sfxOrder = order, sfx = { Sfx_Save = true } },
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text() },
 }
 
 local done = nil

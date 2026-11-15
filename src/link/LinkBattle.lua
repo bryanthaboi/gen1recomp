@@ -285,8 +285,7 @@ function LinkBattle.new(game, net, opts)
   self.opponentName = theirName
   -- _TrainerWantsToFightText (data/text/text_2.asm:1257): wIsInBattle == 2
   -- takes PrintBeginningBattleText's .trainerBattle arm, link included
-  self.introText = self:romText("_TrainerWantsToFightText",
-    "%s wants\nto fight!", theirName)
+  self.introText = self:romLine("_TrainerWantsToFightText", theirName)
   self.remoteHashes = {}
   self.localHashes = {}
   self.remoteParts = {}
@@ -346,7 +345,7 @@ function LinkBattle.new(game, net, opts)
       battle = s, side = s.sides[2], battler = s.enemy, previous = previous,
     })
     s.enemySendingOut = true
-    s:sayNext(Strings("%s sent\nout %s!", theirName, s.enemy.name))
+    s:sayNext(s:romLine("_TrainerSentOutText", theirName, s.enemy.name))
     s:actNext(function()
       s.enemySendingOut = false
       s:startGrowIn(s.enemy)
@@ -372,7 +371,7 @@ function LinkBattle.new(game, net, opts)
         onSwitch = function(mon, menu)
           -- engine/battle/core.asm:1473-1488
           if mon.hp <= 0 then
-            if menu then menu:refuse(Strings("There's no will\nto fight!")) end
+            if menu then menu:refuse(s:romLine("_NoWillText")) end
             return
           end
           s.linkReplacement = mon
@@ -490,13 +489,13 @@ function LinkBattle.new(game, net, opts)
       local both = theirMsg.kind == "run"
       endWithResult(s, (both or not opts.cable) and "draw" or "lose")
       s:act(function() require("src.core.Sound").play(s.data, "Run") end)
-      s:say(s:romText("_GotAwayText", nil))
+      s:say(s:romLine("_GotAwayText"))
       return
     end
     if theirMsg.kind == "run" then
       -- engine/battle/core.asm:254
       endWithResult(s, opts.cable and "win" or "draw")
-      s:say(s:romText("_EnemyRanText", nil, s.enemy.name))
+      s:say(s:romLine("_EnemyRanText", s.enemy.name))
       s:act(function()
         require("src.core.Sound").play(s.data, "Run")
         local pf = s:picFxFor(s.enemy)
@@ -546,8 +545,7 @@ function LinkBattle.new(game, net, opts)
     if theirSwitch then
       -- SwitchEnemyMon (engine/battle/trainer_ai.asm:596-599)
       s:act(function()
-        s:sayNext(s:romText("_AIBattleWithdrawText", "%s with-\ndrew %s!",
-          theirName, s.enemy.name))
+        s:sayNext(s:romLine("_AIBattleWithdrawText", theirName, s.enemy.name))
         s:actNext(function() sendOutEnemy(s, theirParty[theirSwitch]) end)
       end)
     end
@@ -662,9 +660,9 @@ function LinkBattle.new(game, net, opts)
           -- engine/battle/core.asm:2329
           local refusal
           if mon == s.player.mon then
-            refusal = Strings("%s is\nalready out!", s.player.name)
+            refusal = s:romLine("_AlreadyOutText", s.player.name)
           elseif mon.hp <= 0 then
-            refusal = Strings("There's no will\nto fight!")
+            refusal = s:romLine("_NoWillText")
           end
           if refusal then
             if menu then menu:refuse(refusal) else s:say(refusal) end
@@ -965,7 +963,7 @@ function LinkBattle.newSpectator(game, net, opts)
       battle = s, side = s.sides[2], battler = s.enemy, previous = previous,
     })
     s.enemySendingOut = true
-    s:sayNext(Strings("%s sent\nout %s!", guestName, s.enemy.name))
+    s:sayNext(s:romLine("_TrainerSentOutText", guestName, s.enemy.name))
     s:actNext(function()
       s.enemySendingOut = false
       s:startGrowIn(s.enemy)
@@ -1043,8 +1041,7 @@ function LinkBattle.newSpectator(game, net, opts)
       local idx = guestMsg.index
       -- SwitchEnemyMon (engine/battle/trainer_ai.asm:596-599)
       s:act(function()
-        s:sayNext(s:romText("_AIBattleWithdrawText", "%s with-\ndrew %s!",
-          guestName, s.enemy.name))
+        s:sayNext(s:romLine("_AIBattleWithdrawText", guestName, s.enemy.name))
         s:actNext(function() sendOutGuest(s, guestParty[idx]) end)
       end)
     end

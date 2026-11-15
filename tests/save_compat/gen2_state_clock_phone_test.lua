@@ -15,6 +15,7 @@ local Save = require("src.core.gen2.Save")
 local Clock = require("src.core.gen2.Clock")
 local Apricorns = require("src.core.gen2.Apricorns")
 local Phone = require("src.core.gen2.Phone")
+require("tests.fixtures.gen2_phone_events").install()
 local Pokerus = require("src.core.gen2.Pokerus")
 local Happiness = require("src.core.gen2.Happiness")
 local BugContest = require("src.core.gen2.BugContest")
@@ -74,6 +75,7 @@ local function regionNamed(v, name)
 end
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   for _, list in ipairs({ REGIONS.both, REGIONS[v] }) do
     for _, name in ipairs(list) do
       local r = regionNamed(v, name)
@@ -222,6 +224,7 @@ end
 
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   for _, kind in ipairs({ "realistic", "glitch" }) do
     local label = ("%s %s clock, daily, step, phone and lucky regions"):format(v, kind)
     local bytes = build(v, kind == "realistic" and realistic(v) or glitch(v))
@@ -313,6 +316,7 @@ local function specialVm(save)
 end
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local label = v .. " R2 engine-built"
   local s = engineSave(v)
   Clock.setTime(s, 7, 30)
@@ -475,6 +479,7 @@ end
 
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local S = syms(v)
   local label = v .. " dailyResetDay"
   local s = engineSave(v)
@@ -517,6 +522,7 @@ for _, v in ipairs(VERSIONS) do
 end
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local label = v .. " changes"
   local S = syms(v)
   local crystal = v == "crystal"
@@ -606,6 +612,7 @@ end
 
 
 for _, v in ipairs(VERSIONS) do
+  require("tests.fixture_data.gen2_engine_flags").bind(v)
   local S = syms(v)
   local which = v == "crystal" and "crystal" or "gs"
   local spans = {}

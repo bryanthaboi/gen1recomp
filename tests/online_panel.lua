@@ -1309,6 +1309,7 @@ do
   local conv, why = OnlinePanel.convertParty({ party = {} }, "firered", "red")
   T.eq(conv, nil, "a FireRed team can't be converted for a room")
   T.eq(why, TeamPick.NO_TIME_CAPSULE, "and it says why")
+  require("tests.fixture_data.game3_battle_moves").install()
   local _, pwhy = TeamPick.pack({ party = { { species = 25, moves = { 84 } } } },
     { 1 }, 3)
   T.check(pwhy == nil or pwhy ~= "FireRed and LeafGreen can't join online rooms yet.",

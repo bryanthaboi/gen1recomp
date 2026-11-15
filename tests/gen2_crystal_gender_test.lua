@@ -9,6 +9,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 crystal gender")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -24,7 +25,9 @@ local Pokegear = require("src.ui.gen2.Pokegear")
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
 local TrainerCard = require("src.ui.gen2.TrainerCard")
-local Strings = require("src.core.Strings")
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
+local CRYSTAL_DATA = { text = Fixture.text(nil, "crystal") }
+local GOLD_DATA = { text = Fixture.text() }
 
 local priorVersion = GameVersion.get()
 
@@ -56,48 +59,45 @@ check(not FieldMoves.hasGenderChoice(nil), "and neither does no cache at all")
 
 -- ------------------------------------------------- the save field (CT-5)
 
-eq(Save.defaultPlayerName("crystal", "male"), "CHRIS", "MalePlayerNameArray[0]")
-eq(Save.defaultPlayerName("crystal", "female"), "KRIS",
+eq(Save.defaultPlayerName(CRYSTAL_DATA, "male"), "CHRIS", "MalePlayerNameArray[0]")
+eq(Save.defaultPlayerName(CRYSTAL_DATA, "female"), "KRIS",
   "FemalePlayerNameArray[0]")
-eq(Save.defaultPlayerName("gold", "female"), "GOLD",
+eq(Save.defaultPlayerName(GOLD_DATA, "female"), "GOLD",
   "Gold has no female array to fall into")
-eq(Save.defaultPlayerName("silver", "female"), "SILVER", "nor does Silver")
-eq(Save.defaultPlayerName("crystal"), "CHRIS", "and no gender is Chris")
+eq(Save.defaultPlayerName(CRYSTAL_DATA), "CHRIS", "and no gender is Chris")
 
 check(Save.isFemale({ player = { gender = "female" } }), "isFemale on a save")
 check(not Save.isFemale({ player = { gender = "male" } }), "and not on Chris")
 check(not Save.isFemale({}), "nor on a save with no player block")
 
 GameVersion.set("crystal")
-local kris = Save.newGame({ gender = "female" })
+local kris = Save.newGame({ gender = "female", data = CRYSTAL_DATA })
 eq(kris.player.gender, "female", "newGame records the answer")
 eq(kris.player.name, "KRIS", "and lays down .Kris as the default name")
-local chris = Save.newGame({})
+local chris = Save.newGame({ data = CRYSTAL_DATA })
 eq(chris.player.gender, "male", "InitCrystalData zeroes the byte")
 eq(chris.player.name, "CHRIS", "so a fresh save is Chris")
 eq(Save.newGame({ gender = "female", playerName = "ZZ" }).player.name, "ZZ",
   "an explicit name still wins")
 
 local normalized = Save.normalize({ version = "crystal",
-  player = { gender = "female" } })
+  player = { gender = "female" } }, CRYSTAL_DATA)
 eq(normalized.player.name, "KRIS", "normalize fills the gendered default")
-eq(Save.normalize({ version = "crystal", player = {} }).player.name, "CHRIS",
+eq(Save.normalize({ version = "crystal", player = {} }, CRYSTAL_DATA).player.name, "CHRIS",
   "and the male one with no byte")
 
 -- ------------------------------------------------- the name presets
 
 GameVersion.set("crystal")
-eq(NamePick.presetsFor("male")[1], "CHRIS", "ChrisNameMenuHeader row 1")
-eq(NamePick.presetsFor("male")[4], "JON", "and row 4")
-eq(NamePick.presetsFor("female")[1], "KRIS", "KrisNameMenuHeader row 1")
-eq(NamePick.presetsFor("female")[4], "JODI", "and row 4")
-eq(NamePick.presetsFor()[1], "CHRIS", "no gender is the male header")
-GameVersion.set("gold")
-eq(NamePick.presetsFor("female")[1], "GOLD",
+eq(NamePick.presetsFor(CRYSTAL_DATA, "male")[1], "CHRIS", "ChrisNameMenuHeader row 1")
+eq(NamePick.presetsFor(CRYSTAL_DATA, "male")[4], "JON", "and row 4")
+eq(NamePick.presetsFor(CRYSTAL_DATA, "female")[1], "KRIS", "KrisNameMenuHeader row 1")
+eq(NamePick.presetsFor(CRYSTAL_DATA, "female")[4], "JODI", "and row 4")
+eq(NamePick.presetsFor(CRYSTAL_DATA)[1], "CHRIS", "no gender is the male header")
+eq(NamePick.presetsFor(GOLD_DATA, "female")[1], "GOLD",
   "Gold keeps PlayerNameArray whatever is asked for")
-GameVersion.set("silver")
-eq(NamePick.presetsFor("female")[1], "SILVER", "and so does Silver")
-GameVersion.set("crystal")
+check(not pcall(NamePick.presetsFor, { text = Fixture.without("PlayerNameArray#2") }),
+  "and a cache without a row is an error")
 
 eq(NamingScreen.playerSprite("female"), "SPRITE_KRIS",
   "GetPlayerIcon's female sheet")
@@ -112,9 +112,9 @@ check(registered.Gen2GenderSelect, "Gen2GenderSelect has an id")
 eq(Screens.get({ data = {} }, "Gen2GenderSelect"), GenderSelect,
   "and resolves to the builtin")
 
-eq(GenderSelect.OPTIONS[1].label, "Boy", ".MenuData item 1")
+eq(GenderSelect.OPTIONS[1].label, "InitGender.MenuData#1", ".MenuData item 1")
 eq(GenderSelect.OPTIONS[1].gender, "male", "writes wPlayerGender 0")
-eq(GenderSelect.OPTIONS[2].label, "Girl", ".MenuData item 2")
+eq(GenderSelect.OPTIONS[2].label, "InitGender.MenuData#2", ".MenuData item 2")
 eq(GenderSelect.OPTIONS[2].gender, "female", "writes wPlayerGender 1")
 
 -- A joypad that answers one press then goes quiet, the way the harness fakes
@@ -133,7 +133,7 @@ local function fakeInput(button)
 end
 
 local function screenGame(save, button)
-  return { save = save, data = {}, input = fakeInput(button) }
+  return { save = save, data = CRYSTAL_DATA, input = fakeInput(button) }
 end
 
 -- pokecrystal/engine/menus/init_gender.asm:29-34
@@ -181,28 +181,33 @@ eq(save.player.gender, "female", "A on Girl writes PLAYERGENDER_FEMALE")
 check(type(screen.text) == "string" and screen.text:find("boy"),
   "the prompt is _AreYouABoyOrAreYouAGirlText")
 
--- The ROM prompt remains the source of truth while the two finite menu rows
--- go through the translation catalog.
+-- ../pokecrystal/engine/menus/init_gender.asm:49 .MenuData
 do
   local Chrome = require("src.ui.gen2.Chrome")
   local priorPrint = Chrome.print
   local printed = {}
   Chrome.print = function(text) printed[#printed + 1] = text end
-  Strings.load({ strings = { Boy = "Garçon", Girl = "Fille" } })
-  local translated = GenderSelect.new({ data = { text = {
+  local translated = GenderSelect.new({ data = { text = Fixture.text({
     _AreYouABoyOrAreYouAGirlText = "ROM prompt stays intact",
-  } } })
+    ["InitGender.MenuData#1"] = "Garçon",
+    ["InitGender.MenuData#2"] = "Fille",
+  }, "crystal") } })
   eq(translated.text, "ROM prompt stays intact",
-    "the extracted RomText prompt is not replaced by a catalog fallback")
+    "the extracted RomText prompt is what the box prints")
   translated.text = ""
   openMenu(translated)
   translated:drawPanel()
   check(table.concat(printed, "|"):find("Garçon", 1, true) ~= nil,
-    "Boy is translated when drawn")
+    "Boy is InitGender.MenuData#1")
   check(table.concat(printed, "|"):find("Fille", 1, true) ~= nil,
-    "Girl is translated when drawn")
-  Strings.load({})
+    "Girl is InitGender.MenuData#2")
   Chrome.print = priorPrint
+  local bare = GenderSelect.new({ data = { text = Fixture.without("InitGender.MenuData#2",
+    "crystal") } })
+  openMenu(bare)
+  check(not pcall(bare.drawPanel, bare), "a cache without a row is an error")
+  check(not pcall(GenderSelect.new, { data = { text = Fixture.without(
+    "_AreYouABoyOrAreYouAGirlText", "crystal") } }), "and so is one without the prompt")
 end
 
 -- home/text.asm:566
@@ -284,8 +289,8 @@ do
   G.setScissor = function(x, y, w, h) clips[#clips + 1] = { x, y, w, h } end
   for _, screen in ipairs({
     setmetatable({}, OakSpeech),
-    GenderSelect.new({ data = {} }),
-    InitClock.new({}, { save = {} }),
+    GenderSelect.new({ data = CRYSTAL_DATA }),
+    InitClock.new({ data = CRYSTAL_DATA }, { save = {} }),
   }) do
     clips = {}
     screen:draw()
@@ -300,15 +305,22 @@ end
 
 -- ------------------------------------------------- the trainer card
 
-local CARD_GFX = {
+local function cardGfx(overrides)
+  local out = {}
+  for k, v in pairs(require("tests.fixture_data.gen2_trainer_card_s7_c").gold) do out[k] = v end
+  for k, v in pairs(overrides) do out[k] = v end
+  return out
+end
+
+local CARD_GFX = cardGfx({
   card = "card.png", cardFemale = "card_f.png", cardTilesWide = 16,
   leaderClasses = { "FALKNER" },
   -- the male attrmap the extractor writes: portrait on $0, corner on $1
   paletteZones = { { 14, 1, 5, 7, 1 }, { 18, 1, 1, 1, 2 } },
-}
+})
 
 local function cardFor(gender)
-  return TrainerCard.new({ data = {} }, {
+  return TrainerCard.new({ data = CRYSTAL_DATA }, {
     save = { player = { gender = gender, badges = {}, kantoBadges = {} } },
     menuGfx = { trainerCard = CARD_GFX },
     palettes = { trainers = { PLAYER = { { 1, 1, 1 }, { 2, 2, 2 } },
@@ -329,9 +341,9 @@ eq(female.zone[1 * 20 + 18], 1, "the top-right corner follows the border")
 eq(female.zone[14 * 20 + 14], 2, "and Clair borrows Kris's palette")
 eq(female.zone[14 * 20 + 10], nil, "Pryce's box is untouched")
 
-local noFemaleArt = TrainerCard.new({ data = {} }, {
+local noFemaleArt = TrainerCard.new({ data = GOLD_DATA }, {
   save = { player = { gender = "female" } },
-  menuGfx = { trainerCard = { card = "card.png", paletteZones = {} } },
+  menuGfx = { trainerCard = cardGfx({ card = "card.png", paletteZones = {} }) },
 })
 check(not noFemaleArt.female,
   "a Gold cache with no cardFemale draws the card it has")

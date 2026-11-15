@@ -23,7 +23,7 @@ return {
     "src.import.gba.tm_case_extract",
   },
 
-  auxSteps = 21,
+  auxSteps = 23,
   aux = {
     { name = "region_map_extract", key = "regionMap", label = "Town Map", mode = "raise" },
     { name = "map_sections_extract", key = "mapSections", label = "Map Sections", mode = "sections" },
@@ -50,6 +50,7 @@ return {
     { name = "credits_extract", key = "credits", label = "Staff Credits", mode = "raise" },
     { name = "league_extract", key = "league", label = "League Lighting & Diploma", mode = "raise" },
     { name = "roamer_extract", key = "roamer", label = "Roamer Locations", mode = "raise" },
+    { name = "mail_extract", key = "mail", label = "Mail", mode = "raise" },
   },
 
   dirs = {
@@ -81,5 +82,6 @@ return {
     "/rse",
     "/rse/trainer_card",
     "/roamer",
+    "/mail",
   },
 }

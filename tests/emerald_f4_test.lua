@@ -8,6 +8,7 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 local function has(rel)
@@ -130,6 +131,15 @@ local _, exitSq = Py.entranceAndExit(sess)
 local entSq = Py.entranceAndExit(sess)
 check(px and math.floor(px / 8) + math.floor(py / 8) * 4 == entSq, "player starts in the entrance square")
 check(entSq ~= exitSq, "entrance and exit squares differ")
+do
+  local sq = Py.mapDef(Py.mapIdForSquare(Py.layoutOffsets(sess)[1])).midLayout
+  local saved = sq.cells[1]
+  sq.cells[1] = nil
+  local okHole, errHole = pcall(Py.composeLayout, sess, def.midLayout, false)
+  sq.cells[1] = saved
+  check(not okHole and tostring(errHole):find("has no cell", 1, true) ~= nil,
+    "a pyramid square with a missing cell raises instead of drawing metatile 0")
+end
 Rng.SeedRng(99)
 local objs = Py.loadObjectTemplates(sess)
 local ids, dup = {}, false
@@ -260,6 +270,27 @@ local HL = Hill.composeLayout(sess, hdef)
 eq(HL.height, 21, "hill floor is 21 rows")
 local fl = Hill.floor(sess)
 eq(HL:midAt(3, 5 + 2), fl.map.metatiles[2 * 16 + 3 + 1] + 512, "floor metatiles come from the challenge data (trainer_hill.c:653)")
+do
+  local saved = fl.map.metatiles[1]
+  fl.map.metatiles[1] = nil
+  local okHole, errHole = pcall(Hill.composeLayout, sess, hdef)
+  fl.map.metatiles[1] = saved
+  check(not okHole and tostring(errHole):find("has no metatile", 1, true) ~= nil,
+    "a hill floor with a missing metatile raises instead of drawing metatile 0")
+  local savedRow = fl.map.collision[1]
+  fl.map.collision[1] = nil
+  local okRow, errRow = pcall(Hill.composeLayout, sess, hdef)
+  fl.map.collision[1] = savedRow
+  check(not okRow and tostring(errRow):find("has no collision row", 1, true) ~= nil,
+    "a hill floor with a missing collision row raises")
+  local base = hdef._hillBase
+  local savedCell = base.cells[1]
+  base.cells[1] = nil
+  local okBase, errBase = pcall(Hill.composeLayout, sess, hdef)
+  base.cells[1] = savedCell
+  check(not okBase and tostring(errBase):find("has no cell", 1, true) ~= nil,
+    "a hill base layout with a missing cell raises")
+end
 local tpls = Hill.objectTemplates(sess)
 eq(#tpls, 2, "two trainers per floor")
 eq(tpls[1].x, fl.map.trainerCoords[1] % 16, "trainer x from trainerCoords")
@@ -376,7 +407,7 @@ Islands.setEnabled(sess, true)
 check(Islands.pendingGift(sess) == nil, "the option alone hands out nothing; the relay controls tickets")
 eq(Rse.var("VAR_DISTRIBUTE_EON_TICKET", sess), 0, "no Eon Ticket without the relay")
 local feedCards = {}
-for _, b in ipairs(require("src.core.game3.mystery_gift").builtins("rse")) do feedCards[#feedCards + 1] = { key = b.key, card = b.card } end
+for _, b in ipairs(require("tests.fixtures.game3_gift_cards").cards("rse")) do feedCards[#feedCards + 1] = { key = b.key, card = b.card } end
 Islands.applyFeed(sess, { cards = { feedCards[2] } })
 eq(Islands.pendingGift(sess).id, "aurora", "a relay AURORA TICKET card is offered")
 check(not Islands.eonPending(sess), "the relay feed without the Eon card leaves the Eon Ticket off")

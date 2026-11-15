@@ -33,7 +33,7 @@ package.loaded["src.ui.SlotMachine"] = nil
 local SlotMachine = require("src.ui.SlotMachine")
 
 local game = {
-  data = { field = { slotWheels = {} }, text = {} },
+  data = { field = { slotWheels = {} }, text = dofile("tests/fixture_data/text.lua") },
   save = { coins = 100 },
 }
 

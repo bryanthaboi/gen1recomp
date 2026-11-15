@@ -65,8 +65,7 @@ return function(game)
   local def = Map.currentDef and Map.currentDef()
   local pair = def and (def.pair or (def.midLayout and def.midLayout.pair))
   local ts = pair and NativeTileset.get(pair)
-  local PcAnim = require("src.core.game3.pc_anim")
-  result(ts and ts.midToSlot[0x28A] ~= nil and PcAnim.drawable(0x28A),
+  result(ts and ts.midToSlot[0x28A] ~= nil,
     "player_house atlas carries PlayersPCOn 0x28A (pair " .. tostring(pair) .. ")")
   local onLit, onSig = slotStats(ts or { midToSlot = {} }, 0x28A)
   local offLit, offSig = slotStats(ts or { midToSlot = {} }, 0x28F)

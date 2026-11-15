@@ -27,7 +27,8 @@ end
 for _, id in ipairs({ "RAPID_SPIN", "HIDDEN_POWER", "FLAIL", "PRESENT",
     "TACKLE", "EMBER", "TRIPLE_KICK" }) do moves[id].power = 1 end
 moves.EMBER.type = "FIRE"
-local text = {}
+local text = require("tests.fixture_data.gen2_rom_text_s7_a").text(
+  require("tests.fixture_data.gen2_rom_text_s7_b").text(nil, "crystal"), "crystal")
 for _, label in ipairs({ "EliminatedStatsText", "BellChimedText", "SharedPainText",
     "DestinyBondEffectText", "MimicLearnedMoveText", "TransformedTypeText",
     "ShedLeechSeedText", "BlewSpikesText", "ReleasedByText", "RageBuildingText",

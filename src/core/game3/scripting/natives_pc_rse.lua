@@ -57,7 +57,7 @@ function PcRse.setPcMetatile(ctx, on)
   local PcAnim = require("src.core.game3.pc_anim")
   if PcAnim._set then
     PcAnim._set(x, y, mid, true)
-  elseif PcAnim.drawable(mid) then
+  else
     require("src.core.game3.field").setMetatile(x, y, mid, true)
   end
   return mid, x, y

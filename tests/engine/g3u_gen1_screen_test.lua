@@ -7,12 +7,12 @@ local BattleSession = require("src.online.union.BattleSession")
 local L = require("tests.support.g3u_loopback")
 local G = require("src.ui.g3u.Gen1Screen")
 
-local data = { pokemon = {}, moves = {}, text = {
+local data = { pokemon = {}, moves = {}, text = setmetatable({
   _CriticalHitText = "FIX CRIT{PROMPT}",
   _EnemyMonFaintedText = "FIX FOE {RAM:wEnemyMonNick}\nDOWN{PROMPT}",
   _TrainerDefeatedText = "{PLAYER} FIX BEAT\n{RAM:wTrainerName}!{PROMPT}",
   _FlewUpHighText = "\nFIX FLEW{PROMPT}",
-} }
+}, { __index = dofile("tests/fixture_data/text.lua") }) }
 for n = 1, 151 do data.pokemon["MON" .. n] = { dex = n, name = "MON" .. n } end
 for i = 1, 165 do
   data.moves["MV" .. i] = { index = i, name = "MOVE" .. i, effect = (i == 7) and "BURN_SIDE_EFFECT1" or "NO_ADDITIONAL_EFFECT" }
@@ -50,7 +50,7 @@ r = only(G.rowsFor({ kind = "msg", id = "STRINGID_PKMNFLEWHIGH", fill = { atk = 
 T.eq(r.text, "MON25\nFIX FLEW{PROMPT}", "charge text is the user plus the cache fragment")
 r = only(G.rowsFor({ kind = "msg", id = "STRINGID_DEFENDERSSTATFELL",
   fill = { def = { side = 1, index = 1 }, stat = "spDef", delta = -2 } }, ctx), "stat fell")
-T.eq(r.text, "Enemy MON95's\nSPECIAL\ngreatly fell!", "Sp. Def drop reads as SPECIAL in Gen 1 register")
+T.eq(r.text, "Enemy MON95's\nSPECIAL\ngreatly fell!{PROMPT}", "Sp. Def drop reads as SPECIAL in Gen 1 register")
 local rows = G.rowsFor({ kind = "msg", id = "STRINGID_PKMNFASTASLEEP", fill = { atk = { side = 0, index = 1 } } }, ctx)
 T.eq(#rows, 2, "fast asleep gives text and the sleep anim")
 T.eq(rows[1].op, "anim", "my sleeping mon's anim plays before the text")
@@ -117,7 +117,7 @@ T.check(m.switches[3] and m.switches[4] and not m.any, "replacement menu limited
 
 local function texts(rs) local o = {} for _, x in ipairs(rs) do o[#o + 1] = x.text end return table.concat(o, "|") end
 T.eq(texts(G.endRows({ outcome = "win", why = "faint" }, ctx)), "RED FIX BEAT\nGARY!{PROMPT}", "win line from the cache")
-T.eq(texts(G.endRows({ outcome = "lose", why = "faint" }, ctx)), "RED lost to\nGARY!", "lose line")
+T.eq(texts(G.endRows({ outcome = "lose", why = "faint" }, ctx)), "RED lost to\nGARY!{PROMPT}", "lose line")
 T.eq(texts(G.endRows({ outcome = "win", why = "forfeit" }, ctx)), "GARY forfeited\nthe match!|RED FIX BEAT\nGARY!{PROMPT}",
   "foe forfeit then win")
 T.eq(texts(G.endRows({ outcome = "draw", why = "desync" }, ctx)), "The link was\nlost.", "desync line")

@@ -53,22 +53,14 @@
 --                           are both this rect: PlaceMoneyAtTopLeftOfTextbox
 --                           offsets the top-right header by lb de, 0, 11, which
 --                           lands on exactly these coordinates.
---
--- Every string below is transcribed literally from data/text/common_2.asm and
--- paired with its pokegold label in LABELS.  Nothing in the ROM's script
--- bytecode points at any of them -- the clerk's lines are printed by the
--- engine, not by a `writetext` -- so the extractor seeds its text walker at
--- the block by name (RomExtractorGen2's NAMED_TEXT) and this screen prefers
--- the cache's own characters, falling back to the transcription for a cache
--- built before that seed.
 
 local Bag = require("src.inventory.Bag")
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 -- PlayTransactionSound (engine/items/mart.asm): `call WaitSFX` then
@@ -91,10 +83,6 @@ MartMenu.isOpaque = false
 local MART_TYPES = { [0] = "STANDARD", [1] = "BITTER", [2] = "BARGAIN",
   [3] = "PHARMACY" }
 local NUM_MARTS = 34 -- constants/mart_constants.asm, MART_UNDERGROUND is 33
-
--- GetMart: an id at or past NUM_MARTS is not a mart at all and the clerk sells
--- DefaultMart instead (data/items/marts.asm).
-local DEFAULT_MART = { "POKE_BALL", "POTION" }
 
 -- MAX_ITEM_STACK, the ceiling StandardMartAskPurchaseQuantity loads into
 -- wItemQuantity before the selector runs.
@@ -152,112 +140,7 @@ MartMenu.moneyText = moneyText
 
 -- ----------------------------------------------------------------- text
 --
--- A "page" is one screenful of the speech text box: up to two lines, `line`
--- rows apart.  A `para` in the ASM starts a new page; a `cont` scrolls one
--- line, which shows as a page whose first line is the previous page's second.
-local function pages(...) return { ... } end
-local function page(...) return { ... } end
-
-local TEXTS = {
-  -- MartDialog / StandardMart (engine/items/mart.asm).
-  STANDARD = {
-    welcome   = page("Welcome! How may I", "help you?"),   -- MartWelcomeText
-    askMore   = page("Can I do anything", "else for you?"), -- MartAskMoreText
-    comeAgain = pages(page("Please come again!")),
-    howMany   = page("How many?"),
-    thanks    = pages(page("Here you are.", "Thank you!")),
-    noMoney   = pages(page("You don't have", "enough money.")),
-    packFull  = pages(page("You can't carry", "any more items.")),
-    -- MartFinalPriceText: the quantity and the total are text_decimal, which
-    -- sets PRINTNUM_LEFTALIGN, so neither is padded; the ¥ is a literal in the
-    -- string rather than PrintNum's floating one.
-    finalPrice = function(qty, name, total)
-      return pages(page(("%d %s(S)"):format(qty, name),
-        ("will be %s%d."):format(YEN, total)))
-    end,
-  },
-  -- HerbShop (MARTTYPE_BITTER): the Goldenrod Underground herb lady.
-  BITTER = {
-    intro = pages(
-      page("Hello, dear."),
-      page("I sell inexpensive", "herbal medicine."),
-      page("They're good, but", "a trifle bitter."),
-      -- `#` is the four-tile POKé compression byte, which the extractor
-      -- expands everywhere else in the cache; spelled out it is the same
-      -- sixteen columns.
-      page("Your POKéMON may", "not like them."),
-      page("Hehehehe…")),
-    comeAgain = pages(page("Come again, dear.", "Hehehehe…")),
-    howMany   = page("How many?"),
-    thanks    = pages(page("Thank you, dear.", "Hehehehe…")),
-    noMoney   = pages(page("Hehehe… You don't", "have the money.")),
-    packFull  = pages(page("Oh? Your PACK is", "full, dear.")),
-    finalPrice = function(qty, name, total)
-      return pages(page(("%d %s(S)"):format(qty, name),
-        ("will be %s%d."):format(YEN, total)))
-    end,
-  },
-  -- BargainShop (MARTTYPE_BARGAIN): one of each item, at prices carried by
-  -- BargainShopData rather than by ItemAttributes.
-  BARGAIN = {
-    intro = pages(
-      page("Hiya! Care to see", "some bargains?"),
-      page("I sell rare items", "that nobody else"),
-      page("carries--but only", "one of each item.")),
-    comeAgain = pages(page("Come by again", "sometime.")),
-    thanks    = pages(page("Thanks.")),
-    noMoney   = pages(page("Uh-oh, you're", "short on funds.")),
-    packFull  = pages(page("Uh-oh, your PACK", "is chock-full.")),
-    -- `cont` scrolls the box one line instead of clearing it, so the second
-    -- page opens on the first page's second line.
-    soldOut = pages(
-      page("You bought that", "already. I'm all"),
-      page("already. I'm all", "sold out of it.")),
-    finalPrice = function(_qty, name, total)
-      return pages(page(("%s costs"):format(name),
-        ("%s%d. Want it?"):format(YEN, total)))
-    end,
-  },
-  -- Pharmacist (MARTTYPE_PHARMACY): Cianwood.
-  PHARMACY = {
-    intro     = pages(page("What's up? Need", "some medicine?")),
-    comeAgain = pages(page("All right.", "See you around.")),
-    howMany   = page("How many?"),
-    thanks    = pages(page("Thanks much!")),
-    noMoney   = pages(page("Huh? That's not", "enough money.")),
-    packFull  = pages(page("You don't have any", "more space.")),
-    finalPrice = function(qty, name, total)
-      return pages(page(("%d %s(S)"):format(qty, name),
-        ("will cost %s%d."):format(YEN, total)))
-    end,
-  },
-}
-
--- SellMenu's own strings.  Only MARTTYPE_STANDARD ever reaches them.
-local SELL_TEXTS = {
-  cantBuy    = pages(page("Sorry, I can't buy", "that from you.")),
-  howMany    = page("How many?"),
-  -- MartSellPriceText's `para` is a real page break, and the YES/NO box comes
-  -- up on the second page without a further press.
-  price = function(total)
-    return pages(page("I can pay you", ("%s%d."):format(YEN, total)),
-      page("Is that OK?"))
-  end,
-  bought = function(name, total)
-    return pages(page(("Got %s%d for"):format(YEN, total),
-      ("%s(S)."):format(name)))
-  end,
-}
-
-MartMenu.MART_TYPES = MART_TYPES
-MartMenu.TEXTS = TEXTS
-
--- ...and the data/text/common_2.asm label behind each of those entries.
--- Nothing in the ROM's bytecode points at any of them -- the clerk's lines are
--- printed by engine/items/mart.asm itself -- so the extractor seeds its text
--- walker at the whole block by name (RomExtractorGen2's NAMED_TEXT) and this
--- screen prefers the cache's own characters.  The transcriptions above are
--- what a cache built before that seed falls back to.
+-- data/text/common_2.asm:1413,1563
 local LABELS = {
   STANDARD = {
     welcome = "_MartWelcomeText", askMore = "_MartAskMoreText",
@@ -318,51 +201,28 @@ local FILL = {
   _MartBoughtText = function(name, total) return { total, name } end,
 }
 
--- One dialog's table with every entry the cache carries replaced by the
--- extracted string.  Anything missing falls through the metatable to the
--- transcription, so a partial cache is a mix rather than a hole.
-local function extractedText(text, base, labels)
-  local out = setmetatable({}, { __index = base })
-  for key, label in pairs(labels or {}) do
-    local list = CommonText.of(text, label)
-    if list then
-      local fill = FILL[label]
-      if fill then
-        out[key] = function(...) return CommonText.fill(list, fill(...)) end
-      elseif SINGLE_PAGE[key] then
-        out[key] = list[1]
-      else
-        out[key] = list
-      end
-    end
-  end
-  return out
-end
-
--- data/generated/marts.lua is what the ROM extractor will write out of `Marts`
--- (data/items/marts.asm): `lists` is a 1-based array in MART_* order, each
--- entry an array of item ids, and `bargain` is BargainShopData's own
--- item/price rows.  A flat top-level array is accepted too, because that is
--- the shape items.lua uses and an extractor may well write it the same way.
---
--- Nothing is guessed when the table is absent: an id inside the table's range
--- with no row falls back to DefaultMart the way GetMart does, and a missing
--- table leaves the shelf empty rather than inventing stock.
+-- ../pokecrystal/engine/items/mart.asm:118-134
 function MartMenu.inventory(marts, martId)
   martId = martId or 0
-  if martId >= NUM_MARTS then return DEFAULT_MART end
-  if type(marts) ~= "table" then return {} end
-  local lists = marts.lists or marts
+  if martId >= NUM_MARTS then
+    local default = marts and marts.default
+    if type(default) ~= "table" then error("marts.lua has no default", 2) end
+    return default
+  end
+  local lists = marts and marts.lists
+  if type(lists) ~= "table" then error("marts.lua has no lists", 2) end
   local list = lists[martId + 1]
-  if type(list) ~= "table" then return DEFAULT_MART end
+  if type(list) ~= "table" then
+    error(("marts.lua has no list for mart %d"):format(martId), 2)
+  end
   return list
 end
 
 -- BargainShopData is loaded by BargainShop itself, not by the mart id, so the
 -- opcode's mart id is ignored for MARTTYPE_BARGAIN.
 function MartMenu.bargainRows(marts)
-  local rows = type(marts) == "table" and marts.bargain
-  if type(rows) ~= "table" then return {} end
+  local rows = marts and marts.bargain
+  if type(rows) ~= "table" then error("marts.lua has no bargain", 2) end
   return rows
 end
 
@@ -381,7 +241,7 @@ function MartMenu.new(game, opts)
   -- MartTypeDialogs' jumptable would land on entry 0.
   local kind = opts.martType or 0
   if type(kind) == "string" then
-    self.martType = TEXTS[kind] and kind or "STANDARD"
+    self.martType = (kind ~= "SELL" and LABELS[kind]) and kind or "STANDARD"
   else
     self.martType = MART_TYPES[kind] or "STANDARD"
   end
@@ -390,9 +250,10 @@ function MartMenu.new(game, opts)
   -- text.lua rides on the world, the way the Pokegear's phone strings do: the
   -- mart is opened by a script running on a map and never without one.
   self.textData = opts.text or (game and game.world and game.world.text)
-  self.text = extractedText(self.textData,
-    TEXTS[self.martType], LABELS[self.martType])
-  self.sellText = extractedText(self.textData, SELL_TEXTS, LABELS.SELL)
+  self.text = CommonText.texts(self.textData, LABELS[self.martType], FILL,
+    SINGLE_PAGE)
+  self.sellText = CommonText.texts(self.textData, LABELS.SELL, FILL,
+    SINGLE_PAGE)
   self.index = 1
   self.scroll = 0
   self:buildEntries()
@@ -529,8 +390,10 @@ function MartMenu:updateConfirm(input)
 end
 
 -- ---------------------------------------------------------------- top menu
+-- engine/items/mart.asm:824
 local TOP_ITEMS = {
-  Strings.source("BUY"), Strings.source("SELL"), Strings.source("QUIT"),
+  "MenuHeader_BuySell.MenuData#1", "MenuHeader_BuySell.MenuData#2",
+  "MenuHeader_BuySell.MenuData#3",
 }
 
 -- .TopMenu copies MenuHeader_BuySell fresh every pass, and its `db 1 ; default
@@ -888,7 +751,7 @@ function MartMenu:drawTopMenu()
   for i, label in ipairs(TOP_ITEMS) do
     local ty = TOP_LABEL_Y + (i - 1) * TOP_SPACING
     if i == self.topIndex then Chrome.cursor(TOP_LABEL_X - 1, ty) end
-    Chrome.print(Strings(label), TOP_LABEL_X, ty)
+    Chrome.print(RomText(self.game and self.game.data, label), TOP_LABEL_X, ty)
   end
 end
 
@@ -934,7 +797,9 @@ function MartMenu:drawBuyList()
       printPriceOpaque(entry.price, ty + 1)
     elseif i == self:total() then
       if i == self.index then Chrome.cursor(LIST_X - 1, ty) end
-      Chrome.print(Strings("CANCEL"), LIST_X, ty)
+      -- engine/menus/scrolling_menu.asm:409
+      Chrome.print(RomText(self.game and self.game.data,
+        "ScrollingMenu_UpdateDisplay.CancelString"), LIST_X, ty)
     end
   end
   -- SCROLLINGMENU_DISPLAY_ARROWS: the ▲ only appears once the list has been
@@ -970,9 +835,11 @@ function MartMenu:drawQuantityBox(total)
 end
 
 function MartMenu:drawYesNo(choice)
+  local data = self.game and self.game.data
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 

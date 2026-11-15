@@ -5,6 +5,7 @@ local check, eq = T.check, T.eq
 
 require("tests.game3_cache").stubSpeciesNames()
 require("tests.fixture_data.game3_items").install()
+require("tests.fixture_data.game3_battle_moves").install()
 package.loaded["src.core.game3.rom_text"] = {
   plain = function(key) return key end, box = function(key) return key end,
   ascii = function(key) return key end, has = function() return true end,

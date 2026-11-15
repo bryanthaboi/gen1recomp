@@ -1,7 +1,6 @@
 local U=require('tests.drivers.util')
 local Mon=require('src.battle.gen2.Mon')
 local ItemEffects=require('src.core.gen2.ItemEffects')
-local Strings=require('src.core.Strings')
 
 return function(game)
   local deadline=love.timer.getTime()+25
@@ -90,7 +89,7 @@ return function(game)
       assert(battle:volatile(battle.player)[field],'successful item substatus missing')
       menu();turn=battle.turn
       pick(id)
-      typed(Strings(ItemEffects.TEXT_NO_EFFECT));shot(id:lower()..'-refused')
+      typed(screen:rom(ItemEffects.TEXT_NO_EFFECT));shot(id:lower()..'-refused')
       assert(#captured==0 and game.save.inventory[id]==1 and battle.turn==turn,'refusal spent item/turn or emitted success')
       assert(battle:volatile(battle.player)[field],'refusal lost substatus')
       menu()

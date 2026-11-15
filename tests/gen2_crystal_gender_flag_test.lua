@@ -8,6 +8,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 crystal gender flag")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -21,30 +22,17 @@ local priorVersion = GameVersion.get()
 
 -- ------------------------------------------------- the flag id, by name
 
--- constants/engine_flags.asm's const block, with the badge rows at the ids a
--- real crystal cache reports and a hole where parse_const_block met a
--- const_skip.  ENGINE_PLAYER_IS_FEMALE is row 100, so flag id 99.
-local CRYSTAL_ORDER = {}
-CRYSTAL_ORDER[27] = "ENGINE_ZEPHYRBADGE"
-CRYSTAL_ORDER[28] = "ENGINE_HIVEBADGE"
-CRYSTAL_ORDER[29] = "ENGINE_PLAINBADGE"
-CRYSTAL_ORDER[30] = "ENGINE_FOGBADGE"
-CRYSTAL_ORDER[31] = "ENGINE_MINERALBADGE"
-CRYSTAL_ORDER[32] = "ENGINE_STORMBADGE"
-CRYSTAL_ORDER[33] = "ENGINE_GLACIERBADGE"
-CRYSTAL_ORDER[34] = "ENGINE_RISINGBADGE"
-CRYSTAL_ORDER[35] = "ENGINE_BOULDERBADGE"
-CRYSTAL_ORDER[42] = "ENGINE_EARTHBADGE"
--- the hole: nothing at 43..99, which is where ipairs would stop
-CRYSTAL_ORDER[100] = "ENGINE_PLAYER_IS_FEMALE"
+-- ../pokecrystal/constants/engine_flags.asm:121
+local CRYSTAL_ORDER = require("tests.fixture_data.gen2_engine_flags").order("crystal")
+local GOLD_ORDER = require("tests.fixture_data.gen2_engine_flags").order("gold")
 
 FieldMoves.bindEngineFlags(CRYSTAL_ORDER)
 eq(FieldMoves.FEMALE_FLAG, 99, "ENGINE_PLAYER_IS_FEMALE is flag 99 by NAME")
-eq(FieldMoves.BADGE_FLAG[26].name, "ZEPHYR",
-  "and the badge block walks past the const_skip hole")
-eq(FieldMoves.BADGE_FLAG[41].name, "EARTH", "including the last Kanto row")
+eq(FieldMoves.BADGE_FLAG[27].name, "ZEPHYR",
+  "and Crystal's badge block starts one past Gold's")
+eq(FieldMoves.BADGE_FLAG[42].name, "EARTH", "including the last Kanto row")
 
-FieldMoves.bindEngineFlags(nil)
+FieldMoves.bindEngineFlags(GOLD_ORDER)
 eq(FieldMoves.FEMALE_FLAG, nil, "Gold declares no such flag at all")
 eq(FieldMoves.BADGE_FLAG[26].name, "ZEPHYR", "and keeps its own badge ids")
 
@@ -81,7 +69,7 @@ do
 end
 
 do
-  local world, game = flagWorld("gold", "male", nil)
+  local world, game = flagWorld("gold", "male", GOLD_ORDER)
   check(not world:engineFlag(99), "Gold's flag 99 is an ordinary flag")
   world:setEngineFlag(99, true)
   check(world:engineFlag(99), "which reads back out of save.engineFlags")
@@ -140,5 +128,5 @@ do
 end
 
 GameVersion.set(priorVersion)
-FieldMoves.bindEngineFlags(nil)
+FieldMoves.bindEngineFlags(GOLD_ORDER)
 S.finish()

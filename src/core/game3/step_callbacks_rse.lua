@@ -333,14 +333,24 @@ local function sootopolisIce(_game, data)
   return false
 end
 
+-- pokeruby/src/field_tasks.c:665
+local RS_CRACKED = { floor = 0x22F, hole = 0x206, pillarHole = 0x237 }
+
+function Steps.crackedIds(C)
+  C = C or constants()
+  if C.game == "ruby" then return RS_CRACKED end
+  -- pokeemerald/src/field_tasks.c:787
+  return {
+    floor = C:require("metatile_labels", "METATILE_Cave_CrackedFloor"),
+    hole = C:require("metatile_labels", "METATILE_Cave_CrackedFloor_Hole"),
+    pillarHole = C:require("metatile_labels", "METATILE_Pacifidlog_SkyPillar_CrackedFloor_Hole"),
+  }
+end
+
 -- pokeemerald/src/field_tasks.c:785 SetCrackedFloorHoleMetatile
 local function setCrackedFloorHole(x, y)
-  local C = constants()
-  -- pokeruby/src/field_tasks.c:663
-  local cracked = C:id("metatile_labels", "METATILE_Cave_CrackedFloor") or 0x22F
-  local id = Steps.metatileAt(x, y) == cracked and (C:id("metatile_labels", "METATILE_Cave_CrackedFloor_Hole") or 0x206)
-    or (C:id("metatile_labels", "METATILE_Pacifidlog_SkyPillar_CrackedFloor_Hole") or 0x237)
-  Steps.setMetatile(x, y, id)
+  local ids = Steps.crackedIds()
+  Steps.setMetatile(x, y, Steps.metatileAt(x, y) == ids.floor and ids.hole or ids.pillarHole)
 end
 
 -- pokeemerald/src/field_tasks.c:801 CrackedFloorPerStepCallback

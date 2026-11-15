@@ -199,6 +199,9 @@ for _, step in ipairs(OakSpeech.defaultSteps({})) do
   if step.id == "name_rival" then rival = step end
 end
 check(rival ~= nil, "the speech still has a name_rival step")
-eq(rival and rival.title, "RIVAL's NAME?", "the rival prompt is RIVAL's NAME?")
+eq(rival and rival.title, nil, "the rival step carries no hand-typed title")
+local fixtureText = dofile("tests/fixture_data/text.lua")
+eq(fixtureText.RivalsTextString .. fixtureText.NameTextString, "RIVAL's NAME?",
+  "the rival prompt is RivalsTextString + NameTextString")
 
 T.finish("naming_screen_layout_1947")

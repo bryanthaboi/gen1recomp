@@ -42,6 +42,25 @@ end
 
 local DATA = {
   gen2Constants = { itemOrder = ITEM_ORDER },
+  -- pokecrystal/engine/events/battle_tower/rules.asm:57-92
+  text = {
+    _ExcuseMeYoureNotReadyText = "Excuse me.\nYou're not ready.\f{DONE}",
+    _OnlyThreeMonMayBeEnteredText = "Only three POKéMON\nmay be entered.\f{DONE}",
+    _TheMonMustAllBeDifferentKindsText =
+      "The {STRBUF} POKéMON\nmust all be\vdifferent kinds.\f{DONE}",
+    _TheMonMustNotHoldTheSameItemsText =
+      "The {STRBUF} POKéMON\nmust not hold the\vsame items.\f{DONE}",
+    _YouCantTakeAnEggText = "You can't take an\nEGG!\f{DONE}",
+    _BattleTowerReturnWhenReadyText = "Please return when\nyou're ready.{DONE}",
+  },
+  -- pokecrystal/engine/events/battle_tower/battle_tower.asm:1311,
+  -- mobile/mobile_5f.asm:484-495
+  gen2EventTables = { battleTowerMenus = {
+    eggTicketOt = "üぞUゾ",
+    challengeMenu = { flags = 0x40, top = 0, left = 0, bottom = 7, right = 14,
+      defaultOption = 1, dataFlags = 0xa0,
+      rows = { "Challenge", "Explanation", "Cancel" } },
+  } },
   items = {
     POTION = { index = 18, pocket = "ITEM" },
     HP_UP = { index = 26, pocket = "ITEM" },
@@ -422,6 +441,43 @@ do
   eq(vm.scriptVar, 4, "and so is a run with no menu to open")
 end
 
+-- mobile/mobile_5f.asm:484-495
+do
+  local seen
+  local vm = towerVm(crystalSave(), {
+    scriptMenu = function(header, done) seen = header; done(2) end,
+  })
+  vm.scriptVar = 1
+  Specials.ALL.Menu_ChallengeExplanationCancel(vm)
+  eq(seen and table.concat(seen.items, ","), "Challenge,Explanation,Cancel",
+    "the rows are MenuData_ChallengeExplanationCancel's strings")
+  eq(seen and (seen.right .. "," .. seen.bottom), "14,7", "menu_coords 0, 0, 14, 7")
+  eq(seen and seen.dataFlags, 0xa0, "STATICMENU_CURSOR | STATICMENU_WRAP")
+end
+
+-- engine/events/battle_tower/battle_tower.asm:1244-1312
+do
+  local save = crystalSave()
+  save.inventory.EGG_TICKET = 1
+  save.party = { mon("PIKACHU", 40), { species = "PICHU", isEgg = true,
+    otName = DATA.gen2EventTables.battleTowerMenus.eggTicketOt } }
+  local vm = towerVm(save)
+  eq(action(vm, A.EGGTICKET), 1, "an egg carrying String_MysteryJP answers TRUE")
+  eq(save.party[2].otName, "", "and has its OT name cleared")
+
+  local odd = crystalSave()
+  odd.inventory.EGG_TICKET = 1
+  odd.party = { { species = "PICHU", isEgg = true, otName = "ODD" } }
+  eq(action(towerVm(odd), A.EGGTICKET), 0, "the international ODD egg does not")
+
+  local tables = DATA.gen2EventTables
+  DATA.gen2EventTables = {}
+  local ok, err = pcall(action, towerVm(odd), A.EGGTICKET)
+  check(not ok and tostring(err):find("battleTowerMenus", 1, true) ~= nil,
+    "an events.lua without battleTowerMenus is an error")
+  DATA.gen2EventTables = tables
+end
+
 -- ---- BattleTowerRoomMenu (battle_tower.asm:1-5)
 do
   local save = crystalSave()
@@ -454,14 +510,13 @@ do
 end
 
 -- ============================================ the room menu screen itself
+local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
 do
-  eq(BattleTowerMenu.levelLabel(1), " L:10 ", "Strings_L10ToL100 row 1")
-  eq(BattleTowerMenu.levelLabel(10), " L:100", "and row 10, six tiles wide")
-
   local pressed = {}
-  local game = { input = { wasPressed = function(_, name)
-    return pressed[name] == true
-  end } }
+  local game = { data = { text = S7B.text(nil, "crystal") },
+    input = { wasPressed = function(_, name)
+      return pressed[name] == true
+    end } }
   local function press(name) pressed = { [name] = true } end
 
   local save = crystalSave()
@@ -474,6 +529,11 @@ do
   })
   eq(screen.cursor, 1, "the spinner opens on L:10")
   eq(screen:rowCount(), 11, "ten rooms plus CANCEL")
+  eq(screen:rowLabel(1), " L:10 ", "Strings_L10ToL100 row 1")
+  eq(screen:rowLabel(10), " L:100", "and row 10, six tiles wide")
+  eq(screen:rowLabel(11), "CANCEL", "and CANCEL is the list's own last row")
+  eq(screen.message, "What level do you\nwant to challenge?",
+    "Text_WhatLevelDoYouWantToChallenge comes from the cache")
 
   press("up"); screen:update()
   eq(screen.cursor, 2, "UP walks the level up")
@@ -500,9 +560,10 @@ end
 do
   -- The uber gate, and the CANCEL path's yes/no.
   local pressed = {}
-  local game = { input = { wasPressed = function(_, name)
-    return pressed[name] == true
-  end } }
+  local game = { data = { text = S7B.text(nil, "crystal") },
+    input = { wasPressed = function(_, name)
+      return pressed[name] == true
+    end } }
   local function press(name) pressed = { [name] = true } end
 
   local save = crystalSave()
@@ -514,6 +575,7 @@ do
     onDone = function(value) result = value; answered = true end,
   })
   eq(screen:rowCount(), 5, "no Hall of Fame, so four rooms plus CANCEL")
+  eq(screen:rowLabel(5), "CANCEL", "Strings_Ll0ToL40 ends on its own CANCEL")
   for _ = 1, 3 do press("up"); screen:update() end
   eq(screen.cursor, 4, "on L:40")
   press("a"); screen:update()
@@ -557,7 +619,7 @@ do
   end
   Chrome.textbox = function() end
   local save = crystalSave()
-  local screen = BattleTowerMenu.new(nil, {
+  local screen = BattleTowerMenu.new({ data = { text = S7B.text(nil, "crystal") } }, {
     save = save, party = {}, rows = BattleTower.levelGroupRows(save),
   })
   screen:refuse("Cancel your BATTLE\nROOM challenge?")

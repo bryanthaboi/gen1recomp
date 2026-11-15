@@ -18,7 +18,7 @@ local function printIfFacingUp(label)
     end
     local TextBox = require("src.render.TextBox")
     local t = game.data.text
-    game.stack:push(TextBox.new(game, t[label] or "", done))
+    game.stack:push(TextBox.new(game, t[label], done))
   end
 end
 

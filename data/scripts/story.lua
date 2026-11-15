@@ -39,7 +39,7 @@ M.VIRIDIAN_MART = {
       { "move_player", "up", 2 },
       { "move_player", "left", 1 },
       -- the quest text's last page is "{PLAYER} got\nOAK's PARCEL!"
-      { "give_item", "OAKS_PARCEL", 1, "_ViridianMartClerkParcelQuestText" },
+      { "give_item", "OAKS_PARCEL", 1, "_ViridianMartClerkParcelQuestText", false },
       { "set_flag", "EVENT_GOT_OAKS_PARCEL" },
     })
   end,
@@ -54,7 +54,7 @@ M.VIRIDIAN_MART = {
       { "show_text", "_ViridianMartClerkYouCameFromPalletTownText" }, -- 7
       -- the parcel-quest text's last page is "{PLAYER} got\nOAK's
       -- PARCEL!" (scripts/ViridianMart.asm, sound_get_key_item)
-      { "give_item", "OAKS_PARCEL", 1, "_ViridianMartClerkParcelQuestText" }, -- 8
+      { "give_item", "OAKS_PARCEL", 1, "_ViridianMartClerkParcelQuestText", false }, -- 8
       { "set_flag", "EVENT_GOT_OAKS_PARCEL" },                        -- 9
       { "jump", 14 },                                                 -- 10
       { "open_mart", "TEXT_VIRIDIANMART_CLERK" },                     -- 11
@@ -125,8 +125,7 @@ M.VIRIDIAN_CITY = {
     if x ~= 19 or y ~= 9 then return false end
     local TextBox = require("src.render.TextBox")
     game.stack:push(TextBox.new(game,
-      game.data.text._ViridianCityOldManSleepyPrivatePropertyText
-      or "You can't go\nthrough here!\fThis is private\nproperty!",
+      game.data.text._ViridianCityOldManSleepyPrivatePropertyText,
       function() ow:scriptMove(ow.player, "down", 1, nil, { collide = true }) end))
     return true
   end,
@@ -183,8 +182,7 @@ M.BILLS_HOUSE = {
       local t = game.data.text
       local function toMachine()
         game.stack:push(TextBox.new(game,
-          t._BillsHouseBillUseSeparationSystemText
-          or "When I'm in the\nTELEPORTER, run\nthe Cell\nSeparation System!", function()
+          t._BillsHouseBillUseSeparationSystemText, function()
           local function entered()
             local Commands = require("src.script.Commands")
             Commands.hide_object({ game = game, save = game.save,
@@ -215,14 +213,13 @@ M.BILLS_HOUSE = {
         end))
       end
       game.stack:push(TextBox.new(game,
-        t._BillsHouseBillImNotAPokemonText or "Hey! I'm not a\nPOKéMON!",
+        t._BillsHouseBillImNotAPokemonText,
         nil, { choice = function(yes)
           if yes then
             toMachine()
           else
             game.stack:push(TextBox.new(game,
-              t._BillsHouseBillNoYouGottaHelpText
-              or "No! You gotta\nhelp me!", toMachine))
+              t._BillsHouseBillNoYouGottaHelpText, toMachine))
           end
         end }))
     end,
@@ -362,7 +359,7 @@ M.VERMILION_CITY = {
     local hasTicket = (game.save.inventory.S_S_TICKET or 0) > 0
     if shipLeft then
       game.stack:push(TextBox.new(game,
-        t._VermilionCitySailor1ShipSetSailText or "The ship set sail.",
+        t._VermilionCitySailor1ShipSetSailText,
         function() ow:scriptMove(ow.player, "up", 1, nil, { collide = true }) end))
       return true
     end
@@ -372,18 +369,15 @@ M.VERMILION_CITY = {
     -- (walk back).  Returning true while the box is up also blocks the
     -- dock warp on this step.
     local ask = t._VermilionCitySailor1DoYouHaveATicketText
-      or "Welcome to S.S.\nANNE!\fExcuse me, do you\nhave a ticket?"
     if hasTicket then
       game.stack:push(TextBox.new(game,
         ask .. "\f"
-        .. (t._VermilionCitySailor1FlashedTicketText
-            or "{PLAYER} flashed\nthe S.S.TICKET!")))
+        .. t._VermilionCitySailor1FlashedTicketText))
       return true
     end
     game.stack:push(TextBox.new(game,
       ask .. "\f"
-      .. (t._VermilionCitySailor1YouNeedATicketText
-          or "You need a ticket\nto get aboard."),
+      .. t._VermilionCitySailor1YouNeedATicketText,
       function() ow:scriptMove(ow.player, "up", 1, nil, { collide = true }) end))
     return true
   end,
@@ -395,7 +389,7 @@ M.VERMILION_CITY = {
       local t = game.data.text
       if Flags.get(game.save, "EVENT_SS_ANNE_LEFT") then
         game.stack:push(TextBox.new(game,
-          t._VermilionCitySailor1ShipSetSailText or "The ship set sail.",
+          t._VermilionCitySailor1ShipSetSailText,
           done))
         return
       end
@@ -404,17 +398,13 @@ M.VERMILION_CITY = {
       if not p or p.facing == "right"
          or (p.cellX == 19 and (p.cellY == 29 or p.cellY == 31)) then
         game.stack:push(TextBox.new(game,
-          t._VermilionCitySailor1WelcomeToSSAnneText
-            or "Welcome to S.S.\nANNE!", done))
+          t._VermilionCitySailor1WelcomeToSSAnneText, done))
         return
       end
       local ask = t._VermilionCitySailor1DoYouHaveATicketText
-        or "Welcome to S.S.\nANNE!\fExcuse me, do you\nhave a ticket?"
       local tail = ((game.save.inventory.S_S_TICKET or 0) > 0)
-        and (t._VermilionCitySailor1FlashedTicketText
-             or "{PLAYER} flashed\nthe S.S.TICKET!")
-        or (t._VermilionCitySailor1YouNeedATicketText
-            or "You need a ticket\nto get aboard.")
+        and t._VermilionCitySailor1FlashedTicketText
+        or t._VermilionCitySailor1YouNeedATicketText
       game.stack:push(TextBox.new(game, ask .. "\f" .. tail, done))
     end,
   },
@@ -761,9 +751,12 @@ M.WARDENS_HOUSE = {
       { "show_text", "_WardensHouseWardenTeethPoppedInHisTeethText" }, -- 8
       { "take_item", "GOLD_TEETH", 1 },                              -- 9
       { "set_flag", "EVENT_GAVE_GOLD_TEETH" },                       -- 10
+      -- scripts/WardensHouse.asm:39
+      { "label", "gave_gold_teeth" },
       { "show_text", "_WardensHouseWardenThanksText" },              -- 11
       -- give-then-print like scripts/WardensHouse.asm
-      { "give_item", "HM_STRENGTH", 1, false },                      -- 12
+      { "give_item", "HM_STRENGTH", 1, false,
+        "_WardensHouseWardenHM04NoRoomText" },                       -- 12
       { "show_text", "_WardensHouseWardenReceivedHM04Text" },        -- 13
       { "set_flag", "EVENT_GOT_HM04" },                              -- 14
       { "jump", "end" },                                             -- 15 (jp .done)
@@ -773,6 +766,9 @@ M.WARDENS_HOUSE = {
       -- on yes, Gibberish3 on no (scripts/WardensHouse.asm).  The port
       -- printed the question and walked off before the answer.
       { "label", "no_teeth" },                                       -- 16
+      -- scripts/WardensHouse.asm:19-20
+      { "check_flag", "EVENT_GAVE_GOLD_TEETH" },
+      { "jump_if_true", "gave_gold_teeth" },
       { "ask", "_WardensHouseWardenGibberish1Text" },                -- 17
       { "jump_if_true", "gibberish_yes" },                           -- 18
       { "show_text", "_WardensHouseWardenGibberish3Text" },          -- 19
@@ -889,8 +885,7 @@ M.SILPH_CO_11F = {
     if not gio or ow:trainerDefeated(gio) then return false end
     local TextBox = require("src.render.TextBox")
     game.stack:push(TextBox.new(game,
-      game.data.text._SilphCo11FGiovanniText
-      or "Ah {PLAYER}!\nSo we meet again!",
+      game.data.text._SilphCo11FGiovanniText,
       function()
         ow:scriptMove(gio, "down", 3, function()
           -- scripts/SilphCo11F.asm:244-255
@@ -1210,29 +1205,6 @@ M.HALL_OF_FAME = {
     local toggles = game.save.objectToggles and game.save.objectToggles.HALL_OF_FAME
     if toggles then toggles.HALLOFFAME_OAK = nil end
 
-    -- Make the Hall of Fame recording machine interactable.  The console
-    -- juts from the north wall as the two solid cells (4,1) and (5,1); a
-    -- sign on each lets the player face the machine (from below, or from
-    -- either side) and press A to run the TEXT_HALLOFFAME_PC talk script.
-    -- maps.lua is generated from the ROM and gitignored, so the sign is
-    -- injected here (a tracked script) rather than baked into map data.
-    local def = ow.map.def
-    def.signs = def.signs or {}
-    local present = false
-    for _, s in ipairs(def.signs) do
-      if s.text == "TEXT_HALLOFFAME_PC" then present = true break end
-    end
-    if not present then
-      table.insert(def.signs, { text = "TEXT_HALLOFFAME_PC", x = 4, y = 1 })
-      table.insert(def.signs, { text = "TEXT_HALLOFFAME_PC", x = 5, y = 1 })
-    end
-    -- the live Map instance built its signAt lookup from def.signs before
-    -- this hook ran, so rebuild it (idempotent) to pick up the injection
-    ow.map.signAt = {}
-    for _, s in ipairs(def.signs) do
-      ow.map.signAt[s.y * ow.map.widthCells + s.x] = s
-    end
-
     if not game.save.pendingHallOfFame then return end
     game.save.pendingHallOfFame = false
     ow:queueScript({
@@ -1246,21 +1218,6 @@ M.HALL_OF_FAME = {
       { "record_hall_of_fame" },                       -- predef HallOfFamePC: induction + credits
     })
   end,
-  talk = {
-    -- The recording machine doubles as a "warp home" PC: a YES/NO prompt
-    -- that teleports back to the new-game bedroom spawn (special_warps.asm
-    -- NewGameWarp: REDS_HOUSE_2F, 3, 6, facing down).  Fabricated
-    -- convenience -- there is no such prompt in the original ROM.
-    -- Heal + remember_outdoor so house LAST_MAP mats land in Pallet, not
-    -- Indigo Plateau (issue #103 escape path for already-stuck saves).
-    TEXT_HALLOFFAME_PC = {
-      { "ask", "Return to\nPALLET TOWN?" },             -- 1  YES/NO -> lastCheck
-      { "jump_if_false", "end" },                       -- 2  NO: back away
-      { "heal_party" },                                 -- 3
-      { "remember_outdoor", "PALLET_TOWN", 5, 6 },       -- 4  LAST_MAP -> Pallet door
-      { "warp", "REDS_HOUSE_2F", 3, 6, "down" },        -- 5  YES: home to your room
-    },
-  },
 }
 
 -- -------------------------------------------------------------------

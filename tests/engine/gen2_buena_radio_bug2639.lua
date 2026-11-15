@@ -2,6 +2,8 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 local T = require("tests.harness").suite("Crystal Buena radio #2639")
+local EngineFlagsFixture = require("tests.fixture_data.gen2_engine_flags")
+EngineFlagsFixture.bind("crystal")
 local Gear = require("src.ui.gen2.Pokegear")
 local Buena = require("src.core.gen2.Buena")
 local MapRadio = require("src.ui.gen2.MapRadio")
@@ -12,7 +14,6 @@ local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
 local Apricorns = require("src.core.gen2.Apricorns")
 local Fixture = require("tests.fixtures.gen2_buena")
-local Chrome = require("src.ui.gen2.Chrome")
 local function copy(v)
   if type(v) ~= "table" then return v end
   local out = {}; for k, x in pairs(v) do out[k] = copy(x) end; return out
@@ -24,10 +25,14 @@ Music.stop = function() stopped = stopped + 1 end
 local function gear(version, hour, landmark, save, rng, data)
   save = save or { version = version, pokegearFlags = { radio = true }, engineFlags = {} }
   data = data or copy(Fixture)
+  for k, v in pairs(require("tests.fixture_data.gen2_rom_text_s7_d").text(nil, version)) do
+    if data.text[k] == nil then data.text[k] = v end
+  end
   if version ~= "crystal" then data.gen2EventTables = {} end
   local game = { save = save, data = data }
   local g = Gear.new(game, { clock = { hour = hour, weekday = 2 },
-    landmarks = { landmarks = { HERE = { index = landmark or 1 } } },
+    landmarks = require("tests.fixture_data.gen2_landmarks_s7_d").anchored(
+      { landmarks = { HERE = { index = landmark or 1 } } }, version),
     currentLandmark = "HERE", radioRng = rng or function() return 0 end })
   g.tuningKnob = 40; g:tuneRadio()
   return g, save, data
@@ -66,8 +71,11 @@ for _, version in ipairs({ "gold", "silver" }) do
   g.tuningKnob = 16; g:tuneRadio(); g:tickRadio()
   T.eq(g.radioSong, "Music_ProfOaksPokemonTalk", version .. " ordinary station control")
 end
-T.eq(gear("crystal", 21, 46):currentStation().station, nil, "Kanto has no Buena signal")
-T.eq(gear("crystal", 21, 94):currentStation().station, "BUENAS_PASSWORD", "Fast Ship has Buena")
+local crystalLandmarks = require("tests.fixture_data.gen2_landmarks_s7_d").table("crystal").landmarks
+T.eq(gear("crystal", 21, crystalLandmarks.LANDMARK_PALLET_TOWN.index):currentStation().station,
+  nil, "Kanto has no Buena signal")
+T.eq(gear("crystal", 21, crystalLandmarks.LANDMARK_FAST_SHIP.index):currentStation().station,
+  "BUENAS_PASSWORD", "Fast Ship has Buena")
 do
   local save = { version = "crystal", engineFlags = { [95] = true, [96] = true },
     crystal = { buenaPassword = { word = 0x52, day = 57, balance = 17 } } }
@@ -116,9 +124,7 @@ do
   for _ = 1, 500 do g:tickRadio() end
   T.eq(stopped, stopCount, "off-air music stop happens once")
   T.eq(calls, 0, "off-air polling never generates passwords")
-  Apricorns.dailyReset(save, function(name, fallback)
-    return name == "ENGINE_BUENAS_PASSWORD_2" and 96 or fallback
-  end)
+  Apricorns.dailyReset(save)
   T.eq(save.engineFlags[96], nil, "daily reset clears played separately")
   T.eq(save.crystal.buenaPassword.word, 0x52, "daily reset preserves stored packed word")
   T.eq(save.crystal.buenaPassword.balance, 17, "daily reset preserves points")
@@ -187,15 +193,10 @@ do
   T.eq(g.radio.log[1], "ROM INTRO", "show consumes extracted text")
   T.eq(g.radio.log[4], "ROM MON!", "shared resolver consumes extracted IDs and display names")
   local printed
-  local oldPrint, oldBox, oldTextBox = Chrome.print, Chrome.box, Chrome.textbox
-  Chrome.print = function(body, x, y) if x == 2 and y == 9 then printed = body end end
-  Chrome.box, Chrome.textbox = function() end, function() end
   g.styled = function() return false end
   for index, card in ipairs(g.cards) do if card.id == "radio" then g.cardIndex = index end end
-  g:draw()
-  T.eq(printed, "ROM STATION", "plain radio displays imported on-air name")
-  segment(g, "BUENAS_PASSWORD_20"); g:draw()
-  T.eq(printed, "", "plain radio clears off-air name")
+  T.check(not pcall(g.draw, g), "a cache without pokegear art is an error")
+  segment(g, "BUENAS_PASSWORD_20")
   g.text = function(_, body, x, y) if x == 2 and y == 9 then printed = body end end
   g.drawTilemap, g.drawStrip, g.drawTuningKnob, g.textbox = function() end, function() end,
     function() end, function() end
@@ -203,7 +204,6 @@ do
   T.eq(printed, "", "styled radio clears off-air name")
   segment(g, "BUENAS_PASSWORD"); g:drawRadio()
   T.eq(printed, "ROM STATION", "styled radio displays imported on-air name")
-  Chrome.print, Chrome.box, Chrome.textbox = oldPrint, oldBox, oldTextBox
   local rows = {}; local registry = { register = function(_, id, row) rows[id] = row end }
   T.eq(MapRadio.registerInto(registry, data), 11, "Crystal adds one Pokegear-only registry station")
   T.eq(rows.BUENAS_PASSWORD.name, "ROM STATION", "registry uses ROM station name")
@@ -221,22 +221,17 @@ do
   T.eq(g.radio.cur, "RADIO_SCROLL", "Rocket show runs actual segment")
   local s = { version = "silver", engineFlags = { [95] = true, [96] = true },
     crystal = { buenaPassword = { word = 0x52, day = 57, balance = 17 } } }
+  EngineFlagsFixture.bind("gold")
   Apricorns.dailyReset(s)
   T.check(s.engineFlags[95] and s.engineFlags[96], "narrow Buena reset does not clear Gold/Silver flags")
   T.eq(s.crystal.buenaPassword.day, 57, "Gold/Silver unrelated state untouched")
-  local reset = { version = "crystal", engineFlags = { [195] = true, [196] = true,
-    [96] = true }, crystal = { buenaPassword = { word = 0x52, day = 57, balance = 17 } } }
-  local calls = {}
-  Buena.dailyReset(reset, function(name, fallback)
-    calls[name] = true
-    return name == "ENGINE_BUENAS_PASSWORD" and 195
-      or name == "ENGINE_BUENAS_PASSWORD_2" and 196 or fallback
-  end)
-  T.check(calls.ENGINE_BUENAS_PASSWORD_2, "reset resolves actual Crystal played flag name")
-  T.eq(reset.engineFlags[196], nil, "reset clears resolver-selected played flag")
-  T.eq(reset.engineFlags[195], nil, "reset clears resolver-selected listening flag")
-  T.check(reset.engineFlags[96], "reset does not use default ID when resolver selects another")
-  T.eq(reset.crystal.buenaPassword.day, nil, "resolved reset clears listening day")
+  EngineFlagsFixture.bind("crystal")
+  local reset = { version = "crystal", engineFlags = { [95] = true, [96] = true },
+    crystal = { buenaPassword = { word = 0x52, day = 57, balance = 17 } } }
+  Buena.dailyReset(reset)
+  T.eq(reset.engineFlags[96], nil, "reset clears Crystal's ENGINE_BUENAS_PASSWORD_2")
+  T.eq(reset.engineFlags[95], nil, "and ENGINE_BUENAS_PASSWORD")
+  T.eq(reset.crystal.buenaPassword.day, nil, "reset clears listening day")
 end
 Music.play, Music.stop = originalPlay, originalStop
 do

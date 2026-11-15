@@ -135,8 +135,8 @@ end
 
 function NativeTileset.slotFor(pairOrTs, mid)
   local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
-  if not ts then return 0 end
-  return ts.midToSlot[mid] or ts.midToSlot[0] or 0
+  if not (ts and ts.midToSlot) then return nil end
+  return ts.midToSlot[mid]
 end
 
 function NativeTileset.hasMid(pairOrTs, mid)
@@ -146,8 +146,7 @@ end
 
 function NativeTileset.quad(pairOrTs, slot)
   local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
-  if not ts or not ts.image then return nil end
-  slot = tonumber(slot) or 0
+  if not ts or not ts.image or type(slot) ~= "number" then return nil end
   local q = ts.quads[slot]
   if q then return q end
   local cols = ts.cols
@@ -160,8 +159,7 @@ end
 
 function NativeTileset.overQuad(pairOrTs, slot)
   local ts = type(pairOrTs) == "table" and pairOrTs or NativeTileset.get(pairOrTs)
-  if not ts or not ts.overImage then return nil end
-  slot = tonumber(slot) or 0
+  if not ts or not ts.overImage or type(slot) ~= "number" then return nil end
   local q = ts.overQuads[slot]
   if q then return q end
   local cols = ts.cols

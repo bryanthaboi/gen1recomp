@@ -11,6 +11,7 @@ local Renderer = require("src.render.Renderer")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 local Theme = require("src.ui.Theme")
 
 local StartMenu = { isMenu = true }
@@ -109,7 +110,7 @@ function StartMenu.new(game)
     end
     panel.openPrompt = function()
       game.stack:push(TextBox.new(game,
-        Strings("Would you like to\nSAVE the game?"), nil, {
+        romText(game.data, "_WouldYouLikeToSaveText", nil), nil, {
         -- SaveTheGame_YesOrNo pins its TWO_OPTION_MENU at hlcoord 0, 7 rather
         -- than the shared right-hand one -- engine/menus/save.asm:186-192
         choiceBox = Theme.saveBox,
@@ -117,10 +118,14 @@ function StartMenu.new(game)
           if not yes then closePanel() return end
           local function doSave()
             -- engine/menus/save.asm:164-181
-            game.stack:push(TextBox.new(game, Strings("Now saving..."), function()
+            -- engine/menus/save.asm:171, pokeyellow engine/menus/save.asm:159
+            local saving = require("src.core.GameVersion").isYellow()
+              and romText(game.data, "_SavingText", nil)
+              or romText(game.data, "NowSavingString", nil)
+            game.stack:push(TextBox.new(game, saving, function()
               game:writeSave()
               game.stack:push(TextBox.new(game,
-                Strings("%s saved\nthe game!", game.save.player.name or "RED"),
+                romText(game.data, "_GameSavedText", nil, game.save.player.name),
                 closePanel, { auto = {
                   sound = function()
                     return require("src.core.Sound").play(game.data, "Save")

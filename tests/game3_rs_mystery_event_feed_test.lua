@@ -8,16 +8,11 @@ local check, eq = T.check, T.eq
 local function rubyRoot()
   local roots = {}
   if os.getenv("POKEPORT_RS_CACHE") then roots[#roots + 1] = os.getenv("POKEPORT_RS_CACHE") end
-  local home, id = os.getenv("HOME"), os.getenv("POKEPORT_IDENTITY")
-  if home and id and id ~= "" then
-    roots[#roots + 1] = home .. "/Library/Application Support/LOVE/" .. id .. "/ruby/data/generated/gba"
-    roots[#roots + 1] = home .. "/.local/share/love/" .. id .. "/ruby/data/generated/gba"
-  end
   for _, root in ipairs(roots) do
     local f = io.open(root .. "/items/pack.lua", "rb")
     if f then f:close() return root end
   end
-  return nil
+  return require("tests.game3_cache").root("ruby", "items/pack.lua")
 end
 
 local root = rubyRoot()

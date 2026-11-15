@@ -209,15 +209,15 @@ do
   check(plain == 1, "an unknown status falls back to the stock wobble bonus")
   Data.statuses = nil
 
-  -- vanilla gauntlet parity without a battle on hand
+  local plainBattle = { data = Data }
   local sleeper = { mon = { status = "SLP" }, sleepTurns = 2, name = "SLEEPY" }
-  local slpMove, slpMsgs = Status.beforeMove(sleeper, mkseq({}))
+  local slpMove, slpMsgs = Status.beforeMove(sleeper, mkseq({}), plainBattle)
   check(slpMove == false and slpMsgs[1]:find("fast asleep", 1, true),
         "vanilla sleep runs through its record")
   local par = { mon = { status = "PAR" }, name = "ZAPPED" }
-  local parMove = Status.beforeMove(par, mkseq({ 62 }))
+  local parMove = Status.beforeMove(par, mkseq({ 62 }), plainBattle)
   check(parMove == false, "full paralysis on a low roll")
-  local parFree = Status.beforeMove(par, mkseq({ 63 }))
+  local parFree = Status.beforeMove(par, mkseq({ 63 }), plainBattle)
   check(parFree == true, "paralysis clears on a high roll")
 end
 

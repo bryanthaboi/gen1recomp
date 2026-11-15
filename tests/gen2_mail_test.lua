@@ -100,7 +100,12 @@ local function newGame(save)
   return {
     input = input,
     save = save,
-    data = { audio = {}, pokemon = {}, items = {} },
+    data = { audio = {}, pokemon = {}, items = {},
+      text = setmetatable({}, { __index = function(_, label)
+        return require("tests.fixture_data.gen2_rom_text_s7_f2")[label]
+          or require("tests.fixture_data.gen2_rom_text_s7_e")[label]
+      end }) },
+    world = { text = require("tests.fixtures.gen2_common_text").text() },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -350,7 +355,7 @@ do
   save.party[1].item = "PORTRAITMAIL"
   local ok, reason = Boxes.canDeposit(save, 1, 1)
   check("a mail holder cannot be deposited", ok, false)
-  check("with PCString_RemoveMail", reason, "Remove MAIL.")
+  check("with PCString_RemoveMail", reason, "PCString_RemoveMail")
   check("deposit really refuses", (Boxes.deposit(save, 1, 1)), false)
   check("and the party is untouched", #save.party, 3)
 
@@ -464,14 +469,21 @@ do
   local screen = MailCompose.new(game, {
     onDone = function(text) composed = text end,
   })
-  check("the upper grid has five letter rows", #MailCompose.MAIL_INPUT_UPPER, 5)
-  check("ten columns", #MailCompose.MAIL_INPUT_UPPER[1], 10)
-  check("row 1 starts at A", MailCompose.MAIL_INPUT_UPPER[1][1], "A")
-  check("and ends at J", MailCompose.MAIL_INPUT_UPPER[1][10], "J")
-  check("row 4 is the digits", MailCompose.MAIL_INPUT_UPPER[4][10], "0")
-  check("row 5 opens on <PK>", MailCompose.MAIL_INPUT_UPPER[5][1], "<PK>")
-  check("and the lower row 4 on the apostrophe pairs",
-    MailCompose.MAIL_INPUT_LOWER[4][1], "'d")
+  check("the upper grid has five letter rows", #screen.upper, 5)
+  check("ten columns", #screen.upper[1], 10)
+  check("row 1 starts at A", screen.upper[1][1], "A")
+  check("and ends at J", screen.upper[1][10], "J")
+  check("row 3 keeps its blank cell", screen.upper[3][7], " ")
+  check("row 4 is the digits", screen.upper[4][10], "0")
+  check("row 5 opens on <PK>", screen.upper[5][1], "<PK>")
+  check("and ends on the times sign", screen.upper[5][10], "\xc3\x97")
+  check("and the lower row 4 on the apostrophe pairs", screen.lowerKeys[4][1], "'d")
+  check("the lower row 5 opens on the open quote", screen.lowerKeys[5][1],
+    "\xe2\x80\x9c")
+  check("the strip is MailEntry_Uppercase#6", screen.upper.bottom,
+    game.data.text["MailEntry_Uppercase#6"])
+  check("a cache without the keyboard is an error",
+    pcall(MailCompose.new, { data = { text = {} } }, {}), false)
 
   -- The cursor starts on A.
   check("the cursor starts on A", screen:cursorCharacter(), "A")

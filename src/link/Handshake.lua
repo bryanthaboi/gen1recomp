@@ -342,13 +342,30 @@ end
 local WIDTH = 19 -- characters that fit one 160px line at 8px per glyph
 
 local function wrap(lines, text)
-  while #text > WIDTH do
-    local cut = text:sub(1, WIDTH + 1):match("^.*()%s")
-    if not cut or cut <= 1 then cut = WIDTH + 1 end
-    lines[#lines + 1] = text:sub(1, cut - 1)
-    text = text:sub(cut + 1)
+  local split = require("src.render.Font").split
+  local spans = split(text)
+  while #spans > WIDTH do
+    local cut
+    for k = WIDTH + 1, 2, -1 do
+      if text:sub(spans[k].from, spans[k].to):match("^%s$") then
+        cut = k
+        break
+      end
+    end
+    if cut then
+      lines[#lines + 1] = text:sub(1, spans[cut].from - 1)
+      text = text:sub(spans[cut].to + 1)
+    else
+      lines[#lines + 1] = text:sub(1, spans[WIDTH].to)
+      text = text:sub(spans[WIDTH].to + 1)
+    end
+    spans = split(text)
   end
   if #text > 0 then lines[#lines + 1] = text end
+end
+
+local function clipName(name)
+  return require("src.core.TextClip").clip(name, 7, require("src.render.Font").split)
 end
 
 local function listMods(lines, heading, mods)
@@ -368,7 +385,7 @@ end
 function Handshake.describe(localHello, remoteHello, verdict, mode)
   local lines = {}
   local peerName = remoteHello and remoteHello.name
-  local peer = type(peerName) == "string" and peerName or "THEY"
+  local peer = type(peerName) == "string" and clipName(peerName) or "THEY"
   if type(localHello) == "table" and type(localHello.game3) == "table"
       and type(remoteHello) == "table" and type(remoteHello.game3) == "table" then
     local Game3Link = require("src.link.Game3Link")
@@ -425,7 +442,7 @@ function Handshake.describe(localHello, remoteHello, verdict, mode)
     wrap(lines, "differ:")
     wrap(lines, (" you: %s"):format(
       tostring(localHello.ruleset or Handshake.DEFAULT_RULESET):upper():sub(1, 12)))
-    wrap(lines, (" %s: %s"):format(peer:sub(1, 8),
+    wrap(lines, (" %s: %s"):format(peer,
       tostring((remoteHello and remoteHello.ruleset)
                or Handshake.DEFAULT_RULESET):upper():sub(1, 12)))
     if mode == "battle" then
@@ -444,7 +461,7 @@ function Handshake.describe(localHello, remoteHello, verdict, mode)
     wrap(lines, "Your game versions")
     wrap(lines, "differ:")
     wrap(lines, (" you: v%s"):format(tostring(localHello.engineVersion)))
-    wrap(lines, (" %s: v%s"):format(peer:sub(1, 8),
+    wrap(lines, (" %s: v%s"):format(peer,
                                     tostring(remoteHello.engineVersion)))
     if mode == "battle" then
       wrap(lines, "Battle needs the")

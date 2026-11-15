@@ -2037,6 +2037,22 @@ local function award_catch_exp(catchRes, onDone)
   return true
 end
 
+local function style_from_options()
+  local okO, Options = pcall(require, "src.core.game3.options")
+  local okR, Runtime = pcall(require, "src.core.game3.runtime")
+  local session = okR and Runtime.getSession and Runtime.getSession()
+  return (okO and session and Options.battleStyle and Options.battleStyle(session)) or "shift"
+end
+
+-- pokefirered/data/battle_scripts_1.s:2843
+-- pokeemerald/data/battle_scripts_1.s:2852
+function Battle.battleStyle(st)
+  if not ModRuntime.wantsHook("battle.style") then return style_from_options() end
+  local style = ModRuntime.call("battle.style", style_from_options, st)
+  if style == "set" or style == "shift" then return style end
+  return style_from_options()
+end
+
 local function handle_enemy_faint(opts)
   opts = opts or {}
   local st = Battle._st
@@ -2076,13 +2092,9 @@ local function handle_enemy_faint(opts)
       begin_trainer_win(st)
     else
       if opts.onFinished then return opts.onFinished(nextEnemyIdx) end
-      local okO, Options = pcall(require, "src.core.game3.options")
-      local okR, Runtime = pcall(require, "src.core.game3.runtime")
-      local session = okR and Runtime.getSession and Runtime.getSession()
-      local battleStyle = (okO and session and Options.battleStyle and Options.battleStyle(session)) or "shift"
       -- pokefirered/data/battle_scripts_1.s:2839 a link battle never offers the shift
       if Battle._headless or Battle._auto or opts.mutual or st.link or fixedOrder
-          or battleStyle == "set" or State.isFainted(st.player) then
+          or State.isFainted(st.player) or Battle.battleStyle(st) == "set" then
         with_link_replacement(st, nextEnemyIdx, send_out_enemy_next)
       else
         local nextMon = st.foeParty[nextEnemyIdx]
@@ -2090,7 +2102,7 @@ local function handle_enemy_faint(opts)
         -- pokefirered/src/battle_script_commands.c:4953
         local nextName = State.displayName({ mon = nextMon, species = nextSp })
         -- pokefirered/data/battle_scripts_1.s:2846
-        Ui.push(BattleText.get("STRINGID_ENEMYABOUTTOSWITCHPKMN", Adapter.fill(st, { buff2 = nextName })))
+        Battle._shiftText = BattleText.get("STRINGID_ENEMYABOUTTOSWITCHPKMN", Adapter.fill(st, { buff2 = nextName }))
         Battle._shiftEnemyIdx = nextEnemyIdx
         Battle._shiftAsked = false
         Battle._phase = "shift_prompt"
@@ -3757,16 +3769,6 @@ end
 
 local CAUGHT_NICK_LENGTH = 10
 
-local function clip_name(name, limit)
-  local out, n = {}, 0
-  for ch in name:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-    if n >= limit then break end
-    out[#out + 1] = ch
-    n = n + 1
-  end
-  return table.concat(out)
-end
-
 -- pokefirered/src/battle_script_commands.c:9852
 local function apply_caught_nick(mon, nick, ename)
   if mon and nick and nick ~= "" and nick ~= ename then
@@ -3788,7 +3790,7 @@ local function catch_nickname_verdict(mon, ename, sp)
   })
   if verdict == false then return ename end
   if type(verdict) ~= "string" then return nil end
-  local nick = clip_name(verdict, CAUGHT_NICK_LENGTH)
+  local nick = require("src.core.TextClip").clip(verdict, CAUGHT_NICK_LENGTH)
   return apply_caught_nick(mon, nick, ename) and nick or ename
 end
 
@@ -3823,6 +3825,7 @@ local function start_post_catch_flow(catchRes)
   local caughtState = Battle._st
 
   local function prompt_nickname()
+    if catchRes and catchRes.location == "mod" then return finish_catch_flow(catchRes, ename) end
     local shown = catch_nickname_verdict(mon, ename, sp)
     -- pokefirered/src/battle_script_commands.c:9856
     if shown then return finish_catch_flow(catchRes, shown) end
@@ -4185,7 +4188,7 @@ update_body = function(dt, game)
     return
   end
 
-  -- Shift prompt: after dialog dismissed, open Yes/No box
+  -- pokefirered/data/battle_scripts_1.s:2848
   if Battle._phase == "shift_prompt" then
     if not Ui.pump() then return end
     if Ui.choiceActive and Ui.choiceActive() then
@@ -4194,7 +4197,9 @@ update_body = function(dt, game)
     end
     if not Battle._shiftAsked then
       Battle._shiftAsked = true
-      Ui.askYesNo(function(yes)
+      local prompt = Battle._shiftText
+      Battle._shiftText = nil
+      Ui.askYesNo(prompt, function(yes)
         Battle._shiftAsked = false
         local nextEnemyIdx = Battle._shiftEnemyIdx
         Battle._shiftEnemyIdx = nil

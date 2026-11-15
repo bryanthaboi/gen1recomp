@@ -50,8 +50,8 @@ local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
 local Sprites = require("src.pokemon.Sprites")
-local Strings = require("src.core.Strings")
 local TextBox = require("src.render.TextBox")
+local TileSheet = require("src.ui.gen2.TileSheet")
 
 local OakSpeech = {}
 OakSpeech.__index = OakSpeech
@@ -92,19 +92,20 @@ OakSpeech.SHRINK_END = SHRINK_END
 -- ../pokecrystal/engine/menus/intro_menu.asm:945-948
 local ICON_X, ICON_Y = 64, 60
 
-local FALLBACKS = {
-  _OakText1 = Strings("Hello! Sorry to\nkeep you waiting!\fWelcome to the\nworld of POKéMON!\fMy name is OAK.\fPeople call me the\nPOKéMON PROF."),
-  _OakText2 = Strings("This world is in-\nhabited by crea-\vtures that we call\vPOKéMON."),
-  _OakText4 = Strings("People and POKéMON\nlive together by\fsupporting each\nother.\fSome people play\nwith POKéMON, some\vbattle with them."),
-  _OakText5 = Strings("But we don't know\neverything about\vPOKéMON yet.\fThere are still\nmany mysteries to\vsolve.\fThat's why I study\nPOKéMON every day."),
-  _OakText6 = Strings("Now, what did you\nsay your name was?"),
-  _OakText7 = Strings("{PLAYER}, are you\nready?\fYour very own\nPOKéMON story is\vabout to unfold.\fYou'll face fun\ntimes and tough\vchallenges.\fA world of dreams\nand adventures\fwith POKéMON\nawaits! Let's go!\fI'll be seeing you\nlater!"),
-}
-
 local function tryImage(path)
   if not path then return nil end
   local ok, image = pcall(Assets.image, path)
   return ok and image or nil
+end
+
+local function loadPic(path)
+  return TileSheet.loadImage(path)
+end
+
+local function need(data, key)
+  local value = data[key]
+  if value == nil then error("oak_speech.lua has no " .. key, 3) end
+  return value
 end
 
 -- Naming presets are boot config the same way Gen 1 reads them
@@ -130,29 +131,28 @@ function OakSpeech.new(game, opts)
   local data = opts.data or {}
   self.cfg = data
   self.texts = data.text or {}
-  self.oakPic = tryImage(data.oakPic or "assets/generated/intro/oak.png")
+  self.oakPic = loadPic(need(data, "oakPic"))
   -- player.sprite, where Gen 1's Oak speech raises it (src/ui/OakSpeech.lua:121).
-  self.playerPic = tryImage(require("src.pokemon.Sprites").playerPic(
-    data.playerPic or "assets/generated/intro/cal.png",
+  self.playerPic = loadPic(require("src.pokemon.Sprites").playerPic(
+    need(data, "playerPic"),
     { side = "front", kind = "intro", data = game and game.data }))
   -- DrawIntroPlayerPic's other arm, KrisPic under trainer class KRIS
   -- (../pokecrystal/engine/gfx/player_gfx.asm:170-188).
-  self.playerPicFemale = tryImage(require("src.pokemon.Sprites").playerPic(
-    data.playerPicFemale or "assets/generated/intro/kris.png",
-    { side = "front", kind = "intro", data = game and game.data }))
-  self.demoSpecies = data.demoSpecies or "MARILL"
-  local marillPath, marillTrueColor = Sprites.pic(data.marillPic
-    or "assets/generated/battle/front/marill.png", {
+  self.playerPicFemale = data.playerPicFemale
+    and loadPic(require("src.pokemon.Sprites").playerPic(data.playerPicFemale,
+      { side = "front", kind = "intro", data = game and game.data }))
+  self.demoSpecies = need(data, "demoSpecies")
+  local marillPath, marillTrueColor = Sprites.pic(need(data, "marillPic"), {
       species = self.demoSpecies,
       side = "front",
       kind = "oak",
       data = game and game.data,
     })
-  self.marillPic = tryImage(marillPath)
+  self.marillPic = loadPic(marillPath)
   self.marillTrueColor = marillTrueColor
-  self.shrinkPic1 = tryImage(data.shrink1 or "assets/generated/intro/shrink1.png")
-  self.shrinkPic2 = tryImage(data.shrink2 or "assets/generated/intro/shrink2.png")
-  self.music = data.music or "Music_Route30"
+  self.shrinkPic1 = loadPic(need(data, "shrink1"))
+  self.shrinkPic2 = loadPic(need(data, "shrink2"))
+  self.music = need(data, "music")
   -- Every pic on this screen is loaded under SCGB_TRAINER_OR_MON_FRONTPIC_PALS,
   -- which is _CGB_PlayerOrMonFrontpicPals -- the pic's own two shipped colours
   -- bracketed by white and black, exactly as a battle pic gets them.  The
@@ -208,8 +208,8 @@ end
 
 function OakSpeech:text(key)
   local t = self.texts[key]
-  if type(t) == "string" and #t > 0 then return t end
-  return FALLBACKS[key] or ""
+  if type(t) ~= "string" then error("oak_speech.lua has no " .. tostring(key), 2) end
+  return t
 end
 
 -- ------------------------------------------------------------------ steps
@@ -484,7 +484,7 @@ function OakSpeech:openGenderSelect(step)
       -- (../pokecrystal/engine/menus/intro_menu.asm:768-781).
       local save = game.save
       if save and save.player then
-        save.player.name = Gen2Save.defaultPlayerName(save.version, gender)
+        save.player.name = Gen2Save.presetNames(game.data, gender)[1]
       end
       self:recordAnswer(step, gender == "female" and 2 or 1,
         gender == "female" and "Girl" or "Boy", gender)
@@ -512,9 +512,9 @@ function OakSpeech:openNamePick(step)
     picColors = picColors,
     presets = step.presets
       or namePresets(self.game, step.presetsWho or step.who or "player",
-                     step.presetsFallback or NamePick.presetsFor(gender)),
+                     step.presetsFallback or NamePick.presetsFor(self.game.data, gender)),
     onDone = function(name)
-      name = name or NamePick.presetsFor(gender)[1]
+      name = name or NamePick.presetsFor(self.game.data, gender)[1]
       self.game.save.player.name = name
       self.game.stack:pop() -- NamePick
       self.busy = false

@@ -27,7 +27,7 @@ local cells = {}
 for i = 1, 49 do cells[i] = { mid = 0, coll = 0, elev = 3 } end
 -- pokeemerald/src/event_object_movement.c:4663
 cells[2 * 7 + 3 + 1] = { mid = 1, coll = 7, elev = 0 }
-local map = { kind = "town", pair = "test", midLayout = Layout.fromDecoded({ width = 7, height = 7, cells = cells }),
+local map = { kind = "town", pair = "test", midLayout = Layout.fromDecoded({ width = 7, height = 7, cells = cells }, "EM_TEST", "test"),
   warps = { { x = 3, y = 2, destMap = "EM_CENTER", destX = 3, destY = 7 } } }
 local game = { data = { maps = { EM_TEST = map, EM_CENTER = { kind = "indoor" } } } }
 require("src.core.game3.scripting.interaction_scripts").behaviors.test = { [0] = MB.require("NORMAL"), [1] = MB.require("WARP_DOOR") }
@@ -87,7 +87,7 @@ for i = 1, 49 do exitCells[i] = { mid = 0, coll = 0, elev = 3 } end
 exitCells[2 * 7 + 3 + 1] = { mid = 2, coll = 0, elev = 3 }
 require("src.core.game3.scripting.interaction_scripts").behaviors.test[2] = MB.require("SOUTH_ARROW_WARP")
 local exitMap = { kind = "indoor", pair = "test",
-  midLayout = Layout.fromDecoded({ width = 7, height = 7, cells = exitCells }),
+  midLayout = Layout.fromDecoded({ width = 7, height = 7, cells = exitCells }, "EM_TEST_EXIT", "test"),
   warps = { { x = 3, y = 2, destMap = "EM_TEST", destX = 3, destY = 2 } } }
 game.data.maps.EM_CENTER = exitMap
 for _, kind in ipairs({ "mach", "acro" }) do

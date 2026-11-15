@@ -41,7 +41,7 @@ local function buildItems(game, rows)
     end
   end
   -- the $ff terminator's row (home/list_menu.asm:371-372, 523-528)
-  items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
+  items[#items + 1] = { cancel = true, label = romText(game.data, "CancelTextString", nil) }
   return items
 end
 
@@ -58,7 +58,7 @@ end
 -- DisplayChooseQuantityMenu) capped at the stack count.  Key items and
 -- HMs always move one, with no prompt (IsKeyItem in players_pc.asm).
 -- cb(qty) runs only on confirm.
-local function askQuantity(game, list, count, id, cb)
+local function askQuantity(game, list, count, id, howMany, cb)
   local def = game.data.items[id]
   list.pcQtyBox = nil
   if (def and def.keyItem) or id:find("^HM_") then
@@ -66,7 +66,7 @@ local function askQuantity(game, list, count, id, cb)
     return
   end
   local prompt = list.footer
-  list.footer = Strings("How many?")
+  list.footer = romText(game.data, howMany, nil)
   local QuantityBox = require("src.ui.QuantityBox")
   local box
   box = QuantityBox.new(game, {
@@ -136,29 +136,27 @@ local function withdraw(game)
   local pc = game.save.pcItems
   -- players_pc.asm:144-149: an empty list is never opened
   if next(pc) == nil then
-    game.stack:push(TextBox.new(game, romText(game.data, "_NothingStoredText",
-      "There is nothing\nstored."), nil, { noSound = true }))
+    game.stack:push(TextBox.new(game, romText(game.data, "_NothingStoredText", nil), nil, { noSound = true }))
     return
   end
   game.stack:push(pcList(game, buildItems(game, Bag.pcRows(game.save, game.data)), {
     kind = "pc_item_withdraw",
     messageBox = true,
     -- players_pc.asm:151-152 WhatToWithdrawText, printed before the list
-    footer = romText(game.data, "_WhatToWithdrawText",
-      "What do you want\nto withdraw?"),
+    footer = romText(game.data, "_WhatToWithdrawText", nil),
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)
       if leftOnCancel(item, list) then return end
       list.hollowIndex = list.index -- home/list_menu.asm:91
-      askQuantity(game, list, item.stack or pc[item.value] or 1, item.value, function(qty)
+      -- engine/menus/players_pc.asm:171
+      askQuantity(game, list, item.stack or pc[item.value] or 1, item.value, "_WithdrawHowManyText", function(qty)
         if not Bag.add(game.save, item.value, qty, game.data) then
-          list.footer = Strings("You can't carry\nany more items.")
+          list.footer = romText(game.data, "_CantCarryMoreText", nil)
           return
         end
         Bag.pcRemove(game.save, item.value, qty, game.data, item.slot)
         Sound.play(game.data, "Withdraw_Deposit")
-        list:showCompletion(romText(game.data, "_WithdrewItemText",
-          "Withdrew\n%s.{PROMPT}", itemName(game, item.value)),
+        list:showCompletion(romText(game.data, "_WithdrewItemText", nil, itemName(game, item.value)),
           function() refreshRows(list, buildItems(game, Bag.pcRows(game.save, game.data))) end) -- engine/menus/players_pc.asm:191
       end)
     end,
@@ -178,29 +176,27 @@ local function deposit(game)
   local order = Bag.order(game.save, game.data)
   -- players_pc.asm:90-95: an empty bag never reaches the list
   if #order == 0 then
-    game.stack:push(TextBox.new(game, romText(game.data, "_NothingToDepositText",
-      "You have nothing\nto deposit."), nil, { noSound = true }))
+    game.stack:push(TextBox.new(game, romText(game.data, "_NothingToDepositText", nil), nil, { noSound = true }))
     return
   end
   game.stack:push(pcList(game, buildItems(game, Bag.rows(game.save, game.data)), {
     kind = "pc_item_deposit",
     messageBox = true,
     -- players_pc.asm:97-98 WhatToDepositText, printed before the list
-    footer = romText(game.data, "_WhatToDepositText",
-      "What do you want\nto deposit?"),
+    footer = romText(game.data, "_WhatToDepositText", nil),
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)
       if leftOnCancel(item, list) then return end
       list.hollowIndex = list.index -- home/list_menu.asm:91
-      askQuantity(game, list, item.stack or inv[item.value] or 1, item.value, function(qty)
+      -- engine/menus/players_pc.asm:117
+      askQuantity(game, list, item.stack or inv[item.value] or 1, item.value, "_DepositHowManyText", function(qty)
         if not storeInPC(game, pc, item.value, qty) then
-          list.footer = Strings("No room left to\nstore items.")
+          list.footer = romText(game.data, "_NoRoomToStoreText", nil)
           return
         end
         Bag.remove(game.save, item.value, qty, game.data, item.slot)
         Sound.play(game.data, "Withdraw_Deposit")
-        list:showCompletion(romText(game.data, "_ItemWasStoredText",
-          "%s was\nstored via PC.{PROMPT}", itemName(game, item.value)),
+        list:showCompletion(romText(game.data, "_ItemWasStoredText", nil, itemName(game, item.value)),
           function()
             refreshRows(list, buildItems(game, Bag.rows(game.save, game.data)))
           end) -- engine/menus/players_pc.asm:137
@@ -213,23 +209,21 @@ local function toss(game)
   local pc = game.save.pcItems
   -- players_pc.asm:196-201: an empty list is never opened
   if next(pc) == nil then
-    game.stack:push(TextBox.new(game, romText(game.data, "_NothingStoredText",
-      "There is nothing\nstored."), nil, { noSound = true }))
+    game.stack:push(TextBox.new(game, romText(game.data, "_NothingStoredText", nil), nil, { noSound = true }))
     return
   end
   game.stack:push(pcList(game, buildItems(game, Bag.pcRows(game.save, game.data)), {
     kind = "pc_item_toss",
     messageBox = true,
     -- players_pc.asm:205-206 WhatToTossText, printed before the list
-    footer = romText(game.data, "_WhatToTossText",
-      "What do you want\nto toss away?"),
+    footer = romText(game.data, "_WhatToTossText", nil),
     noSound = true, -- PlayerPCMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     onChoose = function(item, list)
       if leftOnCancel(item, list) then return end
       list.hollowIndex = list.index -- home/list_menu.asm:91
       local def = game.data.items[item.value]
       if (def and def.keyItem) or item.value:find("^HM_") then
-        list.footer = Strings("That's too impor-\ntant to toss!")
+        list.footer = romText(game.data, "_TooImportantToTossText", nil)
         return
       end
       local QuantityBox = require("src.ui.QuantityBox")
@@ -237,12 +231,12 @@ local function toss(game)
         max = item.stack or pc[item.value] or 1,
         onDone = function(qty)
           if not qty then return end
-          list.footer = Strings("Toss %s?", itemName(game, item.value))
+          -- engine/items/item_effects.asm:2564
+          list.footer = romText(game.data, "_IsItOKToTossItemText", nil, itemName(game, item.value))
           game.stack:push(ChoiceBox.new(game, function(yes)
             if yes then
               Bag.pcRemove(game.save, item.value, qty, game.data, item.slot)
-              list:showCompletion(romText(game.data, "_ThrewAwayItemText",
-                "Threw away\n%s.{PROMPT}", itemName(game, item.value)),
+              list:showCompletion(romText(game.data, "_ThrewAwayItemText", nil, itemName(game, item.value)),
                 function() refreshRows(list, buildItems(game, Bag.pcRows(game.save, game.data))) end) -- engine/menus/players_pc.asm:240
             else
               list.footer = nil
@@ -275,8 +269,7 @@ function PlayerPC.new(game, opts)
   -- PlayersPCMenu TextBoxBorder (0,0) b=8 c=14 → 16x10
   local menu = Menu.new(game, rows, { tx = 0, ty = 0, tw = 16, th = 10,
        noSound = true, onCancel = logOff })
-  local prompt = TextBox.strip(romText(game.data, "_WhatDoYouWantText",
-    "What do you want\nto do?"))
+  local prompt = TextBox.strip(romText(game.data, "_WhatDoYouWantText", nil))
   for _, row in ipairs(rows) do
     local onSelect = row.onSelect
     if row.keepOpen and onSelect then

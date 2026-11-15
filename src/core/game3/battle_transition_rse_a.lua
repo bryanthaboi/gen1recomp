@@ -37,9 +37,12 @@ end
 function M.register(DEF, ID, H)
   local DW, DH, Pal = H.DW, H.DH, H.Pal
   local s16, Sin = H.s16, H.Sin
-  local winH, copyBuf, setCircularMask, fadeScreenBlack = H.winH, H.copyBuf, H.setCircularMask, H.fadeScreenBlack
+  local winInside, winOutside, rowSrc = H.winInside, H.winOutside, H.rowSrc
+  local copyBuf, setCircularMask, fadeScreenBlack = H.copyBuf, H.setCircularMask, H.fadeScreenBlack
 
   local function chrome() return H.getChrome() end
+
+  local HOFS_OFF = { const = DW }
 
   -- pokeemerald/src/battle_transition.c:1375
   local function patternDef(opts)
@@ -156,26 +159,21 @@ function M.register(DEF, ID, H)
       end,
       winSpans = function(fx, y, out)
         if not fx.mask1 then return 0 end
-        local l, r = winH(fx.mask1[y])
-        if not l then
-          out[1], out[2] = 0, DW
-          return 1
-        end
-        local n = 0
-        if l > 0 then n = n + 1; out[2 * n - 1], out[2 * n] = 0, l end
-        if r < DW then n = n + 1; out[2 * n - 1], out[2 * n] = r, DW end
-        return n
+        return winOutside(fx.mask1[y], out)
       end,
+      row0 = "prev",
+      front = { "mask1", "hofs1" },
       draw = function(fx, R, G)
         if not fx.pattern or not fx.patternImage then return end
         local img = fx.patternImage(fx)
         if not img then return end
         local ba = fx.bldAlpha1 or { 0, 16 }
         local eva, evb = math.min(16, ba[1]), math.min(16, ba[2])
-        local h = fx.hofs1 or { const = DW }
         local function rowHofs(y)
+          local f, sy = rowSrc(fx, y)
+          local h = f.hofs1 or HOFS_OFF
           if h.const then return h.const end
-          return Sin(h.idx + 132 * y, h.amp)
+          return Sin(h.idx + 132 * sy, h.amp)
         end
         local function zero() return 0 end
         if evb < 16 then
@@ -439,13 +437,20 @@ function M.register(DEF, ID, H)
     end,
     winSpans = function(fx, y, out)
       if not fx.hole1 then return 0 end
-      local l, r = winH(fx.hole1[y])
-      if not l or r <= l then return 0 end
-      out[1], out[2] = l, r
-      return 1
+      return winInside(fx.hole1[y], out)
     end,
+    row0 = "prev",
+    front = { "hole1" },
     post = bg0Post,
   }
+
+  M.registerWhiteBars(DEF, ID, H)
+end
+
+-- pokeruby/src/battle_transition.c:2039
+function M.registerWhiteBars(DEF, ID, H, emptyWin0)
+  local DW, DH, Pal = H.DW, H.DH, H.Pal
+  local rowSrc, copyBuf, fadeScreenBlack = H.rowSrc, H.copyBuf, H.fadeScreenBlack
 
   -- pokeemerald/src/battle_transition.c:739
   local NUM_WHITE_BARS = 8
@@ -461,7 +466,7 @@ function M.register(DEF, ID, H)
           fx.buf1[i] = 0
           fx.buf0[i] = 0
           fx.buf1[i + DH] = DW
-          fx.buf0[i + DH] = DW
+          fx.buf0[i + DH] = 0
         end
         fx.T.counter = 0
         fx.state = 1
@@ -549,15 +554,29 @@ function M.register(DEF, ID, H)
         return
       end
       for y = 0, DH - 1 do
-        local v = math.min(16, fx.buf1[y] or 0)
-        local x = fx.buf1[y + DH] or DW
-        if v > 0 and x < DW then
+        local f, sy = rowSrc(fx, y)
+        local v
+        if y > 0 then
+          v = math.min(16, fx.buf1[y - 1] or 0)
+        else
+          -- pokeemerald/src/battle_transition.c:3706
+          v = math.min(16, band(fx.buf1[DH + 67] or 0, 0x1F))
+        end
+        local x = f.buf1[sy + DH] or DW
+        if emptyWin0 then
+          if v > 0 then
+            G.setColor(1, 1, 1, v / 16)
+            G.rectangle("fill", R.X0, y, R.X1 - R.X0, 1)
+          end
+        elseif v > 0 and x < DW then
           G.setColor(1, 1, 1, v / 16)
           G.rectangle("fill", R.hmap(x), y, R.hmapR(DW) - R.hmap(x), 1)
         end
       end
       G.setColor(1, 1, 1, 1)
     end,
+    row0 = "prev",
+    front = { "buf1" },
   }
 end
 

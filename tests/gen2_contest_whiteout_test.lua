@@ -45,6 +45,7 @@ local function contestWorld(save)
   local game = {
     data = {
       pokemon = DATA.pokemon, moves = DATA.moves,
+      text = require("tests.fixture_data.gen2_rom_text_s7_g").text(),
       screens = {
         Gen2BattleState = function(_, opts)
           captured.opts = opts

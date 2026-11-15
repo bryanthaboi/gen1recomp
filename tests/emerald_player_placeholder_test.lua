@@ -8,6 +8,7 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 local function loadRel(rel)

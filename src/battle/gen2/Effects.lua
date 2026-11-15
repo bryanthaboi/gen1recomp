@@ -12,9 +12,14 @@
 -- returns a value or a small table, which is what lets the tests drive them
 -- directly.
 
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 
 local Effects = {}
+
+local function rom(data, label, ...)
+  return CommonText.plain(RomText(data, label, nil, ...))
+end
 
 -- --------------------------------------------------------------- stat stages
 --
@@ -217,13 +222,18 @@ Effects.ALL_UP_STATS = {
   "attack", "defense", "speed", "specialAttack", "specialDefense",
 }
 
+-- data/battle/stat_names.asm:1
 Effects.STAT_NAMES = {
-  attack = Strings.source("ATTACK"), defense = Strings.source("DEFENSE"),
-  speed = Strings.source("SPEED"),
-  specialAttack = Strings.source("SPCL.ATK"),
-  specialDefense = Strings.source("SPCL.DEF"),
-  accuracy = Strings.source("ACCURACY"), evasion = Strings.source("EVASION"),
+  attack = "StatNames#1", defense = "StatNames#2", speed = "StatNames#3",
+  specialAttack = "StatNames#4", specialDefense = "StatNames#5",
+  accuracy = "StatNames#6", evasion = "StatNames#7",
 }
+
+function Effects.statName(data, stat)
+  local label = Effects.STAT_NAMES[stat]
+  if not label then error("no StatNames row for " .. tostring(stat), 2) end
+  return rom(data, label)
+end
 
 -- Stages clamp at ±6 (BattleCommand_StatUp's .CantRaise / .CantLower).
 Effects.MAX_STAGE = 6
@@ -241,20 +251,21 @@ function Effects.applyStage(stages, stat, delta)
   return wanted - current
 end
 
--- BattleCommand_StatUpMessage / StatDownMessage: one stage is "rose"/"fell",
--- two are "sharply rose" / "sharply fell".
-function Effects.stageMessage(name, stat, applied)
-  local label = Strings(Effects.STAT_NAMES[stat] or stat)
+-- ../pokecrystal/engine/battle/effect_commands.asm:4466 BattleCommand_StatUpMessage
+-- ../pokecrystal/engine/battle/effect_commands.asm:4496 BattleCommand_StatDownMessage
+function Effects.stageMessage(data, name, stat, applied)
+  local fill = { USER = name, TARGET = name,
+    STRBUF = Effects.statName(data, stat) }
+  local sharp = math.abs(applied) >= 2
+  local head, tail
   if applied > 0 then
-    if math.abs(applied) >= 2 then
-      return Strings("%s's %s sharply rose!", name, label)
-    end
-    return Strings("%s's %s rose!", name, label)
+    head = "Text_BattleEffectActivate"
+    tail = sharp and "_BattleStatWentWayUpText" or "_BattleStatWentUpText"
+  else
+    head = "Text_BattleFoeEffectActivate"
+    tail = sharp and "_BattleStatSharplyFellText" or "_BattleStatFellText"
   end
-  if math.abs(applied) >= 2 then
-    return Strings("%s's %s sharply fell!", name, label)
-  end
-  return Strings("%s's %s fell!", name, label)
+  return rom(data, head, fill) .. rom(data, tail)
 end
 
 -- ------------------------------------------------------------------ hit count
@@ -313,12 +324,20 @@ Effects.DRAIN = {
 -- stores the move, turn two attacks.  Fly and Dig also make the user
 -- untargetable in between, which is the `semi-invulnerable` flag here.
 Effects.CHARGE = {
-  EFFECT_RAZOR_WIND = { text = Strings.source("%s made a whirlwind!") },
-  EFFECT_SOLARBEAM = { text = Strings.source("%s took in sunlight!") },
-  EFFECT_SKULL_BASH = { text = Strings.source("%s lowered its head!") },
-  EFFECT_SKY_ATTACK = { text = Strings.source("%s is glowing!") },
-  EFFECT_FLY = { text = Strings.source("%s flew up high!"), vanish = true },
+  EFFECT_RAZOR_WIND = { text = "_BattleMadeWhirlwindText" },
+  EFFECT_SOLARBEAM = { text = "_BattleTookSunlightText" },
+  EFFECT_SKULL_BASH = { text = "_BattleLoweredHeadText" },
+  EFFECT_SKY_ATTACK = { text = "_BattleGlowingText" },
+  EFFECT_FLY = { text = "_BattleFlewText", vanish = true },
 }
+
+-- ../pokecrystal/engine/battle/effect_commands.asm:5553 BattleCommand_Charge.UsedText
+function Effects.chargeText(data, effect, moveId, name)
+  local charge = Effects.CHARGE[effect]
+  local label = moveId == "DIG" and "_BattleDugText" or (charge and charge.text)
+  if not label then error("no charge text for " .. tostring(effect), 2) end
+  return rom(data, "Text_BattleUser", { USER = name }) .. rom(data, label)
+end
 
 -- CheckHit's .FlyDigMoves (effect_commands.asm:1713-1746): a vanished target
 -- is not a flat miss, four moves reach it in the air and three underground.
@@ -464,23 +483,40 @@ Effects.WEATHER = {
 
 Effects.WEATHER_TURNS = 5
 
+-- engine/battle/move_effects/rain_dance.asm:7, sunny_day.asm:7, sandstorm.asm:11
 Effects.WEATHER_START_TEXT = {
-  rain = Strings.source("It started to rain!"),
-  sun = Strings.source("The sunlight got bright!"),
-  sandstorm = Strings.source("A sandstorm brewed!"),
+  rain = "DownpourText",
+  sun = "SunGotBrightText",
+  sandstorm = "SandstormBrewedText",
 }
 
+-- ../pokecrystal/engine/battle/core.asm:1775 HandleWeather.WeatherMessages
 Effects.WEATHER_TURN_TEXT = {
-  rain = Strings.source("Rain continues to fall."),
-  sun = Strings.source("The sunlight is strong."),
-  sandstorm = Strings.source("The sandstorm rages."),
+  rain = "BattleText_RainContinuesToFall",
+  sun = "BattleText_TheSunlightIsStrong",
+  sandstorm = "BattleText_TheSandstormRages",
 }
 
+-- ../pokecrystal/engine/battle/core.asm:1783 HandleWeather.WeatherEndedMessages
 Effects.WEATHER_END_TEXT = {
-  rain = Strings.source("The rain stopped."),
-  sun = Strings.source("The sunlight faded."),
-  sandstorm = Strings.source("The sandstorm subsided."),
+  rain = "BattleText_TheRainStopped",
+  sun = "BattleText_TheSunlightFaded",
+  sandstorm = "BattleText_TheSandstormSubsided",
 }
+
+local WEATHER_TEXT = {
+  start = Effects.WEATHER_START_TEXT,
+  turn = Effects.WEATHER_TURN_TEXT,
+  ["end"] = Effects.WEATHER_END_TEXT,
+}
+
+function Effects.weatherText(data, phase, weather)
+  local label = WEATHER_TEXT[phase] and WEATHER_TEXT[phase][weather]
+  if not label then
+    error("no " .. tostring(phase) .. " text for weather " .. tostring(weather), 2)
+  end
+  return rom(data, label)
+end
 
 -- data/battle/weather_modifiers.asm pairs each weather with MORE_EFFECTIVE or
 -- NOT_VERY_EFFECTIVE, and those are 15 and 05 in tenths

@@ -63,13 +63,13 @@ local function newGame(money)
   local game = {
     data = {
       items = { POKE_BALL = { name = "POKe BALL", price = 200 } },
-      text = {
+      text = setmetatable({
         _PokemartBuyingGreetingText = GREET,
         _PokemonSellingGreetingText = SELL_GREET,
         _PokemartTellBuyPriceText = "{RAM:wStringBuffer}?\nThat will be\011¥{NUM:hMoney, 3 | LEADING_ZEROES | LEFT_ALIGN}. OK?{DONE}",
         _PokemartTellSellPriceText = "I can pay you\n¥{NUM:hMoney, 3 | LEADING_ZEROES | LEFT_ALIGN} for that.{DONE}",
         _PokemartBoughtItemText = "Here you are!\nThank you!{PROMPT}",
-      },
+      }, { __index = dofile("tests/fixture_data/text.lua") }),
       constants = {},
     },
     save = { money = money, inventory = {}, bagOrder = {}, options = { textSpeed = 3 } },

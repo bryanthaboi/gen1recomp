@@ -64,6 +64,7 @@ end
 local GameVersion = require("src.core.GameVersion")
 require("src.core.game3.profile").reset()
 GameVersion.set("emerald")
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 local src = cache and cache.read and cache:read("data/generated/gba/frontier/trainers.lua")

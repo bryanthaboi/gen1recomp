@@ -346,6 +346,7 @@ do
   local world = setmetatable({
     map = { id = "TEST", def = { tileset = "JOHTO" }, width = 1, height = 1,
       blocks = { 0 }, borderBlock = 0 },
+    tilesets = { flowerCgbFrames = { 2, 4 } },
     bgSets = { ["TEST|DAY"] = { [2] = { {0,0,0}, {1,1,1}, {2,2,2}, {3,3,3} } } },
     animCells = {
       ["TEST|DAY"] = {

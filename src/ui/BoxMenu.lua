@@ -10,6 +10,7 @@ local Party = require("src.pokemon.Party")
 local Stats = require("src.pokemon.Stats")
 local TextBox = require("src.render.TextBox")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local BoxMenu = { isMenu = true }
 
@@ -42,8 +43,8 @@ local function monRow(game, mon, value)
 end
 
 -- the $ff terminator's row (home/list_menu.asm:371-372, 523-528)
-local function withCancel(items)
-  items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
+local function withCancel(game, items)
+  items[#items + 1] = { cancel = true, label = romText(game.data, "CancelTextString", nil) }
   return items
 end
 
@@ -66,7 +67,7 @@ local function monSubmenu(game, list, action, mon, onAction)
         require("src.ui.Screens").push(game, "SummaryMenu", mon)
       end,
     },
-    { label = Strings("CANCEL"), onSelect = back },
+    { label = romText(game.data, "CancelTextString", nil), onSelect = back },
   }, { tx = 9, ty = 10, tw = 11, th = 8, noSound = true, onCancel = back }))
 end
 
@@ -76,20 +77,17 @@ end
 
 local function withdraw(game)
   local box = Boxes.active(game.save)
-  local t = game.data.text
   if #box == 0 then
-    game.stack:push(TextBox.new(game, t._NoMonText
-      or Strings("What? There are\nno POKéMON here!")))
+    game.stack:push(TextBox.new(game, romText(game.data, "_NoMonText", nil)))
     return
   end
   if #game.save.party >= Party.MAX then
-    game.stack:push(TextBox.new(game, t._CantTakeMonText
-      or Strings("You can't take\nany more POKéMON.\fDeposit POKéMON\nfirst.")))
+    game.stack:push(TextBox.new(game, romText(game.data, "_CantTakeMonText", nil)))
     return
   end
   local items = {}
   for i, mon in ipairs(box) do table.insert(items, monRow(game, mon, i)) end
-  game.stack:push(ListMenu.new(game, nil, withCancel(items), {
+  game.stack:push(ListMenu.new(game, nil, withCancel(game, items), {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     kind = "pc_box_withdraw",
     -- DisplayMonListMenu draws LIST_MENU_BOX over the PC menu, which stays
@@ -118,31 +116,27 @@ local function withdraw(game)
         local name = monName(game, mon)
         game.stringBuffer = name
         require("src.core.Sound").playCry(game.data, mon.species)
-        afterTransfer(game, list, t._MonIsTakenOutText
-          or Strings("%s is\ntaken out.\vGot %s.", name, name))
+        afterTransfer(game, list, romText(game.data, "_MonIsTakenOutText", nil))
       end)
     end,
   }))
 end
 
 local function deposit(game)
-  local t = game.data.text
   if #game.save.party <= 1 then
-    game.stack:push(TextBox.new(game, t._CantDepositLastMonText
-      or Strings("You can't deposit\nthe last POKéMON!")))
+    game.stack:push(TextBox.new(game, romText(game.data, "_CantDepositLastMonText", nil)))
     return
   end
   local box = Boxes.active(game.save)
   if #box >= Boxes.CAPACITY then
-    game.stack:push(TextBox.new(game, t._BoxFullText
-      or Strings("Oops! This Box is\nfull of POKéMON.")))
+    game.stack:push(TextBox.new(game, romText(game.data, "_BoxFullText", nil)))
     return
   end
   local items = {}
   for i, mon in ipairs(game.save.party) do
     table.insert(items, monRow(game, mon, i))
   end
-  game.stack:push(ListMenu.new(game, nil, withCancel(items), {
+  game.stack:push(ListMenu.new(game, nil, withCancel(game, items), {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     kind = "pc_box_deposit",
     itemBox = true,
@@ -154,8 +148,7 @@ local function deposit(game)
       local Follower = require("src.world.PikachuFollower")
       if Follower.isFollowingDisabled(game.overworld)
           and Follower.isStarterPikachu(game.save, mon) then
-        game.stack:push(TextBox.new(game, t._SleepingPikachuText2
-          or Strings("There isn't any\nresponse...")))
+        game.stack:push(TextBox.new(game, romText(game.data, "_SleepingPikachuText2", nil)))
         return
       end
       monSubmenu(game, list, Strings("DEPOSIT"), mon, function()
@@ -177,8 +170,7 @@ local function deposit(game)
         game.stringBuffer = name
         game.boxNumString = tostring(game.save.currentBox)
         require("src.core.Sound").playCry(game.data, mon.species)
-        afterTransfer(game, list, t._MonWasStoredText
-          or Strings("%s was\nstored in Box %s.", name, game.boxNumString))
+        afterTransfer(game, list, romText(game.data, "_MonWasStoredText", nil))
       end)
     end,
   }))
@@ -188,15 +180,13 @@ end
 -- Index by list.index (not stale item.value) after removeCurrent (#171).
 local function release(game)
   local box = Boxes.active(game.save)
-  local t = game.data.text
   if #box == 0 then
-    game.stack:push(TextBox.new(game, t._NoMonText
-      or Strings("What? There are\nno POKéMON here!")))
+    game.stack:push(TextBox.new(game, romText(game.data, "_NoMonText", nil)))
     return
   end
   local items = {}
   for i, mon in ipairs(box) do table.insert(items, monRow(game, mon, i)) end
-  game.stack:push(ListMenu.new(game, nil, withCancel(items), {
+  game.stack:push(ListMenu.new(game, nil, withCancel(game, items), {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
     kind = "pc_box_release",
     itemBox = true,
@@ -212,13 +202,10 @@ local function release(game)
          and mon.ot == game.save.player.name then
         require("src.core.Sound").playCry(game.data, mon.species)
         game.stack:push(TextBox.new(game,
-          ((t._PikachuUnhappyText or Strings("%s looks\nunhappy about it!", name))
-            :gsub("{RAM:wNameBuffer}", name))))
+          romText(game.data, "_PikachuUnhappyText", nil, name)))
         return
       end
-      local question = (t._OnceReleasedText
-        or Strings("Once released,\n%s is\ngone forever. OK?", name))
-          :gsub("{RAM:wStringBuffer}", name)
+      local question = romText(game.data, "_OnceReleasedText", nil, name)
       game.stack:push(TextBox.new(game, question, nil, {
         noSound = true,
         choice = function(yes)
@@ -231,8 +218,7 @@ local function release(game)
           require("src.core.Sound").playCry(game.data, mon.species)
           -- engine/pokemon/bills_pc.asm:318
           game.stack:push(TextBox.new(game,
-            ((t._MonWasReleasedText or Strings("%s was\nreleased outside.\fBye %s!", name, name))
-              :gsub("{RAM:wStringBuffer}", name)), function()
+            romText(game.data, "_MonWasReleasedText", nil, name, name), function()
               list:removeCurrent()
               list:close()
             end))
@@ -262,7 +248,6 @@ local function changeBoxMenu(game)
   })
   menu.kind = "pc_box_change" -- screen.render_visible identity
   menu.index = math.max(1, math.min(Boxes.COUNT, game.save.currentBox or 1))
-  local t = game.data.text
   local baseDraw = menu.draw
   function menu:draw()
     -- ChooseABoxText goes to the standard box, over BillsPCMenu's "What?"
@@ -271,7 +256,7 @@ local function changeBoxMenu(game)
     local y = 112
     -- data/text/text_3.asm:30
     local prompt = require("src.render.TextBox")
-      .strip(t._ChooseABoxText or Strings("Choose a\n<PK><MN> BOX."))
+      .strip(romText(game.data, "_ChooseABoxText", nil))
     for line in (prompt .. "\n"):gmatch("([^\n]*)\n") do
       Font.draw(line, 8, y)
       y = y + 16
@@ -294,9 +279,7 @@ end
 -- ChangeBox (engine/menus/save.asm:358-368) asks before showing the menu
 -- and returns to the PC menu on No.
 local function changeBox(game)
-  local t = game.data.text
-  local ask = TextBox.new(game, t._WhenYouChangeBoxText
-    or Strings("When you change a\nPOKéMON BOX, data\vwill be saved.\fIs that okay?"),
+  local ask = TextBox.new(game, romText(game.data, "_WhenYouChangeBoxText", nil),
     nil, {
     noSound = true,
     choice = function(yes)
@@ -312,7 +295,8 @@ local function drawChrome(game, what)
   if what then
     Font.drawBox(0, 12, 20, 6)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(Strings("What?"), 8, 112)
+    -- engine/pokemon/bills_pc.asm:147
+    Font.draw(TextBox.strip(romText(game.data, "_WhatText", nil)), 8, 112)
   end
   Font.drawBox(9, 14, 11, 4)
   love.graphics.setColor(0, 0, 0, 1)

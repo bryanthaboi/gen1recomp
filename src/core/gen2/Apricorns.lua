@@ -34,11 +34,14 @@
 
 local BugContest = require("src.core.gen2.BugContest")
 local Buena = require("src.core.gen2.Buena")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local Runtime = require("src.mods.Runtime")
 local CartTimers = require("src.save_convert.gen2_state.clock_phone")
 local CartDayCareWild = require("src.save_convert.gen2_state.daycare_wild")
 
-local Apricorns = {}
+local Apricorns = EngineFlags.expose({}, {
+  "ENGINE_KURT_MAKING_BALLS", "ENGINE_ALL_FRUIT_TREES",
+})
 
 -- ------------------------------------------------------- apricorns and balls
 --
@@ -65,34 +68,25 @@ Apricorns.BALLS = {
   { apricorn = "PNK_APRICORN", ball = "LOVE_BALL",   event = 606 },
 }
 
--- ENGINE_KURT_MAKING_BALLS, constants/engine_flags.asm index 79, backed by
--- wDailyFlags1 bit DAILYFLAGS1_KURT_MAKING_BALLS_F.
-Apricorns.ENGINE_KURT_MAKING_BALLS = 79
-
--- Every ENGINE_* id that lives in wDailyFlags1 or wDailyFlags2, in order, so
--- the daily reset can clear the lot the way `ld [hli], a / ld [hl], a` over the
--- two bytes does.  Named as well as numbered because the port's save keeps
--- engine flags in a sparse table keyed by the script's numeric id, and a
--- reader of this list should not have to count constants to know what it just
--- wiped.
+-- constants/engine_flags.asm:97, ../pokecrystal/constants/engine_flags.asm:98
 Apricorns.DAILY_ENGINE_FLAGS = {
-  { id = 79, name = "ENGINE_KURT_MAKING_BALLS" },
-  { id = 80, name = "ENGINE_DAILY_BUG_CONTEST" },
-  { id = 81, name = "ENGINE_SWARM" },
-  { id = 82, name = "ENGINE_TIME_CAPSULE" },
-  { id = 83, name = "ENGINE_ALL_FRUIT_TREES" },
-  { id = 84, name = "ENGINE_GOT_SHUCKIE_TODAY" },
-  { id = 85, name = "ENGINE_GOLDENROD_UNDERGROUND_MERCHANT_CLOSED" },
-  { id = 86, name = "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY" },
-  { id = 87, name = "ENGINE_MT_MOON_SQUARE_CLEFAIRY" },
-  { id = 88, name = "ENGINE_UNION_CAVE_LAPRAS" },
-  { id = 89, name = "ENGINE_GOLDENROD_UNDERGROUND_GOT_HAIRCUT" },
-  { id = 90, name = "ENGINE_GOLDENROD_DEPT_STORE_TM27_RETURN" },
-  { id = 91, name = "ENGINE_DAISYS_GROOMING" },
-  { id = 92, name = "ENGINE_INDIGO_PLATEAU_RIVAL_FIGHT" },
-  -- ../pokecrystal/constants/engine_flags.asm:113-114
-  { name = "ENGINE_DAILY_MOVE_TUTOR" },
-  { name = "ENGINE_BUENAS_PASSWORD" },
+  "ENGINE_KURT_MAKING_BALLS",
+  "ENGINE_DAILY_BUG_CONTEST",
+  "ENGINE_SWARM",
+  "ENGINE_QWILFISH_SWARM",
+  "ENGINE_TIME_CAPSULE",
+  "ENGINE_ALL_FRUIT_TREES",
+  "ENGINE_GOT_SHUCKIE_TODAY",
+  "ENGINE_GOLDENROD_UNDERGROUND_MERCHANT_CLOSED",
+  "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY",
+  "ENGINE_MT_MOON_SQUARE_CLEFAIRY",
+  "ENGINE_UNION_CAVE_LAPRAS",
+  "ENGINE_GOLDENROD_UNDERGROUND_GOT_HAIRCUT",
+  "ENGINE_GOLDENROD_DEPT_STORE_TM27_RETURN",
+  "ENGINE_DAISYS_GROOMING",
+  "ENGINE_INDIGO_PLATEAU_RIVAL_FIGHT",
+  "ENGINE_DAILY_MOVE_TUTOR",
+  "ENGINE_BUENAS_PASSWORD",
 }
 
 local CRYSTAL_PHONE_FLAGS = {
@@ -159,10 +153,6 @@ local CRYSTAL_PHONE_FLAGS = {
 function Apricorns.sampleKenjiBreak(random)
   return (random or math.random)(4) + 2
 end
-
--- ENGINE_ALL_FRUIT_TREES, the wDailyFlags1 bit TryResetFruitTrees tests before
--- it will refill the trees.
-Apricorns.ENGINE_ALL_FRUIT_TREES = 83
 
 local BY_APRICORN, BY_BALL = {}, {}
 for index, row in ipairs(Apricorns.BALLS) do
@@ -443,7 +433,7 @@ Apricorns.updateTimeRemaining = updateTimeRemaining
 --
 -- When it is, wDailyFlags1 and wDailyFlags2 are cleared whole and the timer
 -- restarts.  Returns true on the frames the rollover actually happened.
-function Apricorns.checkDailyResetTimer(save, now, resolveId)
+function Apricorns.checkDailyResetTimer(save, now)
   if type(save) ~= "table" then return false end
   if not save.dailyReset then
     Apricorns.startDailyResetTimer(save, now)
@@ -457,7 +447,7 @@ function Apricorns.checkDailyResetTimer(save, now, resolveId)
     since.days)
   timer.remaining = remaining
   if not expired then return false end
-  Apricorns.dailyReset(save, resolveId)
+  Apricorns.dailyReset(save)
   Apricorns.startDailyResetTimer(save, now)
   return true
 end
@@ -468,32 +458,23 @@ end
 -- (ENGINE_DAILY_BUG_CONTEST) and refilling every fruit tree
 -- (ENGINE_ALL_FRUIT_TREES) happen on the same tick.
 -- ../pokecrystal/constants/engine_flags.asm:25,113-114
-function Apricorns.dailyReset(save, resolveId)
+function Apricorns.dailyReset(save)
   local flags = engineFlags(save)
   if not flags then return end
   local crystal = save.version == "crystal"
-  local function clear(name, id)
-    id = resolveId and resolveId(name, id) or id
-    if id then flags[id] = nil end
+  local function clear(name)
+    flags[EngineFlags.id(name)] = nil
   end
-  for _, row in ipairs(Apricorns.DAILY_ENGINE_FLAGS) do
-    if row.id then
-      if save.version == nil then flags[row.id] = nil end
-      local name = crystal and row.name == "ENGINE_SWARM" and "ENGINE_QWILFISH_SWARM" or row.name
-      clear(name, row.id + (crystal and 1 or 0))
-    elseif crystal then
-      clear(row.name, row.name == "ENGINE_DAILY_MOVE_TUTOR" and 94 or 95)
-    elseif save.version == nil and resolveId then
-      clear(row.name)
-    end
+  for _, name in ipairs(Apricorns.DAILY_ENGINE_FLAGS) do
+    if EngineFlags.has(name) then clear(name) end
   end
   if crystal then
     CartTimers.dailyReset(save)
     CartDayCareWild.dailyReset(save)
-    clear("ENGINE_GOLDENROD_DEPT_STORE_SALE_IS_ON", 97)
-    clear("ENGINE_DUNSPARCE_SWARM", 160)
-    clear("ENGINE_YANMA_SWARM", 161)
-    for i, name in ipairs(CRYSTAL_PHONE_FLAGS) do clear(name, 100 + i) end
+    clear("ENGINE_GOLDENROD_DEPT_STORE_SALE_IS_ON")
+    clear("ENGINE_DUNSPARCE_SWARM")
+    clear("ENGINE_YANMA_SWARM")
+    for _, name in ipairs(CRYSTAL_PHONE_FLAGS) do clear(name) end
     save.crystal = save.crystal or {}
     local days = (save.crystal.kenjiBreak or 0) - 1
     save.crystal.kenjiBreak = days > 0 and days or Apricorns.sampleKenjiBreak()
@@ -503,7 +484,7 @@ function Apricorns.dailyReset(save, resolveId)
   -- save.dailyFlags), so the same wipe has to reach that table.
   local fishing = crystal and save.dailyFlags and save.dailyFlags.fishingSwarm or nil
   save.dailyFlags = fishing ~= nil and { fishingSwarm = fishing } or {}
-  Buena.dailyReset(save, resolveId)
+  Buena.dailyReset(save)
 end
 
 -- ---------------------------------------------------------------- the trees

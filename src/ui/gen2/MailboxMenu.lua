@@ -32,8 +32,8 @@ local Breeding = require("src.core.gen2.Breeding")
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
+local RomText = require("src.core.RomText")
 local Screens = require("src.ui.Screens")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local MailboxMenu = {}
@@ -54,26 +54,12 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 local DOWN_ARROW = "\xe2\x96\xbc"
 local ARROW_X, ARROW_Y = 18, 17
 
--- .SubMenuData, verbatim.
+-- engine/pokemon/mail.asm:561
 local SUB_ENTRIES = {
-  { id = "read", label = Strings.source("READ MAIL") },
-  { id = "pack", label = Strings.source("PUT IN PACK") },
-  { id = "attach", label = Strings.source("ATTACH MAIL") },
-  { id = "cancel", label = Strings.source("CANCEL") },
-}
-
-local function page(...) return { ... } end
-local function pages(...) return { ... } end
-
--- data/text/common_2.asm's _EmptyMailboxText .. _MailMovedFromBoxText block.
-local TEXT = {
-  empty = pages(page("There's no MAIL", "here.")),
-  messageLost = pages(page("The MAIL's message", "will be lost. OK?")),
-  packFull = pages(page("The PACK is full.")),
-  putAway = pages(page("The cleared MAIL", "was put away.")),
-  alreadyHolding = pages(page("It's already hold-", "ing an item.")),
-  egg = pages(page("An EGG can't hold", "any MAIL.")),
-  moved = pages(page("The MAIL was moved", "from the MAILBOX.")),
+  { id = "read", rom = "MailboxPC.SubMenuData#1" },
+  { id = "pack", rom = "MailboxPC.SubMenuData#2" },
+  { id = "attach", rom = "MailboxPC.SubMenuData#3" },
+  { id = "cancel", rom = "MailboxPC.SubMenuData#4" },
 }
 
 local LABELS = {
@@ -86,18 +72,8 @@ local LABELS = {
   moved = "_MailMovedFromBoxText",
 }
 
-MailboxMenu.TEXT = TEXT
 MailboxMenu.LABELS = LABELS
 MailboxMenu.SUB_ENTRIES = SUB_ENTRIES
-
-local function extractedText(text)
-  local out = setmetatable({}, { __index = TEXT })
-  for key, label in pairs(LABELS) do
-    local list = CommonText.of(text, label)
-    if list then out[key] = list end
-  end
-  return out
-end
 
 -- opts: save, text (text.lua), onClose()
 function MailboxMenu.new(game, opts)
@@ -106,7 +82,7 @@ function MailboxMenu.new(game, opts)
   self.game = game
   self.save = opts.save or (game and game.save)
   self.textData = opts.text or (game and game.world and game.world.text)
-  self.TEXT = extractedText(self.textData)
+  self.TEXT = CommonText.texts(self.textData, LABELS)
   self.onClose = opts.onClose
   -- wCurMessageIndex / wCurMessageScrollPosition, both reset by MailboxPC
   -- before its loop.
@@ -356,9 +332,11 @@ function MailboxMenu:drawTextBox(lines)
 end
 
 function MailboxMenu:drawYesNo(choice)
+  local data = self.game and self.game.data
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 
@@ -380,11 +358,12 @@ function MailboxMenu:drawList()
 end
 
 function MailboxMenu:drawSubmenu()
+  local data = self.game and self.game.data
   Chrome.box(SUB_X, SUB_Y, SUB_W, SUB_H)
   for row, entry in ipairs(SUB_ENTRIES) do
     local ty = SUB_LABEL_Y + (row - 1) * 2
     if row == self.submenu.index then Chrome.cursor(SUB_LABEL_X - 1, ty) end
-    Chrome.print(Strings(entry.label), SUB_LABEL_X, ty)
+    Chrome.print(RomText(data, entry.rom), SUB_LABEL_X, ty)
   end
 end
 

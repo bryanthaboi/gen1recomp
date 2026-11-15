@@ -268,6 +268,7 @@ local function open_pending_yesno()
   -- pokefirered/src/evolution_scene.c:912
   if Message.isOpen and Message.isOpen()
       and not (Message.isWaiting and Message.isWaiting()) then return end
+  if Message.isOpen and Message.isOpen() and (Message._page or 1) < #(Message._pages or {}) then return end
   local cb = EvolutionScene._pendingYesNo
   EvolutionScene._pendingYesNo = nil
   local Choice = require("src.ui.game3.choice")

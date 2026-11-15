@@ -3,8 +3,9 @@
 
 local BattleTower = require("src.core.gen2.BattleTower")
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 
 local BattleTowerMenu = {}
 BattleTowerMenu.__index = BattleTowerMenu
@@ -37,28 +38,30 @@ local MESSAGE_FRAMES = 0x80
 -- group and nil for the cancel.
 BattleTowerMenu.CANCELLED = 0x0a
 
--- ../pokecrystal/mobile/mobile_46.asm:5488-5491
-local PICK_TEXT = Strings.source("What level do you\nwant to challenge?")
--- ../pokecrystal/mobile/mobile_46.asm:5459-5462
-local TOPS_TEXT = Strings.source("A party POKéMON\ntops this level.")
--- ../pokecrystal/mobile/mobile_46.asm:5464-5471
-local UBER_TEXT = Strings.source(
-  "%s may go\nonly to BATTLE\n\nROOMS that are\nLv.70 or higher.")
--- ../pokecrystal/mobile/mobile_46.asm:5473-5476
-local QUIT_TEXT = Strings.source("Cancel your BATTLE\nROOM challenge?")
+-- ../pokecrystal/mobile/mobile_46.asm:5488
+local PICK_TEXT = "Text_WhatLevelDoYouWantToChallenge"
+-- ../pokecrystal/mobile/mobile_46.asm:5459
+local TOPS_TEXT = "Text_PartyMonTopsThisLevel"
+-- ../pokecrystal/mobile/mobile_46.asm:5464
+local UBER_TEXT = "Text_UberRestriction"
+-- ../pokecrystal/mobile/mobile_46.asm:5473
+local QUIT_TEXT = "Text_CancelBattleRoomChallenge"
 -- ../pokecrystal/constants/charmap.asm:89 and :192, tiles $61 and $ee.
 local UP_ARROW = "\xe2\x96\xb2"
 local DOWN_ARROW = "\xe2\x96\xbc"
 
--- ../pokecrystal/mobile/mobile_46.asm:3880 and :4623-4627
-local CANCEL_LABEL = Strings.source("CANCEL")
-local YES_LABEL = Strings.source("YES")
-local NO_LABEL = Strings.source("NO")
+-- ../pokecrystal/mobile/mobile_46.asm:4623, :4626
+local YES_LABEL = "String_11a2cf"
+local NO_LABEL = "String_11a2d3"
 
--- ../pokecrystal/mobile/mobile_46.asm:3869-3879 Strings_L10ToL100, six tiles
--- a row.
-function BattleTowerMenu.levelLabel(group)
-  return string.format(" L:%-3d", group * 10):sub(1, 6)
+function BattleTowerMenu:text(label)
+  return CommonText.plain(RomText(self.data, label, nil))
+end
+
+-- ../pokecrystal/mobile/mobile_46.asm:1159-1165, :3869
+function BattleTowerMenu:rowLabel(index)
+  local list = #self.rows > 4 and "Strings_L10ToL100" or "Strings_Ll0ToL40"
+  return self:text(list .. "#" .. (2 * index - 1))
 end
 
 -- opts: save, party, rows (BattleTower.levelGroupRows), monName,
@@ -76,7 +79,7 @@ function BattleTowerMenu.new(game, opts)
   -- `ld a, $1 / ld [wcd4f], a` (../pokecrystal/mobile/mobile_46.asm:1152-1153)
   self.cursor = 1
   self.phase = "pick"
-  self.message = Strings(PICK_TEXT)
+  self.message = self:text(PICK_TEXT)
   return self
 end
 
@@ -108,7 +111,7 @@ function BattleTowerMenu:refuse(text)
   self.phase = "message"
   -- ../pokecrystal/home/text.asm:479 Paragraph
   self.pages = {}
-  for page in (tostring(text) .. "\n\n"):gmatch("(.-)\n\n") do
+  for page in (tostring(text) .. "\f"):gmatch("(.-)\f") do
     self.pages[#self.pages + 1] = page
   end
   if #self.pages == 0 then self.pages[1] = tostring(text) end
@@ -123,17 +126,17 @@ function BattleTowerMenu:confirm()
   if not row then
     -- ../pokecrystal/mobile/mobile_46.asm:1291-1303 `.asm_118a3c`
     self.phase = "quit"
-    self.message = Strings(QUIT_TEXT)
+    self.message = self:text(QUIT_TEXT)
     self.yes = true
     return
   end
   if BattleTower.levelCheck(self.party, row.group) then
-    return self:refuse(Strings(TOPS_TEXT))
+    return self:refuse(self:text(TOPS_TEXT))
   end
   local uber = BattleTower.ubersCheck(self.party, row.group)
   if uber then
     local name = (self.monName and self.monName(uber)) or uber
-    return self:refuse(Strings(UBER_TEXT, name))
+    return self:refuse(CommonText.plain(RomText(self.data, UBER_TEXT, nil, name)))
   end
   self:finish(row.group)
 end
@@ -154,7 +157,7 @@ function BattleTowerMenu:updatePick()
   elseif input:wasPressed("b") then
     self:playSfx("Sfx_ReadText2")
     self.phase = "quit"
-    self.message = Strings(QUIT_TEXT)
+    self.message = self:text(QUIT_TEXT)
     self.yes = true
   end
 end
@@ -172,12 +175,12 @@ function BattleTowerMenu:updateQuit()
     self:playSfx("Sfx_ReadText2")
     if self.yes then return self:finish(nil) end
     self.phase = "pick"
-    self.message = Strings(PICK_TEXT)
+    self.message = self:text(PICK_TEXT)
     self.cursor = 1
   elseif input:wasPressed("b") then
     self:playSfx("Sfx_ReadText2")
     self.phase = "pick"
-    self.message = Strings(PICK_TEXT)
+    self.message = self:text(PICK_TEXT)
     self.cursor = 1
   end
 end
@@ -196,7 +199,7 @@ function BattleTowerMenu:update(_dt)
     self.wait = (self.wait or 0) - 1
     if self.wait > 0 then return end
     self.phase = "pick"
-    self.message = Strings(PICK_TEXT)
+    self.message = self:text(PICK_TEXT)
     self.cursor = 1
     return
   end
@@ -214,16 +217,14 @@ function BattleTowerMenu:drawPanel()
   end
   if self.phase == "quit" then
     Chrome.box(YN_X, YN_Y, YN_W, YN_H)
-    Chrome.print(Strings(YES_LABEL), YN_TEXT_X, YES_Y)
-    Chrome.print(Strings(NO_LABEL), YN_TEXT_X, NO_Y)
+    Chrome.print(self:text(YES_LABEL), YN_TEXT_X, YES_Y)
+    Chrome.print(self:text(NO_LABEL), YN_TEXT_X, NO_Y)
     Chrome.cursor(YN_TEXT_X - 1, self.yes and YES_Y or NO_Y)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
   Chrome.box(PICK_X, PICK_Y, PICK_W, PICK_H)
-  local row = self.rows[self.cursor]
-  Chrome.print(row and BattleTowerMenu.levelLabel(row.group) or Strings(CANCEL_LABEL),
-    ROW_X, ROW_Y)
+  Chrome.print(self:rowLabel(self.cursor), ROW_X, ROW_Y)
   Chrome.print(UP_ARROW, ARROW_X, UP_Y)
   Chrome.print(DOWN_ARROW, ARROW_X, DOWN_Y)
   love.graphics.setColor(1, 1, 1, 1)

@@ -42,9 +42,6 @@ this port.
   native `save.lua` format keeps every existing item when the configured
   limit changes; exporting to a cartridge `.sav` still writes only the first
   20 bag slots because the original SRAM layout has no room for more.
-- PC Box **overflow handling** was deliberately changed even though the
-  20×12 box *shape* was kept faithful: instead of Gen 1's "full box discards
-  or blocks the deposit," this port spills into the next box with room.
 - Several battle-related overflow "bugs" (byte overflow, Focus Energy) are
   gated behind a `gen1_faithful` vs `modern_clean` ruleset toggle in
   `src/battle/rulesets/`, so the faithful-but-buggy behavior can be turned

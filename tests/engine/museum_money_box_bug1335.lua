@@ -14,11 +14,23 @@ package.loaded["src.render.TextBox"] = {
 local M = assert(loadfile("data/scripts/story2.lua"))()
 local clerk = M.MUSEUM_1F.talk.TEXT_MUSEUM1F_SCIENTIST1
 
+local MUSEUM_TEXT = {
+  _Museum1FScientist1AmberIsFossilizedTreeSapText = "AMBER is fossil-\nized tree sap.{DONE}",
+  _Museum1FScientist1ComeAgainText = "Come again!{DONE}",
+  _Museum1FScientist1DoYouKnowWhatAmberIsText = "You can't sneak\nin the back way!\fOh, whatever!\nDo you know what\vAMBER is?{DONE}",
+  _Museum1FScientist1DontHaveEnoughMoneyText = "You don't have\nenough money.{PROMPT}",
+  _Museum1FScientist1GoToOtherSideText = "Please go to the\nother side!{DONE}",
+  _Museum1FScientist1TakePlentyOfTimeText = "Take plenty of\ntime to look!{DONE}",
+  _Museum1FScientist1ThankYouText = "Right, ¥50!\nThank you!{DONE}",
+  _Museum1FScientist1TheresALabSomewhereText = "There's a lab\nsomewhere trying\vto resurrect\vancient POKéMON\vfrom AMBER.{DONE}",
+  _Museum1FScientist1WouldYouLikeToComeInText = "It's ¥50 for a\nchild's ticket.\fWould you like to\ncome in?{DONE}",
+}
+
 local pushed
 local function mkGame(cash)
   pushed = {}
   return {
-    data = { text = {} },
+    data = { text = MUSEUM_TEXT },
     save = { money = cash, flags = {} },
     stack = { push = function(_, box) pushed[#pushed + 1] = box end },
   }
@@ -74,7 +86,7 @@ T.eq(decline.opts.money(), 3000, "and its closure reads the unspent balance")
 g = mkGame(3000)
 g.save.flags.EVENT_BOUGHT_MUSEUM_TICKET = true
 clerk(g, nil, nil, function() end)
-T.check(tostring(pushed[1].text):find("Take your time", 1, true) ~= nil,
+T.check(tostring(pushed[1].text):find("Take plenty", 1, true) ~= nil,
   "an existing ticket holder gets the take-your-time line")
 T.check(pushed[1].opts == nil, "and no money box on that branch")
 

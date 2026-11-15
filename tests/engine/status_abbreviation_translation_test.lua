@@ -128,7 +128,7 @@ do
   PartyMenu.drawIcon = function() end
   local game = {
     data = { pokemon = { BULBASAUR = mkDef() }, statuses = moddedStatuses(),
-      text = {} },
+      text = dofile("tests/fixture_data/text.lua") },
     save = { party = { mkMon("PSN") } },
   }
   local list = setmetatable({ game = game, index = 1 }, PartyMenu)

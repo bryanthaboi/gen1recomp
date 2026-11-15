@@ -10,6 +10,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 contest")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 local seq = S.rng.seq
 
@@ -108,8 +109,20 @@ eq(BugContest.score({ maxHp = 200 }), 0, "and neither does an empty slot")
 eq(#BugContest.CONTESTANTS, 10, "ten contestant rows")
 -- BugContestantPointers slot 1 is Bug Catcher Don and slot 10 is Schoolboy
 -- Kipp; slot 0's duplicate Don is deliberately not in the Lua table.
-eq(BugContest.CONTESTANTS[1].name, "DON", "slot 1 is DON")
-eq(BugContest.CONTESTANTS[10].name, "KIPP", "slot 10 is KIPP")
+local CONTEST_TRAINERS = { trainers = { classes = {
+  BUG_CATCHER = { name = "BUG CATCHER", trainers = { { name = "DON" }, {},
+    { name = "ED" }, {}, { name = "BENNY" }, {}, { name = "JOSH" } } },
+  COOLTRAINERM = { name = "COOLTRAINER", trainers = { { name = "NICK" } } },
+  POKEFANM = { name = "POKéFAN", trainers = { { name = "WILLIAM" } } },
+  CAMPER = { name = "CAMPER", trainers = { {}, {}, {}, {}, { name = "BARRY" } } },
+  PICNICKER = { name = "PICNICKER", trainers = { {}, {}, {}, {}, { name = "CINDY" } } },
+  YOUNGSTER = { name = "YOUNGSTER", trainers = { {}, {}, {}, {}, { name = "SAMUEL" } } },
+  SCHOOLBOY = { name = "SCHOOLBOY", trainers = { {}, { name = "KIPP" } } },
+} } }
+eq(BugContest.contestantName(CONTEST_TRAINERS, 2), "BUG CATCHER DON",
+  "slot 1 is DON")
+eq(BugContest.contestantName(CONTEST_TRAINERS, 11), "SCHOOLBOY KIPP",
+  "slot 10 is KIPP")
 eq(BugContest.contestantId(1), 2, "slot 1 answers to winner ID 2")
 eq(BugContest.contestantId(10), 11, "slot 10 answers to winner ID 11")
 eq(BugContest.contestantSlot(2), 1, "and back again")
@@ -122,8 +135,10 @@ eq(BugContest.CONTESTANTS[3].mons[1].score, 357, "Nick's first row is 357")
 eq(BugContest.CONTESTANTS[3].mons[3].score, 368, "and his third row is 368")
 
 eq(BugContest.contestantName(nil, 1, "GOLD"), "GOLD", "ID 1 is the player")
-eq(BugContest.contestantName(nil, 4), "COOLTRAINERM NICK",
-  "and a contestant falls back to the transcribed class and name")
+eq(BugContest.contestantName(CONTEST_TRAINERS, 4), "COOLTRAINER NICK",
+  "and a contestant is trainers.lua's class name and member name")
+check(not pcall(BugContest.contestantName, nil, 4),
+  "a dataset without the trainer names is an error")
 
 -- ---- ComputeAIContestantScores' roll --------------------------------------
 --
@@ -270,21 +285,20 @@ check(judged.first.id >= BugContest.contestantId(6),
 -- that is not on the map.
 local Events = require("src.world.gen2.Events")
 
-eq(#BugContest.FLAGS, 10, "one flag per contestant, not counting the player")
-for slot = 1, 10 do
-  eq(BugContest.FLAGS[slot], 1813 + slot,
-    ("slot %d is EVENT_BUG_CATCHING_CONTESTANT_%dA"):format(slot, slot))
-end
+-- ../pokegold/data/events/bug_contest_flags.asm:1
+local FLAGS = { 1814, 1815, 1816, 1817, 1818, 1819, 1820, 1821, 1822, 1823 }
+local FLAG_TABLES = { bugContestFlags = FLAGS }
 
-eq(BugContest.contestantFlags(nil), BugContest.FLAGS,
-  "no event tables at all falls back to the transcription")
-eq(BugContest.contestantFlags({}), BugContest.FLAGS,
-  "and so does a cache that predates the extractor writing it")
-eq(BugContest.contestantFlags({ bugContestFlags = { 1, 2, 3 } }),
-  BugContest.FLAGS, "a short table is a misread, not a source")
+check(BugContest.FLAGS == nil, "no hand-typed contestant flag table")
+check(not pcall(BugContest.contestantFlags, nil),
+  "no event tables at all is an error")
+check(not pcall(BugContest.contestantFlags, {}),
+  "and so is a cache without bugContestFlags")
+check(not pcall(BugContest.contestantFlags, { bugContestFlags = { 1, 2, 3 } }),
+  "a short table is a misread, not a source")
 local extractedFlags = { 900, 901, 902, 903, 904, 905, 906, 907, 908, 909 }
 eq(BugContest.contestantFlags({ bugContestFlags = extractedFlags }),
-  extractedFlags, "a full one is preferred over the transcription")
+  extractedFlags, "a full one is the source")
 
 do
   -- `.loop1` RESETS all ten before the five are set, so the flags the caller
@@ -292,9 +306,9 @@ do
   local events = Events.new()
   local chosen = { [2] = true, [4] = true, [6] = true, [8] = true,
                    [10] = true }
-  BugContest.applyContestantFlags(events, chosen, nil)
+  BugContest.applyContestantFlags(events, chosen, FLAG_TABLES)
   for slot = 1, 10 do
-    local flag = BugContest.FLAGS[slot]
+    local flag = FLAGS[slot]
     if chosen[slot] then
       check(events:get(flag), ("slot %d is flagged out of the park"):format(slot))
       check(not events:objectVisible(flag),
@@ -309,22 +323,22 @@ do
   -- A second contest must not inherit the first one's absentees: without the
   -- reset the two picks would union and the park would keep emptying.
   BugContest.applyContestantFlags(events, { [1] = true, [3] = true,
-    [5] = true, [7] = true, [9] = true }, nil)
+    [5] = true, [7] = true, [9] = true }, FLAG_TABLES)
   local hidden = 0
   for slot = 1, 10 do
-    if events:get(BugContest.FLAGS[slot]) then hidden = hidden + 1 end
+    if events:get(FLAGS[slot]) then hidden = hidden + 1 end
   end
   eq(hidden, 5, "the second contest hides five, not ten")
-  check(events:get(BugContest.FLAGS[1]), "the new picks are out")
-  check(not events:get(BugContest.FLAGS[2]), "and the old ones are back")
+  check(events:get(FLAGS[1]), "the new picks are out")
+  check(not events:get(FLAGS[2]), "and the old ones are back")
 
   -- The extracted table is the one written when it is there.
   local other = Events.new()
   BugContest.applyContestantFlags(other, { [1] = true },
     { bugContestFlags = extractedFlags })
   check(other:get(900), "an extracted flag number is the one that is set")
-  check(not other:get(BugContest.FLAGS[1]),
-    "and the transcribed number is left alone")
+  check(not other:get(FLAGS[1]),
+    "and the vanilla number is left alone")
 
   -- A caller with no flag store at all still picks; it just cannot hide
   -- anybody.
@@ -746,10 +760,17 @@ else
 end
 
 local ContestMenu = require("src.ui.gen2.ContestMenu")
-eq(ContestMenu.TEXT.stock, " STOCK <PK><MN> ",
-  "the STOCK label keeps its spaces, which is what erases the border under it")
-eq(ContestMenu.TEXT.this, " THIS <PK><MN> ", "and so does THIS")
-eq(ContestMenu.TEXT.askSwitch, "Switch #MON?", "_ContestAskSwitchText")
+local CONTEST_TEXT = require("tests.fixtures.gen2_common_text").text()
+eq(ContestMenu.TEXT, nil, "no transcribed STOCK / THIS / HEALTH strings")
+do
+  local t = ContestMenu.texts(CONTEST_TEXT)
+  eq(t.stock, " STOCK <PK><MN> ",
+    "the STOCK label keeps its spaces, which is what erases the border under it")
+  eq(t.this, " THIS <PK><MN> ", "and so does THIS")
+  eq(t.askSwitch, "Switch POKéMON?", "_ContestAskSwitchText")
+  check(not pcall(ContestMenu.new, { save = {} }, { save = {} }),
+    "a switch screen with no text.lua is an error")
+end
 
 -- The screen decides nothing: yes swaps the stock mon, no and B both keep it.
 local function fakeInput(pressed)
@@ -763,7 +784,7 @@ local _, stockMon, freshMon = BugContest.catch(save, mon({ species = "PINSIR" })
 
 local answered
 local screen = ContestMenu.new({ save = save }, {
-  save = save, stock = stockMon, caught = freshMon,
+  save = save, stock = stockMon, caught = freshMon, text = CONTEST_TEXT,
   onClose = function(keptMon) answered = keptMon end,
 })
 eq(screen.choice, 1, "PlaceYesNoBox opens on YES")
@@ -774,7 +795,7 @@ eq(BugContest.caughtMon(save).species, "CATERPIE", "so the state is unchanged")
 
 answered = nil
 screen = ContestMenu.new({ save = save }, {
-  save = save, stock = stockMon, caught = freshMon,
+  save = save, stock = stockMon, caught = freshMon, text = CONTEST_TEXT,
   onClose = function(keptMon) answered = keptMon end,
 })
 screen.game.input = fakeInput("a")
@@ -784,7 +805,7 @@ eq(BugContest.caughtMon(save).species, "PINSIR", "and the state follows")
 
 answered = nil
 screen = ContestMenu.new({ save = save }, {
-  save = save, stock = freshMon, caught = stockMon,
+  save = save, stock = freshMon, caught = stockMon, text = CONTEST_TEXT,
   onClose = function(keptMon) answered = keptMon end,
 })
 screen.game.input = fakeInput("down")
@@ -815,13 +836,15 @@ local Specials = require("src.script.gen2.Specials")
 local function fakeVm(record, sfx)
   local vm = { scriptVar = 0, texts = {}, rebuilds = 0 }
   vm.events = Events.new()
-  vm.eventTables = {}
+  vm.eventTables = { bugContestFlags = FLAGS }
   vm.onFlagsChanged = function() vm.rebuilds = vm.rebuilds + 1 end
   vm.specials = {
     save = function() return record end,
     party = function() return record.party end,
     monName = function(species) return species end,
     playSfxNamed = function(name) sfx[#sfx + 1] = name end,
+    data = function() return { text = require("tests.fixtures.gen2_rom_text").text(),
+      trainers = CONTEST_TRAINERS.trainers } end,
   }
   function vm:showRaw(body) self.texts[#self.texts + 1] = body end
   function vm:setStringBuffer(value) self.stringBuffer = value end
@@ -894,7 +917,7 @@ do
   -- handler that only stored the pick on the save left all ten standing there.
   local hidden, drawn = 0, 0
   for slot = 1, BugContest.NUM_CONTESTANTS do
-    local flag = BugContest.FLAGS[slot]
+    local flag = FLAGS[slot]
     if vm.events:objectVisible(flag) then drawn = drawn + 1
     else hidden = hidden + 1 end
     eq(vm.events:get(flag),
@@ -1014,6 +1037,9 @@ local function kurtVm(record, pick)
   local vm = { scriptVar = 0xff, menus = {} }
   vm.specials = {
     save = function() return record end,
+    data = function()
+      return { text = require("tests.fixture_data.gen2_rom_text_s7_f1").text() }
+    end,
     itemName = function(id) return (id:gsub("_APRICORN", " APRICORN")) end,
     itemIndex = function(id) return APRICORN_ITEM[id] end,
     scriptMenu = function(header, onChoose)
@@ -1139,8 +1165,7 @@ do
       "Apricorns.treePicked(save, treeId)",
       "Apricorns.pickTree(save, treeId)",
       "fruitTreeReset = function() return self:fruitTreeReset() end,",
-      "Apricorns.checkDailyResetTimer(save, nil,",
-      "self.engineFlagResolver and self:engineFlagResolver() or nil)",
+      "Apricorns.checkDailyResetTimer(save, nil)",
     }) do
     check(world:find(wanted, 1, true) ~= nil, "World has " .. wanted)
   end
@@ -1215,7 +1240,7 @@ do
     check(true, "cache predates bug_contest_flags extraction (SKIP)")
   else
     eq(#flags, BugContest.NUM_CONTESTANTS, "ten contestant flags")
-    for slot, hand in ipairs(BugContest.FLAGS) do
+    for slot, hand in ipairs(FLAGS) do
       eq(flags[slot], hand, ("slot %d flag number"):format(slot))
     end
     eq(BugContest.contestantFlags(eventTables), flags,
@@ -1242,19 +1267,28 @@ eq(BugContest.score(mon({ hp = 16 })), BugContest.score(mon()) - 3,
   "the remaining HP term feeds the score")
 
 do
-  local GameVersion = require("src.core.GameVersion")
-  local prior = GameVersion.current
-  GameVersion.set("gold")
-  local stock, this = ContestMenu.labels()
-  eq(stock, " STOCK <PK><MN> ", "gold's STOCK label")
-  eq(this, " THIS <PK><MN> ", "gold's THIS label, one trailing space")
-  GameVersion.set("crystal")
-  stock, this = ContestMenu.labels()
-  eq(stock, " STOCK <PK><MN> ",
-    "crystal's STOCK expands <PKMN> to the same ten tiles")
-  eq(this, " THIS <PK><MN>  ",
-    "crystal's THIS keeps its second trailing space, ten tiles not nine")
-  GameVersion.set(prior)
+  local crystalText = require("tests.fixtures.gen2_common_text").text()
+  local key = crystalText.labels["DisplayCaughtContestMonStats.This"]
+  crystalText[key] = " THIS <PK><MN>  "
+  eq(ContestMenu.texts(crystalText).this, " THIS <PK><MN>  ",
+    "THIS is whatever text.lua carries, crystal's second trailing space included")
+  local home = os.getenv("HOME") or ""
+  local chunk
+  for _, id in ipairs({ os.getenv("POKEPORT_IDENTITY") or "", "g1r-crystal" }) do
+    chunk = chunk or (id ~= "" and loadfile(home
+      .. "/Library/Application Support/LOVE/" .. id
+      .. "/crystal/data/generated/text.lua"))
+  end
+  local text = chunk and chunk()
+  if not (text and text.labels
+      and text.labels["DisplayCaughtContestMonStats.This"]) then
+    print("[skip] no Crystal text.lua with the contest labels")
+  else
+    local t = ContestMenu.texts(text)
+    -- ../pokecrystal/engine/events/bug_contest/display_stats.asm:84-87
+    eq(t.stock, " STOCK <PK><MN> ", "crystal's <PKMN> decodes to the two tiles")
+    eq(t.this, " THIS <PK><MN>  ", "and its THIS keeps the second trailing space")
+  end
 end
 
 do
@@ -1272,7 +1306,8 @@ do
   BugContest.catch(record, mon({ species = "CATERPIE", level = 9 }))
   local warped = 0
   local game = { save = record, world = {
-    bugContestResults = function() warped = warped + 1; return true end } }
+    bugContestResults = function() warped = warped + 1; return true end },
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
 
   local menu = StartMenu.new(game, { save = record })
   local function ids(m)

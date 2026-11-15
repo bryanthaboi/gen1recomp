@@ -26,7 +26,15 @@ end
 function Wire.str(v, default, maxLen)
   if type(v) ~= "string" then return default end
   maxLen = maxLen or MAX_STRING
-  if #v > maxLen then return v:sub(1, maxLen) end
+  if #v > maxLen then
+    local cut = maxLen
+    while cut > 0 do
+      local b = v:byte(cut + 1)
+      if b < 0x80 or b >= 0xC0 then break end
+      cut = cut - 1
+    end
+    return v:sub(1, cut)
+  end
   return v
 end
 
@@ -133,11 +141,11 @@ local function mon(v)
     hp = Wire.num(v.hp, nil, 0, 65535),
     status = Wire.str(v.status, nil, MAX_STRING),
     sleepTurns = v.status == "SLP" and Wire.num(v.sleepTurns, nil, 1, 7) or nil,
-    nickname = Wire.str(v.nickname, nil, MAX_NAME),
+    nickname = Wire.str(v.nickname, nil, MAX_STRING),
     dvs = statMap(v.dvs),
     statExp = statMap(v.statExp),
     moves = Wire.list(v.moves, MAX_MOVES, move),
-    ot = Wire.str(v.ot, nil, MAX_NAME),
+    ot = Wire.str(v.ot, nil, MAX_STRING),
     otId = Wire.num(v.otId, nil, 0, MAX_INT),
     item = Wire.str(v.item, nil, MAX_STRING),
     happiness = Wire.num(v.happiness, nil, 0, 65535),
@@ -333,6 +341,7 @@ local MAX_PLAZA = 40
 local MAX_DIRECT = 64
 local MAX_GROUPS = 64
 local MAX_AVATAR_NAME = 16
+local MAX_AVATAR_CHARS = 10
 local MAX_AVATAR_STYLE = 16
 local MAX_CAPS_FP = 64
 local MAX_CAPS_ENTRIES = 11
@@ -342,7 +351,7 @@ local MAX_CHAT_TEXT = 15
 local MAX_WIRE_DIGEST = 16
 
 local function displayName(v)
-  return Wire.str(v, nil, MAX_DISPLAY_NAME)
+  return Wire.chars(v, nil, MAX_DISPLAY_NAME)
 end
 
 local function codeStr(v)
@@ -463,7 +472,7 @@ Wire.avatarStyle = avatarStyle
 function Wire.avatar(v)
   if type(v) ~= "table" then return nil end
   return {
-    name = Wire.str(v.name, "", MAX_AVATAR_NAME),
+    name = Wire.chars(v.name, "", MAX_AVATAR_CHARS),
     trainerId = Wire.num(v.trainerId, 0, 0, 65535),
     gender = Wire.num(v.gender, 0, 0, 1),
     version = Wire.str(v.version, nil, MAX_AVATAR_NAME),

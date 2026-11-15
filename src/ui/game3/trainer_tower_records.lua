@@ -26,7 +26,6 @@ local CacheBlob = require("src.import.CacheBlob")
 
 Records.CACHE_BG = "data/generated/gba/trainer_tower/records_bg.rgba"
 Records.CACHE_MANIFEST = "data/generated/gba/trainer_tower/manifest.lua"
-Records.BG_W, Records.BG_H = Display.W, Display.H
 
 -- pokefirered/src/battle_message.c:1364
 Records.MODE_TEXT = RomText.lazy({
@@ -42,17 +41,10 @@ Records._phase = "idle"
 Records._rows = {}
 Records._session = nil
 Records._onDone = nil
-Records._logged = {}
 Records._templates = {}
 Records._title = nil
 Records._titleX = 0
 Records._total = nil
-
-local function log(key, msg)
-  if Records._logged[key] then return end
-  Records._logged[key] = true
-  print("[game3/tower_records] " .. tostring(msg))
-end
 
 local function fade()
   local ok, Fade = pcall(require, "src.ui.game3.fade")
@@ -65,42 +57,30 @@ local function se(id)
 end
 
 local function read_bytes(rel)
-  local okD, Dataset = pcall(require, "src.core.game3.dataset")
-  if okD and Dataset and Dataset.cache then
-    local okC, cache = pcall(Dataset.cache)
-    if okC and cache and cache.read then
-      local okR, d = pcall(cache.read, cache, rel)
-      if okR and type(d) == "string" and #d > 0 then return d end
-    end
-  end
-  local okF, CacheFs = pcall(require, "src.import.CacheFs")
-  if okF and CacheFs and CacheFs.readActive then
-    local okR, d = pcall(CacheFs.readActive, rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
-  end
+  local d = require("src.core.game3.dataset").cache():read(rel)
+  if type(d) == "string" and #d > 0 then return d end
+  d = require("src.import.CacheFs").readActive(rel)
+  if type(d) == "string" and #d > 0 then return d end
   if type(love) == "table" and love.filesystem and love.filesystem.read then
-    local okR, d = pcall(CacheBlob.readFs, rel)
-    if okR and type(d) == "string" and #d > 0 then return d end
+    d = CacheBlob.readFs(rel)
+    if type(d) == "string" and #d > 0 then return d end
   end
   local f = io.open(rel, "rb")
   if f then
-    local d = CacheBlob.decode(rel, f:read("*a"))
+    d = CacheBlob.decode(rel, f:read("*a"))
     f:close()
     if type(d) == "string" and #d > 0 then return d end
   end
-  return nil
+  error(rel .. " is not in the cache", 0)
 end
 
 local function bg_size()
-  local src = read_bytes(Records.CACHE_MANIFEST)
-  if type(src) ~= "string" or #src == 0 then return Records.BG_W, Records.BG_H end
-  local chunk = (load or loadstring)(src, "@" .. Records.CACHE_MANIFEST, "t", {})
-  local ok, pack = pcall(chunk)
-  local row = ok and type(pack) == "table" and (pack.recordsBg or (pack.frames and pack.frames.recordsBg))
-  if type(row) == "table" then
-    return tonumber(row.width) or Records.BG_W, tonumber(row.height) or Records.BG_H
+  local pack = assert((load or loadstring)(read_bytes(Records.CACHE_MANIFEST), "@" .. Records.CACHE_MANIFEST, "t", {}))()
+  local row = type(pack) == "table" and pack.recordsBg
+  if not (type(row) == "table" and tonumber(row.width) and tonumber(row.height)) then
+    error(Records.CACHE_MANIFEST .. " has no recordsBg size", 0)
   end
-  return Records.BG_W, Records.BG_H
+  return tonumber(row.width), tonumber(row.height)
 end
 
 local function background()
@@ -109,27 +89,19 @@ local function background()
     Records._bg = false
     return nil
   end
-  local rgba = read_bytes(Records.CACHE_BG)
   local w, h = bg_size()
-  if type(rgba) == "string" and #rgba >= w * h * 4 then
-    local okD, data = pcall(love.image.newImageData, w, h, "rgba8", rgba)
-    if okD and data then
-      local okI, image = pcall(love.graphics.newImage, data)
-      if okI and image then
-        if image.setFilter then image:setFilter("nearest", "nearest") end
-        Records._bg = image
-        return image
-      end
-    end
+  local rgba = read_bytes(Records.CACHE_BG)
+  if #rgba ~= w * h * 4 then
+    error(("%s is %d bytes, not %dx%d"):format(Records.CACHE_BG, #rgba, w, h), 0)
   end
-  log("no-bg", "no " .. Records.CACHE_BG .. " in cache; plain window chrome")
-  Records._bg = false
-  return nil
+  local image = love.graphics.newImage(love.image.newImageData(w, h, "rgba8", rgba))
+  if image.setFilter then image:setFilter("nearest", "nearest") end
+  Records._bg = image
+  return image
 end
 
 function Records.resetArt()
   Records._bg = nil
-  Records._logged = {}
   Records._templates = {}
 end
 
@@ -340,8 +312,6 @@ function Records.draw()
     if img then
       -- pokefirered/src/battle_records.c:205 ResetGpu
       love.graphics.draw(img, 0, 0)
-    else
-      Window.fixedStdFrame(tpl)
     end
   end
 

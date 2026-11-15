@@ -43,7 +43,8 @@ local ITEMS = {
 
 local function newGame()
   return {
-    data = { text = {}, items = ITEMS },
+    data = { text = setmetatable({}, { __index = function(_, k) return k end }),
+             items = ITEMS },
     save = { flags = {}, inventory = {}, player = { name = "RED" } },
     stack = { push = function(_, box) pushed[#pushed + 1] = box end },
   }

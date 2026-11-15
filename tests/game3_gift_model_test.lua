@@ -31,7 +31,7 @@ local function newSession()
 end
 
 local function builtin(key)
-  for _, entry in ipairs(MysteryGift.builtins()) do
+  for _, entry in ipairs(require("tests.fixtures.game3_gift_cards").cards()) do
     if entry.key == key then return entry end
   end
   return nil

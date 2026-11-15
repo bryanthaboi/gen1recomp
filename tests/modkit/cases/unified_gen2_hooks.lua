@@ -44,6 +44,9 @@ end
 local function dataFor(version)
   return {
     version = version,
+    gen2Palettes = { battleText = {
+      { 255, 255, 255 }, { 140, 156, 255 }, { 115, 132, 255 }, { 0, 0, 0 },
+    } },
     pokemon = {
       growthRates = { GROWTH_MEDIUM_FAST = {
         numerator = 1, denominator = 1, squared = 0, linear = 0, constant = 0,
@@ -64,11 +67,25 @@ local function dataFor(version)
       WATER = { id = "WATER", index = 21, category = "special" },
     }, matchups = {} },
     items = {},
+    gen2MenuGfx = {
+      stats = { sheet = "stats_tiles.png", tiles = 17, firstTile = 0x31 },
+      eggHatch = { egg = "egg.png", shell = "egg_hatch.png", shellTiles = 2 },
+    },
   }
 end
 
 local function newGame(version)
   local data = dataFor(version)
+  data.text = data.text or {}
+  for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_e")) do
+    if data.text[label] == nil then data.text[label] = text end
+  end
+  for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_a").text(nil, version)) do
+    if data.text[label] == nil then data.text[label] = text end
+  end
+  for label, text in pairs(require("tests.fixture_data.gen2_rom_text_s7_b").text(nil, version)) do
+    if data.text[label] == nil then data.text[label] = text end
+  end
   local player = Mon.new(data, "MAGIKARP", 42, {
     dvs = { attack = 8, defense = 8, speed = 8, special = 8 },
   })

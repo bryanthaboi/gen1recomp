@@ -6,13 +6,13 @@
 local Runtime = require("src.mods.Runtime")
 local Status = require("src.battle.Status")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local StatusRegistry = {}
 
--- pokered's <USER>/<TARGET> text macros (home/text.asm
--- PlaceMoveUsersName): enemy-mon texts print "Enemy " before the name
-local function displayName(b)
-  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
+-- home/text.asm:185
+local function displayName(data, b)
+  return b.isPlayer and b.name or romText(data, "EnemyText", nil) .. b.name
 end
 
 -- opts: toxic (start the Toxic counter), moveType (for the type gates),
@@ -44,7 +44,7 @@ function StatusRegistry.inflict(battle, target, status, opts)
   -- move_effects/paralyze.asm:35, effects.asm:236
   Status.bakeOnInflict(battle, target)
   local msgs
-  local display = displayName(target)
+  local display = displayName(battle and battle.data, target)
   if record and record.onInflict then
     msgs = record.onInflict(battle, target, opts, display)
   else

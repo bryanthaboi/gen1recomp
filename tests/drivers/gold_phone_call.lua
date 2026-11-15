@@ -121,7 +121,11 @@ return function(game)
   w:setEngineFlag(2, true) -- ENGINE_PHONE_CARD
   w:setEngineFlag(4, true) -- ENGINE_POKEGEAR
   game:openStartMenuItem("pokegear")
-  U.wait(3)
+  for _ = 1, 600 do
+    local top = game.stack:top()
+    if top and top.cards then break end
+    U.wait(1)
+  end
   local gear = game.stack:top()
   assert(gear and gear.cards, "the Pokegear did not open")
   gear.mode = "card"

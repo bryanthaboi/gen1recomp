@@ -9,6 +9,7 @@ require("src.import.gba.versions").select("emerald")
 require("src.core.game3.se_ids").select("emerald")
 require("src.core.game3.song_ids").select("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 if not cache:read("data/generated/gba/native/manifest.lua") or not cache:read("data/generated/gba/scripts/events.lua") then

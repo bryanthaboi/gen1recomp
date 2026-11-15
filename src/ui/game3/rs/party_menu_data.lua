@@ -200,10 +200,11 @@ end
 
 function Data.drawPrompt(ui)
   local id = 0
-  if ui.mode == "switch" then id = 1
-  elseif ui.mode == "give" then id = 4
-  elseif ui.mode == "move_tutor" then id = 20
-  elseif ui.mode == "use" then id = require("src.core.game3.items_data").isTm(ui._item) and 2 or 3 end
+  local mode = (ui.mode == "choose" and ui._promptMode) or ui.mode
+  if mode == "switch" then id = 1
+  elseif mode == "give" then id = 4
+  elseif mode == "move_tutor" then id = 20
+  elseif mode == "use" then id = require("src.core.game3.items_data").isTm(ui._item) and 2 or 3 end
   prompt(ui, ui.mode, id, 22)
 end
 

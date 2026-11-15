@@ -48,7 +48,30 @@ end
 function R.tiles(game,session,frame)
   return R.fillTiles(game,session,frame,{})
 end
-function R.event(session,key,args)
+local FIELD_MOVE_OR_CENTER={UsedCut=true,UsedFly=true,UsedSurf=true,UsedStrength=true,UsedFlash=true,
+  UsedRockSmash=true,UsedWaterfall=true,UsedDive=true,UsedDigInLocation=true,UsedSweetScent=true,
+  UsedTeleportToLocation=true,UsedSoftboiled=true,UsedMilkDrink=true,MonsWereFullyRestoredAtCenter=true}
+local BEFORE_GAME_CLEAR={SwitchMon1WithMon2=true,DefeatedWildMon=true,CaughtWildMon=true}
+local BEFORE_RS_LINK={UsedItemOnMonAtThisLocation=true,UsedTheItem=true,UsedTheKeyItem=true,
+  MonLearnedMoveFromTM=true,MonReplacedMoveWithTM=true,MonLearnedMoveFromHM=true,MonReplacedMoveWithHM=true,
+  GaveMonHeldItem=true,GaveMonHeldItem2=true,GaveMonHeldItemFromPC=true,TookHeldItemFromMon=true,
+  SwappedHeldItemsOnMon=true,SwappedHeldItemFromPC=true,SwitchedPartyMonForPCMon=true,
+  WithdrewMonFromPC=true,DepositedMonInPC=true}
+-- pokefirered/src/quest_log_events.c:640
+local STORY_TRAINER_CLASSES={[81]=true,[83]=true,[89]=true,[90]=true}
+-- pokefirered/src/quest_log_events.c:603
+function R.isPartyAction(session,key,trainerClass)
+  if FIELD_MOVE_OR_CENTER[key] then return true end
+  local Flags=require('src.core.game3.scripting.flags')
+  local Space=package.loaded['src.core.game3.scripting.space']
+  local store=(Space and Space.store) or session.store or session
+  if not Flags.getFlag(store,nil,Flags.IDS.FLAG_SYS_GAME_CLEAR) then
+    if BEFORE_GAME_CLEAR[key] then return true end
+    if key=='TookOnTrainersMonWithMonAndWon' and not STORY_TRAINER_CLASSES[tonumber(trainerClass)] then return true end
+  end
+  return BEFORE_RS_LINK[key]==true and not Flags.getFlag(store,nil,Flags.IDS.FLAG_SYS_CAN_LINK_WITH_RS)
+end
+function R.event(session,key,args,trainerClass)
   if not require('src.core.game3.field_modules').enabled('questLog',session) then return end
   local Runtime=package.loaded['src.core.game3.runtime']
   -- Ignore simulations/tests and sessions that aren't the active game.
@@ -57,27 +80,50 @@ function R.event(session,key,args)
   local map=tostring(session.map):upper():gsub('_','')
   if map:find('TRAINERTOWER',1,true) or map:find('ELEVATOR',1,true)
       or map:find('POKEMONTRAINERFANCLUB',1,true) or map:find('SEVENISLANDHOUSEROOM',1,true) then return end
+  Q.track(session)
+  -- pokefirered/src/quest_log_events.c:504
+  if not Q.recording(session) and R.isPartyAction(session,key,trainerClass) then return end
   local f=R.capture(game,session)
   Q.record(session,key,args,f);Q.addTiles(session,R.tiles(game,session,f))
   local scene=session.questLog.scenes[#session.questLog.scenes]
   if scene then scene.song=require('src.core.game3.audio')._mapSong end
 end
+-- pokefirered/src/quest_log.c:1294
+function R.cut(session)
+  if session then session._questNewScene=true end
+end
 function R.save(game)
   local session=game.session
+  -- pokefirered/src/quest_log.c:1335
+  R.cut(session)
   if not session or not session.questLog then return end
   local frame=R.capture(game,session)
   session.questLog.final={map=session.map,frames={frame},tiles=R.tiles(game,session,frame),
     song=require("src.core.game3.audio")._mapSong,
     events={{key='SavedGameAtLocation',args={R.location(game,session)},frame=1}}}
 end
+-- pokefirered/src/quest_log_events.c:2176
+function R.recordEnteredMap(session,flag,wasSet)
+  if not session or not require('src.core.game3.field_modules').enabled('questLog',session) then return end
+  local UI=require('src.ui.game3.quest_log')
+  if not UI.pack then UI.install(require('src.core.game3.dataset').cache()) end
+  local list=UI.pack and UI.pack.worldMapFlags
+  if type(list)~='table' then error('Quest Log cache pack has no worldMapFlags; reimport the ROM') end
+  flag=tonumber(flag)
+  for _,f in ipairs(list) do
+    if f==flag then session._questNewlyEntered=not wasSet or nil;return end
+  end
+end
 function R.update(game)
   local session=game.session;if not session then return end
+  Q.track(session)
   local Battle=require('src.core.game3.battle')
   if Battle.isActive() then return end
   if require('src.core.game3.field_effects').flyActive() then return end
-  local map=session.map
-  if session._questMap~=map then
-    session._questMap=map
+  local Warp=package.loaded['src.core.game3.warp']
+  -- pokefirered/src/quest_log_events.c:2202
+  if session._questNewlyEntered and not (Warp and Warp._busy) then
+    session._questNewlyEntered=nil
     R.event(session,'ArrivedInLocation',{R.location(game,session)})
   end
   local Runtime=package.loaded['src.core.game3.runtime']
@@ -115,7 +161,7 @@ function R.battle(session,st)
     elseif class==90 then
       key='PlayerBattledChampionRival';args={D0=session.name,D1=st.trainerName}
     end
-    R.event(session,key,args)
+    R.event(session,key,args,class)
   end
 end
 return R

@@ -95,10 +95,19 @@ local function newWorld(cellX, cellY)
   return w
 end
 
+local SAFARI_TEXT = {
+  _SafariZoneGateSafariZoneWorker1Text = "Welcome to the\nSAFARI ZONE!{DONE}",
+  _SafariZoneGateSafariZoneWorker1WouldYouLikeToJoinText = "For just ¥500,\nyou can catch all\vthe POKéMON you\vwant in the park!\fWould you like to\njoin the hunt?{DONE}",
+  _SafariZoneGateSafariZoneWorker1ThatllBe500PleaseText = "That'll be ¥500\nplease!\fWe only use a\nspecial POKé BALL\vhere.\f{PLAYER} received\n30 SAFARI BALLs!{DONE}",
+  _SafariZoneGateSafariZoneWorker1CallYouOnThePAText = "\fWe'll call you on\nthe PA when you\vrun out of time\vor SAFARI BALLs!{DONE}",
+  _SafariZoneGateSafariZoneWorker1PleaseComeAgainText = "OK! Please come\nagain!{DONE}",
+  _SafariZoneGateSafariZoneWorker1NotEnoughMoneyText = "Oops! Not enough\nmoney!{DONE}",
+}
+
 local function newGame(world, money)
   local game = {
     data = {
-      text = {},
+      text = SAFARI_TEXT,
       maps = { SAFARI_ZONE_CENTER = {
         warps = { { x = 14, y = 25 }, { x = 15, y = 25 } } } },
     },

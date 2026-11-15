@@ -117,7 +117,7 @@ T.eq(fly.items[1] and fly.items[1].label, "BOURG PALETTE",
 
 local BagMenu = assert(loadfile("src/ui/BagMenu.lua"))()
 local bag = BagMenu.new({
-  data = { items = {} },
+  data = { items = {}, text = dofile("tests/fixture_data/text.lua") },
   save = { inventory = {}, bagOrder = {} },
 })
 T.eq(bag.title, "ITEMS", "BagMenu preserves its source title")
@@ -218,7 +218,9 @@ end
 local Overworld = require("src.world.OverworldController")
 local hookLabels, menuItems
 local pcGame = {
-  data = { text = {} },
+  data = { text = { _TurnedOnPC1Text = "{PLAYER} turned on\nthe PC.",
+                    BillsPCText = "PC DE LÉO", PlayersPCText = " (PC)",
+                    OaksPCText = "PC DU PROF.CHEN", LogOffPCText = "DÉCONNEXION" } },
   save = {
     flags = { EVENT_MET_BILL = true },
     player = { name = "RED" }, hallOfFame = {},
@@ -250,9 +252,10 @@ T.eq(hookLabels[1], "BILL'S PC",
 T.eq(hookLabels[2], "RED's PC",
   "ui.pc.items sees the stable player-PC source label")
 T.eq(menuItems[1].label, "PC DE LÉO",
-  "the retained box-PC row is translated after the hook")
-T.eq(menuItems[2].label, "PC DE RED",
-  "the dynamic player-PC format is translated exactly once after the hook")
+  "the retained box-PC row reads BillsPCText after the hook")
+T.eq(menuItems[2].label, "RED (PC)",
+  "the player-PC row is the name plus PlayersPCText, read once after the hook")
+T.eq(menuItems[#menuItems].label, "DÉCONNEXION", "LOG OFF reads LogOffPCText")
 
 -- Keep a ROM-free guard in the normal engine tier as well as the Python test
 -- that runs modkit's actual harvester.  These literals must stay at static
@@ -285,7 +288,7 @@ local harvestCalls = {
     'Strings("MONEY/¥%d",', 'Strings("TIME/  %d:%02d",',
   },
   ["src/world/OverworldController.lua"] = {
-    'Strings("BILL\'S PC")', 'Strings("%s\'s PC",', 'Strings("HEAL")',
+    'Strings.source("BILL\'S PC")', 'Strings.source("%s\'s PC")',
   },
 }
 for path, calls in pairs(harvestCalls) do

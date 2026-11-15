@@ -124,7 +124,8 @@ do
   battle:volatile(wild).chargeMove = "FLY"
   local missed, events = use(battle, player, wild, "SWIFT")
   T.check(missed, "a FLY target still dodges SWIFT")
-  T.check(findText(events, "MACHOP's attack missed!"), "with CheckHit's .Miss")
+  T.check(findText(events, battle:romText("AttackMissedText", player)),
+    "with CheckHit's .Miss")
   T.eq(wild.hp, wild.maxHp, "and takes nothing")
 end
 
@@ -140,7 +141,8 @@ do
   battle:volatile(wild).protect = true
   local missed, events = use(battle, player, wild, "SWIFT")
   T.check(missed, "PROTECT still turns SWIFT aside")
-  T.check(findText(events, "Enemy MACHOP protected itself!"), "with .Protect's line")
+  T.check(findText(events, battle:romText("ProtectingItselfText", player, wild)),
+    "with .Protect's line")
   T.eq(wild.hp, wild.maxHp, "and takes nothing")
 end
 

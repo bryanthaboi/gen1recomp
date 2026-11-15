@@ -32,7 +32,8 @@ local function newGame(party, player)
   local game = {
     save = { player = player or {}, flags = {}, options = { textSpeed = "FAST" },
              party = party },
-    data = { audio = { fanfares = {}, sfx = {}, songs = {} }, text = {} },
+    data = { audio = { fanfares = {}, sfx = {}, songs = {} },
+             text = { _PewterPokecenterJigglypuffText = "JIGGLYPUFF: Puu\npupuu!{DONE}" } },
     logicSpeed = function() return 1 end,
   }
   game.stack = {

@@ -1,51 +1,15 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = love or require("tests.love_stub")
 
-local HOME = os.getenv("HOME") or ""
-local LOVE_ROOTS = { HOME .. "/Library/Application Support/LOVE", HOME .. "/.local/share/love" }
-
-local function metaOk(root, version, cacheVersion)
-  local f = io.open(root .. "/data/generated/gba/meta.json", "rb")
-  if not f then return false end
-  local src = (f:read("*a") or ""):gsub("%s", "")
-  f:close()
-  return src:find(('"cache_version":%d'):format(cacheVersion), 1, true) ~= nil
-    and (version ~= "emerald" or src:find('"version":"emerald"', 1, true) ~= nil)
-end
-
-local function findCache(version, cacheVersion, preferred)
-  for _, r in ipairs(LOVE_ROOTS) do
-    local names = {}
-    if preferred and preferred ~= "" then names[#names + 1] = preferred end
-    local pipe = io.popen('ls -1t "' .. r .. '" 2>/dev/null')
-    if pipe then
-      for name in pipe:lines() do names[#names + 1] = name end
-      pipe:close()
-    end
-    for _, name in ipairs(names) do
-      local root = r .. "/" .. name .. "/" .. version
-      if metaOk(root, version, cacheVersion) then return root, name end
-    end
-  end
-  return nil
-end
-
-local VersionsGame = require("src.import.gba.versions_game")
-local identity = os.getenv("POKEPORT_IDENTITY")
-local emHere = false
-for _, r in ipairs(LOVE_ROOTS) do
-  if identity and identity ~= "" and metaOk(r .. "/" .. identity .. "/emerald", "emerald",
-      VersionsGame.game("emerald").CACHE_VERSION) then emHere = true end
-end
-if not emHere and os.getenv("POKEPORT_XVER_CHILD") ~= "1" then
-  local _, id = findCache("emerald", VersionsGame.game("emerald").CACHE_VERSION)
-  if not id then
-    print("emerald_link_xver_test: skipped (no current Emerald cache)")
+local Cache = require("tests.game3_cache")
+local ROOTS = {}
+for _, v in ipairs({ "firered", "leafgreen", "emerald" }) do
+  ROOTS[v] = Cache.gameDir(v)
+  if not ROOTS[v] then
+    print("[skip] emerald_link_xver_test: " .. tostring(Cache.reason))
     os.exit(0)
   end
-  local status = os.execute(("POKEPORT_XVER_CHILD=1 POKEPORT_IDENTITY='%s' %s tests/emerald_link_xver_test.lua")
-    :format(id, os.getenv("LUA") or "luajit"))
-  os.exit((status == true or status == 0) and 0 or 1)
+  print("[info] " .. v .. " cache at " .. ROOTS[v])
 end
 
 local T = require("tests.harness")
@@ -56,40 +20,15 @@ local GameVersion = require("src.core.GameVersion")
 local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
-
-local Dataset = require("src.core.game3.dataset")
-local emCache = Dataset.cache()
-local meta = emCache and emCache.read and emCache:read("data/generated/gba/meta.json")
-if not (type(meta) == "string" and meta:find('"version":"emerald"', 1, true)) then
-  print("emerald_link_xver_test: skipped (no Emerald cache; set POKEPORT_IDENTITY)")
-  os.exit(0)
-end
+Cache.mount("emerald")
 require("src.import.gba.versions").select("emerald")
 require("src.core.game3.song_ids").select("emerald")
 local Pokemon = require("src.core.game3.pokemon")
 Pokemon.install(nil)
 
-local ROOTS = {
-  emerald = findCache("emerald", VersionsGame.game("emerald").CACHE_VERSION, identity),
-  firered = findCache("firered", VersionsGame.game("firered").CACHE_VERSION, os.getenv("POKEPORT_FR_IDENTITY")),
-  leafgreen = findCache("leafgreen", VersionsGame.game("leafgreen").CACHE_VERSION, os.getenv("POKEPORT_LG_IDENTITY")),
-}
-for _, v in ipairs({ "emerald", "firered", "leafgreen" }) do
-  if not ROOTS[v] then
-    print("emerald_link_xver_test: skipped (no current " .. v .. " cache)")
-    os.exit(0)
-  end
-  print("[info] " .. v .. " cache at " .. ROOTS[v])
-end
-
 local function reader(root)
-  return function(rel)
-    local f = io.open(root .. "/" .. rel, "rb")
-    if not f then return nil end
-    local s = f:read("*a")
-    f:close()
-    return s
-  end
+  local cache = Cache.cache(root .. "/data/generated/gba")
+  return function(rel) return cache:read(rel) end
 end
 
 local Fingerprint = require("src.link.Fingerprint")
@@ -177,13 +116,7 @@ print("[test] 4. cross-version link battles over the relay")
 local H = require("tests.link3_harness")
 H.SHARED["src.core.game3.battle.moves"] = nil
 local ExtractScripts = require("src.import.gba.extract_scripts")
-local Cache = require("tests.game3_cache")
 H.bundle = ExtractScripts.loadBundle(Cache.cache(), ROOTS.emerald .. "/data/generated/gba", { allowIncomplete = true })
-
-local function cacheFor(v)
-  local read = reader(ROOTS[v])
-  return { read = function(_, rel) return read(rel) end }
-end
 
 local function mon(species, moves)
   return H.legal({ species = species, level = 50, moves = moves, personality = 0,
@@ -255,17 +188,15 @@ end
 local seq = 0
 local function world(v, name, tid, gender)
   seq = seq + 1
-  local w = H.newWorld(name .. seq, { name = name, trainerId = tid, gender = gender, party = {}, bag = {}, version = v })
+  local w = H.newWorld(name .. seq, { name = name, trainerId = tid, gender = gender, party = {}, bag = {}, version = v },
+    { cacheRoot = ROOTS[v] .. "/data/generated/gba" })
   w.version = v
   w.game.version = v
   w.game.data = { maps = {}, generation = 3, gen3Inputs = INPUTS[v] }
   H.run(w, function()
     require("src.core.GameVersion").set("emerald")
     require("src.core.game3.song_ids").select("emerald")
-    local Moves = require("src.core.game3.battle.moves")
-    local load = Moves.loadRomPack
-    Moves.loadRomPack = function() return load(cacheFor(v)) end
-    Moves.loadRomPack()
+    require("src.core.game3.battle.moves").loadRomPack()
   end)
   return w
 end

@@ -1,10 +1,5 @@
--- BattleState:storeCaughtMon() queues up to two plain-Lua-literal
--- messages: the new-Pokedex-data line (_ItemUseBallText06) and, when the
--- party is full, the box-transfer line (_ItemUseBallText07/08, keyed on
--- EVENT_MET_BILL -- two full, independently-translated ROM strings, not
--- one template with a substituted PC name). This test fakes all three
--- labels and checks the queued messages use them, not the English
--- literals.
+-- engine/items/item_effects.asm:561-566
+-- engine/items/item_effects.asm:624-629
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -38,40 +33,43 @@ end
 -- empty party: Party.add succeeds, only the new-Pokedex-data message fires
 do
   local battle = mkbattle(0, false)
+  local saved06 = Data.text._ItemUseBallText06
   Data.text._ItemUseBallText06 = "FAKE-DEX {RAM:wEnemyMonNick} FAKE!"
   battle:storeCaughtMon()
   T.eq(findText(battle, "FAKE-DEX"), "FAKE-DEX " .. battle.enemy.name .. " FAKE!",
     "a translated _ItemUseBallText06 reaches the new-Pokedex-data message")
-  Data.text._ItemUseBallText06 = nil
+  Data.text._ItemUseBallText06 = saved06
 end
 
 -- full party, EVENT_MET_BILL true: box transfer via _ItemUseBallText07
 do
   local battle = mkbattle(6, true)
+  local saved07 = Data.text._ItemUseBallText07
   Data.text._ItemUseBallText07 = "FAKE-BILL {RAM:wBoxMonNicks} FAKE!"
   battle:storeCaughtMon()
   T.eq(findText(battle, "FAKE-BILL"), "FAKE-BILL " .. battle.enemy.name .. " FAKE!",
     "EVENT_MET_BILL true routes through the translated _ItemUseBallText07")
-  Data.text._ItemUseBallText07 = nil
+  Data.text._ItemUseBallText07 = saved07
 end
 
 -- full party, EVENT_MET_BILL false: box transfer via _ItemUseBallText08
 do
   local battle = mkbattle(6, false)
+  local saved08 = Data.text._ItemUseBallText08
   Data.text._ItemUseBallText08 = "FAKE-SOMEONE {RAM:wBoxMonNicks} FAKE!"
   battle:storeCaughtMon()
   T.eq(findText(battle, "FAKE-SOMEONE"), "FAKE-SOMEONE " .. battle.enemy.name .. " FAKE!",
     "EVENT_MET_BILL false routes through the translated _ItemUseBallText08")
-  Data.text._ItemUseBallText08 = nil
+  Data.text._ItemUseBallText08 = saved08
 end
 
--- vanilla, full party, EVENT_MET_BILL true: English literal, BILL's PC
 do
   local battle = mkbattle(6, true)
-  battle:storeCaughtMon()
-  T.eq(findText(battle, "transferred"),
-    battle.enemy.name .. " was\ntransferred to\nBILL's PC!",
-    "no catalog entry falls back to the English BILL's-PC literal")
+  local saved = Data.text._ItemUseBallText07
+  Data.text._ItemUseBallText07 = nil
+  T.check(not pcall(battle.storeCaughtMon, battle),
+    "a cache without _ItemUseBallText07 is an error, not an English literal")
+  Data.text._ItemUseBallText07 = saved
 end
 
 -- engine/menus/pokedex.asm:581-582 (#2069)

@@ -18,17 +18,12 @@
 
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Permissions = require("src.world.gen2.Permissions")
-local Strings = require("src.core.Strings")
 
-local Bike = {}
-
--- constants/engine_flags.asm.  wBikeFlags' three bits and wStatusFlags2's
--- BIKE_SHOP_CALL bit are all reachable from a script as ENGINE_* ids, which is
--- the namespace Vm's setflag / clearflag writes onto save.engineFlags.
-Bike.ENGINE_BIKE_SHOP_CALL_ENABLED = 19
-Bike.ENGINE_STRENGTH_ACTIVE = 23
-Bike.ENGINE_ALWAYS_ON_BIKE = 24
-Bike.ENGINE_DOWNHILL = 25
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local Bike = EngineFlags.expose({}, {
+  "ENGINE_BIKE_SHOP_CALL_ENABLED", "ENGINE_STRENGTH_ACTIVE",
+  "ENGINE_ALWAYS_ON_BIKE", "ENGINE_DOWNHILL",
+})
 
 -- engine/overworld/variables.asm .VarActionTable, and wPlayerState as
 -- VAR_MOVEMENT writes it raw.  Script_GetOnBike is `loadvar VAR_MOVEMENT,
@@ -155,17 +150,15 @@ end
 
 -- ------------------------------------------------------------ the scripts
 --
--- data/text/common_2.asm.  None of the three hangs off a script pointer -- they
--- are `text_far` targets inside engine/events/overworld.asm -- so the extractor
--- never saw them and there is no text.lua key to name them by.  Strings.source
--- declares them, Strings() resolves them at the call: the split a module-level
--- table has to use.
+-- engine/events/overworld.asm:1600
 --
 -- {STRBUF} is wStringBuffer2, which _DoItemEffect filled with the item's name
 -- before it ever reached BikeFunction; `getitemname` is that same fill here.
-local TEXT_GOT_ON_BIKE = Strings.source("{PLAYER} got on the\n{STRBUF}.")
-local TEXT_GOT_OFF_BIKE = Strings.source("{PLAYER} got off\nthe {STRBUF}.")
-local TEXT_CANT_GET_OFF = Strings.source("You can't get off\nhere!")
+local TEXT_GOT_ON_BIKE = "_GotOnBikeText"
+local TEXT_GOT_OFF_BIKE = "_GotOffBikeText"
+local TEXT_CANT_GET_OFF = "_CantGetOffBikeText"
+
+local romLine = FieldMoves.line
 
 -- Script_GetOnBike and Script_GetOffBike, which are the same six commands with
 -- a different PLAYER_* byte and a `special PlayMapMusic` on the way out (the
@@ -182,7 +175,7 @@ local TEXT_CANT_GET_OFF = Strings.source("You can't get off\nhere!")
 -- `specialId(name)` resolves a special by LABEL through the cache's own
 -- specialOrder; a nil answer just leaves that line out rather than dispatching
 -- some other special by a counted index.
-local function stateScript(item, varValue, text, specialId, restoreMusic, silent)
+local function stateScript(item, varValue, text, specialId, restoreMusic, silent, data)
   local script = {}
   if not silent then
     -- .CheckIfRegistered: with wUsingItemWithSelect set, the cart swaps in
@@ -194,7 +187,7 @@ local function stateScript(item, varValue, text, specialId, restoreMusic, silent
   end
   script[#script + 1] = { op = "loadvar", args = { Bike.VAR_MOVEMENT, varValue } }
   if not silent then
-    script[#script + 1] = { op = "rawtext", text = text }
+    script[#script + 1] = { op = "rawtext", text = romLine(data, text) }
     script[#script + 1] = { op = "waitbutton" }
     script[#script + 1] = { op = "closetext" }
   end
@@ -208,22 +201,22 @@ local function stateScript(item, varValue, text, specialId, restoreMusic, silent
   return script
 end
 
-function Bike.mountScript(item, specialId, silent)
+function Bike.mountScript(item, specialId, silent, data)
   return stateScript(item, Bike.PLAYER_BIKE_ID, TEXT_GOT_ON_BIKE,
-    specialId, false, silent)
+    specialId, false, silent, data)
 end
 
-function Bike.dismountScript(item, specialId, silent)
+function Bike.dismountScript(item, specialId, silent, data)
   return stateScript(item, Bike.PLAYER_NORMAL_ID, TEXT_GOT_OFF_BIKE,
-    specialId, true, silent)
+    specialId, true, silent, data)
 end
 
 -- Script_CantGetOffBike: no loadvar at all, so wPlayerState is left exactly as
 -- it was and the player is still riding when the box closes.
-function Bike.cantGetOffScript()
+function Bike.cantGetOffScript(data)
   return {
     { op = "opentext" },
-    { op = "rawtext", text = TEXT_CANT_GET_OFF },
+    { op = "rawtext", text = romLine(data, TEXT_CANT_GET_OFF) },
     { op = "waitbutton" },
     { op = "closetext" },
     { op = "end" },

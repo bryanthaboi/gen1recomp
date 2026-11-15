@@ -657,7 +657,6 @@ tests/engine/pp_restore_jingle_menu_2155.lua
 tests/engine/present_probe.lua
 tests/engine/present_sync_logic.lua
 tests/engine/printer_android_gallery_bug2103.lua
-tests/engine/prize_counter_name_clamp_test.lua
 tests/engine/prize_full_party_bug2034.lua
 tests/engine/prize_menu_scroll_pages_test.lua
 tests/engine/prize_window_bug1867.lua

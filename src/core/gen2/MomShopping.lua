@@ -22,7 +22,8 @@
 -- the event bitfield (src/world/gen2/Events.lua), so World, and the tests,
 -- drive the same routine.
 
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Decorations = require("src.core.gen2.Decorations")
 
 local MomShopping = {}
@@ -79,18 +80,13 @@ MomShopping.ITEMS_2 = {
   momitem(100000, 22800, MOM_DOLL, DECO_BIG_SNORLAX_DOLL),
 }
 
--- data/text/common_1.asm, transcribed the way Specials' MOM_TEXT transcribes
--- the bank's own bank.  Mom never names what she bought, in either script.
--- `cont` folds into the same `\n` as `line`.
-local MOM_HI = Strings.source("Hi, {PLAYER}!\nHow are you?")
-local FOUND_AN_ITEM = Strings.source(
-  "I found a useful\nitem shopping, so")
-local FOUND_A_DOLL = Strings.source(
-  "While shopping\ntoday, I saw this\nadorable doll, so")
-local BOUGHT_WITH_YOUR_MONEY = Strings.source(
-  "I bought it with\nyour money. Sorry!")
-local ITS_IN_PC = Strings.source("It's in your PC.\nYou'll like it!")
-local ITS_IN_YOUR_ROOM = Strings.source("It's in your room.\nYou'll love it!")
+-- engine/events/mom_phone.asm:162
+local MOM_HI = "_MomHiHowAreYouText"
+local FOUND_AN_ITEM = "_MomFoundAnItemText"
+local FOUND_A_DOLL = "_MomFoundADollText"
+local BOUGHT_WITH_YOUR_MONEY = "_MomBoughtWithYourMoneyText"
+local ITS_IN_PC = "_MomItsInPCText"
+local ITS_IN_YOUR_ROOM = "_MomItsInYourRoomText"
 
 --------------------------------------------------------------------------
 -- State
@@ -225,18 +221,17 @@ end
 
 -- Mom_GetScriptPointer's two scripts, .ItemScript and .DollScript: four
 -- writetexts each, differing only in the middle line and the last.
---
--- The SOURCE strings, not looked-up ones: the caller feeds them to `rawtext`,
--- which is where the Strings lookup happens (src/script/gen2/Vm.lua).  A
--- module-level template resolved here would freeze the English before
--- Strings.load has a catalog, which is exactly what Strings.source exists to
--- avoid.
-function MomShopping.pages(purchase)
+function MomShopping.pages(purchase, data)
   if not purchase then return {} end
+  local labels = { MOM_HI, FOUND_AN_ITEM, BOUGHT_WITH_YOUR_MONEY, ITS_IN_PC }
   if purchase.kind == "doll" then
-    return { MOM_HI, FOUND_A_DOLL, BOUGHT_WITH_YOUR_MONEY, ITS_IN_YOUR_ROOM }
+    labels = { MOM_HI, FOUND_A_DOLL, BOUGHT_WITH_YOUR_MONEY, ITS_IN_YOUR_ROOM }
   end
-  return { MOM_HI, FOUND_AN_ITEM, BOUGHT_WITH_YOUR_MONEY, ITS_IN_PC }
+  local out = {}
+  for i, label in ipairs(labels) do
+    out[i] = CommonText.plain(RomText(data, label, nil))
+  end
+  return out
 end
 
 return MomShopping

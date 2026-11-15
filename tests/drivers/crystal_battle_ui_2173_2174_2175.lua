@@ -10,8 +10,7 @@ return function(game)
   local shotN = 0
   local function shot(tag)
     shotN = shotN + 1
-    game.capturePath = string.format("%s/%03d_%s.png", out, shotN, tag)
-    U.wait(2)
+    U.still(game, string.format("%s/%03d_%s.png", out, shotN, tag))
   end
   local fails = 0
   local function ok(cond, msg)
@@ -55,8 +54,31 @@ return function(game)
 
   local sawTrainer, sawEmpty, popped = false, false, false
   local shotEmpty = false
+  local held, monPageTimer, sawMonPage = false, 0, false
+  local function contHeld()
+    return (screen.messageTimer or 0) > 0 and screen.typer
+      and screen.typedText == screen.message
+      and screen.typer:done() and not screen.waitSfx
+      and (screen.messageDelay or 0) <= 0
+      and (screen.message or ""):find("sent out$")
+  end
   for _ = 1, 2400 do
     if screen.showEnemyTrainer then sawTrainer = true end
+    if not held and contHeld() then
+      held = true
+      screen.arrowBlink = 0
+      ok(screen:messageArrowVisible(), "the down arrow is on at blink phase 0")
+      shot("2174_arrow_on")
+      screen.arrowBlink = 16
+      ok(not screen:messageArrowVisible(),
+        "UnloadBlinkingCursor blanks it at phase 16")
+      shot("2174_arrow_off")
+      screen.arrowBlink = 0
+    end
+    if (screen.message or ""):find("RATTATA!$") then
+      sawMonPage = true
+      monPageTimer = math.max(monPageTimer, screen.messageTimer or 0)
+    end
     if sawTrainer and not screen.showEnemyTrainer and not screen.afterSendOut
        and not screen.anim and not screen.showEnemyHud then
       if screen:picBoxCleared("enemy") then
@@ -73,24 +95,9 @@ return function(game)
   ok(sawTrainer, "the trainer frontpic stood in the enemy box")
   ok(sawEmpty, "the box was empty across SlideBattlePicOut -> the send-out")
   ok(not popped, "the mon never popped in before ANIM_SEND_OUT_MON")
-
-  local held = false
-  for _ = 1, 1800 do
-    if (screen.messageTimer or 0) > 0 and screen.typer and screen.typer:done()
-    then held = true break end
-    U.wait(1)
-  end
-  ok(held, "a battle line is holding for PromptButton")
-  if held then
-    screen.arrowBlink = 0
-    ok(screen:messageArrowVisible(), "the down arrow is on at blink phase 0")
-    shot("2174_arrow_on")
-    screen.arrowBlink = 16
-    ok(not screen:messageArrowVisible(),
-      "UnloadBlinkingCursor blanks it at phase 16")
-    shot("2174_arrow_off")
-    screen.arrowBlink = 0
-  end
+  ok(held, "the cont page of BattleText_EnemySentOut holds for PromptButton")
+  ok(sawMonPage and monPageTimer == 0,
+    "the done page of BattleText_EnemySentOut does not wait")
 
   for _ = 1, 2400 do
     if screen.phase == "menu" then break end

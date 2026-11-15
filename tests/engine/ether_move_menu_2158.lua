@@ -152,7 +152,7 @@ local Data = {
   items = { ETHER = { name = "ETHER" } },
   moves = { SCRATCH = { name = "SCRATCH", pp = 35 }, EMBER = { name = "EMBER", pp = 25 } },
   pokemon = { CHARMANDER = { name = "CHARMANDER" } },
-  text = {},
+  text = dofile("tests/fixture_data/text.lua"),
 }
 local save = SaveData.newGame()
 local t = { species = "CHARMANDER", hp = 20, stats = { hp = 20 },

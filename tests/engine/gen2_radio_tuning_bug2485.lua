@@ -1,16 +1,18 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
 local S = require("tests.harness").suite("gen2 radio tuning #2485")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local Pokegear = require("src.ui.gen2.Pokegear")
 local Music = require("src.core.Music")
-local Chrome = require("src.ui.gen2.Chrome")
 local input = { pressed = {} }
 function input:wasPressed(key)
   local value = self.pressed[key]
   self.pressed[key] = nil
   return value or false
 end
-local game = { input = input, data = {},
+local game = { input = input,
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
+    gen2Landmarks = require("tests.fixture_data.gen2_landmarks_s7_d").table("gold") },
   save = { pokegearFlags = { radio = true } } }
 local opts = { clock = { hour = 14, minute = 0, weekday = 1 } }
 local gear = Pokegear.new(game, opts)
@@ -61,18 +63,7 @@ press("down")
 S.eq(playing, song, "same_station_music_resumes")
 S.eq(plays, before + 1, "same_station_music_replayed")
 press("up")
-local text, saved = {}, {}
-for _, name in ipairs({ "box", "print", "cursor", "textbox" }) do
-  saved[name] = Chrome[name]
-  Chrome[name] = name == "print" and function(value) text[#text + 1] = value end
-    or function() end
-end
-gear:drawPlain()
-for name, fn in pairs(saved) do Chrome[name] = fn end
-S.check(table.concat(text, "|"):find("05.0", 1, true) ~= nil,
-  "plain_renderer_intermediate_frequency")
-S.check(table.concat(text, "|"):find("04.5", 1, true) == nil,
-  "plain_renderer_has_no_preset_list")
+S.check(not pcall(gear.drawPanel, gear), "a cache without pokegear art is an error")
 S.eq(Pokegear.new(game, opts).tuningKnob, 18, "reopen_retains_knob")
 game.save = { pokegearFlags = { radio = true } }
 S.eq(Pokegear.new(game, opts).tuningKnob, 0, "new_save_resets_knob")

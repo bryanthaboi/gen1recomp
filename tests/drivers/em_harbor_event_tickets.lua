@@ -47,7 +47,7 @@ return function(game)
 
     EI.setEnabled(session, true)
     local feed = {}
-    for _, b in ipairs(Gift.builtins("rse")) do feed[#feed + 1] = { key = b.key, card = b.card } end
+    for _, b in ipairs(require("tests.fixtures.game3_gift_cards").cards("rse")) do feed[#feed + 1] = { key = b.key, card = b.card } end
     EI.applyFeed(session, { cards = feed })
     EI.sync(session, { offline = true })
 

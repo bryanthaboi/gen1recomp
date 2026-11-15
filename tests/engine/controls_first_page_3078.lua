@@ -29,7 +29,8 @@ local function gen1Game()
 end
 
 local function gen2Game()
-  local game = { data = { audio = { sfx = {} } }, options = {} }
+  local game = { data = { audio = { sfx = {} }, text = require("tests.fixture_data.gen2_rom_text_s7_c").text() },
+    options = {} }
   game.stack = newStack()
   game.input = { wasPressed = function() return false end }
   return game

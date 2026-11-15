@@ -25,6 +25,7 @@ local vm = Vm.new(scripts, {}, Events.new(), {
   yesorno = function(onChoose) onChoose(true) end,
   showText = function(_, onDone) onDone() end,
   specials = {
+    data = function() return { text = require("tests.fixtures.gen2_rom_text").text() } end,
     monName = function(species) return species == 155 and "CYNDAQUIL" or "?" end,
     renameMon = function(m, done, opts)
       renamed = { mon = m, blank = opts and opts.blank }
@@ -58,7 +59,9 @@ local vm2 = Vm.new(scripts2, {}, Events.new(), {
   givePoke = function() return mon2 end,
   yesorno = function() error("a trainer-labelled gift must never prompt") end,
   showText = function(_, onDone) onDone() end,
-  specials = { renameMon = function() renamed2 = true end },
+  specials = { renameMon = function() renamed2 = true end,
+    data = function() return { text = require("tests.fixtures.gen2_rom_text").text() } end,
+  },
 })
 T.check(vm2:start("s:give2"), "trainer-gift script starts")
 for _ = 1, 10 do vm2:update() end
@@ -80,6 +83,7 @@ local vm3 = Vm.new(scripts3, {}, Events.new(), {
   yesorno = function(onChoose) onChoose(false) end,
   showText = function(_, onDone) onDone() end,
   specials = {
+    data = function() return { text = require("tests.fixtures.gen2_rom_text").text() } end,
     renameMon = function() error("NO must not open the keyboard") end,
   },
 })

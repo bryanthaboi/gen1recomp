@@ -11,9 +11,7 @@
 -- (a whole SCREEN_AREA of tile ids) straight over the background before a
 -- single string is placed, so the border, the seal and the ribbon are cart
 -- art.  Both come out of the cache as `data.gen2Diploma`
--- (RomExtractorGen2:extractDiploma); a cache that predates that stage falls
--- back to the plain Chrome.box frame below, which is a placeholder and not
--- the real seal.
+-- (RomExtractorGen2:extractDiploma).
 --
 -- Positions below are the literal hlcoord operands PlaceDiplomaOnScreen
 -- calls PlaceString with, not a layout guessed from a screenshot:
@@ -27,23 +25,16 @@
 --
 -- WaitPressAorB_BlinkCursor just parks on A or B; there is no menu here.
 
+local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local Diploma = {}
 Diploma.__index = Diploma
 Diploma.isOpaque = true
 
 function Diploma:wantsFillScale() return true end
-
-local CERTIFICATION = {
-  Strings.source("This certifies"),
-  Strings.source("that you have"),
-  Strings.source("completed the"),
-  Strings.source("new #DEX."),
-  Strings.source("Congratulations!"),
-}
 
 -- opts: playerName, gfx, onClose()
 function Diploma.new(game, opts)
@@ -54,7 +45,13 @@ function Diploma.new(game, opts)
   self.playerName = opts.playerName
     or (save and save.player and save.player.name) or "?"
   self.onClose = opts.onClose
-  self.gfx = opts.gfx or ((game and game.data) or {}).gen2Diploma
+  local data = game and game.data
+  self.player = RomText(data, "PlaceDiplomaOnScreen.Player")
+  self.certification = {}
+  for line in (RomText(data, "PlaceDiplomaOnScreen.Certification") .. "\n"):gmatch("(.-)\n") do
+    self.certification[#self.certification + 1] = line
+  end
+  self.gfx = opts.gfx or (data or {}).gen2Diploma
   self.images = {}
   self.done = false
   return self
@@ -75,42 +72,41 @@ function Diploma:update(_dt)
   end
 end
 
+function Diploma:need(key)
+  local value = self.gfx and self.gfx[key]
+  if value == nil then error("diploma.lua has no " .. key, 2) end
+  return value
+end
+
 -- engine/gfx/cgb_layouts.asm:495
 function Diploma:palette()
-  return self.gfx and self.gfx.bgPalette
+  return self:need("bgPalette")
 end
 
 function Diploma:image(path)
-  if not path then return nil end
   local cached = self.images[path]
-  if cached == nil then
-    local Assets = require("src.render.Assets")
-    local ok, image = pcall(Assets.image, path)
-    cached = ok and image or false
-    if cached then cached:setFilter("nearest", "nearest") end
+  if not cached then
+    cached = Assets.image(path)
+    cached:setFilter("nearest", "nearest")
     self.images[path] = cached
   end
-  return cached or nil
+  return cached
 end
 
 -- The page as one batch of 8x8 tiles.  Built once, because the tilemap is
 -- copied once and nothing on this screen ever moves; the palette is applied at
 -- draw time instead of baked in, so a COLOR mode change needs no rebuild.
 function Diploma:batch()
-  if self.tilemap ~= nil then return self.tilemap or nil end
-  local gfx = self.gfx
-  local image = gfx and gfx.page1 and self:image(gfx.image)
-  if not image then
-    self.tilemap = false
-    return nil
-  end
-  local across = gfx.sheetTiles or 16
-  local width = gfx.width or Chrome.SCREEN_W
-  local height = gfx.height or Chrome.SCREEN_H
+  if self.tilemap then return self.tilemap end
+  local page1 = self:need("page1")
+  local image = self:image(self:need("image"))
+  local across = self:need("sheetTiles")
+  local width = self:need("width")
+  local height = self:need("height")
   local batch = love.graphics.newSpriteBatch(image, width * height)
   local quads = {}
   for index = 0, width * height - 1 do
-    local tile = gfx.page1[index + 1] or 0
+    local tile = page1[index + 1]
     local quad = quads[tile]
     if not quad then
       quad = love.graphics.newQuad(tile % across * 8,
@@ -127,31 +123,19 @@ function Diploma:drawPanel()
   local palette = self:palette()
   local batch = self:batch()
 
-  if batch then
-    -- ClearTilemap leaves the screen on colour 0 of the loaded set, and the
-    -- page covers all of it, but the fill is what a letterboxed fill-scale
-    -- draw shows outside the 160x144 page.
-    local paper = GbcPalette.color(palette, 1)
-    love.graphics.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
-    love.graphics.rectangle("fill", 0, 0,
-      Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
-    love.graphics.setColor(1, 1, 1, 1)
-    local function blit() love.graphics.draw(batch, 0, 0) end
-    -- A palette-less cache would send the shader four black entries, so the
-    -- sheet's own grey shades are the fallback rather than a black page.
-    if palette then GbcPalette.with(palette, blit) else blit() end
-    love.graphics.setColor(1, 1, 1, 1)
-  else
-    -- No gfx/diploma in the cache: a placeholder frame, not the real seal.
-    Chrome.clear()
-    Chrome.box(0, 0, Chrome.SCREEN_W, Chrome.SCREEN_H)
-  end
+  local paper = GbcPalette.color(palette, 1)
+  love.graphics.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
+  love.graphics.rectangle("fill", 0, 0,
+    Chrome.SCREEN_W * 8, Chrome.SCREEN_H * 8)
+  love.graphics.setColor(1, 1, 1, 1)
+  GbcPalette.with(palette, function() love.graphics.draw(batch, 0, 0) end)
+  love.graphics.setColor(1, 1, 1, 1)
 
-  Chrome.printThrough(Strings("PLAYER"), 2, 5, palette)
+  Chrome.printThrough(self.player, 2, 5, palette)
   Chrome.printThrough(self.playerName, 9, 5, palette)
 
-  for i, line in ipairs(CERTIFICATION) do
-    Chrome.printThrough(Strings(line), 2, 7 + i, palette)
+  for i, line in ipairs(self.certification) do
+    Chrome.printThrough(line, 2, 7 + i, palette)
   end
 end
 
@@ -161,16 +145,11 @@ end
 
 -- PlaceDiplomaOnScreen opens on ClearBGPalettes / ClearTilemap
 -- (engine/events/diploma.asm:13-14), so the map is gone and the diploma's own
--- paper is the whole screen.  Colour 1 of the page palette is that paper (a
--- pale green), which is why the surround cannot be the generic white the
--- fallback paints: the page would sit in a white field instead of running to
--- the window edge.
+-- paper is the whole screen.
 function Diploma:drawsWidescreen() return true end
 
 function Diploma:drawWidescreen(winW, winH)
   local G = love.graphics
-  -- Nil palette degrades to the DMG ramp's colour 1, i.e. white, matching the
-  -- Chrome.clear() the panel falls back to when the cache has no gfx/diploma.
   local paper = GbcPalette.color(self:palette(), 1)
   Chrome.letterbox(winW, winH, paper[1] / 255, paper[2] / 255, paper[3] / 255)
   G.setColor(1, 1, 1, 1)

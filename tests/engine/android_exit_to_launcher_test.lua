@@ -49,7 +49,7 @@ end
 do
   local exitCalled = false
   local dummyGame2 = {
-    data = {},
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() },
     stack = {
       states = {},
       push = function(self, state) table.insert(self.states, state) end,

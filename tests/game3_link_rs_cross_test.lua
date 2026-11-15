@@ -217,13 +217,14 @@ local function cacheRoot(version)
   local env = os.getenv("POKEPORT_" .. version:upper() .. "_CACHE")
   if env and env ~= "" then return env end
   local identity, home = os.getenv("POKEPORT_" .. version:upper() .. "_IDENTITY") or os.getenv("POKEPORT_IDENTITY"), os.getenv("HOME")
-  if not (identity and identity ~= "" and home) then return nil end
-  for _, base in ipairs({ home .. "/Library/Application Support/LOVE/", home .. "/.local/share/love/" }) do
-    local root = base .. identity .. "/" .. version .. "/data/generated/gba"
-    local f = io.open(root .. "/meta.json", "rb")
-    if f then f:close(); return root end
+  if identity and identity ~= "" and home then
+    for _, base in ipairs({ home .. "/Library/Application Support/LOVE/", home .. "/.local/share/love/" }) do
+      local root = base .. identity .. "/" .. version .. "/data/generated/gba"
+      local f = io.open(root .. "/meta.json", "rb")
+      if f then f:close(); return root end
+    end
   end
-  return nil
+  return require("tests.game3_cache").root(version)
 end
 local rubyRoot, emeraldRoot = cacheRoot("ruby"), cacheRoot("emerald")
 if not (rubyRoot and emeraldRoot) then

@@ -157,7 +157,7 @@ do
   eq(wild.hp, 1, "a roll under 30 leaves the holder at exactly 1 HP")
   eq(dealt, 9, "the clamp is the False Swipe clamp: hp - 1")
   check(findText(battle:takeEvents(),
-    "Enemy PIDGEY hung on with FOCUS BAND!"),
+    battle:romText("HungOnText", battle.player, wild, "FOCUS BAND")),
     "and HungOnText names the item")
 
   battle, _, wild = newBattle({ wildItem = "FOCUS_BAND",
@@ -239,7 +239,7 @@ do
   before = wild.hp
   battle:useMove(player, wild, "TACKLE")
   eq(wild.hp, before, "and misses against it")
-  check(findText(battle:takeEvents(), "MACHOP's attack missed!"),
+  check(findText(battle:takeEvents(), battle:romText("AttackMissedText", player)),
     "with the ordinary miss line")
 end
 
@@ -257,8 +257,8 @@ do
   eq(player.volatile.confuseCount, Battle.BERSERK_GENE_CONFUSE_TURNS,
     "and the holder is confused, no count -- the lock")
   eq(player.status, nil, "the status byte stays free for a real status")
-  check(findText(events, "MACHOP's BERSERK GENE activated!"),
-    "UsersStringBuffer1Activated announces it")
+  check(findText(events, battle:romText("BattleText_UsersStringBuffer1Activated",
+    player, player, "BERSERK GENE")), "UsersStringBuffer1Activated announces it")
 
   -- One shot: the next turn has nothing left to fire.
   battle:takeTurn({ kind = "skip" })

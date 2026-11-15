@@ -66,7 +66,7 @@ GameVersion.set("emerald")
 game.session.version = "emerald"
 require("src.import.gba.versions").select("emerald")
 local Cache = require("tests.game3_cache")
-local root = Cache.mount("scripts/movements.lua", { native = true })
+local root = Cache.mount("emerald", "scripts/movements.lua", { native = true })
 if not root then
   print("[skip] 2764 extracted Emerald scenes: " .. tostring(Cache.reason))
   T.finish("game3_cutscene_push_2764")

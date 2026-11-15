@@ -8,9 +8,8 @@
 -- board LOOKS like the cart's -- is what a screenshot driver is for.
 
 package.path = "./?.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 
--- The UI modules pull love-side helpers in at load time.  Stub what they touch;
--- nothing here draws.
 love = love or {}
 love.graphics = love.graphics or {
   getColor = function() return 1, 1, 1, 1 end,
@@ -155,14 +154,15 @@ check("X-Z is three",
   Unown.UNLOCK_SETS[4].last - Unown.UNLOCK_SETS[4].first + 1, 3)
 check("the four sets cover all 26 letters",
   Unown.UNLOCK_SETS[4].last, 26)
-check("ENGINE_UNLOCKED_UNOWNS_A_TO_K is flag 42", Unown.UNLOCK_SETS[1].flag, 42)
+check("ENGINE_UNLOCKED_UNOWNS_A_TO_K is Gold flag 42",
+  require("src.core.gen2.EngineFlags").id(Unown.UNLOCK_SETS[1].name), 42)
 check("ENGINE_UNOWN_DEX is flag 12", Unown.ENGINE_UNOWN_DEX, 12)
 
 -- Each chamber's .PuzzleComplete arm sets exactly one of them.
-check("Kabuto unlocks A-K", Unown.PUZZLES[0].flag, 42)
-check("Omanyte unlocks L-R", Unown.PUZZLES[1].flag, 43)
-check("Aerodactyl unlocks S-W", Unown.PUZZLES[2].flag, 44)
-check("Ho-Oh unlocks X-Z", Unown.PUZZLES[3].flag, 45)
+check("Kabuto unlocks A-K", Unown.PUZZLES[0].flag, Unown.UNLOCK_SETS[1].name)
+check("Omanyte unlocks L-R", Unown.PUZZLES[1].flag, Unown.UNLOCK_SETS[2].name)
+check("Aerodactyl unlocks S-W", Unown.PUZZLES[2].flag, Unown.UNLOCK_SETS[3].name)
+check("Ho-Oh unlocks X-Z", Unown.PUZZLES[3].flag, Unown.UNLOCK_SETS[4].name)
 
 local flags = {}
 check("nothing is unlocked on a fresh file", Unown.anyUnlocked(flags), false)
@@ -352,11 +352,27 @@ local input = { pressed = {} }
 function input:wasPressed(button) return self.pressed[button] == true end
 function input:isDown(button) return self.pressed[button] == true end
 
+love.graphics.newQuad = function(x, y, w, h)
+  local quad = {}
+  function quad.setViewport(_, nx, ny, nw, nh) x, y, w, h = nx, ny, nw, nh end
+  function quad.getViewport() return x, y, w, h end
+  return quad
+end
+love.graphics.newImage = function(path)
+  if tostring(path):find("unloadable", 1, true) then return nil end
+  local w, h = 96, 96
+  if tostring(path):find("chrome", 1, true) then w, h = 152, 8 end
+  return { getDimensions = function() return w, h end,
+    getWidth = function() return w end, getHeight = function() return h end,
+    setFilter = function() end }
+end
+
 local closed = { count = 0 }
 local function newPuzzle(puzzleId)
   input.pressed = {}
   closed.count, closed.solved = 0, nil
-  return UnownPuzzle.new({ input = input, data = {} }, {
+  return UnownPuzzle.new({ input = input, data = { gen2MenuGfx = {
+    unownPuzzle = require("tests.fixture_data.gen2_unown_puzzle_gfx_s7_f2") } } }, {
     puzzle = puzzleId or 0,
     random = scripted({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }),
     onClose = function(solved)
@@ -378,27 +394,32 @@ local screen = newPuzzle(0)
 -- PalPacket_UnownPuzzle, which is PREDEFPAL_UNOWN_PUZZLE four times, and then
 -- WipeAttrmap puts every tile on palette 0: the board is BROWN, and the `ld a,
 -- $e4` after it is the identity reorder of that palette rather than a grey
--- ramp.  The screen above carries no menu_gfx at all, so this also pins the
--- fallback that colours a cache built before the extractor emitted the palette.
+-- ramp.
 local function rgb(colors, index)
   local c = colors and colors[index]
   return c and (c[1] .. "," .. c[2] .. "," .. c[3]) or "nil"
 end
 check("BG colour 1 is the tan of PREDEFPAL_UNOWN_PUZZLE",
-  rgb(UnownPuzzle.PALETTE, 2), "197,165,90")
-check("BG colour 2 is its dark brown",
-  rgb(UnownPuzzle.PALETTE, 3), "148,107,90")
-check("BG colour 0 is white", rgb(UnownPuzzle.PALETTE, 1), "255,255,255")
-check("BG colour 3 is black", rgb(UnownPuzzle.PALETTE, 4), "0,0,0")
+  rgb(screen.palette, 2), "197,165,90")
+check("BG colour 2 is its dark brown", rgb(screen.palette, 3), "148,107,90")
+check("BG colour 0 is white", rgb(screen.palette, 1), "255,255,255")
+check("BG colour 3 is black", rgb(screen.palette, 4), "0,0,0")
 -- wOBPals1 colour 0 is overwritten with `palred 31`, and `ld a, $24` reorders
 -- OBJ pal 0 to entries 0, 1, 2, 0, so both of the cursor sheet's colours are it.
-check("OBJ colour 0 is pure red", rgb(UnownPuzzle.CURSOR_PALETTE, 1), "255,0,0")
-check("and colour 3 is the same red",
-  rgb(UnownPuzzle.CURSOR_PALETTE, 4), "255,0,0")
-check("a screen with no menu_gfx still falls back to the BG palette",
-  rgb(screen.palette, 2), "197,165,90")
-check("and to the cursor palette",
-  rgb(screen.cursorPalette, 4), "255,0,0")
+check("OBJ colour 0 is pure red", rgb(screen.cursorPalette, 1), "255,0,0")
+check("and colour 3 is the same red", rgb(screen.cursorPalette, 4), "255,0,0")
+check("the palettes are menu_gfx.lua's",
+  screen.palette == require("tests.fixture_data.gen2_unown_puzzle_gfx_s7_f2").palette, true)
+check("a menu_gfx.lua without unownPuzzle is an error",
+  pcall(UnownPuzzle.new, { input = input, data = { gen2MenuGfx = {} } }, {}), false)
+local noChrome = {}
+for key, value in pairs(require("tests.fixture_data.gen2_unown_puzzle_gfx_s7_f2")) do
+  noChrome[key] = value
+end
+noChrome.chrome = nil
+check("and so is one without the caption tiles",
+  pcall(UnownPuzzle.new, { input = input,
+    data = { gen2MenuGfx = { unownPuzzle = noChrome } } }, {}), false)
 
 check("a new board starts on cell 0", screen.cursor, 0)
 check("nothing is held", screen.holding, false)
@@ -508,13 +529,18 @@ screen.cursor = occupied
 press(screen, "a")
 check("dropping onto an occupied cell is refused", screen.holding, true)
 
--- The board draws without art: no picture, no chrome sheet and no cursor sheet
--- in the harness, so every cell takes the labelled-cell fallback.  This is a
--- crash check, not a layout one -- what the board LOOKS like is a screenshot
--- driver's job.
 screen = newPuzzle(0)
+local caption = {}
+local realDraw = screen.chrome.draw
+screen.chrome.draw = function(sheet, tile, tx, ty)
+  if ty == 16 then caption[#caption + 1] = tile end
+  return realDraw(sheet, tile, tx, ty)
+end
 local drewOk = pcall(function() screen:drawPanel() end)
-check("an artless board still draws", drewOk, true)
+check("the board draws", drewOk, true)
+check("START>CANCEL is the ten caption tiles, last over the box",
+  table.concat(caption, ",", #caption - 9), "246,247,248,249,250,251,252,253,254,255")
+screen.chrome.draw = realDraw
 screen.holding = true
 screen.held = 4
 drewOk = pcall(function() screen:drawPanel() end)
@@ -523,6 +549,26 @@ screen.holding = false
 screen.solved = true
 drewOk = pcall(function() screen:drawPanel() end)
 check("and so does a solved one", drewOk, true)
+screen.solved = false
+screen.chrome.loaded = false
+check("a chrome sheet that will not load is an error, not font text",
+  pcall(function() screen:drawPanel() end), false)
+screen = newPuzzle(0)
+check("a tile the chrome sheet does not hold is an error, not a filled square",
+  pcall(screen.drawTile, screen, 0x10, 0, 0), false)
+
+local function gfxWith(key, value)
+  local gfx = {}
+  for k, v in pairs(require("tests.fixture_data.gen2_unown_puzzle_gfx_s7_f2")) do gfx[k] = v end
+  gfx[key] = value
+  return UnownPuzzle.new({ input = input, data = { gen2MenuGfx = { unownPuzzle = gfx } } },
+    { puzzle = 0 })
+end
+check("a picture that will not load is an error, not numbered panels",
+  pcall(gfxWith, "pictures", { "unloadable_kabuto.png" }), false)
+check("a cache without the pictures is an error", pcall(gfxWith, "pictures", nil), false)
+check("a cursor sheet that will not load is an error, not a drawn square",
+  pcall(gfxWith, "cursor", "unloadable_cursor.png"), false)
 
 -- ================================================================ the special
 --
@@ -575,59 +621,41 @@ check("Gen2UnownPuzzle is a screen id", registered, true)
 -- unlock flags to 43-46 (:57-60); pokegold keeps 42-45 (:56-59).
 do
   local World = require("src.world.gen2.World")
-  local crystalOrder = {}
-  for _, set in ipairs(Unown.UNLOCK_SETS) do
-    crystalOrder[set.flag + 2] = set.name
-  end
-  local function stubWorld(engineFlags, order)
+  local EngineFlagsFixture = require("tests.fixture_data.gen2_engine_flags")
+  local function stubWorld(engineFlags)
     return setmetatable({
-      constants = { engineFlagOrder = order },
       game = { save = { engineFlags = engineFlags } },
     }, { __index = World })
   end
 
-  -- what a Crystal save's raw flags used to feed Unown directly: L-Z only
+  EngineFlagsFixture.bind("crystal")
   local rawCrystal = { [43] = true, [44] = true, [45] = true, [46] = true }
-  local leaked = Unown.unlockedLetters(rawCrystal)
-  check("raw Crystal flags leak only 15 letters", #leaked, 15)
-  check("and the first survivor is L", leaked[1], 12)
-
-  local view = stubWorld(rawCrystal, crystalOrder):unownUnlockFlags()
-  local resolved = Unown.unlockedLetters(view)
-  check("the resolved view unlocks all 26", #resolved, 26)
+  local resolved = Unown.unlockedLetters(stubWorld(rawCrystal):unownUnlockFlags())
+  check("Crystal's 43-46 unlock all 26", #resolved, 26)
   check("A included", resolved[1], 1)
 
-  -- the same distribution through wildDVs itself
   math.randomseed(1)
   local function roll()
     return { attack = math.random(0, 15), defense = math.random(0, 15),
       speed = math.random(0, 15), special = math.random(0, 15) }
   end
-  local seenOld, seenNew = {}, {}
+  local seen = {}
   for _ = 1, 4000 do
-    seenOld[Unown.letterFromDVs(Unown.wildDVs(rawCrystal, roll))] = true
-    seenNew[Unown.letterFromDVs(Unown.wildDVs(view, roll))] = true
+    seen[Unown.letterFromDVs(Unown.wildDVs(rawCrystal, roll))] = true
   end
-  local countOld, countNew = 0, 0
-  for _ in pairs(seenOld) do countOld = countOld + 1 end
-  for _ in pairs(seenNew) do countNew = countNew + 1 end
-  check("raw flags roll only 15 letters", countOld, 15)
-  check("raw flags never roll A", seenOld[1], nil)
-  check("the resolved view rolls all 26", countNew, 26)
+  local count = 0
+  for _ in pairs(seen) do count = count + 1 end
+  check("Crystal's flags roll all 26", count, 26)
 
-  -- one chamber: Crystal's setflag 43 is Kabuto's A-K, not L-R
-  local kabuto = Unown.unlockedLetters(
-    stubWorld({ [43] = true }, crystalOrder):unownUnlockFlags())
+  local kabuto = Unown.unlockedLetters(stubWorld({ [43] = true }):unownUnlockFlags())
   check("Crystal flag 43 is A-K", #kabuto, 11)
   check("starting at A", kabuto[1], 1)
 
-  -- Crystal's 42 is ENGINE_EARTHBADGE and must not unlock a chamber
   check("Crystal flag 42 unlocks nothing", Unown.anyUnlocked(
-    stubWorld({ [42] = true }, crystalOrder):unownUnlockFlags()), false)
+    stubWorld({ [42] = true }):unownUnlockFlags()), false)
 
-  -- a Gold cache has no engineFlagOrder and keeps its own ids
-  local gold = Unown.unlockedLetters(
-    stubWorld({ [42] = true }, nil):unownUnlockFlags())
+  EngineFlagsFixture.bind("gold")
+  local gold = Unown.unlockedLetters(stubWorld({ [42] = true }):unownUnlockFlags())
   check("Gold flag 42 stays A-K", #gold, 11)
 end
 

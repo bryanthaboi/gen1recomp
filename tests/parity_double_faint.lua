@@ -41,7 +41,7 @@ local function battleWith(partyHP, result)
     afterQueue = nil,
     said = {},
     -- the reserves-left path reads the "Use next POKéMON?" prompt off Data
-    data = { text = { _UseNextMonText = "Use next POKéMON?" } },
+    data = { text = setmetatable({ _UseNextMonText = "Use next POKéMON?" }, { __index = dofile("tests/fixture_data/text.lua") }) },
     game = { save = { party = party, player = { name = "RED" } } },
     sayNext = function(self, m) self.said[#self.said + 1] = m end,
     rows = {},

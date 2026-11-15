@@ -14,7 +14,6 @@ return {
     onInteract = function(game, ow, fx, fy)
       if fx ~= 3 or fy ~= 5 then return false end
       local text = game.data.text._RedBedroomSNESText
-        or "{PLAYER} is\nplaying the SNES!"
       game.stack:push(TextBox.new(game, text))
       return true
     end,

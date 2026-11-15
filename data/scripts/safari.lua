@@ -55,12 +55,10 @@ local function startGame(game, ow, t, done, balls, introText)
   game.save.safariGameOver = nil
   local TextBox = require("src.render.TextBox")
   local paid = introText
-    or (t._SafariZoneGateSafariZoneWorker1ThatllBe500PleaseText
-        or "That'll be ¥500\nplease!\f{PLAYER} received\n30 SAFARI BALLs!")
+    or t._SafariZoneGateSafariZoneWorker1ThatllBe500PleaseText
        :gsub("{NUM:[^}]*}", "500")
   paid = paid:gsub("{PLAYER}", game.save.player.name)
-  local pa = (t._SafariZoneGateSafariZoneWorker1CallYouOnThePAText
-              or "\fWe'll call you on\nthe PA when you\nrun out of time\nor SAFARI BALLs!")
+  local pa = t._SafariZoneGateSafariZoneWorker1CallYouOnThePAText
              :gsub("^\f", "")
   local money = function() return game.save.money end
   -- scripts/SafariZoneGate.asm:181
@@ -95,12 +93,9 @@ local function yellowLowCost(game, ow, t, done, back)
     local balls = math.min(math.floor(game.save.money / 23) + 1, 29)
     game.save.money = 0
     local intro =
-      (t._SafariZoneGateSafariZoneWorker1NotEnoughMoneyText
-       or "Oops! Not enough\nmoney!")
-      .. (t._SafariZoneLowCostText1
-          or "\fOh, all right, pay\nme what you have.")
-      .. "\f" .. (t._SafariZoneLowCostText2
-                  or "But, I can't give\nyou all 30 BALLs.")
+      t._SafariZoneGateSafariZoneWorker1NotEnoughMoneyText
+      .. t._SafariZoneLowCostText1
+      .. "\f" .. t._SafariZoneLowCostText2
     startGame(game, ow, t, done, balls, intro)
     return
   end
@@ -108,16 +103,15 @@ local function yellowLowCost(game, ow, t, done, back)
   game.save.safariNags = nag + 1
   if nag >= 3 then
     local intro =
-      (t._SafariZoneLowCostText8 or "Read my lips, NO!\nGet it?")
-      .. (t._SafariZoneLowCostText3
-          or "\fYou're persistent,\naren't you?\fOK, you can go in\nfor free, but\njust this once!")
+      t._SafariZoneLowCostText8
+      .. t._SafariZoneLowCostText3
     startGame(game, ow, t, done, 1, intro)
     return
   end
   local nags = {
-    t._SafariZoneLowCostText5 or "I'm sorry, but you\nhave to pay to\nenter.",
-    t._SafariZoneLowCostText6 or "You can't enter\nwithout paying!",
-    t._SafariZoneLowCostText7 or "I said, no money,\nno entry!",
+    t._SafariZoneLowCostText5,
+    t._SafariZoneLowCostText6,
+    t._SafariZoneLowCostText7,
   }
   back(nags[nag + 1])
 end
@@ -133,21 +127,18 @@ local function joinPrompt(game, ow, done)
   end
   -- scripts/SafariZoneGate.asm:150-154
   game.stack:push(TextBox.new(game,
-    t._SafariZoneGateSafariZoneWorker1WouldYouLikeToJoinText
-    or "For just ¥500 you\ncan join the hunt!\fWould you like to\njoin the hunt?",
+    t._SafariZoneGateSafariZoneWorker1WouldYouLikeToJoinText,
     nil,
     { money = function() return game.save.money end,
       moneyWithChoice = true,
       choice = function(yes)
         if not yes then
-          back(t._SafariZoneGateSafariZoneWorker1PleaseComeAgainText
-               or "OK! Please come\nagain!")
+          back(t._SafariZoneGateSafariZoneWorker1PleaseComeAgainText)
         elseif game.save.money < FEE then
           if require("src.core.GameVersion").isYellow() then
             yellowLowCost(game, ow, t, done, back)
           else
-            back(t._SafariZoneGateSafariZoneWorker1NotEnoughMoneyText
-                 or "Oops! Not enough\nmoney!")
+            back(t._SafariZoneGateSafariZoneWorker1NotEnoughMoneyText)
           end
         else
           game.save.money = game.save.money - FEE
@@ -173,8 +164,7 @@ M.SAFARI_ZONE_GATE = {
     if game.save.safari then return false end -- paid, walking in
     local TextBox = require("src.render.TextBox")
     game.stack:push(TextBox.new(game,
-      game.data.text._SafariZoneGateSafariZoneWorker1Text
-      or "Welcome to the\nSAFARI ZONE!",
+      game.data.text._SafariZoneGateSafariZoneWorker1Text,
       function()
         -- scripts/SafariZoneGate.asm:29
         ow.player.facing = "right"

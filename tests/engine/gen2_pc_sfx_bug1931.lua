@@ -47,7 +47,9 @@ local function newGame(save)
     save = save,
     options = save.options,
     data = { items = {}, moves = {}, pokemon = {},
-      audio = { sfx = SFX } },
+      audio = { sfx = SFX },
+      text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(
+        require("tests.fixture_data.gen2_rom_text_s7_e")) },
     stack = { push = function() end, pop = function() end },
   }
 end

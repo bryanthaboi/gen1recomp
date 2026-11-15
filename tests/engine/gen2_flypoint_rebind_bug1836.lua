@@ -21,7 +21,7 @@ for spawn, id in pairs(GOLD_IDS) do
   T.eq(gold[spawn], id, spawn .. " binds the pokegold id")
 end
 
-FieldMoves.bindEngineFlags({ [18] = "ENGINE_BUG_CONTEST_TIMER" })
+FieldMoves.bindEngineFlags(require("tests.fixture_data.gen2_engine_flags").order("crystal"))
 T.eq(byFlag().SPAWN_INDIGO, 63, "bindEngineFlags leaves the flypoint ids alone")
 
 Fixture.bind("crystal")
@@ -46,5 +46,5 @@ local goldSave = { engineFlags = { [63] = true } }
 T.check(FieldMoves.hasVisitedSpawn(goldSave, "SPAWN_INDIGO"),
   "Gold flag 63 is INDIGO_PLATEAU again")
 
-FieldMoves.bindEngineFlags(nil)
+FieldMoves.bindEngineFlags(require("tests.fixture_data.gen2_engine_flags").order("gold"))
 T.finish("gen2 flypoint rebind bug 1836")

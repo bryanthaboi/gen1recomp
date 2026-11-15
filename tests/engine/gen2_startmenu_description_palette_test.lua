@@ -19,7 +19,6 @@ require("src.core.Logger").warn = function() end
 
 local GbcPalette = require("src.render.GbcPalette")
 local StartMenu = require("src.ui.gen2.StartMenu")
-local Strings = require("src.core.Strings")
 
 local calls
 local function spy(name)
@@ -64,12 +63,13 @@ do
   T.check(ok, "StartMenu:draw() does not error with no shader available")
 end
 
+-- engine/menus/start_menu.asm:223 .OptionDesc
 do
-  Strings.load({ strings = {
-    ["Change\nsettings"] = "Modifier les\nreglages",
-  } })
   local save = { party = {}, inventory = {}, options = {} }
-  local menu = StartMenu.new({ save = save }, {
+  local menu = StartMenu.new({ save = save, data = {
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text({
+      ["StartMenu.OptionDesc"] = "Modifier les\nreglages",
+    }) } }, {
     save = save,
     unlocked = { pack = true },
   })
@@ -79,8 +79,7 @@ do
   end
   T.check(option and option.desc[1] == "Modifier les"
       and option.desc[2] == "reglages",
-    "START descriptions use one complete multiline key before splitting")
-  Strings.load({})
+    "START descriptions split the cache's whole .OptionDesc line by line")
 end
 
 T.finish()

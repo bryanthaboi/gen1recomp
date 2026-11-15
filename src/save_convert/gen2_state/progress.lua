@@ -1,3 +1,5 @@
+local Gen2EngineFlags = require("src.save_convert.Gen2EngineFlags")
+
 local M = {}
 
 M.CARRIER = "cartProgress"
@@ -25,11 +27,11 @@ for _, label in ipairs(FIGHT_COUNTS) do
   SCRIPT_MEM_LABELS.crystal[#SCRIPT_MEM_LABELS.crystal + 1] = label
 end
 
--- pokegold constants/engine_flags.asm:34
--- pokecrystal constants/engine_flags.asm:35
-local BIKE_FLAG_IDS = { gs = { 23, 24, 25 }, crystal = { 24, 25, 26 } }
--- pokecrystal constants/engine_flags.asm:123
-local ENGINE_FOREST_IS_RESTLESS = 100
+-- pokegold data/events/engine_flags.asm:42
+-- pokecrystal data/events/engine_flags.asm:43
+local BIKE_FLAGS = { "ENGINE_STRENGTH_ACTIVE", "ENGINE_ALWAYS_ON_BIKE", "ENGINE_DOWNHILL" }
+-- pokecrystal data/events/engine_flags.asm:133
+local ENGINE_FOREST_IS_RESTLESS = Gen2EngineFlags.id("crystal", "ENGINE_FOREST_IS_RESTLESS")
 -- pokecrystal constants/ram_constants.asm:307
 local CELEBIEVENT_FOREST_IS_RESTLESS_F = 2
 
@@ -180,7 +182,8 @@ end
 
 local function bikeIds(ctx)
   local ids = {}
-  for b, id in ipairs(BIKE_FLAG_IDS[family(ctx)]) do ids[b - 1] = id end
+  local version = family(ctx) == "crystal" and "crystal" or "gold"
+  for b, name in ipairs(BIKE_FLAGS) do ids[b - 1] = Gen2EngineFlags.id(version, name) end
   return ids
 end
 

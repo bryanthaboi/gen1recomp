@@ -16,7 +16,7 @@ local realPlay = Sound.play
 Sound.play = function(_, name) played[#played + 1] = name end
 
 local function fakeGame(pressed)
-  local game = { data = { audio = { sfx = {} } } }
+  local game = { data = { audio = { sfx = {} }, text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
   game.input = { wasPressed = function(_, key) return key == pressed end }
   game.stack = { items = {} }
   function game.stack:push(s) self.items[#self.items + 1] = s end

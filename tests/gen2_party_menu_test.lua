@@ -64,7 +64,6 @@ local SummaryMenu = require("src.ui.gen2.SummaryMenu")
 local Gen2Battle = require("src.battle.gen2.Battle")
 local Registry = require("src.mods.Registry")
 local Schemas = require("src.mods.Schemas")
-local Strings = require("src.core.Strings")
 
 local failures, checks = 0, 0
 local function check(name, got, want)
@@ -152,6 +151,8 @@ local DATA = {
     },
   },
 }
+DATA.text = setmetatable({},
+  { __index = require("tests.fixture_data.gen2_rom_text_s7_e") })
 
 local function mergedGen2Statuses()
   local registry = Registry.new("statuses", Schemas.REGISTRIES.statuses)
@@ -216,24 +217,24 @@ end
 
 -- WritePartyMenuTilemap's quality routines, as row data.
 local save = newSave()
-local row = PartyMenu.rowFor(save.party[1])
+local row = PartyMenu.rowFor(save.party[1], nil, nil, DATA)
 check("a mon's row shows its nickname", row.name, "CYNDAQUIL")
 check("and its HP digits", row.hp ~= nil, true)
 check("and its level", row.level, "<LV>12")
 check("a healthy mon has no status", row.status, nil)
 
 local fnt = mon("TOTODILE", 10, { fields = { hp = 0 } })
-check("a fainted mon reads FNT", PartyMenu.rowFor(fnt).status, "FNT")
+check("a fainted mon reads FNT", PartyMenu.rowFor(fnt, nil, nil, DATA).status, "FNT")
 
 local poisoned = mon("TOTODILE", 10, { fields = { status = "poison" } })
 DATA.gen2Statuses = mergedGen2Statuses()
 check("a status registry translation reaches a Gen 2 party row",
-  PartyMenu.rowFor(poisoned, nil, DATA.gen2Statuses).status, "TOX")
+  PartyMenu.rowFor(poisoned, nil, DATA.gen2Statuses, DATA).status, "TOX")
 DATA.gen2Statuses = nil
 
 -- PartyMenuCheckEgg: every quality routine skips an EGG's row, and the name
 -- is String_Egg -- never the species hiding inside.
-local eggRow = PartyMenu.rowFor(egg())
+local eggRow = PartyMenu.rowFor(egg(), nil, nil, DATA)
 check("an egg's row reads EGG", eggRow.name, "EGG")
 check("an egg has no HP digits", eggRow.hp, nil)
 check("an egg has no level", eggRow.level, nil)
@@ -255,26 +256,35 @@ check("STATS first", eggItems[1].id, "STATS")
 check("SWITCH second", eggItems[2].id, "SWITCH")
 check("CANCEL third", eggItems[3].id, "CANCEL")
 
-Strings.load({ strings = {
-  STATS = "STATS FR", SWITCH = "ÉCHANGER", MOVE = "DÉPLACER",
-  ITEM = "OBJET", MAIL = "COURRIER", CANCEL = "ANNULER",
-  FNT = "K.O.", EGG = "ŒUF", ABLE = "APTE", ["NOT ABLE"] = "INAPTE",
-} })
+local TRANSLATED = {
+  ["MonMenuOptionStrings#1"] = "STATS FR", ["MonMenuOptionStrings#2"] = "ÉCHANGER",
+  ["MonMenuOptionStrings#3"] = "OBJET", ["MonMenuOptionStrings#4"] = "ANNULER",
+  ["MonMenuOptionStrings#5"] = "DÉPLACER", ["MonMenuOptionStrings#6"] = "COURRIER",
+  ["PlacePartyMonTMHMCompatibility.string_able"] = "APTE",
+  ["PlacePartyMonTMHMCompatibility.string_not_able"] = "INAPTE",
+}
+for label, text in pairs(TRANSLATED) do DATA.text[label] = text end
+DATA.text.FntString, DATA.text.String_Egg = "K.O.", "ŒUF"
 local translatedItems = party:submenuItems(save.party[1])
 check("the submenu keeps a stable STATS id", translatedItems[1].id, "STATS")
-check("and translates the STATS label", translatedItems[1].label, "STATS FR")
-check("SWITCH is localizable", translatedItems[2].label, "ÉCHANGER")
-check("MOVE is localizable", translatedItems[3].label, "DÉPLACER")
-check("ITEM is localizable", translatedItems[4].label, "OBJET")
-check("CANCEL is localizable", translatedItems[5].label, "ANNULER")
-check("FNT is localizable", PartyMenu.rowFor(fnt).status, "K.O.")
-check("EGG is localizable", PartyMenu.rowFor(egg()).name, "ŒUF")
+check("and the STATS label is MonMenuOptionStrings#1", translatedItems[1].label, "STATS FR")
+check("SWITCH is MonMenuOptionStrings#2", translatedItems[2].label, "ÉCHANGER")
+check("MOVE is MonMenuOptionStrings#5", translatedItems[3].label, "DÉPLACER")
+check("ITEM is MonMenuOptionStrings#3", translatedItems[4].label, "OBJET")
+check("CANCEL is MonMenuOptionStrings#4", translatedItems[5].label, "ANNULER")
+check("FNT is FntString out of the cache",
+  PartyMenu.rowFor(fnt, nil, nil, DATA).status, "K.O.")
+check("EGG is String_Egg out of the cache",
+  PartyMenu.rowFor(egg(), nil, nil, DATA).name, "ŒUF")
+DATA.text.FntString, DATA.text.String_Egg = nil, nil
+check("a cache without FntString is an error",
+  not pcall(PartyMenu.rowFor, fnt, nil, nil, { text = {} }), true)
 party.tmhm = { move = "SURF" }
 DATA.pokemon.CYNDAQUIL.tmhm = { "SURF" }
-check("ABLE is localizable", party:tmhmAble(save.party[1]), "APTE")
-check("NOT ABLE is localizable", party:tmhmAble(save.party[2]), "INAPTE")
+check("ABLE is .string_able", party:tmhmAble(save.party[1]), "APTE")
+check("NOT ABLE is .string_not_able", party:tmhmAble(save.party[2]), "INAPTE")
 DATA.pokemon.CYNDAQUIL.tmhm = nil
-Strings.load(nil)
+for label in pairs(TRANSLATED) do DATA.text[label] = nil end
 
 -- GiveTakePartyMonItem's first test is `cp EGG`: the held-item menu refuses.
 game = newGame(save)
@@ -453,7 +463,7 @@ local screen = SummaryMenu.new(game, { party = save.party, index = 3,
 check("an egg opens without a cry", cries, 0)
 local page = screen:placements()
 check("EGG at hlcoord 8,1", at(page, 8, 1), "EGG")
-check("<ID>№. at hlcoord 8,3", at(page, 8, 3), "<ID>№.")
+check("IDNoString at hlcoord 8,3", at(page, 8, 3), DATA.text.IDNoString)
 check("????? for the ID", at(page, 11, 3), "?????")
 check("OT/ at hlcoord 8,5", at(page, 8, 5), "OT/")
 check("????? for the OT", at(page, 11, 5), "?????")
@@ -644,14 +654,11 @@ do
   marked:drawIcon(held.party[2], 0, 0)
   check("an empty hand is still one 16x16 draw", #calls, 1)
 
-  -- A cache imported before the extractor read HeldItemIcons has no `heldItem`
-  -- row: the list must draw exactly what it drew before, not error.
   local plain = PartyMenu.new(newGame(held), { party = held.party })
   plain.iconCache["x/fox.png"] = iconImage
   calls = {}
-  plain:drawIcon(held.party[1], 0, 0)
-  check("no marker sheet in the cache falls back to the plain icon",
-    #calls, 1)
+  check("no marker sheet in the cache is an error, not the plain icon",
+    pcall(plain.drawIcon, plain, held.party[1], 0, 0), false)
 
   love.graphics.draw = realDraw
 end

@@ -55,7 +55,7 @@ local function badgeEndBattleText(game, victoryKey)
   local victories = victoryKey and require("data.scripts.victories")
   local reward = victories and victories[victoryKey]
   if not (reward and reward.dialogue) then return nil end
-  local text = game.data.text or {}
+  local text = game.data.text
   local pages, soundPage = {}, nil
   for _, label in ipairs(reward.dialogue) do
     if text[label] and text[label] ~= "" then
@@ -89,8 +89,7 @@ M.PEWTER_GYM.talk = {
       if retryTmGive(game, ow, "OPP_BROCK#1", done) then return end
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        game.data.text._PewterGymBrockPostBattleAdviceText
-        or "Go to the GYM in\nCERULEAN and test\nyour abilities!", done))
+        game.data.text._PewterGymBrockPostBattleAdviceText, done))
     else
       local text, sound, soundPage = badgeEndBattleText(game, "OPP_BROCK#1")
       ow:engageTrainer(npc, done, text, nil, sound, nil, soundPage)
@@ -112,7 +111,7 @@ M.PEWTER_GYM.talk = {
 -- done) and must call done() itself once whatever it's doing (e.g. a fade
 -- around a HideObject) finishes, rather than having it invoked
 -- automatically. Only Giovanni's farewell uses this.
-local function leaderTalk(beatFlag, adviceLabel, fallback, afterAdvice, victoryKey)
+local function leaderTalk(beatFlag, adviceLabel, afterAdvice, victoryKey)
   return function(game, ow, npc, done)
     if game.save.flags[beatFlag] then
       if victoryKey and retryTmGive(game, ow, victoryKey, done) then return end
@@ -124,7 +123,7 @@ local function leaderTalk(beatFlag, adviceLabel, fallback, afterAdvice, victoryK
         end
       end
       game.stack:push(TextBox.new(game,
-        game.data.text[adviceLabel] or fallback, finish))
+        game.data.text[adviceLabel], finish))
     else
       local text, sound, soundPage = badgeEndBattleText(game, victoryKey)
       ow:engageTrainer(npc, done, text, nil, sound, nil, soundPage)
@@ -137,43 +136,37 @@ end
 -- (.TM11ExplanationText).
 M.CERULEAN_GYM.talk = {
   TEXT_CERULEANGYM_MISTY = leaderTalk("EVENT_BEAT_MISTY",
-    "_CeruleanGymMistyTM11ExplanationText",
-    "TM11 teaches\nBUBBLEBEAM!", nil, "OPP_MISTY#1"),
+    "_CeruleanGymMistyTM11ExplanationText", nil, "OPP_MISTY#1"),
 }
 
 -- scripts/VermilionGym.asm VermilionGymLTSurgeText .got_tm24_already
 M.VERMILION_GYM.talk = {
   TEXT_VERMILIONGYM_LT_SURGE = leaderTalk("EVENT_BEAT_LT_SURGE",
-    "_VermilionGymLTSurgePostBattleAdviceText",
-    "A little word of\nadvice, kid!", nil, "OPP_LT_SURGE#1"),
+    "_VermilionGymLTSurgePostBattleAdviceText", nil, "OPP_LT_SURGE#1"),
 }
 
 -- scripts/CeladonGym.asm CeladonGymErikaText .afterBeat
 M.CELADON_GYM.talk = {
   TEXT_CELADONGYM_ERIKA = leaderTalk("EVENT_BEAT_ERIKA",
-    "_CeladonGymErikaPostBattleAdviceText",
-    "You are cataloging\nPOKéMON? I must\nsay I'm impressed.", nil, "OPP_ERIKA#1"),
+    "_CeladonGymErikaPostBattleAdviceText", nil, "OPP_ERIKA#1"),
 }
 
 -- scripts/FuchsiaGym.asm FuchsiaGymKogaText .afterBeat
 M.FUCHSIA_GYM.talk = {
   TEXT_FUCHSIAGYM_KOGA = leaderTalk("EVENT_BEAT_KOGA",
-    "_FuchsiaGymKogaPostBattleAdviceText",
-    "When afflicted by\nTOXIC, POKéMON\nsuffer more and\nmore as battle\nprogresses!", nil, "OPP_KOGA#1"),
+    "_FuchsiaGymKogaPostBattleAdviceText", nil, "OPP_KOGA#1"),
 }
 
 -- scripts/SaffronGym.asm SaffronGymSabrinaText .afterBeat
 M.SAFFRON_GYM.talk = {
   TEXT_SAFFRONGYM_SABRINA = leaderTalk("EVENT_BEAT_SABRINA",
-    "_SaffronGymSabrinaPostBattleAdviceText",
-    "Everyone has\npsychic power!\nPeople just don't\nrealize it!", nil, "OPP_SABRINA#1"),
+    "_SaffronGymSabrinaPostBattleAdviceText", nil, "OPP_SABRINA#1"),
 }
 
 -- scripts/CinnabarGym.asm CinnabarGymBlaineText .afterBeat
 M.CINNABAR_GYM.talk = {
   TEXT_CINNABARGYM_BLAINE = leaderTalk("EVENT_BEAT_BLAINE",
-    "_CinnabarGymBlainePostBattleAdviceText",
-    "FIRE BLAST is the\nultimate fire\ntechnique!", nil, "OPP_BLAINE#1"),
+    "_CinnabarGymBlainePostBattleAdviceText", nil, "OPP_BLAINE#1"),
 }
 
 -- scripts/ViridianGym.asm ViridianGymGiovanniText .afterBeat: after the
@@ -191,7 +184,6 @@ M.CINNABAR_GYM.talk = {
 M.VIRIDIAN_GYM.talk = {
   TEXT_VIRIDIANGYM_GIOVANNI = leaderTalk("EVENT_BEAT_GIOVANNI",
     "_ViridianGymGiovanniPostBattleAdviceText",
-    "Let us meet again\nsome day!\nFarewell!",
     function(game, ow, npc, done)
       local Transition = require("src.render.Transition")
       game.stack:push(Transition.new(game, function()

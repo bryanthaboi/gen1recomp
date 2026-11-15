@@ -25,48 +25,9 @@ local check, eq = S.check, S.eq
 
 local World = require("src.world.gen2.World")
 
--- The recovery path, in isolation: given the seed's flag list and a scripts
--- table containing the script those flags came from, find its variablesprite
--- rows.  This is what lets a cache written before the extractor learned to
--- record them still put the tree on the map.
 do
-  local w = setmetatable({
-    initialEvents = { 10, 20, 30 },
-    scripts = {
-      -- A decoy with some of the flags and a sprite row: must NOT match.
-      ["a:1"] = {
-        { op = "setevent", event = 10 },
-        { op = "variablesprite", args = { 4, 99 } },
-      },
-      -- The real one: every seed flag, then the sprite assignments.
-      ["b:1"] = {
-        { op = "setevent", event = 10 },
-        { op = "setevent", event = 20 },
-        { op = "setevent", event = 30 },
-        { op = "variablesprite", args = { 4, 55 } },   -- SPRITE_WEIRD_TREE
-        { op = "variablesprite", args = { 5, 56 } },
-        { op = "end" },
-      },
-    },
-  }, { __index = World })
-
-  local rows = w:findInitialSprites()
-  eq(#rows, 2, "found both variablesprite rows")
-  local bySlot = {}
-  for _, row in ipairs(rows) do bySlot[row.slot] = row.sprite end
-  eq(bySlot[4], 55, "slot 4 ($f4 SPRITE_WEIRD_TREE) takes its sprite")
-  eq(bySlot[5], 56, "slot 5 too")
-  check(bySlot[4] ~= 99, "the decoy script, which lacks two of the flags, lost")
-end
-
--- No seed list means no guessing: a cache with no flags must not match some
--- arbitrary script that happens to contain a variablesprite.
-do
-  local w = setmetatable({
-    initialEvents = {},
-    scripts = { ["a:1"] = { { op = "variablesprite", args = { 4, 99 } } } },
-  }, { __index = World })
-  eq(#w:findInitialSprites(), 0, "an empty seed list matches nothing")
+  check(World.findInitialSprites == nil,
+    "no scripts.lua scan stands in for initial_events.sprites")
 end
 
 -- resolveSprite is the half that reads it back, and the reason an unfilled

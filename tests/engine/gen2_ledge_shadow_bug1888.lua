@@ -63,14 +63,14 @@ do
 end
 
 do
-  local world = newWorld()
-  world.jumpShadowImage = nil
-  local jumper = { jumping = true, facing = "down", px = 0, py = 0 }
-  local draws, ellipses = record(function()
-    world:drawJumpShadow(jumper, 0, 0, 1)
-  end)
-  T.eq(#draws, 0, "a cache from before the tile was extracted has no shadow")
-  T.eq(ellipses, 0, "and does not fall back to a drawn oval")
+  local world = setmetatable({ game = { data = { gen2MenuGfx = {
+    emotes = { grassRustle = "rustle.png", cutGrass = "cut.png",
+      fishing = "fishing.png" },
+    healMachine = { sheet = "heal.png", palette = { 0, 0, 0, 0 } },
+  } } } }, { __index = World })
+  local ok, err = pcall(world.loadMenuGfx, world)
+  T.check(not ok and tostring(err):find("menu_gfx.lua has no emotes.jumpShadow",
+    1, true), "a menu_gfx.lua without the shadow tile does not load")
 end
 
 do

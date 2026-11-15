@@ -59,6 +59,7 @@ local function gen2Dataset()
   data.moves = load("moves") or {}
   data.type_chart = load("type_chart") or {}
   data.gen2Constants = load("constants")
+  data.font = load("font")
   local ItemEffects = require("src.core.gen2.ItemEffects")
   data.gen2HeldItems = ItemEffects.heldItemsFrom(data.items)
   return data

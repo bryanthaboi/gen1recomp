@@ -489,7 +489,8 @@ differences an author meets:
   sheet name carries: a species id names an assignment (a string, the sheet's
   name), an `ICON_*` id names a sheet.
 - **`palettes`, `battle_anims`, `constants`.** The id is a subtable of the
-  target: `pokemon` / `trainers` / `bg` / `objects` / `roofs` for palettes,
+  target: `pokemon` / `trainers` / `bg` / `objects` / `roofs` / `battleText` /
+  `specialTilesets` (full typed list in the registry reference) for palettes,
   `scripts` / `moves` / `objects` / `framesets` / `oamsets` / `gfx` for
   battle_anims, and one of Gold's 42 ordered ROM name lists (plus `mapGroups`,
   `trainerClassMembers`, `types`) for constants. Those lists are ordered and
@@ -581,7 +582,19 @@ gains a field instead of the name gaining a prefix.
   `movement.collision`, `movement.speed`, `encounter.roll`,
   `encounter.species`, `encounter.fishing`, `encounter.table`, `world.tod`,
   `map.palette`, `fieldmove.eligibility`, `world.follower.spawn`,
-  `trainer.before_battle`. `trainer.before_battle` (`src/world/gen2/World.lua`)
+  `world.talk`, `item.use`, `trainer.before_battle`. `world.talk` is raised
+  from `World:interactBody` for every standing object the A press lands on
+  (trainers, item balls, boulders, scripted and mod-spawned objects) with
+  `(world, npc)`; `next(world, npc)` runs `World:talkObject`, and a claim
+  consumes the press and still emits `world.interacted` with kind `npc`. A
+  spawned object with no `scriptKey` is answered only through this hook.
+  `item.use` is raised once per field PACK USE as
+  `(game, nil, itemId, nil, pack)` and once per SELECT use as
+  `(game, nil, itemId, nil, nil)`; the party pick runs inside `next`, so
+  `target` is always nil on Gold. The battle PACK raises it from
+  `BattleState:useItem` as `(game, battleScreen, itemId, nil)`. The mart SELL
+  and item PC packs and the catch tutorial raise nothing. A claim spends
+  nothing; in battle it hands the menu back. `trainer.before_battle` (`src/world/gen2/World.lua`)
   receives `(game, { trainerClass, partyIndex, mapId, npcId }, continueBattle)`
   and a truthy return defers the battle until a mod calls `continueBattle`,
   optionally with `{ cancel = true }`. `flag.changed` carries the numeric
@@ -622,7 +635,7 @@ gains a field instead of the name gaining a prefix.
   `battle.crit`, `battle.accuracy`, `battle.charge_required`,
   `battle.turn_order`,
   `battle.enemy_action`, `battle.run`, `battle.exp_award`, `exp.gain`,
-  `catch.rate`, `catch.nickname`, `trainer.party`, `battle.overlay`, `battle.low_health_alarm`,
+  `catch.rate`, `catch.nickname`, `catch.party_full`, `battle.style`, `trainer.party`, `battle.overlay`, `battle.low_health_alarm`,
   `battle.catch_exp`, `battle.bottom_ui_visible`,
   `battle.status_hud_visible`, `battle.move_grid_navigation`,
   `battle.caught_marker_visible`, `battle.field_residual` and
@@ -654,6 +667,23 @@ gains a field instead of the name gaining a prefix.
   `src/core/gen2/Evolution.lua` emits `pokemon.evolved` from `apply` and wraps
   each row's decision in `evolution.check`. The hook passes `data` where Gen 1
   passes `game`; positions 2-4 (mon, row, trigger) match.
+  `catch.party_full` runs from `pushCaught` when the party is full, with Gen
+  1's `{ battle, mon, name, game }` (`battle` is the battle screen); a claim
+  skips the box, the nickname question and the BILL's PC line, and
+  `pokemon.caught` reports `destination = "mod"`. The throw-time refusal on a
+  full party plus full current box still stands. `battle.style` runs from
+  `shiftOfferAllowed` after the cart's link, party-size, fainted-mon and Battle
+  Tower gates, with the battle screen as its one argument and Gen 1's lowercase
+  `"set"` / `"shift"` contract.
+- *Gifts (`src/core/gen2/Gift.lua`):* `pokemon.before_give`, from
+  `World:givePoke` (every `givepoke`), `GiveShuckle`, the prize counter's mon
+  purchase, `World:giveEgg` (`giveegg`), the Odd Egg and the Day-Care egg.
+  The payload is Gen 1's `{ ctx, species, level }` plus `isEgg` and
+  `nickname`. `ctx` is `{ game, save, world }` (plus `runner` from a special);
+  a trainer gift (Kenya, Shuckie) arrives with its nickname already set. A
+  string nickname skips the `givepoke` yes/no. On an egg only `species` and
+  `level` are read back, and a changed egg is rebuilt as a fresh egg of the
+  new species with the old one's OT.
 - *The frame (`src/core/Game2.lua`):* hooks `core.logic_speed` (the
   resolved logic-clock multiplier, clamped by `GameSpeed.clamp`; a locked or
   overridden speed never reaches it), `input.step`, `input.pointer`,
@@ -895,8 +925,6 @@ name and the existing payload, plus fields where Gen 2 genuinely carries more
 
 The list is much shorter than it was. What is outstanding, in descending value:
 
-- `pokemon.before_give` / `pokemon.received`: Gold has no give-mon seam of its
-  own yet.
 - `link.*` and `trade.completed`: a Gold boot offers no in-game link menu.
   Gen 2 battles run as launcher arenas (`src/ui/gen2/ArenaState.lua` over
   `src/link/LinkBattle2.lua`), which raise `link.battle_ended`; trades happen

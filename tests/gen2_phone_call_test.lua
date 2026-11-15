@@ -53,6 +53,8 @@ end
 -- pin one ungated ring, which is the shape that let the $6a SFX_CALL be
 -- dropped by the PlaySFX priority gate; it now pins the cart's.
 do
+  local PHONE = require("tests.fixtures.gen2_phone_events")
+  PHONE.install()
   local call = Phone.loadCallerScript(15, "incoming", "caller")
   local rows = PhoneRing.script(call, "JOEY", "YOUNGSTER")
   local ops = {}
@@ -65,7 +67,8 @@ do
   eq(rows[6].label, "RingTwice_StartCall", "and rings a second time")
   eq(rows[4].frames, 60, "three Phone_Wait20Frames apart")
   eq(rows[12].label, "InitCallReceiveDelay", "and the countdown restarts last")
-  eq(rows[8].script, "41:4368", "around the caller's own bank $41 script")
+  eq(rows[8].script, PHONE.events.phoneScripts.JoeyPhoneCallerScript.script,
+    "around the caller's own bank $41 script")
   check(rows[7].text:find("RING!", 1, true) ~= nil, "the ring page rings")
   check(rows[7].text:find("JOEY: YOUNGSTER", 1, true) ~= nil,
     "and carries the caller-ID line")
@@ -185,7 +188,8 @@ do
     savingMoney = true }, party = {} })
   local vm = {}
   local fake = {
-    game = { save = save },
+    game = { save = save,
+      data = { text = require("tests.fixture_data.gen2_rom_text_s7_g").text() } },
     events = Events.new(),
     vm = vm,
     momTriesToBuy = World.momTriesToBuy,
@@ -213,6 +217,9 @@ do
       pages[#pages + 1] = body
       onDone()
     end,
+    specials = { data = function()
+      return { text = require("tests.fixture_data.gen2_rom_text_s7_f1").text() }
+    end },
   })
   check(runner:start(rows), "the queued call runs whole")
   pump(runner)
@@ -258,6 +265,7 @@ do
     local trainers = assert(loadfile(generated .. "trainers.lua"))()
     local encounters = assert(loadfile(generated .. "encounters.lua"))()
     local pokemon = assert(loadfile(generated .. "pokemon.lua"))()
+    local romText = assert(loadfile(generated .. "rom_text.lua"))()
     local TrainerHouse = require("src.world.gen2.TrainerHouse")
 
     local function newCallVm(save, world)
@@ -279,7 +287,8 @@ do
         specials = {
           world = world,
           save = function() return save end,
-          data = function() return { pokemon = pokemon, trainers = trainers } end,
+          data = function() return { pokemon = pokemon, trainers = trainers,
+            text = romText } end,
         },
       })
       return vm, pages

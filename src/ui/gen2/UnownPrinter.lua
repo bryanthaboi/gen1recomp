@@ -45,8 +45,8 @@ local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local Palettes = require("src.world.gen2.Palettes")
+local RomText = require("src.core.RomText")
 local Sprites = require("src.pokemon.Sprites")
-local Strings = require("src.core.Strings")
 local Unown = require("src.core.gen2.Unown")
 
 local UnownPrinter = {}
@@ -57,17 +57,24 @@ function UnownPrinter:wantsFillScale() return true end
 
 -- AlphRuinsStampString keeps its leading space: the string starts at column 1
 -- and the space is what puts the S of STAMP under the box's own edge.
+-- engine/events/print_unown.asm:205
 local TEXT = {
-  title = Strings.source(" ALPH RUINS STAMP"),
-  doWhat = Strings.source("Do what?"),
-  vacant = Strings.source("VACANT"),
-  menu = {
-    Strings.source("A▶PRINT"),
-    Strings.source("B▶CANCEL"),
-    Strings.source("L▶BEFORE"),
-    Strings.source("R▶NEXT"),
-  },
+  title = "AlphRuinsStampString",
+  doWhat = "UnownDexDoWhatString",
+  vacant = "UnownDexVacantString",
+  menu = "UnownDexMenuString#1",
 }
+local BOLD = { "A", "B" }
+
+-- engine/events/print_unown.asm:211
+function UnownPrinter.menuRows(data)
+  local rows = {}
+  for line in (RomText(data, TEXT.menu) .. "\n"):gmatch("(.-)\n") do
+    local i = #rows + 1
+    rows[i] = BOLD[i] and BOLD[i] .. (line:gsub("^\xe2\x99[\x80\x82]", "")) or line
+  end
+  return rows
+end
 
 -- opts: pokemon, palettes, onClose()
 function UnownPrinter.new(game, opts)
@@ -175,10 +182,12 @@ function UnownPrinter:drawPanel()
   Chrome.textbox(0, 5, 7, 7)
   Chrome.textbox(0, 14, 18, 2)
 
-  Chrome.print(Strings(TEXT.title), 1, 2)
-  Chrome.print(Strings(TEXT.doWhat), 1, 16)
-  for i, row in ipairs(TEXT.menu) do
-    Chrome.print(Strings(row), 10, 5 + i)
+  local data = self.game and self.game.data
+  Chrome.print(RomText(data, TEXT.title), 1, 2)
+  Chrome.print(RomText(data, TEXT.doWhat), 1, 16)
+  self.menu = self.menu or UnownPrinter.menuRows(data)
+  for i, row in ipairs(self.menu) do
+    Chrome.print(row, 10, 5 + i)
   end
 
   local letter = self:letter()
@@ -186,7 +195,7 @@ function UnownPrinter:drawPanel()
     self:drawPic(letter)
   else
     -- .vacant: ClearBox over the 7x7 block, then VACANT across its middle.
-    Chrome.print(Strings(TEXT.vacant), 1, 9)
+    Chrome.print(RomText(data, TEXT.vacant), 1, 9)
   end
 end
 

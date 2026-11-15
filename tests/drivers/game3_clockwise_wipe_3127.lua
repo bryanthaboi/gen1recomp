@@ -7,10 +7,8 @@ local SCENE = {
   emerald = { map = "MAP_RUSTURF_TUNNEL", x = 6, y = 10, lead = "SPECIES_MUDKIP", foe = "SPECIES_WHISMUR" },
   ruby = { map = "MAP_RUSTURF_TUNNEL", x = 6, y = 10, lead = "SPECIES_MUDKIP", foe = "SPECIES_WHISMUR" },
   sapphire = { map = "MAP_RUSTURF_TUNNEL", x = 6, y = 10, lead = "SPECIES_MUDKIP", foe = "SPECIES_WHISMUR" },
-  firered = { map = "MAP_MT_MOON_1F", x = 20, y = 26, lead = "SPECIES_CHARMANDER", foe = "SPECIES_ZUBAT",
-    forceCave = true },
-  leafgreen = { map = "MAP_MT_MOON_1F", x = 20, y = 26, lead = "SPECIES_CHARMANDER", foe = "SPECIES_ZUBAT",
-    forceCave = true },
+  firered = { map = "MAP_MT_MOON_1F", x = 20, y = 26, lead = "SPECIES_CHARMANDER", foe = "SPECIES_ZUBAT" },
+  leafgreen = { map = "MAP_MT_MOON_1F", x = 20, y = 26, lead = "SPECIES_CHARMANDER", foe = "SPECIES_ZUBAT" },
 }
 
 local function loadPng(path)
@@ -76,9 +74,7 @@ return function(game)
   Party.giveMon(session, C.species.byName[sc.lead], 20, "LEAD")
 
   local function run(shoot)
-    local wopts = {}
-    if sc.forceCave then wopts.terrain = Ids.TERRAIN.CAVE end
-    BattleBridge.startWild(Runtime._mod, game, { species = C.species.byName[sc.foe], level = 5 }, wopts)
+    BattleBridge.startWild(Runtime._mod, game, { species = C.species.byName[sc.foe], level = 5 }, {})
     local picked = BT._transitionId
     local frames, mainAt = 0, nil
     local rec = {}

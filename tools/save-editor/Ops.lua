@@ -1381,7 +1381,7 @@ function Ops.deposit(S)
     local Boxes2 = require("src.core.gen2.Boxes")
     local boxIndex = S.selectedBox or S.save.currentBox or 1
     local ok, reason = Boxes2.canDeposit(S.save, i, boxIndex)
-    if not ok then return Ops.say(S, reason) end
+    if not ok then return Ops.say(S, Boxes2.reasonText(reason, S.data)) end
     Boxes2.deposit(S.save, i, boxIndex)
     S.selectedParty = clamp(i, 1, math.max(#S.save.party, 1))
     S.selectedBox = boxIndex

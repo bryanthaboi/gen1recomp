@@ -28,32 +28,28 @@
 local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
+local RomText = require("src.core.RomText")
+local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
-local Strings = require("src.core.Strings")
 
 local NamePick = {}
 NamePick.__index = NamePick
 NamePick.isOpaque = true
 
--- data/player_names.asm PlayerNameArray, one half of the IF per edition, and
--- Crystal's two arrays at ../pokecrystal/data/player_names.asm:12-16, :31-35.
-local PRESETS = {
-  gold = { "GOLD", "HIRO", "TAYLOR", "KARL" },
-  silver = { "SILVER", "KAMON", "OSCAR", "MAX" },
-  crystal = { "CHRIS", "MAT", "ALLAN", "JON" },
-}
-local PRESETS_FEMALE = {
-  crystal = { "KRIS", "AMANDA", "JUANA", "JODI" },
-}
-
 -- ShowPlayerNamingChoices picks the header off wPlayerGender
 -- (../pokecrystal/engine/gfx/player_gfx.asm:57-62).
-local function presetsFor(gender)
-  local version = require("src.core.GameVersion").get()
-  if gender == "female" and PRESETS_FEMALE[version] then
-    return PRESETS_FEMALE[version]
+local function presetsFor(data, gender)
+  return Save.presetNames(data, gender)
+end
+
+-- data/player_names.asm:7 .Names; ../pokecrystal/data/player_names.asm:8, :27
+local function newNameLabel(data, gender)
+  local text = data and data.text
+  if text and text["MalePlayerNameArray#1"] then
+    return gender == "female" and "KrisNameMenuHeader.FemaleNames#1"
+      or "ChrisNameMenuHeader.MaleNames#1"
   end
-  return PRESETS[version] or PRESETS.gold
+  return "NameMenuHeader.Names#1"
 end
 
 -- menu_coords 0, 0, 10, TEXTBOX_Y - 1 (TEXTBOX_Y = 12).
@@ -61,8 +57,7 @@ local BOX_X1, BOX_Y1, BOX_X2, BOX_Y2 = 0, 0, 10, 11
 -- GetMenuTextStartCoord's answer for this header's flags.
 local TEXT_X, TEXT_Y = 2, 2
 local CURSOR_X = TEXT_X - 1
-local TITLE, TITLE_X, TITLE_Y = Strings.source("NAME"), 2, 0
-local NEW_NAME = Strings.source("NEW NAME")
+local TITLE_X, TITLE_Y = 2, 0
 
 -- Intro_PrepTrainerPic puts the 7x7 pic at hlcoord 6,4; MovePlayerPic walks
 -- it to 13,4 one tile per frame.
@@ -81,8 +76,10 @@ function NamePick.new(game, opts)
   self.onDone = opts.onDone
   self.gender = opts.gender
     or (game and game.save and game.save.player and game.save.player.gender)
-  self.items = { NEW_NAME }
-  for _, name in ipairs(opts.presets or presetsFor(self.gender)) do
+  local data = game and game.data
+  self.items = { RomText(data, newNameLabel(data, self.gender)) }
+  self.title = Save.presetTitle(data, self.gender)
+  for _, name in ipairs(opts.presets or presetsFor(data, self.gender)) do
     self.items[#self.items + 1] = name
   end
   -- `db 1 ; default option`: the cursor starts on NEW NAME, not on a preset.
@@ -132,7 +129,7 @@ function NamePick:openNaming()
       if name and #name > 0 then
         self:choose(name)
       else
-        self:choose(self.items[2] or presetsFor(self.gender)[1])
+        self:choose(self.items[2] or presetsFor(data, self.gender)[1])
       end
     end,
   })
@@ -172,7 +169,7 @@ function NamePick:update(_dt)
       if self.fontOk then
         self:openNaming()
       else
-        self:choose(self.items[2] or presetsFor(self.gender)[1])
+        self:choose(self.items[2] or presetsFor(self.game.data, self.gender)[1])
       end
     else
       -- A preset returns through MovePlayerPicLeft, so the pic walks back
@@ -214,7 +211,7 @@ function NamePick:drawPanel()
     G.setColor(0, 0, 0, 1)
     for index, label in ipairs(self.items) do
       local prefix = (index == self.cursor) and "> " or "  "
-      G.print(prefix .. (index == 1 and Strings(label) or label), TEXT_X * 8,
+      G.print(prefix .. label, TEXT_X * 8,
         (TEXT_Y + (index - 1) * 2) * 8)
     end
     G.setColor(1, 1, 1, 1)
@@ -227,12 +224,11 @@ function NamePick:drawPanel()
   -- on the box's top border -- so the border tiles under it have to go, or
   -- the letters sit on a line the cart does not draw there.
   G.setColor(1, 1, 1, 1)
-  local title = Strings(TITLE)
+  local title = self.title
   G.rectangle("fill", TITLE_X * 8, TITLE_Y * 8, #Font.split(title) * 8, 8)
   Chrome.print(title, TITLE_X, TITLE_Y)
   for index, label in ipairs(self.items) do
-    Chrome.print(index == 1 and Strings(label) or label,
-      TEXT_X, TEXT_Y + (index - 1) * 2)
+    Chrome.print(label, TEXT_X, TEXT_Y + (index - 1) * 2)
   end
   Chrome.cursor(CURSOR_X, TEXT_Y + (self.cursor - 1) * 2)
   G.setColor(1, 1, 1, 1)
@@ -253,8 +249,6 @@ function NamePick:drawWidescreen(winW, winH)
   G.pop()
 end
 
-NamePick.PRESETS = PRESETS
-NamePick.PRESETS_FEMALE = PRESETS_FEMALE
 NamePick.presetsFor = presetsFor
 
 return NamePick

@@ -20,10 +20,14 @@
 -- one more entry in the list the hook receives.
 
 local BugContest = require("src.core.gen2.BugContest")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
+local CommonText = require("src.core.gen2.CommonText")
 local Logger = require("src.core.Logger")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
+local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
@@ -43,42 +47,15 @@ StartMenu.dockSelf = true
 
 -- STARTMENUITEM_* in the order .SetUpMenuItems appends them.  `need` is the
 -- save flag that unlocks the entry; nil means always shown.
---
--- Labels are the ASM's own strings, with the compression bytes expanded the
--- way the cart expands them at print time: "#DEX" is POKé + DEX (seven tiles),
--- while "<POKE>GEAR" is <PO><KE>GEAR -- the <PO> and <KE> glyphs ($70/$71) are
--- one tile each, so that row is six tiles wide, not eight.  That difference is
--- exactly what kept POKéGEAR hanging off the menu box's right edge.
+-- engine/menus/start_menu.asm:189-233
 local ITEMS = {
-  {
-    id = "pokedex", label = Strings.source("POKéDEX"), need = "pokedex",
-    desc = Strings.source("POKéMON\ndatabase"),
-  },
-  {
-    id = "pokemon", label = Strings.source("POKéMON"), need = "party",
-    desc = Strings.source("Party <PK><MN>\nstatus"),
-  },
-  {
-    id = "pack", label = Strings.source("PACK"), need = "pack",
-    desc = Strings.source("Contains\nitems"),
-  },
-  {
-    id = "pokegear", label = Strings.source("<PO><KE>GEAR"), need = "pokegear",
-    desc = Strings.source("Trainer's\nkey device"),
-  },
-  {
-    -- The player's own name is the label (.StatusString is "<PLAYER>").
-    id = "status", label = nil,
-    desc = Strings.source("Your own\nstatus"),
-  },
-  {
-    id = "save", label = Strings.source("SAVE"),
-    desc = Strings.source("Save your\nprogress"),
-  },
-  {
-    id = "option", label = Strings.source("OPTION"),
-    desc = Strings.source("Change\nsettings"),
-  },
+  { id = "pokedex", rom = "Pokedex", need = "pokedex" },
+  { id = "pokemon", rom = "Party", need = "party" },
+  { id = "pack", rom = "Pack", need = "pack" },
+  { id = "pokegear", rom = "Pokegear", need = "pokegear" },
+  { id = "status", rom = "Status" },
+  { id = "save", rom = "Save" },
+  { id = "option", rom = "Option" },
   {
     -- The mod manager's discoverable home, exactly as the Gen 1 start menu
     -- carries it: the row only appears once at least one mod has been
@@ -110,6 +87,16 @@ StartMenu.lastIndex = 1
 -- ui.start_menu.items identity: an unhooked build hands its own list back.
 local function sameItems(_, items) return items end
 
+local function descLines(text)
+  local out = {}
+  for line in (text .. "\n"):gmatch("(.-)\n") do out[#out + 1] = line end
+  return out
+end
+
+function StartMenu:romText(label, ...)
+  return RomText(self.game and self.game.data, label, nil, ...)
+end
+
 -- opts: save, onChoose(id), onClose(), unlocked (override table for tests)
 function StartMenu.new(game, opts)
   opts = opts or {}
@@ -136,11 +123,9 @@ function StartMenu.new(game, opts)
   for _, item in ipairs(items) do
     if item.translateLabel then item.label = Strings(item.label) end
     if item.translateDesc then
-      local translated = Strings(item.desc)
-      item.desc = {}
-      for line in (translated .. "\n"):gmatch("(.-)\n") do
-        item.desc[#item.desc + 1] = line
-      end
+      item.desc = descLines(Strings(item.desc))
+    elseif item.romDesc then
+      item.desc = descLines(item.desc)
     end
   end
   self.items = items
@@ -171,12 +156,10 @@ end
 -- Which entries the player has unlocked.  Derived from the save so the menu
 -- grows as the game does; `unlocked` overrides it wholesale for tests.
 -- .SetUpMenuItems tests two ENGINE flag bits, and both arrive as `setflag`
--- ids in save.engineFlags (constants/engine_flags.asm const order, via
--- World:setEngineFlag): `bit STATUSFLAGS_POKEDEX_F, [wStatusFlags]` is
--- ENGINE_POKEDEX = 11, written by Oak at Mr. Pokemon's house, and
--- `bit POKEGEAR_OBTAINED_F, [wPokegearFlags]` is ENGINE_POKEGEAR = 4,
--- written by Mom on the way out the door.
-local ENGINE_POKEGEAR, ENGINE_POKEDEX = 4, 11
+-- ids in save.engineFlags (via World:setEngineFlag): `bit
+-- STATUSFLAGS_POKEDEX_F, [wStatusFlags]` is ENGINE_POKEDEX, written by Oak at
+-- Mr. Pokemon's house, and `bit POKEGEAR_OBTAINED_F, [wPokegearFlags]` is
+-- ENGINE_POKEGEAR, written by Mom on the way out the door.
 
 function StartMenu:availability()
   if self.unlocked then return self.unlocked end
@@ -187,11 +170,12 @@ function StartMenu:availability()
   return {
     mods = status ~= nil and #(status.available or {}) > 0,
     -- ENGINE_POKEDEX first; pokedexReceived stays as the test/driver override.
-    pokedex = engine[ENGINE_POKEDEX] == true or save.pokedexReceived == true,
+    pokedex = engine[EngineFlags.id("ENGINE_POKEDEX")] == true
+      or save.pokedexReceived == true,
     party = #(save.party or {}) > 0,
     -- The PACK exists from the start; the cart gates it on nothing.
     pack = true,
-    pokegear = engine[ENGINE_POKEGEAR] == true
+    pokegear = engine[EngineFlags.id("ENGINE_POKEGEAR")] == true
       or (inventory.POKEGEAR or 0) > 0 or save.pokegearReceived == true,
   }
 end
@@ -200,8 +184,9 @@ function StartMenu:visibleItems()
   local available = self:availability()
   local contest = BugContest.isActive(self.save)
   self.contest = contest
-  local playerName = (self.save and self.save.player and self.save.player.name)
-    or "GOLD"
+  local player = self.save and self.save.player
+  local playerName = (player and player.name)
+    or Save.presetNames(self.game and self.game.data, player and player.gender)[1]
   local out = {}
   for _, item in ipairs(ITEMS) do
     local id = item.id
@@ -211,18 +196,25 @@ function StartMenu:visibleItems()
       if contest and id == "save" then
         -- pokecrystal engine/menus/start_menu.asm:330
         out[#out + 1] = {
-          label = Strings.source("QUIT"), value = "quitContest",
+          label = self:romText("StartMenu.QuitString"), value = "quitContest",
           -- pokecrystal engine/menus/start_menu.asm:231
-          desc = Strings.source("Quit and\nbe judged."),
-          translateLabel = true,
-          translateDesc = true,
+          desc = self:romText("StartMenu.QuitDesc"),
+          romDesc = true,
+        }
+      elseif item.rom then
+        out[#out + 1] = {
+          label = self:romText("StartMenu." .. item.rom .. "String",
+            { PLAYER = playerName }),
+          value = id,
+          desc = self:romText("StartMenu." .. item.rom .. "Desc"),
+          romDesc = true,
         }
       else
         out[#out + 1] = {
-          label = item.label or playerName,
+          label = item.label,
           value = id,
           desc = item.desc,
-          translateLabel = item.label ~= nil,
+          translateLabel = true,
           translateDesc = item.desc ~= nil,
         }
       end
@@ -340,7 +332,7 @@ end
 function StartMenu:promptText()
   if self.phase == "confirmContest" then
     -- pokecrystal data/text/common_2.asm:1381
-    return Strings("Would you like to\nend the Contest?"), "contest end"
+    return CommonText.plain(self:romText("_StartMenuContestEndText")), "contest end"
   end
   return Strings(Strings.source("Return to the\ntitle screen?")), "title screen"
 end
@@ -379,16 +371,17 @@ local function valueColumn(label, cartColumn)
   return math.max(cartColumn, 1 + labelTiles + 1)
 end
 
+-- engine/menus/menu_2.asm:154 StartMenu_PrintBugContestStatus
 function StartMenu:drawContestStatus()
   Chrome.textbox(0, 0, 17, 5)
-  local caught = Strings("CAUGHT")
-  local balls = Strings("BALLS:")
+  local caught = self:romText("StartMenu_PrintBugContestStatus.CaughtString")
+  local balls = self:romText("StartMenu_PrintBugContestStatus.BallsString")
   Chrome.print(caught, 1, 1)
   local mon = BugContest.caughtMon(self.save)
   Chrome.print(mon and (mon.nickname or mon.name or mon.species)
-    or Strings("None", "contest.caught"), valueColumn(caught, 8), 1)
+    or self:romText("StartMenu_PrintBugContestStatus.NoneString"), valueColumn(caught, 8), 1)
   if mon then
-    local level = Strings("LEVEL")
+    local level = self:romText("StartMenu_PrintBugContestStatus.LevelString")
     Chrome.print(level, 1, 3)
     Chrome.print(tostring(mon.level or 1), valueColumn(level, 7), 3)
   end
@@ -419,8 +412,8 @@ function StartMenu:draw()
     docked = Chrome.dockPush("topright")
     -- pokecrystal home/menu.asm:418
     Chrome.box(14, 7, 6, 5)
-    Chrome.print(Strings("YES"), 16, 8)
-    Chrome.print(Strings("NO"), 16, 10)
+    Chrome.print(self:romText("YesNoMenuHeader.MenuData#1"), 16, 8)
+    Chrome.print(self:romText("YesNoMenuHeader.MenuData#2"), 16, 10)
     Chrome.cursor(15, self.confirmChoice == 1 and 8 or 10)
     Chrome.dockPop(docked)
     return
@@ -432,8 +425,8 @@ function StartMenu:draw()
     self:drawPrompt()
     if not self:promptTyping() then
       Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-      Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-      Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+      Chrome.print(self:romText("YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+      Chrome.print(self:romText("YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
       Chrome.cursor(YESNO_X + 1,
         YESNO_Y + (self.confirmChoice == 1 and 1 or 3))
     end

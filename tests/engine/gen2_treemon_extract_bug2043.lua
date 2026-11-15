@@ -121,8 +121,8 @@ do
     symbols = { AsleepTreeMonsNite = { 0x0f, NITE } },
     manifest = { constants = { speciesOrder = SPECIES } },
   }, Extractor)
-  eq(gold:readAsleepTreeMons(), nil,
-    "a ROM without all three labels (pokegold) has no list")
+  check(not pcall(gold.readAsleepTreeMons, gold),
+    "a manifest without all three labels is an error, not an empty list")
 end
 
 -- ../pokecrystal/engine/battle/core.asm:6422 CheckSleepingTreeMon
@@ -144,11 +144,47 @@ do
 
   local empty = { treeMonsAsleep = { NITE = {}, DAY = {}, MORN = {} } }
   eq(Encounter.treeMonAsleep("SPEAROW", "NITE", "crystal", empty), false,
-    "an extracted list wins over the transcribed constant")
-  eq(Encounter.treeMonAsleep("SPEAROW", "NITE", "crystal", nil), true,
-    "which still answers for a cache without the table")
-  eq(Encounter.treeMonAsleep("SPEAROW", "NITE", "crystal", {}), true,
-    "or with it missing")
+    "only the extracted list is read")
+  check(Encounter.ASLEEP_TREEMONS == nil, "no hand-typed asleep table")
+  check(not pcall(Encounter.treeMonAsleep, "SPEAROW", "NITE", "crystal", nil),
+    "a crystal cache without treeMonsAsleep is an error")
+  check(not pcall(Encounter.treeMonAsleep, "SPEAROW", "NITE", "crystal", {}),
+    "and so is an encounters table missing it")
+  check(not pcall(Encounter.treeMonAsleep, "SPEAROW", "MORN", "crystal",
+      { treeMonsAsleep = { NITE = {}, DAY = {} } }),
+    "and a list missing one time of day")
+end
+
+do
+  local encounters = { trees = { ROCKY = "TREEMON_SET_ROCK" } }
+  check(not pcall(Encounter.treeSlot, encounters, "ROCKY", 0, 0,
+      function() return 0 end, { otId = 4, engine = "crystal" }),
+    "a tree map with no treeSets is an error, not a bite of nothing")
+  encounters.treeSets = {}
+  check(not pcall(Encounter.treeSlot, encounters, "ROCKY", 0, 0,
+      function() return 0 end, { otId = 4, engine = "crystal" }),
+    "and so is a usable set missing from treeSets")
+end
+
+do
+  local encounters = {
+    fishGroups = { POND = { old = { { chance = 255, timeGroup = 3 } } } },
+  }
+  check(not pcall(Encounter.fish, encounters, "POND", "old", "DAY",
+      function() return 0 end),
+    "a time_group row with no timeFishGroups is an error")
+  encounters.timeFishGroups = {}
+  check(not pcall(Encounter.fish, encounters, "POND", "old", "DAY",
+      function() return 0 end),
+    "and so is one whose group is missing")
+  encounters.timeFishGroups[3] = { day = { species = "SHELLDER", level = 20 },
+    nite = { species = "SHELLDER", level = 20 } }
+  eq((Encounter.fish(encounters, "POND", "old", "NITE",
+      function() return 0 end) or {}).species, "SHELLDER",
+    "the extracted group is read")
+  check(not pcall(Encounter.fishGroupFor, encounters, "FISHGROUP_QWILFISH",
+      Encounter.FISHSWARM_QWILFISH),
+    "a swarm with no swarm group in the cache is an error")
 end
 
 T.finish("gen2 treemon extract bug2043")

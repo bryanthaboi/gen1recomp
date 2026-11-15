@@ -69,17 +69,10 @@ return function(game)
     U.wait(1)
   end
   local seq = table.concat(seen, ",")
-  local PcAnim = require("src.core.game3.pc_anim")
-  local canLight = PcAnim.drawable(0x28A)
-  print("[u1b] turn-on metatile sequence " .. seq .. " atlasHas28A=" .. tostring(canLight))
+  print("[u1b] turn-on metatile sequence " .. seq)
   local _, Message = mods()
-  if canLight then
-    result(seq == "28A,28F,28A,28F,28A", "AnimatePcTurnOn flickers on/off/on/off/on")
-    result(pcMid() == 0x28A and Message and Message.isOpen and Message.isOpen(), "PC lit behind booted-up message")
-  else
-    result(seq == "" and pcMid() == 0x28F and Message and Message.isOpen and Message.isOpen(),
-      "PlayersPCOn 0x28A not in this cache's atlas: swap skipped, no black tile")
-  end
+  result(seq == "28A,28F,28A,28F,28A", "AnimatePcTurnOn flickers on/off/on/off/on")
+  result(pcMid() == 0x28A and Message and Message.isOpen and Message.isOpen(), "PC lit behind booted-up message")
   U.shot(game, DIR .. "/u1b_01_pc_lit_booted_msg.png")
 
   local PcMenu

@@ -122,12 +122,15 @@ do
 end
 
 do
-  local realBoxes = package.loaded["src.pokemon.Boxes"]
-  package.loaded["src.pokemon.Boxes"] = { deposit = function() return nil end }
+  local Boxes = require("src.pokemon.Boxes")
   local game = fakeGame()
   game.save.party = {}
   for i = 1, 6 do
     game.save.party[i] = Pokemon.new(Data, "RATTATA", 5)
+  end
+  Boxes.ensure(game.save)
+  for _ = 1, Boxes.CAPACITY do
+    table.insert(Boxes.active(game.save), Pokemon.new(Data, "RATTATA", 5))
   end
   check(take(game), "the refused take-it flow completes")
   eq(#game.save.party, 6, "the party is untouched")
@@ -139,7 +142,6 @@ do
   check(game.save.objectToggles == nil
         or game.save.objectToggles.FIGHTING_DOJO == nil,
         "and the ball stays on the mat")
-  package.loaded["src.pokemon.Boxes"] = realBoxes
 end
 
 package.loaded["src.render.TextBox"] = realTextBox

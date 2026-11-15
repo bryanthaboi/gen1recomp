@@ -137,7 +137,8 @@ do
     mon(100, 60),
     mon(50, 10, { species = "GEODUDE", nickname = "GEODUDE" }),
   }
-  local game = { data = { gen2MenuGfx = {} }, input = input,
+  local game = { data = { gen2MenuGfx = {},
+    text = require("tests.fixture_data.gen2_rom_text_s7_e") }, input = input,
     save = { party = party } }
   local menu = PartyMenu.new(game, { party = party, prompt = "useItem" })
   menu:beginSoftboiled(1, 20)

@@ -30,7 +30,6 @@ return function(game)
   local Fade = require("src.ui.game3.fade")
   local Party = require("src.core.game3.party")
   local FE = require("src.core.game3.field_effects")
-  local Ow = require("src.core.game3.ow_sprites")
   local QuestLog = require("src.ui.game3.quest_log")
   local QuestRecorder = require("src.core.game3.quest_log_recorder")
   local C = require("src.core.game3.constants").of(session.version)
@@ -80,6 +79,7 @@ return function(game)
   Player.reset(wx, wy, "left")
   Player.surfing, Player.currentElevation, Player.elevation = true, 1, 1
   for _, o in ipairs(Objects.forDraw()) do o.sight = 0 end
+  QuestRecorder.event(session, "ObtainedItemInLocation", { QuestRecorder.location(game, session), "TEA" })
   U.wait(30)
   if not check(holdUntil("left", function() return Player.cellX <= wx - 3 and not Player.moving end, 240),
       "3126 surfing three cells left") then return finish() end
@@ -131,27 +131,20 @@ return function(game)
   check(framesAtFlyOut ~= nil and #surfScene.frames == framesAtFlyOut,
     "3126 no samples during fly-out " .. tostring(framesAtFlyOut) .. "->" .. tostring(surfScene and #surfScene.frames))
 
-  local arrived = sceneFor(dest.map)
-  local walkGid = Ow.playerGraphicsId(game)
-  local first = arrived and arrived.frames[1] and arrived.frames[1].actors[1]
-  check(arrived ~= nil and arrived.events[1].key == "ArrivedInLocation", "3126 Arrived scene recorded")
-  check(first ~= nil and first.id == 255 and first.x == dest.x * 16 and first.y == dest.y * 16,
-    "3126 first Arrived frame has the player standing on the landing cell")
-  local rider = 0
-  for _, f in ipairs(arrived and arrived.frames or {}) do
-    local a = f.actors[1]
-    if not a or a.id ~= 255 or a.graphicsId ~= walkGid or a.surf then rider = rider + 1 end
+  local arrivedAfterFly = 0
+  for _, sc in ipairs(session.questLog and session.questLog.scenes or {}) do
+    for _, e in ipairs(sc.events) do if e.key == "ArrivedInLocation" then arrivedAfterFly = arrivedAfterFly + 1 end end
   end
-  check(arrived ~= nil and rider == 0, "3126 Arrived scene has no rider or missing-player frames " .. rider)
+  check(sceneFor(dest.map) == nil and arrivedAfterFly == 0, "3126 no Arrived scene after Fly " .. arrivedAfterFly)
 
   local playback = QuestLog.begin(session)
   if not check(playback ~= nil, "3126 recap playback begins") then return finish() end
-  local surfIndex, arrivedIndex
+  local surfIndex, landingIndex
   for i, s in ipairs(playback.scenes) do
     if s.map == route then surfIndex = i end
-    if s.map == dest.map then arrivedIndex = i end
+    if s.map == dest.map then landingIndex = i end
   end
-  check(surfIndex ~= nil and arrivedIndex ~= nil, "3126 recap has the surf and Arrived scenes")
+  check(surfIndex ~= nil and landingIndex == nil, "3126 recap has the surf scene and no Fly landing scene")
   local phase = game.phase
   game.questPlayback = playback
   game.phase = "quest_log"
@@ -164,8 +157,6 @@ return function(game)
   check(U.still(game, DIR .. "/3126_02_recap_surf_blob.png"), "3126 recap surf shot")
   FE.drawSurfBlob = realDraw
   check(blobs > 0, "3126 recap draws the surf blob")
-  playback.index, playback.ticks = arrivedIndex or 1, 0
-  check(U.still(game, DIR .. "/3126_03_recap_arrived_no_rider.png"), "3126 recap Arrived shot")
   game.questPlayback = nil
   game.phase = phase
   finish()

@@ -261,7 +261,8 @@ function Pyramid.composeLayout(sess, baseLayout, keepPosition)
     local ox, oy = (i % Pyramid.SQUARES_WIDE) * S, math.floor(i / Pyramid.SQUARES_WIDE) * S
     for y = 0, S - 1 do
       for x = 0, S - 1 do
-        local c = src.cells[y * src.width + x + 1] or { mid = 0, coll = 0xff, elev = 0 }
+        local c = src.cells[y * src.width + x + 1]
+          or error(("pyramid square %d has no cell at %d,%d"):format(i, x, y))
         local out = { mid = c.mid, coll = c.coll, elev = c.elev }
         if c.mid == exitMid and i ~= exit then
           if i == entrance and not keepPosition then px, py = ox + x, oy + y end

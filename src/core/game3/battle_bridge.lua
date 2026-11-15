@@ -38,6 +38,21 @@ local function safari_mode_active(session)
   return Flags.getFlag(Space.store, nil, FLAG_SYS_SAFARI_MODE) and true or false
 end
 
+-- pokefirered/src/battle_setup.c:542
+local function player_party_level_sum(party, numMons)
+  local sum = 0
+  for _, mon in ipairs(party or {}) do
+    local sp = tonumber(mon.species or mon.speciesId) or 0
+    if sp ~= 0 and sp ~= 412 and not mon.isEgg and (tonumber(mon.hp) or 0) ~= 0 then
+      sum = (sum + (tonumber(mon.level or mon.lvl) or 0)) % 256
+      numMons = numMons - 1
+      if numMons == 0 then break end
+    end
+  end
+  return sum
+end
+BattleBridge._playerPartyLevelSum = player_party_level_sum
+
 -- pokefirered/src/overworld.c:1270
 local function map_battle_scene(mapId, game)
   if type(mapId) ~= "string" then return nil end
@@ -769,8 +784,8 @@ local function start_battle(mod, game, foe, opts, lifecycle)
     local Field = package.loaded["src.core.game3.field"] or require("src.core.game3.field")
     if Field and Field.lock then Field.lock(lifecycle); lockedDefault = lifecycle == nil end
 
-    local leadMon = battleParty and battleParty[1]
-    local playerLv = leadMon and (leadMon.level or leadMon.lvl) or 5
+    -- pokefirered/src/battle_setup.c:616
+    local playerLv = player_party_level_sum(battleParty, 1)
     local foeLv = (foe and foe.level) or (foe and foe.party and foe.party[1] and (foe.party[1].level or foe.party[1].lvl)) or 3
     if isDouble then
       playerLv, foeLv = PartyView.doubleTransitionLevels(battleParty, foe and foe.party)
@@ -778,8 +793,11 @@ local function start_battle(mod, game, foe, opts, lifecycle)
 
     local pickOpts = {
       wild = opts.wild,
-      mapKind = mapKind,
       terrain = opts.terrain,
+      -- pokefirered/src/battle_setup.c:517
+      mapType = mapType,
+      mapBehavior = mapBehavior,
+      flashLevel = session.flashLevel,
       playerLevel = playerLv,
       enemyLevel = foeLv,
       trainerId = startOpts.trainerId,
@@ -790,10 +808,6 @@ local function start_battle(mod, game, foe, opts, lifecycle)
       transitionId = opts.transitionId,
     }
     if require("src.core.game3.profile").family(session) == "rse" then
-      -- pokeemerald/src/battle_setup.c:696
-      pickOpts.mapType = mapType
-      pickOpts.mapBehavior = mapBehavior
-      pickOpts.flashLevel = session.flashLevel
       pickOpts.pyramid = opts.pyramid
     end
     local picked, tid = guarded(BattleTransition.pick, pickOpts)

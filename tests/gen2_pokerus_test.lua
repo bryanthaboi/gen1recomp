@@ -56,7 +56,8 @@ local MOVES = {
     pp = 35, category = "physical" },
 }
 
-local DATA = { pokemon = POKEMON, moves = MOVES }
+local DATA = { pokemon = POKEMON, moves = MOVES,
+  text = require("tests.fixture_data.gen2_rom_text_s7_a").text() }
 
 -- A roller that hands back a fixed sequence, so every branch below is chosen
 -- rather than sampled.  Running off the end is a test bug, not a pass.

@@ -40,8 +40,8 @@ import re  # noqa: E402
 
 # See make_rom_manifest.py's POKERED_REVISION comment for why this pin
 # matters -- pokeyellow can drift the same way pokered did for the Silph Co
-# 10F/11F rename. Verified against this commit: symbols/text/trainerHeaders/
-# trainerPartyOverrides all come out byte-for-byte identical to the
+# 10F/11F rename. Verified against this commit: symbols/text/trainerHeaders
+# all come out byte-for-byte identical to the
 # committed rom_manifest_yellow.json (field.oldManBattle does not -- a
 # separate, pre-existing, undiagnosed discrepancy unrelated to text labels,
 # left alone the same way field.seafoam/tradeArt were for Red/Blue).

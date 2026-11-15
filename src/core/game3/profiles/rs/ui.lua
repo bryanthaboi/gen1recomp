@@ -33,6 +33,8 @@ TextAliases.gText_PkmnAlreadyInBattle = "gOtherText_AlreadyBattle"
 TextAliases.gText_PkmnAlreadySelected = "gOtherText_AlreadySelected"
 TextAliases.gText_EggCantBattle = "gOtherText_EGGCantBattle"
 TextAliases.gText_PkmnCantSwitchOut = "gOtherText_CantBeSwitched"
+-- pokeruby/src/pokemon_3.c:1317
+TextAliases.gText_PkmnsXPreventsSwitching = "BattleText_PreventedSwitch"
 -- pokeruby/src/battle_party_menu.c:655
 TextAliases.gText_CantSwitchWithAlly = "gOtherText_CantSwitchPokeWithYours"
 TextAliases.gText_Hoenn = "gOtherText_Hoenn"

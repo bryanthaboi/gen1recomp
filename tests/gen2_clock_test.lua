@@ -18,7 +18,13 @@ require("src.core.Logger").warn = function() end
 
 local Clock = require("src.core.gen2.Clock")
 local InitClock = require("src.ui.gen2.InitClock")
-local Strings = require("src.core.Strings")
+local Fixture = require("tests.fixture_data.gen2_rom_text_s7_c")
+local DATA = { text = Fixture.text() }
+
+local function newClock(game, opts)
+  game.data = game.data or DATA
+  return InitClock.new(game, opts)
+end
 
 -- A stub input the screen drives off, the same shape Input:wasPressed has.
 local function fakeInput()
@@ -95,7 +101,7 @@ do
   local save = {}
   local input = fakeInput()
   local done = {}
-  local screen = InitClock.new({ input = input }, {
+  local screen = newClock({ input = input }, {
     save = save,
     onDone = function(hour, minute) done = { hour = hour, minute = minute } end,
   })
@@ -103,11 +109,11 @@ do
   eq(screen.hour, 10, "with InitClock's own default of 10 AM")
   eq(screen.minute, 0, "and no minutes")
 
-  -- OakTimeWokeUpText is two `para` pages, so A turns the page before it takes
-  -- the box down.
-  eq(#screen:pages(), 2, "Oak's opening is two pages")
+  -- data/text/common_1.asm:96 _OakTimeWokeUpText
+  eq(#screen:pages(), 3, "Oak's opening is three pages")
   press(screen, input, "a")
   eq(screen.phase, "intro", "the first A turns the page")
+  press(screen, input, "a")
   check(screen:pageText():find("clock", 1, true) ~= nil,
     "onto the one that asks about the clock")
   press(screen, input, "a")
@@ -179,10 +185,10 @@ eq(InitClock.responseKey(18), "soDark", "and NITE_HOUR is dark again")
 -- number and no meridiem at all.  These read "12 AM" / "1 PM" while InitClock
 -- built the string that way, which is what let InitClock.timeString append
 -- ":mm" to a meridiem and have Oak say "5 AM:30".
-eq(InitClock.hourString(0), "NITE 12", "PrintHour shows midnight as NITE 12")
-eq(InitClock.hourString(12), "DAY 12", "and noon as DAY 12")
-eq(InitClock.hourString(13), "DAY 1", "and the afternoon on a 12-hour clock")
-eq(InitClock.timeString(5, 30), "MORN 5:30",
+eq(InitClock.hourString(0, DATA), "NITE 12", "PrintHour shows midnight as NITE 12")
+eq(InitClock.hourString(12, DATA), "DAY 12", "and noon as DAY 12")
+eq(InitClock.hourString(13, DATA), "DAY 1", "and the afternoon on a 12-hour clock")
+eq(InitClock.timeString(5, 30, DATA), "MORN 5:30",
    "and OakText_ResponseToSetTime's line is PrintHour, ':', two-digit minutes")
 
 -- --------------------------------------------------------- the weekday wheel
@@ -190,17 +196,17 @@ do
   local save = {}
   local input = fakeInput()
   local picked
-  local screen = InitClock.new({ input = input }, {
+  local screen = newClock({ input = input }, {
     mode = "day", save = save,
     onDone = function(day) picked = day end,
   })
   eq(screen.phase, "day", "the wheel opens on its picker, with no preamble")
   eq(screen.day, 0, "`xor a / ld [wTempDayOfWeek], a`: SUNDAY")
-  eq(screen:display(), "SUNDAY", "which is what the box shows")
+  eq(screen:display(), " SUNDAY", "which is what the box shows")
   for _ = 1, 2 do
     press(screen, input, "up")
   end
-  eq(screen:display(), "TUESDAY", "up walks the wheel forward")
+  eq(screen:display(), " TUESDAY", "up walks the wheel forward")
   press(screen, input, "down")
   press(screen, input, "down")
   press(screen, input, "down")
@@ -220,7 +226,7 @@ end
 do
   local save = {}
   local finished = false
-  local screen = InitClock.new({}, {
+  local screen = newClock({}, {
     save = save, autoConfirm = true,
     onDone = function() finished = true end,
   })
@@ -236,7 +242,7 @@ end
 -- Drawing must not throw with the stub canvas: the layout is transcribed from
 -- hlcoord calls, so a bad coordinate is a crash rather than a wrong pixel.
 do
-  local screen = InitClock.new({}, { save = {} })
+  local screen = newClock({}, { save = {} })
   for _, phase in ipairs({ "intro", "hour", "confirm-hour", "minute",
       "confirm-minute", "response", "day", "confirm-day" }) do
     screen.phase = phase
@@ -250,23 +256,26 @@ do
   local Chrome = require("src.ui.gen2.Chrome")
   local priorPrint = Chrome.print
   local rows = {}
-  Chrome.print = function(text, _tx, ty) rows[text] = ty end
-  local screen = InitClock.new({}, { save = {} })
+  Chrome.print = function(text, _tx, ty) rows[#rows + 1] = { text, ty } end
+  local screen = newClock({}, { save = {} })
   settle(screen)
   screen:drawPanel()
   Chrome.print = priorPrint
-  eq(rows["Zzz... Hm? Wha...?"], 14, "Oak's first line prints on row 14")
-  eq(rows["You woke me up!"], 16, "and `line` puts the second on row 16")
+  local first, second = DATA.text._OakTimeWokeUpText:match("^(.-)\n(.-)\f")
+  eq(rows[1] and rows[1][1], first, "Oak's first line is the cache's")
+  eq(rows[1] and rows[1][2], 14, "Oak's first line prints on row 14")
+  eq(rows[2] and rows[2][1], second, "and the second line is too")
+  eq(rows[2] and rows[2][2], 16, "and `line` puts the second on row 16")
 end
 
 -- ../pokecrystal/engine/rtc/timeset.asm:385
 do
   local Chrome = require("src.ui.gen2.Chrome")
-  local day = InitClock.new({}, { mode = "day", save = {} })
+  local day = newClock({}, { mode = "day", save = {} })
   eq(day.isOpaque, false, "SetDayOfWeek draws over the map")
   eq(day:drawsWidescreen(), false, "and paints no surround of its own")
   eq(day:wantsFillScale(), false, "nor asks for the fill scale")
-  local clock = InitClock.new({}, { mode = "clock", save = {} })
+  local clock = newClock({}, { mode = "clock", save = {} })
   eq(clock.isOpaque, true, "InitClock still runs on a cleared page")
   eq(clock:drawsWidescreen(), true, "with its own widescreen surround")
   -- ../pokecrystal/engine/rtc/timeset.asm:22-32
@@ -305,7 +314,7 @@ end
 
 -- ../pokecrystal/home/print_text.asm:5
 do
-  local slow = InitClock.new(
+  local slow = newClock(
     { input = fakeInput(), save = { options = { textSpeed = "SLOW" } } },
     { save = {} })
   check(slow.typer ~= nil, "the clock screen types its text")
@@ -314,11 +323,11 @@ do
   eq(slow.typer.shown, 5, "SLOW is one character every five frames")
 
   local input = fakeInput()
-  local fast = InitClock.new(
+  local fast = newClock(
     { input = input, save = { options = { textSpeed = "FAST" } } },
     { save = {} })
-  for _ = 1, 25 do fast:update(0) end
-  eq(fast.typer.shown, 25, "FAST is one a frame")
+  for _ = 1, 10 do fast:update(0) end
+  eq(fast.typer.shown, 10, "FAST is one a frame")
   check(not fast.typer:done(), "the page is still going")
   input:press("a")
   fast:update(0)
@@ -329,15 +338,15 @@ do
   eq(fast.page, 2, "the next A turns it")
   check(not fast.typer:done(), "and the new page starts from nothing")
 
-  local driven = InitClock.new({}, { save = {}, autoConfirm = true })
+  local driven = newClock({}, { save = {}, autoConfirm = true })
   check(driven.typer.instant, "autoConfirm takes the whole line at once")
-  local wheel = InitClock.new({}, { mode = "day", save = {} })
+  local wheel = newClock({}, { mode = "day", save = {} })
   check(wheel.typer.instant, "and so does SetDayOfWeek")
 end
 
 -- ../pokecrystal/home/text.asm:502
 do
-  local screen = InitClock.new({}, { save = {}, hour = 12, minute = 0 })
+  local screen = newClock({}, { save = {}, hour = 12, minute = 0 })
   screen.phase = "response"
   eq(InitClock.responseKey(12), "yikes", "noon is the three-line response")
   local pages = screen:pages()
@@ -348,66 +357,51 @@ do
     "page two keeps line 2 on top and scrolls line 3 under it")
 end
 
--- Clock.DAY_NAMES / Clock.weekdayName / Clock.daytimeLabel: the single home
--- InitClock, MainMenu and the Pokegear clock card all share, so a weekday
--- cannot be named one way on one screen and another way on the next.
+-- engine/menus/main_menu.asm:237 PrintDayOfWeek, engine/rtc/timeset.asm:688
 do
-  eq(Clock.weekdayName(1), "SUNDAY", "1-based, SUNDAY first")
-  eq(Clock.weekdayName(6), "FRIDAY", "and the rest in wCurDay's order")
-  check(Clock.weekdayName(0) == nil, "day 0 is out of range")
-  check(Clock.weekdayName(8) == nil, "and so is day 8")
+  eq(Clock.weekdayName(1, DATA), "SUNDAY", "1-based, SUNDAY first")
+  eq(Clock.weekdayName(6, DATA), "FRIDAY", "and the rest in wCurDay's order")
+  check(Clock.weekdayName(0, DATA) == nil, "day 0 is out of range")
+  check(Clock.weekdayName(8, DATA) == nil, "and so is day 8")
 
-  eq(Clock.daytimeLabel(4), "MORN", "daytimeLabel matches clockDaytime's word")
-  eq(Clock.daytimeLabel(10), "DAY", "for every hour band")
-  eq(Clock.daytimeLabel(20), "NITE", "including the wrap back to NITE")
+  eq(Clock.daytimeLabel(4, DATA), "MORN", "daytimeLabel matches clockDaytime's word")
+  eq(Clock.daytimeLabel(10, DATA), "DAY", "for every hour band")
+  eq(Clock.daytimeLabel(20, DATA), "NITE", "including the wrap back to NITE")
 
-  local MainMenu = require("src.ui.gen2.MainMenu")
-  check(MainMenu.DAYS == Clock.DAY_NAMES,
-    "MainMenu reuses the same table InitClock and the Pokegear do")
+  check(not pcall(Clock.weekdayName, 1, { text = Fixture.without("PrintDayOfWeek.Day") }),
+    "a cache without the weekday label is an error")
+  check(not pcall(Clock.daytimeLabel, 4, { text = {} }),
+    "and so is one without the time-of-day words")
 end
 
--- ------------------------------------------------- a translation mod's turn
---
--- DAYS, the clockDaytime word and the "o'clock"/"min." suffixes used to
--- bypass Strings entirely, so a translation mod's `strings` registry had no
--- seam to catch them: the picker kept printing the English day name and
--- "o'clock" no matter the catalog (reported from a real Gold build).
 do
-  Strings.load({
-    strings = {
-      SUNDAY = "DIMANCHE",
-      MORN = "MATIN",
-      ["%s o'clock"] = "%s heures",
-      ["%d min."] = "%d min",
-    },
-  })
+  local localized = { text = Fixture.text({
+    ["SetDayOfWeek.Sunday"] = " DIMANCHE",
+    ["GetTimeOfDayString.morn_string"] = "MATIN",
+    String_oclock = "heures",
+    String_min = "min",
+  }) }
 
-  local wheel = InitClock.new({ input = fakeInput() }, { mode = "day", save = {} })
-  eq(wheel:display(), "DIMANCHE", "a translated catalog reaches the day wheel")
+  local wheel = newClock({ input = fakeInput(), data = localized },
+    { mode = "day", save = {} })
+  eq(wheel:display(), " DIMANCHE", "the cache's weekday reaches the day wheel")
 
-  eq(InitClock.hourString(4), "MATIN 4",
+  eq(InitClock.hourString(4, localized), "MATIN 4",
     "and the clockDaytime word, through Clock.daytimeLabel")
-  eq(InitClock.oclockString(4), "MATIN 4 heures",
-    "and the o'clock suffix, template and all")
+  eq(InitClock.oclockString(4, localized), "MATIN 4 heures",
+    "and String_oclock")
 
-  local minutePicker = InitClock.new({ input = fakeInput() }, { save = {} })
+  local minutePicker = newClock({ input = fakeInput(), data = localized }, { save = {} })
   minutePicker.phase = "minute"
   minutePicker.minute = 30
-  eq(minutePicker:display(), "30 min", "and the minutes picker's own suffix")
+  eq(minutePicker:display(), "30 min", "and String_min")
 
   -- Palettes.clockDaytime itself must stay untranslated even with a catalog
   -- loaded: FORCED_DAYTIME and the rest of Palettes.lua's own lookups
   -- compare against its return value as an internal key, not display text.
   local Palettes = require("src.world.gen2.Palettes")
   eq(Palettes.clockDaytime(4), "MORN",
-    "the internal palette key is untouched by the loaded catalog")
-
-  -- Module state is process-global and tests/run_tests.lua runs every suite
-  -- in one process (see tests/mod_strings_tests.lua's own note): leaving the
-  -- catalog loaded would translate the day/hour of every suite after this
-  -- one.
-  Strings.load({})
-  check(not Strings.active(), "the catalog is unloaded for the suites after this one")
+    "the internal palette key is untouched by the cache's words")
 end
 
 S.finish()
