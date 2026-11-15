@@ -275,6 +275,7 @@ tests/engine/gen2_badge_jingle_bug1930.lua
 tests/engine/gen2_badge_sfx_after_waitbutton_bug1934.lua
 tests/engine/gen2_bake_chunk_3093_test.lua
 tests/engine/gen2_bake_queue_test.lua
+tests/engine/gen2_boot_binds_engine_flags_3147.lua
 tests/engine/gen2_prefetch_drain_3093.lua
 tests/engine/gen2_ball_anim_id_bug1804.lua
 tests/engine/gen2_ball_throw_pic_latch_bug1232.lua
