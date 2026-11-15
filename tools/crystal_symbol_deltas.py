@@ -73,8 +73,6 @@ ADD_SYMBOLS = frozenset({
     "MansionPalette1", "MansionPalette2", "PokeComPalette", "RadioTowerPalette",
     # data/radio/buenas_passwords.asm:1; engine/pokegear/radio.asm:1713
     "BuenasPasswordTable", "BuenasPasswordChannelName",
-    # engine/overworld/wildmons.asm:493-524 -- Raikou and Entei only.
-    "InitRoamMons",
     # data/events/unown_walls.asm:7,15 -- the four Ruins of Alph wall words
     # and the menu box each one is drawn in.
     "UnownWalls", "MenuHeaders_UnownWalls",
@@ -100,6 +98,19 @@ ADD_SYMBOLS = frozenset({
     "AsleepTreeMonsNite", "AsleepTreeMonsDay", "AsleepTreeMonsMorn",
     # engine/gfx/color.asm:1301
     "PartyMenuBGPalette",
+    # engine/events/odd_egg.asm:93, data/events/odd_eggs.asm:10,37
+    "_GiveOddEgg.Odd", "OddEggProbabilities", "OddEggs",
+    # engine/events/dratini.asm:72,79
+    "GiveDratini.Moveset0", "GiveDratini.Moveset1",
+    # data/items/buena_prizes.asm:1, engine/events/buena.asm:263
+    "BuenaPrizeItems", "Buena_PrizeMenu.Prizes",
+    # engine/events/poke_seer.asm:178,203,214,357
+    "GetCaughtLevel.unknown_level", "GetCaughtTime.times",
+    "UnknownCaughtData.unknown", "SeerAdviceTexts",
+    # engine/events/battle_tower/battle_tower.asm:1311
+    "String_MysteryJP",
+    # mobile/mobile_5f.asm:484
+    "MenuHeader_ChallengeExplanationCancel",
 })
 
 # Mobile System GB art, all of it present in the international v1.0 object:

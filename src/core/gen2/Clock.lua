@@ -17,53 +17,42 @@
 -- and World only ever reads it.
 
 local Palettes = require("src.world.gen2.Palettes")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
-local Strings = require("src.core.Strings")
 
 local Clock = {}
 
 Clock.MINUTES_PER_DAY = 24 * 60
 Clock.DAYS = 7
 
--- data/text/day_of_week.asm order, which is wCurDay's own: SUNDAY is 0, so
--- index 1 is SUNDAY -- matching both InitClock's `self.day + 1` and
--- `Clock.weekday(save) + 1`.  Strings.source, not Strings: built at require
--- time, before Strings.load has a catalog, so Clock.weekdayName looks each
--- name up at display time instead (src/battle/MoveEffects.lua's STAT_LABEL
--- is the same pattern).  One shared table and one lookup function, so
--- InitClock's screens, the main menu clock box and the Pokegear clock card
--- cannot drift apart on what a weekday is called.
-Clock.DAY_NAMES = {
-  Strings.source("SUNDAY"), Strings.source("MONDAY"), Strings.source("TUESDAY"),
-  Strings.source("WEDNESDAY"), Strings.source("THURSDAY"), Strings.source("FRIDAY"),
-  Strings.source("SATURDAY"),
-}
-
--- The translated name for a 1-based weekday (SUNDAY = 1), or nil if `day` is
--- out of range.
-function Clock.weekdayName(day)
-  local name = Clock.DAY_NAMES[day]
-  return name and Strings(name)
+-- engine/menus/main_menu.asm:237 PrintDayOfWeek
+function Clock.weekdayName(day, data)
+  if type(day) ~= "number" or day < 1 or day > Clock.DAYS then return nil end
+  return RomText(data, "PrintDayOfWeek.Days#" .. day)
+    .. RomText(data, "PrintDayOfWeek.Day")
 end
 
--- The three words Palettes.clockDaytime can hand back, translated (never
--- DARK: that one only comes out of Palettes.daytimeFor, for a PALETTE_DARK
--- map, and is never printed as text).  Strings.source, not Strings:
--- clockDaytime's return value is also an internal key every
--- FORCED_DAYTIME/palette lookup in Palettes.lua compares against, so THAT
--- stays untranslated -- only this table, and Clock.daytimeLabel below, look
--- a word up, at the UI call sites that actually print it.
-local DAYTIME_LABEL = {
-  MORN = Strings.source("MORN"), DAY = Strings.source("DAY"),
-  NITE = Strings.source("NITE"),
+-- engine/rtc/timeset.asm:503 .WeekdayStrings
+local SET_DAY_LABEL = {
+  "SetDayOfWeek.Sunday", "SetDayOfWeek.Monday", "SetDayOfWeek.Tuesday",
+  "SetDayOfWeek.Wednesday", "SetDayOfWeek.Thursday", "SetDayOfWeek.Friday",
+  "SetDayOfWeek.Saturday",
 }
 
--- clockDaytime's word, translated -- the one InitClock's clock-setting
--- screen and the Pokegear's clock card print (DisplayHourOClock /
--- Pokegear_UpdateClock).
-function Clock.daytimeLabel(hour)
-  local daytime = Palettes.clockDaytime(hour)
-  return Strings(DAYTIME_LABEL[daytime] or daytime)
+function Clock.setDayName(day, data)
+  local label = SET_DAY_LABEL[day]
+  return label and RomText(data, label)
+end
+
+-- engine/rtc/timeset.asm:688 GetTimeOfDayString
+local DAYTIME_LABEL = {
+  MORN = "GetTimeOfDayString.morn_string",
+  DAY = "GetTimeOfDayString.day_string",
+  NITE = "GetTimeOfDayString.nite_string",
+}
+
+function Clock.daytimeLabel(hour, data)
+  return RomText(data, DAYTIME_LABEL[Palettes.clockDaytime(hour)])
 end
 
 -- InitClock's own default: `ld a, 10 ; default hour = 10 AM`, with the minute

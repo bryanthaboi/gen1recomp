@@ -57,6 +57,10 @@ if identity and identity ~= "" then
     if h then h:close(); IDROOT = r; break end
   end
 end
+if not IDROOT then
+  local dir = require("tests.game3_cache").gameDir("emerald", "scripts/text.lua")
+  IDROOT = dir and dir .. "/"
+end
 
 local function readFile(path)
   if files[path] then return files[path] end

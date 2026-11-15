@@ -18,6 +18,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 battle items")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -96,7 +97,8 @@ end
 local DATA = {
   pokemon = POKEMON,
   moves = MOVES,
-  text = require("tests.gen2_battle_text_fixture")(), type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
+  text = require("tests.fixture_data.gen2_rom_text_s7_g").text(nil, require("tests.gen2_battle_text_fixture")()),
+  type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
   items = {
     POTION = item("POTION"),
     ANTIDOTE = item("ANTIDOTE"),

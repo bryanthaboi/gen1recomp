@@ -4,6 +4,16 @@ local T=require("tests.harness")
 local Data=require("src.core.Data")
 Data:load()
 require("src.render.Font").load(Data)
+local YELLOW_LOW_COST={
+  _SafariZoneLowCostText1="\fOh, all right, pay\nme what you have.{PROMPT}",
+  _SafariZoneLowCostText2="But, I can't give\nyou all 30 BALLs.{DONE}",
+  _SafariZoneLowCostText3="\fYou're persistent,\naren't you?\fOK, you can go in\nfor free, but\vjust this once!{DONE}",
+  _SafariZoneLowCostText5="I'm sorry, but you\nhave to pay to\venter.{DONE}",
+  _SafariZoneLowCostText6="You can't enter\nwithout paying!{DONE}",
+  _SafariZoneLowCostText7="I said, no money,\nno entry!{DONE}",
+  _SafariZoneLowCostText8="Read my lips, NO!\nGet it?{DONE}",
+}
+for k,v in pairs(YELLOW_LOW_COST) do Data.text[k]=Data.text[k] or v end
 local Game=require("src.core.Game")
 local Input=require("src.core.Input")
 local Renderer=require("src.render.Renderer")

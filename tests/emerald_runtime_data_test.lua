@@ -22,6 +22,10 @@ for _, r in ipairs(roots) do
   end
 end
 if not ROOT then
+  local dir = require("tests.game3_cache").gameDir("emerald", "pokemon/hoenn.lua")
+  ROOT = dir and dir .. "/"
+end
+if not ROOT then
   print("emerald_runtime_data_test: skipped (no Emerald cache; set POKEPORT_IDENTITY)")
   os.exit(0)
 end

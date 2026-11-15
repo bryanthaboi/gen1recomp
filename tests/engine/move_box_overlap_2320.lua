@@ -15,13 +15,13 @@ do
     items = { PP_UP = { name = "PP UP" } },
     moves = { LICK = { name = "LICK", pp = 30 } },
     pokemon = { GENGAR = { name = "GENGAR" } },
-    text = {},
+    text = dofile("tests/fixture_data/text.lua"),
   }
   local t = { species = "GENGAR", hp = 20, stats = { hp = 20 },
               moves = { { id = "LICK", pp = 48, ppUps = 3 } } }
   local result, payload = ItemEffects.use(Data, {}, "PP_UP", t, nil, 1)
   eq(result, "ppmaxed", "PP UP on a move with 3 PP Ups reports maxed out")
-  eq(payload and payload[1], "LICK's PP\nis maxed out.", "and prints PPMaxedOutText")
+  eq(payload and payload[1], "LICK's PP\nis maxed out.{PROMPT}", "and prints PPMaxedOutText")
   eq(t.moves[1].ppUps, 3, "the move is untouched")
 end
 
@@ -67,7 +67,7 @@ local function newGame()
                 SURF = { name = "SURF" }, MEGA_PUNCH = { name = "MEGA PUNCH", pp = 20 } },
       pokemon = { GENGAR = { name = "GENGAR" } },
       statuses = {},
-      text = {},
+      text = dofile("tests/fixture_data/text.lua"),
     },
   }
   game.stack = {

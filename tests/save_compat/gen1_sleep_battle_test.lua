@@ -147,8 +147,8 @@ for n = 1, 7 do
   local ownerBattler = BattleState.makeBattler(Data, save.party[1], true, nil)
   local peerBattler = BattleState.makeBattler(Data, peer, false, nil)
   for turn = 1, n do
-    local ownerCanMove = Status.beforeMove(ownerBattler, function() return 1 end)
-    local peerCanMove = Status.beforeMove(peerBattler, function() return 1 end)
+    local ownerCanMove = Status.beforeMove(ownerBattler, function() return 1 end, { data = Data })
+    local peerCanMove = Status.beforeMove(peerBattler, function() return 1 end, { data = Data })
     eq(peerCanMove, ownerCanMove, ("%d: link turn %d has the same sleep result"):format(n, turn))
     eq(peer.status, save.party[1].status, ("%d: link turn %d has the same status"):format(n, turn))
     eq(peer.sleepTurns, save.party[1].sleepTurns, ("%d: link turn %d has the same remaining counter"):format(n, turn))

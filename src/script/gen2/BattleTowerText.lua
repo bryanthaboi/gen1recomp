@@ -33,9 +33,11 @@ end
 -- trainer_text.asm:51-79: `kind` is the BATTLETOWERTEXT_* byte and `index`
 -- the stored wBT_TrainerTextIndex.
 function M.pick(roster, trainerIndex, kind, index)
-  local text = roster and roster.text
-  local trainer = roster and roster.trainers[(trainerIndex or 0) + 1]
-  if not (text and trainer) then return nil end
+  if not roster then return nil end
+  local text = roster.text
+  if type(text) ~= "table" then error("trainers.lua battleTower has no text", 2) end
+  local trainer = roster.trainers[(trainerIndex or 0) + 1]
+  if not trainer then return nil end
   local set = M.set(text, trainer)
   local list = (kind == M.INTRO and set.intro)
     or (kind == M.WIN and set.playerLost)
@@ -49,7 +51,10 @@ function M.forVm(vm, kind, random)
   local hooks = vm.specials or {}
   local roster = BattleTower.roster(hooks.data and hooks.data())
   local opponent = vm.btOpponent
-  if not (roster and roster.text and opponent) then return nil end
+  if not (roster and opponent) then return nil end
+  if type(roster.text) ~= "table" then
+    error("trainers.lua battleTower has no text", 2)
+  end
   local trainer = roster.trainers[opponent.index + 1]
   if not trainer then return nil end
   if kind == M.INTRO then

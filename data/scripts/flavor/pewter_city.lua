@@ -112,8 +112,7 @@ local function museumEscortWalk(game, ow)
       guy.facing = "up"
     end
     Music.playMap(game.data, "PEWTER_CITY")
-    push(game, t._PewterCitySuperNerd1ItsRightHereText
-      or "It's right here!", walkOut)
+    push(game, t._PewterCitySuperNerd1ItsRightHereText, walkOut)
   end
 
   local function lockstep()
@@ -158,14 +157,11 @@ M.PEWTER_CITY = {
     -- fossils comment, NO -> "you have to go" and the museum escort
     TEXT_PEWTERCITY_SUPER_NERD1 = function(game, ow, npc, done)
       local t = text(game)
-      ask(game, t._PewterCitySuperNerd1DidYouCheckOutMuseumText
-        or "Did you check out\nthe MUSEUM?", function(yes)
+      ask(game, t._PewterCitySuperNerd1DidYouCheckOutMuseumText, function(yes)
         if yes then
-          push(game, t._PewterCitySuperNerd1WerentThoseFossilsAmazingText
-            or "Weren't those\nfossils from MT.\nMOON amazing?", done)
+          push(game, t._PewterCitySuperNerd1WerentThoseFossilsAmazingText, done)
         else
-          push(game, t._PewterCitySuperNerd1YouHaveToGoText
-            or "Really?\nYou absolutely\nhave to go!", function()
+          push(game, t._PewterCitySuperNerd1YouHaveToGoText, function()
             museumEscortWalk(game, ow)
             if done then done() end
           end)
@@ -178,14 +174,11 @@ M.PEWTER_CITY = {
     -- spraying Repel to keep Pokemon out of his garden.
     TEXT_PEWTERCITY_SUPER_NERD2 = function(game, ow, npc, done)
       local t = text(game)
-      ask(game, t._PewterCitySuperNerd2DoYouKnowWhatImDoingText
-        or "Psssst!\nDo you know what\nI'm doing?", function(yes)
+      ask(game, t._PewterCitySuperNerd2DoYouKnowWhatImDoingText, function(yes)
         if yes then
-          push(game, t._PewterCitySuperNerd2ThatsRightText
-            or "That's right!\nIt's hard work!", done)
+          push(game, t._PewterCitySuperNerd2ThatsRightText, done)
         else
-          push(game, t._PewterCitySuperNerd2ImSprayingRepelText
-            or "I'm spraying REPEL\nto keep POKéMON\nout of my garden!", done)
+          push(game, t._PewterCitySuperNerd2ImSprayingRepelText, done)
         end
       end)
     end,

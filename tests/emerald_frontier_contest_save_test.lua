@@ -16,7 +16,7 @@ local function emeraldRoot()
   end
   return nil
 end
-local cacheRoot = emeraldRoot()
+local cacheRoot = emeraldRoot() or require("tests.game3_cache").root("emerald", "rse/contest_gfx/manifest.lua")
 if not cacheRoot then
   print("[skip] Emerald cache required: emerald_frontier_contest_save_test")
   os.exit(0)

@@ -80,14 +80,13 @@ local function mansionFloor(switchCoords, textPrefix)
       end
       if not hit then return false end
       local t = text(game)
-      ask(game, t[textPrefix .. "SwitchText"] or "A secret switch!\fPress it?",
+      ask(game, t[textPrefix .. "SwitchText"],
         function(yes)
           if not yes then
-            push(game, t[textPrefix .. "SwitchNotPressedText"]
-              or "Not quite yet!")
+            push(game, t[textPrefix .. "SwitchNotPressedText"])
             return
           end
-          push(game, t[textPrefix .. "SwitchPressedText"] or "Who wouldn't?",
+          push(game, t[textPrefix .. "SwitchPressedText"],
             function()
               local f = game.save.flags
               if f.EVENT_MANSION_SWITCH_ON then
@@ -193,8 +192,7 @@ local function yellowQuizTalk(machineIndex)
       local TextBox = require("src.render.TextBox")
       local t = game.data.text
       game.stack:push(TextBox.new(game,
-        t["_CinnabarGymText_" .. machineIndex]
-        or "You have to take\nthe quiz first!", done))
+        t["_CinnabarGymText_" .. machineIndex], done))
       return
     end
     -- gate open (or Red/Blue): the ordinary trainer engagement /
@@ -205,9 +203,10 @@ local function yellowQuizTalk(machineIndex)
       return
     end
     local header = game.data:trainerHeader(ow.map.def.label, npc.def.index)
-    local after = header and header.after and game.data.text[header.after]
+    local after = game.data.text[header.after]
+    if not after then error("text " .. tostring(header.after) .. " is not in the cache", 0) end
     local TextBox = require("src.render.TextBox")
-    game.stack:push(TextBox.new(game, after or "...", done))
+    game.stack:push(TextBox.new(game, after, done))
   end
 end
 
@@ -233,15 +232,13 @@ M.CINNABAR_GYM = {
     -- pokeyellow engine/events/hidden_events/cinnabar_gym_quiz.asm:23
     local intro = index ~= 1 and t._CinnabarGymQuizShortIntroText
       or t._CinnabarGymQuizIntroText
-    push(game, intro
-      or "POKéMON Quiz!\fGet it right and\nthe door opens!", function()
-      ask(game, t["_CinnabarQuizQuestionsText" .. index] or "Well?",
+    push(game, intro, function()
+      ask(game, t["_CinnabarQuizQuestionsText" .. index],
         function(yes)
           if yes == machine.yes then
             -- CinnabarGymQuizCorrectText: item jingle, then the gate
             -- slides open (SFX_GO_INSIDE) if it was still locked
-            push(game, t._CinnabarGymQuizCorrectText
-              or "You're absolutely\ncorrect!\fGo on through!", function()
+            push(game, t._CinnabarGymQuizCorrectText, function()
               if not game.save.flags[gymGateFlag(index)] then
                 game.save.flags[gymGateFlag(index)] = true
                 Sound.play(game.data, "Go_Inside")
@@ -253,7 +250,7 @@ M.CINNABAR_GYM = {
             return
           end
           Sound.play(game.data, "Denied")
-          push(game, t._CinnabarGymQuizIncorrectText or "Sorry! Bad call!",
+          push(game, t._CinnabarGymQuizIncorrectText,
             function()
               local npc = ow:npcByIndex(machine.npc)
               if npc and not ow:trainerDefeated(npc) then

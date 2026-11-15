@@ -56,10 +56,6 @@ local function run(game)
   print("[driver] PASS radio_2485_same_channel_resume")
   shot("restored_station_04.5")
   U.tap(game, "up") U.wait(4)
-  local styled = gear.styled
-  gear.styled = function() return false end
-  shot("plain_dead_air_05.0")
-  gear.styled = styled
   for _ = 1, 45 do U.tap(game, "up") end
   assert(gear.tuningKnob == 80, "upper knob did not clamp at 80")
   for _ = 1, 45 do U.tap(game, "down") end

@@ -71,12 +71,13 @@ local vm4 = Vm.new({ generation = 2 }, {}, Events.new(), {
     coins = function() return 50 end,
     hasItem = function(id) return wrongBag[id] == true end,
     gameCornerGame = function() opened = true end,
+    data = function() return { text = require("tests.fixtures.gen2_rom_text").text() } end,
   },
 })
 vm4.showTextFn = function() end
 vm4.co = coroutine.create(function() Specials.HANDLERS.SlotMachine(vm4) end)
 local _, refusal = coroutine.resume(vm4.co)
-T.eq(refusal and refusal.text, "You don't have a\nCOIN CASE.",
+T.eq(refusal and refusal.text, "You don't have a\nCOIN CASE.{PROMPT}",
   "holding only SILVER_WING gets the real _NoCoinCaseText refusal")
 T.check(not opened, "and the machine never opens behind it")
 

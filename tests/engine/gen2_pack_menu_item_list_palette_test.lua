@@ -49,6 +49,7 @@ local function fakePackMenu()
     index = 1,
     switching = nil,
     gfx = PackGfx.new(nil),
+    game = { data = { gen2Text = require("tests.fixtures.gen2_common_text").text() } },
     cursorAt = PackMenu.cursorAt,
     total = function() return 2 end, -- 1 row + CANCEL
   }

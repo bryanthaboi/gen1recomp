@@ -29,7 +29,10 @@ Chrome.paletteGlyphs = function(palette)
   end, function() end
 end
 
-local gfx = { faceDown = {}, faceUp = {}, deck = {} }
+local PAL = { { 255, 255, 255 }, { 140, 58, 255 }, { 49, 156, 66 }, { 0, 0, 0 } }
+local PALETTES = { bg = {}, obj = { [0] = PAL } }
+for slot = 0, 7 do PALETTES.bg[slot] = PAL end
+local gfx = { faceDown = {}, faceUp = {}, deck = {}, palettes = PALETTES }
 for i = 1, 30 do gfx.faceDown[i], gfx.faceUp[i] = i % 32, (i + 1) % 32 end
 gfx.faceUp[8], gfx.faceUp[9] = 0x7f, 0x7f
 for card = 0, 23 do
@@ -89,7 +92,7 @@ Chrome.paletteFill, Chrome.paletteGlyphs = originalFill, originalGlyphs
 local missing = setmetatable({}, CardFlip)
 T.check(not pcall(missing.drawCards, missing), "drawing requires cached Card Flip data")
 local short = setmetatable({ game = { data = { gen2MenuGfx = { cardFlip = {
-  faceDown = gfx.faceDown, faceUp = gfx.faceUp, deck = {},
+  faceDown = gfx.faceDown, faceUp = gfx.faceUp, deck = {}, palettes = PALETTES,
 } } } } }, CardFlip)
 T.check(not pcall(short.drawCards, short), "drawing rejects a short cached deck")
 short.game.data.gen2MenuGfx.cardFlip.deck = gfx.deck
@@ -105,5 +108,28 @@ local flip = setmetatable({
 flip:tick()
 T.eq(flip.phase, "flipping", "discarded exact-card wager is still accepted")
 T.eq(flip.payoutLeft, 0, "a discarded exact-card wager loses against another card")
+
+-- pokegold/engine/games/card_flip.asm:301
+do
+  local boxes, originalTextbox, originalPrint = {}, Chrome.textbox, Chrome.print
+  Chrome.textbox = function(x, y) boxes[#boxes + 1] = x .. "," .. y end
+  Chrome.print = function() end
+  local data = { text = {
+    _CardFlipShuffledText = "The cards have\nbeen shuffled.",
+    _CardFlipPlayAgainText = "Want to play\nagain?",
+    ["CardFlip_PrintCoinBalance.CoinStr"] = "COIN",
+  } }
+  local panel = setmetatable({ game = { data = data }, save = { player = { coins = 9 } },
+    phase = "message" }, CardFlip)
+  panel.drawBoard, panel.drawCards = function() end, function() end
+  panel.lines = panel:text("shuffled")
+  panel:drawPanel()
+  T.eq(table.concat(boxes, " "), "0,12", "the shuffled text has no coin box")
+  boxes = {}
+  panel.lines = panel:text("playAgain")
+  panel:drawPanel()
+  T.eq(boxes[2], "9,15", "other Card Flip text keeps the coin box")
+  Chrome.textbox, Chrome.print = originalTextbox, originalPrint
+end
 
 T.finish("gen2_card_flip_layout_3042")

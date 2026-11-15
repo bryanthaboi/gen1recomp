@@ -58,7 +58,7 @@ local FLAG_RECEIVED_MYSTIC_TICKET = 0x2A8
 local FLAG_ENABLE_SHIP_NAVEL_ROCK = 0x84A
 
 local function builtin(key)
-  for _, entry in ipairs(MysteryGift.builtins()) do
+  for _, entry in ipairs(require("tests.fixtures.game3_gift_cards").cards()) do
     if entry.key == key then return entry end
   end
   return nil

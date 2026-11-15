@@ -1404,15 +1404,6 @@ function RomExtractor:extractTrainers()
     end
     local parties = self:trainerParties(
       pointers.bank, partyStarts[index], partyEnds[index])
-    -- ChiefData is empty in the ROM (the Celadon Chief battle is unused/
-    -- cut content); tools/rom_manifest.json carries a hand-authored party
-    -- for the trainers this project reimplements, since no ROM data exists
-    -- to extract for them.
-    if #parties == 0 then
-      local override = self.manifest.trainerPartyOverrides
-        and self.manifest.trainerPartyOverrides[trainerId]
-      if override then parties = { copy(override) } end
-    end
     out[trainerId] = {
       id = trainerId, index = index, name = decodedNames[index],
       source = "ROM:TrainerDataPointers",
@@ -1594,11 +1585,36 @@ function RomExtractor:extractText()
   end
   -- engine/link/cable_club.asm:538
   -- engine/battle/end_of_battle.asm:77-84
+  -- engine/events/hidden_events/school_blackboard.asm:70-74
+  -- home/text.asm:185, data/text_boxes.asm:68-74, engine/battle/core.asm:2689-2690
+  -- engine/battle/core.asm:2909-2913, engine/pokemon/status_screen.asm:283-287
+  -- engine/menus/naming_screen.asm:485-495
+  -- data/yes_no_menu_strings.asm:44-46, engine/pokemon/bills_pc.asm:88-93
   for _, label in ipairs({ "TradeCenter_SelectMon.statsTrade", "CancelTextString",
       "TradeCompleted", "TradeCanceled", "WaitingText", "YouWinText", "YouLoseText",
-      "DrawText", "TwoOptionMenuStrings.TradeCancelMenu" }) do
+      "DrawText", "TwoOptionMenuStrings.TradeCancelMenu", "HowToLinkText", "EnemyText",
+      "BattleMenuText", "SafariZoneBattleMenuText", "WhichTechniqueString", "DisabledText",
+      "TypeText", "PrintStatsBox.StatsText", "NicknameTextString", "YourTextString",
+      "RivalsTextString", "NameTextString", "TwoOptionMenuStrings.HealCancelMenu",
+      "SomeonesPCText", "BillsPCText", "PlayersPCText", "OaksPCText", "PKMNLeaguePCText",
+      "LogOffPCText" }) do
     local s = self:symbol(label)
     texts[label] = self.rom:readString(s.bank, s.address, self.manifest.charmap)
+  end
+  -- pokered engine/menus/save.asm:183-184
+  if self.symbols.NowSavingString then
+    local s = self:symbol("NowSavingString")
+    texts.NowSavingString = self.rom:readString(s.bank, s.address, self.manifest.charmap)
+  end
+  -- data/battle/stat_mod_names.asm:4-10, data/battle/stat_names.asm:3-9
+  for label, count in pairs({ StatModTextStrings = 6, VitaminStats = 5 }) do
+    local s = self:symbol(label)
+    local address = s.address
+    for i = 1, count do
+      local name, length = self.rom:readString(s.bank, address, self.manifest.charmap)
+      texts[label .. "." .. i] = name
+      address = address + length
+    end
   end
   -- pokeyellow engine/events/diploma2.asm:51-65
   -- engine/printer/printer2.asm:164-177

@@ -2505,22 +2505,11 @@ function Union.facingTradingBoard()
     and (tonumber(P.cellY) or 0) + d[2] == board.y
 end
 
-function Union.namedRequest(name)
-  local Strings = require("src.core.Strings")
-  local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
-  if raw == Union.ACTIVITY.BATTLE_SINGLE then return Strings("%s wants to battle!\nWill you accept?", name) end
-  if raw == Union.ACTIVITY.CHAT then return Strings("%s wants to chat!\nWill you join?", name) end
-  if raw == Union.ACTIVITY.CARD then return Strings("%s wants to show\nyou a TRAINER CARD. OK?", name) end
-  return nil
-end
-
 -- pokefirered/src/union_room.c:3148
 function Union.contactedYou()
   local inv = Union.incoming or {}
   local from = type(inv.from) == "table" and inv.from or {}
   local name = Union._requestName or from.name or ""
-  local Strings = require("src.core.Strings")
-  local raw = math.floor(tonumber(Union.activity) or 0) % Union.IN_UNION_ROOM
   Union.state = "handle_activity_request"
   Union._asked = true
   if Union._xg then
@@ -2530,15 +2519,8 @@ function Union.contactedYou()
       Union.yesNoStep(function(yes) Union.answerRequest(yes) end)
     ), "handle_activity_request")
   end
-  local named = Union.namedRequest(name)
-  local steps
-  if named then
-    steps = stepsOf(Union.stayStep(named))
-  elseif raw == Union.ACTIVITY.TRADE then
-    steps = stepsOf(Union.sayStep(Strings("%s wants to trade!", name)), Union.stayStep(Union.requestPrompt()))
-  else
-    steps = stepsOf(Union.stayStep(Union.requestPrompt()))
-  end
+  -- pokefirered/src/union_room.c:4486 GetChatLeaderActionRequestMessage
+  local steps = stepsOf(Union.stayStep(Union.requestPrompt()))
   steps[#steps + 1] = Union.yesNoStep(function(yes) Union.answerRequest(yes) end)
   return Union.runFlow(steps, "handle_activity_request")
 end

@@ -396,7 +396,8 @@ end
 local function decodeOrMiss(rel, data)
   local ok, raw = pcall(CacheBlob.decode, rel, data)
   if ok then return raw end
-  return nil, raw
+  if rel:find("/atlas_", 1, true) then return nil, raw end
+  error(raw, 0)
 end
 
 -- Read an exact version-qualified path without consulting CacheFs.prefix.

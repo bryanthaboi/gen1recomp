@@ -57,7 +57,8 @@ for _, version in ipairs({ "gold", "silver", "crystal" }) do
     T.eq(stock.source, "fixture", label .. "metadata retained")
     T.same(Mart.bargainRows(stock), { { item = "NUGGET", price = 500 } }, label .. "bargain replaces")
     local save = { player = { money = 10000 }, inventory = {} }
-    local game = { data = data, save = save }
+    local game = { data = data, save = save,
+      world = { text = require("tests.fixtures.gen2_common_text").text() } }
     local menu = Mart.new(game, { martId = 0 })
     T.eq(menu.entries[1] and menu.entries[1].price, 1200, label .. "normal shelf uses item price")
     menu.qtyItem, menu.qty = menu.entries[1], 2

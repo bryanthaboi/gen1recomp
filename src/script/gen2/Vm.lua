@@ -89,18 +89,28 @@ local VAR_MAPGROUP, VAR_MAPNUMBER = 0x0c, 0x0d
 -- depend on it.  DRAW is the Sudowoodo / Gyarados "it fled" case; no battle
 -- resumes with it yet, so it is here for the branch rather than for a caller.
 local BATTLE_RESULTS = { win = 0, lose = 1, draw = 2 }
--- ItemPocketNames (data/items/pocket_names.asm), indexed by the item type
--- CheckItemPocket leaves in wItemAttributeValue: ITEM 1, KEY_ITEM 2, BALL 3,
--- TM_HM 4 (constants/item_data_constants.asm:15-19).  GetPocketName copies the
--- matching string into wStringBuffer3, which is the SECOND blank in both
--- _PutItemInPocketText and _PocketIsFullText (data/text/common_2.asm:1351,
--- :1361).  The cache's items.lua carries the same four names on `pocket`.
+-- data/items/pocket_names.asm:1
 local POCKET_NAMES = {
-  ITEM = "ITEM POCKET",
-  KEY_ITEM = "KEY POCKET",
-  BALL = "BALL POCKET",
-  TM_HM = "TM POCKET",
+  ITEM = "ItemPocketNames.Item",
+  KEY_ITEM = "ItemPocketNames.Key",
+  BALL = "ItemPocketNames.Ball",
+  TM_HM = "ItemPocketNames.TM",
 }
+
+local romLine = Specials.shared.romLine
+
+-- data/text/common_2.asm:1344
+local RECEIVED_ITEM = "_ReceivedItemText"
+local PUT_ITEM_IN_POCKET = "_PutItemInPocketText"
+local POCKET_IS_FULL = "_PocketIsFullText"
+-- engine/events/fruit_trees.asm:98-116
+local FRUIT_BEARING_TREE = "_FruitBearingTreeText"
+local HEY_ITS_FRUIT = "_HeyItsFruitText"
+local OBTAINED_FRUIT = "_ObtainedFruitText"
+local FRUIT_PACK_IS_FULL = "_FruitPackIsFullText"
+local NOTHING_HERE = "_NothingHereText"
+-- data/text/common_3.asm:63
+local PHONE_CLICK = "_PhoneClickText"
 
 -- CompareMoney (engine/events/money.asm) reports account minus amount as one
 -- of the HAVE_* three rather than as a boolean.
@@ -280,23 +290,6 @@ local function runCmd(self, cmd, op)
       coroutine.yield({ kind = "waitsfx" })
     end
   elseif op == "rawtext" then
-    -- NOT a cart opcode.  `writetext`'s operand is a KEY into text.lua, and
-    -- text.lua only holds strings the extractor reached through a script
-    -- pointer -- so a hand-ported script (src/world/gen2/CmdQueue.lua's two
-    -- stone tables, whose text hangs off a callback nothing walks) has a
-    -- literal and no key to name it by.  This is the one command that carries
-    -- one, and the extractor never emits it.
-    -- Declared through Strings.source at the table, looked up here, which is
-    -- the split src/core/Strings.lua asks for: a module-level template must
-    -- not resolve before Strings.load has a catalog.
-    -- `stay` rides the row for the same reason the text does: a transcription
-    -- that holds ONE MapTextbox over the next few commands has to say so, and
-    -- Vm:textStays' one-command lookahead cannot work it out.
-    -- `stay` / `hold` ride the row for the same reason the text does: a
-    -- transcription that keeps ONE MapTextbox standing over the next few
-    -- commands has to say so, and Vm:textStays' one-command lookahead cannot
-    -- work it out.  `hold` is the cart `pause` those commands contain, in
-    -- Script_pause's own doubled frames (Vm:pauseFrames).
     self:showRaw(Strings(cmd.text), cmd.stay or self:textJingle(),
       cmd.hold and Vm.pauseLength(cmd.hold) or nil)
   elseif op == "waitbutton" then
@@ -697,7 +690,7 @@ local function runCmd(self, cmd, op)
       local name = self.getItemNameFn and self.getItemNameFn(item) or "?"
       self:setStringBuffer(name)
       -- engine/overworld/scripting.asm:467
-      self:showRaw(Strings("{PLAYER} received\n%s.", name),
+      self:showRaw(romLine(self, RECEIVED_ITEM, name),
         ok or self:canHoldStayed())
       if ok then
         self:specialSound(item)
@@ -707,12 +700,12 @@ local function runCmd(self, cmd, op)
         -- GetPocketName fills from ItemPocketNames: KEY ITEMs, BALLs and TMs
         -- name their own pocket, not the ITEM one (data/text/common_2.asm
         -- :1351, data/items/pocket_names.asm:10-13).
-        self:showRaw(Strings("{PLAYER} put the\n%s in\nthe %s.",
+        self:showRaw(romLine(self, PUT_ITEM_IN_POCKET,
           name, self:pocketName(item)), nil, nil, not held)
       else
         -- engine/overworld/scripting.asm:477
         self:holdStayed("prompt")
-        self:showRaw(Strings("The %s\nis full…", self:pocketName(item)))
+        self:showRaw(romLine(self, POCKET_IS_FULL, self:pocketName(item)))
       end
     end
   elseif op == "itemnotify" then
@@ -726,13 +719,13 @@ local function runCmd(self, cmd, op)
     -- the clobber would corrupt an unrelated {STRBUF} page.
     local name = self:curItemName()
     if name ~= "" then
-      self:showRaw(Strings("{PLAYER} put the\n%s in\nthe %s.",
+      self:showRaw(romLine(self, PUT_ITEM_IN_POCKET,
         name, self:pocketName(self.curItem)))
     end
   elseif op == "pocketisfull" then
     -- Script_pocketisfull reads wCurItem exactly as Script_itemnotify does
     -- (../pokecrystal/engine/overworld/scripting.asm:520).
-    self:showRaw(Strings("The %s\nis full…", self:pocketName(self.curItem)))
+    self:showRaw(romLine(self, POCKET_IS_FULL, self:pocketName(self.curItem)))
   -- ---- bag, money and coins (engine/events/money.asm) --------------------
   elseif op == "checkitem" then
     -- Script_checkitem clears wScriptVar FIRST and only CheckItem's carry
@@ -1481,21 +1474,19 @@ local function runCmd(self, cmd, op)
     -- garbage, which is exactly why this branch has to return.
     --
     -- FruitTreeScript itself is transcribed here rather than looked up.  It
-    -- is an engine script: nothing in the ROM's bytecode points at it, so
-    -- neither it nor its text reaches data/generated, the same reason
-    -- GiveItemScript is inlined in the verbosegiveitem branch above.  Text
-    -- bodies from data/text/common_1.asm.
+    -- is an engine script: nothing in the ROM's bytecode points at it, so it
+    -- never reaches scripts.lua, the same reason GiveItemScript is inlined in
+    -- the verbosegiveitem branch above.
     local tree = cmd.tree or arg1(cmd) or 0
     -- callasm GetCurTreeFruit: FruitTreeItems[tree - 1], FRUITTREE_* being
     -- 1-based (constants/script_constants.asm `const FRUITTREE_ROUTE_29 ; 01`
     -- and GetCurTreeFruit's own `dec a`).  The hook undoes the offset.
     local item = self.fruitTreeItemFn and self.fruitTreeItemFn(tree) or 0
-    local name = (item ~= 0 and self.getItemNameFn
-      and self.getItemNameFn(item)) or "BERRY"
+    local name = (self.getItemNameFn and self.getItemNameFn(item)) or ""
     -- readmem wCurFruit / getitemname STRING_BUFFER_3, USE_SCRIPT_VAR
     self.scriptVar = item
     self:setStringBuffer(name)
-    self:showRaw(Strings("It's a fruit-\nbearing tree."))
+    self:showRaw(romLine(self, FRUIT_BEARING_TREE))
     -- callasm TryResetFruitTrees / callasm CheckFruitTree / iffalse .fruit.
     -- The reset runs BEFORE the check and gated on ENGINE_ALL_FRUIT_TREES,
     -- so the first tree examined after the daily rollover refills the other
@@ -1506,20 +1497,20 @@ local function runCmd(self, cmd, op)
     -- day), so a CLEAR flag is the arm with fruit on it.
     local picked = self.fruitTreePickedFn and self.fruitTreePickedFn(tree)
     if picked then
-      self:showRaw(Strings("There's nothing\nhere…"))
+      self:showRaw(romLine(self, NOTHING_HERE))
       return "end"
     end
-    self:showRaw(Strings("Hey! It's\n%s!", name))
+    self:showRaw(romLine(self, HEY_ITS_FRUIT, name))
     -- readmem wCurFruit / giveitem ITEM_FROM_MEM / iffalse .packisfull
     local ok = true
     if self.giveItemFn then ok = self.giveItemFn(item, 1) ~= false end
     self.scriptVar = ok and 1 or 0
     if not ok then
-      self:showRaw(Strings("But the PACK is\nfull…"))
+      self:showRaw(romLine(self, FRUIT_PACK_IS_FULL))
       return "end"
     end
     -- engine/events/fruit_trees.asm:21
-    self:showRaw(Strings("Obtained\n%s!", name), true)
+    self:showRaw(romLine(self, OBTAINED_FRUIT, name), true)
     -- callasm PickedFruitTree: the flag is set AFTER the fruit is banked, so
     -- a full pack leaves the tree pickable.
     if self.fruitTreePickFn then self.fruitTreePickFn(tree) end
@@ -1528,7 +1519,7 @@ local function runCmd(self, cmd, op)
     -- itemnotify.  Berries are all ITEM pocket, so nothing here moves; the
     -- noun still comes from ItemPocketNames rather than from a third copy of
     -- the literal (data/items/pocket_names.asm:10-13).
-    self:showRaw(Strings("{PLAYER} put the\n%s in\nthe %s.",
+    self:showRaw(romLine(self, PUT_ITEM_IN_POCKET,
       name, self:pocketName(item)), nil, nil, not held)
     return "end"
   elseif op == "describedecoration" then
@@ -1645,7 +1636,7 @@ local function runCmd(self, cmd, op)
     -- returns without waiting on the cart, while this port's text box holds
     -- until A, so playing it after would put the beep on an empty screen.
     if self.playSoundFn then self.playSoundFn(SFX_HANG_UP) end
-    self:showRaw(Strings("Click!"))
+    self:showRaw(romLine(self, PHONE_CLICK))
     if self.hangUpFn then self.hangUpFn() end
   elseif op == "specialphonecall" then
     -- `specialphonecall call_id` only STORES the id; the call itself fires
@@ -1737,17 +1728,7 @@ local function runCmd(self, cmd, op)
       self.autoInputFn(arg1(cmd) or 0, wordArg(cmd, 2))
     end
   elseif op == "writecmdqueue" then
-    -- Script_writecmdqueue copies a five-byte entry (CMDQUEUE_ENTRY_SIZE) out
-    -- of the script's own bank into the first free wCmdQueue slot;
-    -- HandleQueuedCommand then polls that queue every frame.  Two maps use
-    -- it, both for CMDQUEUE_STONETABLE: the Ice Path B1F boulder puzzle and
-    -- the Blackthorn Gym 2F one, where the queue is what makes a pushed
-    -- boulder fall into the water.
-    --
-    -- The five bytes sit behind a pointer in the script's own bank and the
-    -- extractor emits only the pointer, so the World resolves the entry from
-    -- the map instead (src/world/gen2/CmdQueue.lua STONE_TABLES).  Like the
-    -- cart's own Script_writecmdqueue this leaves wScriptVar alone.
+    -- engine/overworld/scripting.asm:1999
     if self.writeCmdQueueFn then
       self.writeCmdQueueFn(cmd.pointer or wordArg(cmd))
     end
@@ -2418,7 +2399,7 @@ end
 -- ../pokecrystal/engine/overworld/scripting.asm:540
 function Vm:pocketName(item)
   local pocket = self.getItemPocketFn and item and self.getItemPocketFn(item)
-  return POCKET_NAMES[pocket] or POCKET_NAMES.ITEM
+  return romLine(self, POCKET_NAMES[pocket] or POCKET_NAMES.ITEM)
 end
 
 function Vm:emitFace(doFace)

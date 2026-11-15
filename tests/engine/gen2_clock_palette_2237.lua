@@ -23,11 +23,13 @@ do
 end
 
 do
-  local clock = InitClock.new({ input = {} }, { mode = "clock", save = {} })
+  local clock = InitClock.new({ input = {}, data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } },
+    { mode = "clock", save = {} })
   eq(clock:palette(), InitClock.PALETTE, "the intro clock draws on SCGB_DIPLOMA")
   eq(rgb(clock:palette()[1]), "255,255,255", "so its boxes are white")
 
-  local day = InitClock.new({ input = {} }, { mode = "day", save = {} })
+  local day = InitClock.new({ input = {}, data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } },
+    { mode = "day", save = {} })
   eq(day:palette(), Chrome.DEFAULT_BOX_PALETTE,
     "SetDayOfWeek's Textbox is the overworld PAL_BG_TEXT")
   eq(rgb(day:palette()[1]), "255,255,255", "so Mom's wheel is white too")

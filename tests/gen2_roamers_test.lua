@@ -26,6 +26,7 @@ local check, eq = S.check, S.eq
 local World = require("src.world.gen2.World")
 local Roamers = require("src.core.gen2.Roamers")
 local FieldMoves = require("src.world.gen2.FieldMoves")
+local RoamFixture = require("tests.fixtures.gen2_roamers")
 
 -- MAPSETUP_* (constants/map_setup_constants.asm), as World names them.
 local WARP, RELOADMAP = 0xf1, 0xf3
@@ -55,14 +56,14 @@ local function roamWorld(opts)
   }
   world.map = { id = opts.map or "ROUTE_29", def = world.maps.ROUTE_29,
     width = 2, height = 2 }
-  world.encounters = opts.encounters
+  world.encounters = RoamFixture.encounters("gold", opts.encounters)
   -- The load itself is not the subject here; the roam step around it is.
   world.setMap = function(self, id)
     self.map = { id = id, def = self.maps[id] or self.maps.ROUTE_29,
       width = 2, height = 2 }
     return true
   end
-  Roamers.init(game.save, { force = true })
+  Roamers.init(game.save, { force = true, encounters = world.encounters })
   return world, game
 end
 
@@ -175,11 +176,10 @@ end
 -- RoamMaps off the cart
 -- ---------------------------------------------------------------------------
 --
--- data/wild/roammon_maps.asm, which RomExtractorGen2 now emits as
--- encounters.roamMaps.  Roamers.MAPS stays as the fallback for a cache written
--- before it did, so the two have to agree row for row -- ORDER included, since
--- `.Update` picks a connection by a two-bit index and JumpRoamMon picks an
--- entry by a four-bit one.
+-- data/wild/roammon_maps.asm, which RomExtractorGen2 emits as
+-- encounters.roamMaps.  The test fixture has to agree with it row for row --
+-- ORDER included, since `.Update` picks a connection by a two-bit index and
+-- JumpRoamMon picks an entry by a four-bit one.
 do
   local cache = os.getenv("GOLD_CACHE")
   if not cache then
@@ -194,9 +194,9 @@ do
     local extracted = encounters.roamMaps
     eq(#extracted, Roamers.NUM_MAPS, "RoamMaps has NUM_ROAMMON_MAPS entries")
     check(Roamers.mapTable(encounters) == extracted,
-      "and Roamers.mapTable prefers it over the hand-written fallback")
+      "and Roamers.mapTable reads it")
     local same = true
-    for index, row in ipairs(Roamers.MAPS) do
+    for index, row in ipairs(RoamFixture.ROAM_MAPS) do
       local got = extracted[index]
       if not got or got.map ~= row.map or #got.to ~= #row.to then
         same = false
@@ -206,7 +206,16 @@ do
         end
       end
     end
-    check(same, "every row matches the transcribed table, in order")
+    check(same, "every row matches the fixture, in order")
+    local roster = Roamers.roster(encounters)
+    eq(#roster, 3, "Gold's InitRoamMons seeds three beasts")
+    for index, row in ipairs(RoamFixture.ROAM_MONS_GOLD) do
+      eq(roster[index] and roster[index].species, row.species,
+        ("roamer %d is %s"):format(index, row.species))
+      eq(roster[index] and roster[index].map, row.map,
+        ("starting on %s"):format(row.map))
+      eq(roster[index] and roster[index].level, row.level, "at level 40")
+    end
     -- Routes 40 and 41 are water routes and deliberately absent.
     local seen = {}
     for _, row in ipairs(extracted) do seen[row.map] = true end

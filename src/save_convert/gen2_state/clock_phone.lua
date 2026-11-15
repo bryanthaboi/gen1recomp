@@ -1,5 +1,6 @@
 local M = {}
 local Syms = require("src.save_convert.Gen2Syms")
+local Gen2EngineFlags = require("src.save_convert.Gen2EngineFlags")
 
 M.KEY = "cartTimers"
 
@@ -78,22 +79,25 @@ local DAY_WRAP = 140
 local FRUIT_TREES = 30
 local CONTACTS = 10
 
--- pokegold constants/engine_flags.asm:93
-local LUCKY_SHOW_GS, LUCKY_SHOW_CRYSTAL = 77, 78
--- pokegold constants/engine_flags.asm:97
-local DAILY_GS = { [0] = 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92 }
--- pokecrystal constants/engine_flags.asm:98
-local DAILY_CRYSTAL = { [0] = 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94 }
--- pokecrystal constants/engine_flags.asm:114
-local BUENA_FLAG = 95
+-- pokegold data/events/engine_flags.asm:103
+-- pokecrystal data/events/engine_flags.asm:104
+local LUCKY_SHOW_GS = Gen2EngineFlags.id("gold", "ENGINE_LUCKY_NUMBER_SHOW")
+local LUCKY_SHOW_CRYSTAL = Gen2EngineFlags.id("crystal", "ENGINE_LUCKY_NUMBER_SHOW")
+-- pokegold data/events/engine_flags.asm:107
+local DAILY_GS = Gen2EngineFlags.run("gold", "ENGINE_KURT_MAKING_BALLS", "ENGINE_INDIGO_PLATEAU_RIVAL_FIGHT")
+-- pokecrystal data/events/engine_flags.asm:108
+local DAILY_CRYSTAL = Gen2EngineFlags.run("crystal", "ENGINE_KURT_MAKING_BALLS", "ENGINE_DAILY_MOVE_TUTOR")
+-- pokecrystal data/events/engine_flags.asm:124
+local BUENA_FLAG = Gen2EngineFlags.id("crystal", "ENGINE_BUENAS_PASSWORD")
 -- pokegold constants/ram_constants.asm:305
 local SWARM_BIT = 2
--- pokecrystal constants/engine_flags.asm:125
+-- pokecrystal data/events/engine_flags.asm:136, :161, :172
 local CRYSTAL_ARRAYS = {
-  { label = "wDailyRematchFlags", first = 101, count = 24 },
-  { label = "wDailyPhoneItemFlags", first = 125, count = 10 },
-  { label = "wDailyPhoneTimeOfDayFlags", first = 135, count = 24 },
+  { label = "wDailyRematchFlags", first = "ENGINE_JACK_READY_FOR_REMATCH", count = 24 },
+  { label = "wDailyPhoneItemFlags", first = "ENGINE_BEVERLY_HAS_NUGGET", count = 10 },
+  { label = "wDailyPhoneTimeOfDayFlags", first = "ENGINE_JACK_MONDAY_MORNING", count = 24 },
 }
+for _, array in ipairs(CRYSTAL_ARRAYS) do array.first = Gen2EngineFlags.id("crystal", array.first) end
 
 local function u8(t, o) return t[o] or 0 end
 local function bit(b, n) return math.floor(b / 2 ^ n) % 2 == 1 end

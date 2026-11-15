@@ -150,6 +150,7 @@ local function gen2Dataset()
   data.moves = load("moves") or {}
   data.type_chart = load("type_chart") or {}
   data.gen2Constants = load("constants")
+  data.gen2EventTables = load("events")
   data.text = load("rom_text") or {}
   data.font = load("font")
   local chart = data.type_chart
@@ -161,6 +162,7 @@ local function gen2Dataset()
   data.gen2HeldItems = ItemEffects.heldItemsFrom(data.items)
   return data, ItemEffects.heldSnapshot(data.gen2HeldItems)
 end
+ArenaData.gen2Dataset = gen2Dataset
 
 local function loadDataset(version, generation)
   if generation == 2 then

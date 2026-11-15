@@ -130,7 +130,8 @@ function BattleAnimView:objPalette(name, battle)
     return player and self:monColors(player.species, player.shiny)
   end
   local set = self.palettes and self.palettes.battleObjects
-  return set and set[name] or nil
+  if not set then error("palettes.lua has no battleObjects", 2) end
+  return set[name] or error("battleObjects has no " .. tostring(name), 2)
 end
 
 -- One frame's OBJ layer.  The palette shader is set once per run of objects

@@ -27,9 +27,6 @@ function Boxes.active(save)
   return Boxes.ensure(save)[save.currentBox]
 end
 
--- Deposit into the current box; overflows into the next box with room
--- (divergence: the original refuses the catch when the box is full --
--- docs/known-differences.md).  Returns the box number used, or nil.
 function Boxes.deposit(save, mon)
   local boxes = Boxes.ensure(save)
   for off = 0, Boxes.COUNT - 1 do

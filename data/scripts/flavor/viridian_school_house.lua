@@ -96,7 +96,7 @@ function StatusBoard:draw()
 end
 
 local function blackboard(game)
-  local text = game.data.text or {}
+  local text = game.data.text
   local openBoard
   -- wCurrentMenuItem / wMenuItemOffset are zeroed once, above .blackboardLoop,
   -- and nothing inside the loop clears them again: after a status blurb
@@ -136,13 +136,13 @@ end
 -- and NO stops the read; page 4 turns without asking and runs straight into
 -- page 5, the girl catching you at it.
 local function notebook(game)
-  local text = game.data.text or {}
+  local text = game.data.text
   local function page(n, after)
-    return TextBox.new(game, text["_ViridianSchoolNotebookText" .. n] or "", after)
+    return TextBox.new(game, text["_ViridianSchoolNotebookText" .. n], after)
   end
   local function turnPage(nextPage)
     return function()
-      game.stack:push(TextBox.new(game, text._TurnPageText or "Turn the page?",
+      game.stack:push(TextBox.new(game, text._TurnPageText,
         nil, { choice = function(yes)
           if yes then game.stack:push(nextPage()) end
         end }))

@@ -22118,6 +22118,10 @@
       11,
       22438
     ],
+    "HowToLinkText": [
+      23,
+      23820
+    ],
     "HpBarAndStatusGraphics": [
       4,
       18976
@@ -38185,6 +38189,86 @@
     "YouWinText": [
       4,
       30749
+    ],
+    "EnemyText": [
+      0,
+      6208
+    ],
+    "StatModTextStrings": [
+      15,
+      30293
+    ],
+    "VitaminStats": [
+      3,
+      23886
+    ],
+    "NicknameTextString": [
+      1,
+      26321
+    ],
+    "BattleMenuText": [
+      1,
+      29482
+    ],
+    "SafariZoneBattleMenuText": [
+      1,
+      29501
+    ],
+    "PrintStatsBox.StatsText": [
+      4,
+      22238
+    ],
+    "WhichTechniqueString": [
+      15,
+      21688
+    ],
+    "DisabledText": [
+      15,
+      22215
+    ],
+    "TypeText": [
+      15,
+      22225
+    ],
+    "YourTextString": [
+      1,
+      26301
+    ],
+    "RivalsTextString": [
+      1,
+      26307
+    ],
+    "NameTextString": [
+      1,
+      26315
+    ],
+    "TwoOptionMenuStrings.HealCancelMenu": [
+      1,
+      30078
+    ],
+    "SomeonesPCText": [
+      8,
+      21560
+    ],
+    "BillsPCText": [
+      8,
+      21572
+    ],
+    "PlayersPCText": [
+      8,
+      21581
+    ],
+    "OaksPCText": [
+      8,
+      21586
+    ],
+    "PKMNLeaguePCText": [
+      8,
+      21599
+    ],
+    "LogOffPCText": [
+      8,
+      21607
     ]
   },
   "text": {
@@ -50586,30 +50670,6 @@
     "TRI_ATTACK",
     "SUBSTITUTE"
   ],
-  "trainerPartyOverrides": {
-    "OPP_CHIEF": [
-      {
-        "level": 41,
-        "species": "MACHOKE"
-      },
-      {
-        "level": 41,
-        "species": "GOLBAT"
-      },
-      {
-        "level": 43,
-        "species": "MAROWAK"
-      },
-      {
-        "level": 43,
-        "species": "WEEZING"
-      },
-      {
-        "level": 46,
-        "species": "PERSIAN"
-      }
-    ]
-  },
   "trainerPics": [
     {
       "imageBase": "youngster",

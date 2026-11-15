@@ -130,6 +130,7 @@ local pushed = {}
 local partyGame = {
   save = save,
   overworld = sleepOw,
+  data = { text = dofile("tests/fixture_data/text.lua") },
   stack = { push = function(_, state) pushed[#pushed + 1] = state end },
   input = { wasPressed = function(_, key) return key == "a" end },
 }
@@ -140,7 +141,7 @@ check(getmetatable(pushed[#pushed]) == TextBox,
 local boxGame = {
   save = save,
   overworld = sleepOw,
-  data = { pokemon = { PIKACHU = { name = "PIKACHU" }, PIDGEY = { name = "PIDGEY" } }, text = {} },
+  data = { pokemon = { PIKACHU = { name = "PIKACHU" }, PIDGEY = { name = "PIDGEY" } }, text = dofile("tests/fixture_data/text.lua") },
   stack = { push = function(_, state) pushed[#pushed + 1] = state end },
 }
 local pc = BoxMenu.new(boxGame)

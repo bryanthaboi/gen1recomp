@@ -56,7 +56,7 @@ local GameVersion = require("src.core.GameVersion")
 local Happiness = require("src.core.gen2.Happiness")
 local Phone = require("src.core.gen2.Phone")
 local Pokerus = require("src.core.gen2.Pokerus")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 local Roamers = require("src.core.gen2.Roamers")
 local Unown = require("src.core.gen2.Unown")
 
@@ -71,9 +71,6 @@ local SHUCKLE = "SHUCKLE"
 
 -- constants/misc_constants.asm GBCHECK_*: what GameboyCheck answers.
 local GBCHECK_GB, GBCHECK_SGB, GBCHECK_CGB = 0, 1, 2
-
--- data/events/magikarp_lengths.asm is one table, but the ARITHMETIC around it
--- (CalcMagikarpLength) is what actually produces a length, so both are below.
 
 -- Rolls.  Kept on the module rather than taken from the VM so a test can pin
 -- every weighted table below without reaching into love.math, and so the two
@@ -146,6 +143,10 @@ local function data(vm)
   return h.data and h.data() or nil
 end
 
+local function romLine(vm, label, ...)
+  return RomText(data(vm), label, nil, ...)
+end
+
 -- wScriptVar, spelled the way the asm spells it so a handler reads as its
 -- source: `ld a, TRUE / ld [wScriptVar], a`.
 local function answer(vm, value)
@@ -191,6 +192,7 @@ Specials.shared = {
   party = party,
   save = save,
   data = data,
+  romLine = romLine,
   answer = answer,
   nameMon = nameMon,
   selectMon = selectMon,
@@ -201,26 +203,14 @@ Specials.shared = {
 -- Magikarp lengths (engine/events/magikarp.asm)
 --------------------------------------------------------------------------
 
--- MagikarpLengths (data/events/magikarp_lengths.asm): fourteen `dwb` triplets
--- of "threshold word, divisor byte".  Not extracted -- nothing in the ROM's
--- script bytecode points at it -- so it is transcribed here beside the
--- arithmetic that reads it, in the file's own order.
-Specials.MAGIKARP_LENGTHS = {
-  { 110, 1 },   -- not used unless the .BCLessThanDE bug is fixed
-  { 310, 2 },
-  { 710, 4 },
-  { 2710, 20 },
-  { 7710, 50 },
-  { 17710, 100 },
-  { 32710, 150 },
-  { 47710, 150 },
-  { 57710, 100 },
-  { 62710, 50 },
-  { 64710, 20 },
-  { 65210, 5 },
-  { 65410, 2 },
-  { 65510, 1 },  -- not used
-}
+-- data/events/magikarp_lengths.asm:1
+function Specials.magikarpLengths(vm)
+  local d = data(vm)
+  local tables = d and d.gen2EventTables
+  local lengths = tables and tables.magikarpLengths
+  if lengths == nil then error("events.lua has no magikarpLengths", 2) end
+  return lengths
+end
 
 -- `rrc` on one byte: an 8-bit rotate right, the bit that falls off coming back
 -- in at the top.
@@ -256,7 +246,7 @@ end
 --
 -- Both truncations are the cart's: Divide leaves a 32-bit quotient and the
 -- routine reads only hQuotient + 3, its LOW BYTE.
-function Specials.magikarpLength(otId, dvWord)
+function Specials.magikarpLength(lengths, otId, dvWord)
   otId = (otId or 0) % 65536
   dvWord = (dvWord or 0) % 65536
   local b = xorByte(rrc(math.floor(otId / 256)),
@@ -270,7 +260,7 @@ function Specials.magikarpLength(otId, dvWord)
   else
     local index = 2
     local de = 0
-    for _, row in ipairs(Specials.MAGIKARP_LENGTHS) do
+    for _, row in ipairs(lengths) do
       de = row[1]
       if b < math.floor(de / 256) then
         local dividend = (bc - de) % 65536
@@ -380,15 +370,13 @@ end
 -- is the three-way answer BugContestResults_DidNotLeaveMons branches on:
 -- BUGCONTEST_CAUGHT_MON 0, BUGCONTEST_BOXED_MON 1, BUGCONTEST_NO_CATCH 2
 -- (constants/script_constants.asm).
--- _CaughtAskNicknameText (data/text/common_2.asm:717), engine-printed so
--- the extractor never reaches it.
-local CONTEST_NICKNAME_PROMPT =
-  Strings.source("Give a nickname to\nthe {STRBUF} you\nreceived?")
+-- engine/pokemon/caught_nickname.asm:129
+local CONTEST_NICKNAME_PROMPT = "_CaughtAskNicknameText"
 
 -- GiveANickname_YesNo (engine/pokemon/caught_nickname.asm:123)
 function Specials.askNickname(vm, mon)
   nameMon(vm, mon.species)
-  showRawHeld(vm, Strings(CONTEST_NICKNAME_PROMPT))
+  showRawHeld(vm, romLine(vm, CONTEST_NICKNAME_PROMPT))
   if coroutine.yield({ kind = "yesorno" }) then
     -- InitNickname (engine/pokemon/move_mon.asm:1787)
     local h = hooks(vm)
@@ -417,17 +405,15 @@ end
 -- page and its placing jingle.  The placing itself is what
 -- BugContest_GetPlayersResult leaves in wScriptVar, and the gate script's three
 -- `ifequal`s are the prize branches.
---
--- The pages are authored here rather than read out of text.lua because nothing
--- in the ROM's script bytecode points at ContestJudging_*Text: they hang off
--- engine code, so the extractor never reaches them.
+
+-- engine/events/bug_contest/judging.asm:27
 local JUDGING = {
-  third = Strings.source("Placing third was\n%s,\fwho caught a\n%s!"),
-  second = Strings.source("Placing second was\n%s,\fwho caught a\n%s!"),
-  first = Strings.source(
-    "This Bug-Catching\nContest winner is\f%s,\nwho caught a\n%s!"),
-  score = Strings.source("The score was\n%d points!"),
-  winningScore = Strings.source("The winning score\nwas %d points!"),
+  third = "_ContestJudging_ThirdPlaceText",
+  thirdScore = "_ContestJudging_ThirdPlaceScoreText",
+  second = "_ContestJudging_SecondPlaceText",
+  secondScore = "_ContestJudging_SecondPlaceScoreText",
+  first = "_ContestJudging_FirstPlaceText",
+  firstScore = "_ContestJudging_FirstPlaceScoreText",
 }
 
 -- SFX_1ST_PLACE / SFX_2ND_PLACE / SFX_3RD_PLACE, by their pokegold labels: the
@@ -445,12 +431,12 @@ H.BugContestJudging = function(vm)
   -- LoadContestantName reads the winner ID, and GetPokemonName the species the
   -- podium recorded, so a slot nobody filled prints nothing at all.
   local order = {
-    { entry = results.third, page = JUDGING.third, score = JUDGING.score,
+    { entry = results.third, page = JUDGING.third, score = JUDGING.thirdScore,
       sfx = PLACE_SFX[3] },
-    { entry = results.second, page = JUDGING.second, score = JUDGING.score,
-      sfx = PLACE_SFX[2] },
+    { entry = results.second, page = JUDGING.second,
+      score = JUDGING.secondScore, sfx = PLACE_SFX[2] },
     { entry = results.first, page = JUDGING.first,
-      score = JUDGING.winningScore, sfx = PLACE_SFX[1] },
+      score = JUDGING.firstScore, sfx = PLACE_SFX[1] },
   }
   for _, row in ipairs(order) do
     local entry = row.entry
@@ -458,11 +444,11 @@ H.BugContestJudging = function(vm)
       local who = BugContest.contestantName(data(vm), entry.id, playerName)
       local what = (h.monName and h.monName(entry.species)) or entry.species
         or ""
-      vm:showRaw(Strings(row.page, who, what))
+      vm:showRaw(romLine(vm, row.page, who, what))
       -- pokegold engine/events/bug_contest/judging.asm:29-32
       drainSfx()
       if h.playSfxNamed then h.playSfxNamed(row.sfx) end
-      vm:showRaw(Strings(row.score, entry.score or 0), nil, nil, true)
+      vm:showRaw(romLine(vm, row.score, entry.score or 0), nil, nil, true)
     end
   end
   answer(vm, place)
@@ -486,11 +472,11 @@ H.CheckMagikarpLength = function(vm)
     nameMon(vm, mon.species)
     return
   end
-  local feet, inches =
-    Specials.magikarpLength(mon.otId, Specials.dvWord(mon.dvs))
+  local feet, inches = Specials.magikarpLength(Specials.magikarpLengths(vm),
+    mon.otId, Specials.dvWord(mon.dvs))
   vm:setStringBuffer(magikarpLengthText(feet, inches))
   local record = save(vm)
-  local best = Specials.magikarpBest(record)
+  local best = Specials.magikarpBest(vm, record)
   -- pokecrystal engine/events/magikarp.asm:39
   if feet < best.feet or (feet == best.feet and inches <= best.inches) then
     answer(vm, 2)
@@ -506,19 +492,25 @@ H.CheckMagikarpLength = function(vm)
   answer(vm, 3)
 end
 
--- pokecrystal engine/menus/intro_menu.asm:267
-Specials.MAGIKARP_DEFAULT_RECORD = { feet = 3, inches = 6, name = "RALPH" }
+-- pokecrystal engine/menus/intro_menu.asm:267-278
+function Specials.magikarpDefaultRecord(vm)
+  local d = data(vm)
+  local tables = d and d.gen2EventTables
+  local holder = tables and tables.magikarpRecordHolder
+  if holder == nil then error("events.lua has no magikarpRecordHolder", 2) end
+  return { feet = 3, inches = 6, name = holder }
+end
 
-function Specials.magikarpBest(record)
+function Specials.magikarpBest(vm, record)
   local best = record and record.magikarpRecord
-  local d = Specials.MAGIKARP_DEFAULT_RECORD
-  if not best then return { feet = d.feet, inches = d.inches, name = d.name } end
-  return { feet = best.feet or 0, inches = best.inches or 0, name = best.name or d.name }
+  if not best then return Specials.magikarpDefaultRecord(vm) end
+  return { feet = best.feet or 0, inches = best.inches or 0,
+    name = best.name or Specials.magikarpDefaultRecord(vm).name }
 end
 
 -- pokecrystal engine/events/magikarp.asm:302
 H.MagikarpHouseSign = function(vm)
-  local best = Specials.magikarpBest(save(vm))
+  local best = Specials.magikarpBest(vm, save(vm))
   vm:setStringBuffer(magikarpLengthText(best.feet, best.inches))
 end
 
@@ -611,46 +603,25 @@ H.DayCareMan = function(vm) dayCare(vm, "man") end
 H.DayCareLady = function(vm) dayCare(vm, "lady") end
 H.DayCareManOutside = function(vm) dayCare(vm, "outside") end
 
--- DayCareMon1 / DayCareMon2: not the conversation, just the "you left X here"
--- line, the deposited mon's cry, and -- only when the OTHER side is occupied
--- too -- the compatibility line about the pair.  Both texts live in
--- data/text/common_2.asm and are printed by engine/pokemon/breeding.asm
--- rather than by any bytecode, so the extractor seeds its text walker at them
--- by name (RomExtractorGen2's NAMED_TEXT); `line` below prefers the cache's
--- own characters and falls back to the transcription, which is the shape
--- src/ui/gen2/DayCareMenu.lua uses for the same block.
+-- engine/pokemon/breeding.asm:852,865
 local DAY_CARE_LEFT = {
-  man = { label = "_LeftWithDayCareManText",
-    body = Strings.source(
-      "It's {STRBUF}\nthat was left with\nthe DAY-CARE MAN.") },
-  lady = { label = "_LeftWithDayCareLadyText",
-    body = Strings.source(
-      "It's {STRBUF}\nthat was left with\nthe DAY-CARE LADY.") },
+  man = "_LeftWithDayCareManText",
+  lady = "_LeftWithDayCareLadyText",
 }
 
--- DayCareMonCompatibilityText's five verdicts, keyed by the string
--- Breeding.compatibilityText hands back (Breeding.COMPATIBILITY_*), in the
--- ASM's own fall-through order.  The name in {STRBUF} is the OTHER parent's:
--- `ld hl, wBreedMon2Nickname / call DayCareMonCompatibilityText` copies it
--- into wStringBuffer1 before the verdict is picked.
+-- engine/pokemon/breeding.asm:889
 local COMPATIBILITY = {
-  brimming = { label = "_BreedBrimmingWithEnergyText",
-    body = Strings.source("It's brimming with\nenergy.") },
-  none = { label = "_BreedNoInterestText",
-    body = Strings.source("It has no interest\nin {STRBUF}.") },
-  cares = { label = "_BreedAppearsToCareForText",
-    body = Strings.source("It appears to care\nfor {STRBUF}.") },
-  friendly = { label = "_BreedFriendlyText",
-    body = Strings.source("It's friendly with\n{STRBUF}.") },
-  interest = { label = "_BreedShowsInterestText",
-    body = Strings.source("It shows interest\nin {STRBUF}.") },
+  brimming = "_BreedBrimmingWithEnergyText",
+  none = "_BreedNoInterestText",
+  cares = "_BreedAppearsToCareForText",
+  friendly = "_BreedFriendlyText",
+  interest = "_BreedShowsInterestText",
 }
 
--- The extracted string for one of the entries above, or its transcription.
-local function commonLine(vm, entry)
-  if not entry then return "" end
+local function commonLine(vm, label)
+  if not label then return "" end
   local CommonText = require("src.core.gen2.CommonText")
-  return CommonText.get(vm and vm.text, entry.label) or Strings(entry.body)
+  return CommonText.get(vm and vm.text, label)
 end
 
 local function dayCareMon(vm, side)
@@ -691,19 +662,16 @@ H.DayCareMon2 = function(vm) dayCareMon(vm, "lady") end
 -- stubs this replaces used to leave it at a fixed value; nothing reads it
 -- after this call because MoveDeleter's own script has no branch behind it.
 --
--- data/text/common_3.asm, transcribed the way DAY_CARE_LEFT above transcribes
--- its own common_* text: the extractor does not reach the common banks.
+-- engine/events/move_deleter.asm:62
 local MOVE_DELETER_TEXT = {
-  intro = Strings.source(
-    "Um… Oh, yes, I'm\nthe MOVE DELETER.\fI can make #MON\n"
-    .. "forget moves.\fShall I make a\n#MON forget?"),
-  declined = Strings.source("No? Come visit me\nagain."),
-  whichMon = Strings.source("Which #MON?"),
-  egg = Strings.source("An EGG doesn't\nknow any moves!"),
-  onlyOneMove = Strings.source("That #MON knows\nonly one move."),
-  whichMove = Strings.source("Which move should\nit forget, then?"),
-  confirm = Strings.source("Oh, make it forget\n{STRBUF}?"),
-  forgot = Strings.source("Done! Your #MON\nforgot the move."),
+  intro = "_DeleterIntroText",
+  declined = "_DeleterNoComeAgainText",
+  whichMon = "_DeleterAskWhichMonText",
+  egg = "_DeleterEggText",
+  onlyOneMove = "_MoveKnowsOneText",
+  whichMove = "_DeleterAskWhichMoveText",
+  confirm = "_AskDeleteMoveText",
+  forgot = "_DeleterForgotMoveText",
 }
 
 -- ChooseMoveToDelete is its own screen (engine/pokemon/mon_menu.asm), not a
@@ -720,17 +688,17 @@ end
 
 H.MoveDeletion = function(vm)
   -- engine/events/move_deleter.asm:2-4, PrintText then `call YesNoBox`.
-  showRawHeld(vm, Strings(MOVE_DELETER_TEXT.intro))
+  showRawHeld(vm, romLine(vm, MOVE_DELETER_TEXT.intro))
   local wantsToDelete = coroutine.yield({ kind = "yesorno" })
   if not wantsToDelete then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.declined))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.declined))
     return
   end
 
-  vm:showRaw(Strings(MOVE_DELETER_TEXT.whichMon))
+  vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.whichMon))
   local _, mon = selectMon(vm, "choose")
   if not mon then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.declined))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.declined))
     return
   end
 
@@ -738,19 +706,19 @@ H.MoveDeletion = function(vm)
   -- `isEgg` instead of overwriting the species (src/core/gen2/Breeding.lua),
   -- so that is the flag this reads.
   if mon.isEgg then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.egg))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.egg))
     return
   end
 
   if #(mon.moves or {}) <= 1 then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.onlyOneMove))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.onlyOneMove))
     return
   end
 
-  vm:showRaw(Strings(MOVE_DELETER_TEXT.whichMove))
+  vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.whichMove))
   local index = chooseMoveToDelete(vm, mon)
   if not index then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.declined))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.declined))
     return
   end
 
@@ -759,10 +727,10 @@ H.MoveDeletion = function(vm)
   local def = entry and d and d.moves and d.moves[entry.id]
   vm:setStringBuffer((def and def.name) or (entry and entry.id) or "?")
   -- engine/events/move_deleter.asm:33-35, the same PrintText / YesNoBox pair.
-  showRawHeld(vm, Strings(MOVE_DELETER_TEXT.confirm))
+  showRawHeld(vm, romLine(vm, MOVE_DELETER_TEXT.confirm))
   local reallyDelete = coroutine.yield({ kind = "yesorno" })
   if not reallyDelete then
-    vm:showRaw(Strings(MOVE_DELETER_TEXT.declined))
+    vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.declined))
     return
   end
 
@@ -780,7 +748,7 @@ H.MoveDeletion = function(vm)
   if h.playSfxNamed then h.playSfxNamed("Sfx_MoveDeleted", 97) end
   coroutine.yield({ kind = "waitsfx" })
 
-  vm:showRaw(Strings(MOVE_DELETER_TEXT.forgot))
+  vm:showRaw(romLine(vm, MOVE_DELETER_TEXT.forgot))
 end
 
 -- ---- the Goldenrod NAME RATER ----------------------------------------------
@@ -791,28 +759,18 @@ end
 -- opens or closes one.  The asm never writes wScriptVar either, so vm.scriptVar
 -- is left exactly as `special` found it.
 --
--- data/text/common_1.asm, transcribed the way MOVE_DELETER_TEXT transcribes
--- its own bank -- this one IS reached by the extractor, but a map's own
--- `special` byte only points at the routine, not at the text bank behind it.
+-- engine/events/name_rater.asm:181
 local NAME_RATER_TEXT = {
-  hello = Strings.source(
-    "Hello, hello! I'm\nthe NAME RATER.\fI rate the names\nof #MON.\f"
-    .. "Would you like me\nto rate names?"),
-  comeAgain = Strings.source("OK, then. Come\nagain sometime."),
-  whichMon = Strings.source("Which #MON's\nnickname should I\vrate for you?"),
-  egg = Strings.source("Whoa… That's just\nan EGG."),
-  perfectName = Strings.source(
-    "Hm… {STRBUF}?\nWhat a great name!\vIt's perfect.\fTreat {STRBUF}\n"
-    .. "with loving care."),
-  betterName = Strings.source(
-    "Hm… {STRBUF}…\nThat's a fairly\vdecent name.\fBut, how about a\n"
-    .. "slightly better\vnickname?\fWant me to give it\na better name?"),
-  whatName = Strings.source("All right. What\nname should we\vgive it, then?"),
-  finished = Strings.source("That's a better\nname than before!\fWell done!"),
-  sameName = Strings.source(
-    "It might look the\nsame as before,\fbut this new name\n"
-    .. "is much better!\fWell done!"),
-  named = Strings.source("All right. This\n#MON is now\vnamed {STRBUF}."),
+  hello = "_NameRaterHelloText",
+  comeAgain = "_NameRaterComeAgainText",
+  whichMon = "_NameRaterWhichMonText",
+  egg = "_NameRaterEggText",
+  perfectName = "_NameRaterPerfectNameText",
+  betterName = "_NameRaterBetterNameText",
+  whatName = "_NameRaterWhatNameText",
+  finished = "_NameRaterFinishedText",
+  sameName = "_NameRaterSameNameText",
+  named = "_NameRaterNamedText",
 }
 
 -- IsNewNameEmpty: the typed name is empty if every character up to the
@@ -847,23 +805,23 @@ end
 
 H.NameRater = function(vm)
   -- engine/events/name_rater.asm:3-5, PrintText then `call YesNoBox`.
-  showRawHeld(vm, Strings(NAME_RATER_TEXT.hello))
+  showRawHeld(vm, romLine(vm, NAME_RATER_TEXT.hello))
   local wantsToRate = coroutine.yield({ kind = "yesorno" })
   if not wantsToRate then
-    vm:showRaw(Strings(NAME_RATER_TEXT.comeAgain))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.comeAgain))
     return
   end
 
-  vm:showRaw(Strings(NAME_RATER_TEXT.whichMon))
+  vm:showRaw(romLine(vm, NAME_RATER_TEXT.whichMon))
   local _, mon = selectMon(vm, "choose")
   if not mon then
-    vm:showRaw(Strings(NAME_RATER_TEXT.comeAgain))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.comeAgain))
     return
   end
 
   -- `cp EGG`, the same isEgg flag MoveDeletion checks above.
   if mon.isEgg then
-    vm:showRaw(Strings(NAME_RATER_TEXT.egg))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.egg))
     return
   end
 
@@ -873,19 +831,19 @@ H.NameRater = function(vm)
   vm:setStringBuffer(currentName)
 
   if isTradedMon(vm, mon) then
-    vm:showRaw(Strings(NAME_RATER_TEXT.perfectName))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.perfectName))
     return
   end
 
   -- engine/events/name_rater.asm:21-23, the same PrintText / YesNoBox pair.
-  showRawHeld(vm, Strings(NAME_RATER_TEXT.betterName))
+  showRawHeld(vm, romLine(vm, NAME_RATER_TEXT.betterName))
   local wantsRename = coroutine.yield({ kind = "yesorno" })
   if not wantsRename then
-    vm:showRaw(Strings(NAME_RATER_TEXT.comeAgain))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.comeAgain))
     return
   end
 
-  vm:showRaw(Strings(NAME_RATER_TEXT.whatName))
+  vm:showRaw(romLine(vm, NAME_RATER_TEXT.whatName))
   local newName = renameMon(vm, mon)
 
   -- IsNewNameEmpty and CompareNewToOld both fall into `.samename`: an empty
@@ -902,11 +860,11 @@ H.NameRater = function(vm)
   -- path) before NameRaterNamedText, then falls into whichever of
   -- FinishedText / SameNameText applies.
   vm:setStringBuffer(finalName)
-  vm:showRaw(Strings(NAME_RATER_TEXT.named))
+  vm:showRaw(romLine(vm, NAME_RATER_TEXT.named))
   if unchanged then
-    vm:showRaw(Strings(NAME_RATER_TEXT.sameName))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.sameName))
   else
-    vm:showRaw(Strings(NAME_RATER_TEXT.finished))
+    vm:showRaw(romLine(vm, NAME_RATER_TEXT.finished))
   end
 end
 
@@ -966,8 +924,10 @@ local function dstConfirmTime(vm)
   return string.format("%d:%02d", hour, Clock.minute(record))
 end
 
-local DST_CONFIRM = Strings.source("%s DST,\nis that OK?")
-local TIME_CONFIRM = Strings.source("%s,\nis that OK?")
+-- engine/rtc/timeset.asm:561
+local DST_CONFIRM = "_DSTIsThatOKText"
+-- engine/rtc/timeset.asm:589
+local TIME_CONFIRM = "_TimeAskOkayText"
 
 H.InitialSetDSTFlag = function(vm)
   local record = save(vm)
@@ -975,7 +935,7 @@ H.InitialSetDSTFlag = function(vm)
     record.rtc = record.rtc or {}
     record.rtc.dst = true
   end
-  vm:showRaw(Strings(DST_CONFIRM, dstConfirmTime(vm)))
+  vm:showRaw(dstConfirmTime(vm) .. romLine(vm, DST_CONFIRM))
 end
 
 H.InitialClearDSTFlag = function(vm)
@@ -984,7 +944,7 @@ H.InitialClearDSTFlag = function(vm)
     record.rtc = record.rtc or {}
     record.rtc.dst = false
   end
-  vm:showRaw(Strings(TIME_CONFIRM, dstConfirmTime(vm)))
+  vm:showRaw(dstConfirmTime(vm) .. romLine(vm, TIME_CONFIRM))
 end
 
 -- MrChrono prints the raw RTC registers into the text box: a debug readout the
@@ -1029,19 +989,20 @@ end
 -- no coins at all, or no COIN_CASE to hold them.
 local COIN_CASE = 0x36 -- constants/item_constants.asm:62
 
--- _NoCoinsText / _NoCoinCaseText, data/text/common_1.asm.
-local NO_COINS_TEXT = Strings.source("You have no coins.")
-local NO_COIN_CASE_TEXT = Strings.source("You don't have a\nCOIN CASE.")
+-- engine/events/specials.asm:254
+local NO_COINS_TEXT = "_NoCoinsText"
+-- engine/events/specials.asm:258
+local NO_COIN_CASE_TEXT = "_NoCoinCaseText"
 
 local function gameCornerGame(vm, kind)
   local h = hooks(vm)
   local coins = (h.coins and h.coins()) or 0
   if coins == 0 then
-    vm:showRaw(Strings(NO_COINS_TEXT))
+    vm:showRaw(romLine(vm, NO_COINS_TEXT))
     return
   end
   if h.hasItem and not h.hasItem(COIN_CASE) then
-    vm:showRaw(Strings(NO_COIN_CASE_TEXT))
+    vm:showRaw(romLine(vm, NO_COIN_CASE_TEXT))
     return
   end
   if not h.gameCornerGame then return end
@@ -1105,10 +1066,7 @@ H.UnownPrinter = function(vm)
   end)
 end
 
--- GameCornerPrizeMonCheckDex: a prize mon the player has never caught shows
--- its #DEX page as it is handed over.  The catch itself is the prize counter's
--- job (src/ui/gen2/PrizeMenu.lua); this is the entry, and wScriptVar carries
--- the species in and out untouched.
+-- engine/events/specials.asm:21
 H.GameCornerPrizeMonCheckDex = function(vm)
   local record = save(vm)
   local h = hooks(vm)
@@ -1362,8 +1320,9 @@ end
 -- trainer ID, nicknamed SHUCKIE.  Those four facts are what ReturnShuckie
 -- checks before it will take the thing back, so none of them is decoration.
 Specials.MANIA_OT_ID = 518
-Specials.MANIA_OT = "MANIA"
-Specials.SHUCKIE_NICKNAME = "SHUCKIE"
+-- engine/events/shuckle.asm:64-68
+Specials.MANIA_OT = "SpecialShuckleOT"
+Specials.SHUCKIE_NICKNAME = "SpecialShuckleNickname"
 Specials.SHUCKIE_LEVEL = 15
 
 H.GiveShuckle = function(vm)
@@ -1379,7 +1338,7 @@ H.GiveShuckle = function(vm)
   -- ../pokecrystal/engine/events/shuckle.asm:14
   local species, level, nickname = require("src.core.gen2.Gift").beforeGive(data(vm),
     { game = world and world.game, save = save(vm), world = world, runner = vm },
-    SHUCKLE, Specials.SHUCKIE_LEVEL, { nickname = Specials.SHUCKIE_NICKNAME })
+    SHUCKLE, Specials.SHUCKIE_LEVEL, { nickname = romLine(vm, Specials.SHUCKIE_NICKNAME) })
   local mon = Mon.new(data(vm), species, level, {
     nickname = nickname,
     item = "BERRY",
@@ -1388,7 +1347,7 @@ H.GiveShuckle = function(vm)
     answer(vm, FALSE)
     return
   end
-  mon.ot = Specials.MANIA_OT
+  mon.ot = romLine(vm, Specials.MANIA_OT)
   mon.otId = Specials.MANIA_OT_ID
   local record = save(vm)
   list[#list + 1] = mon
@@ -1429,7 +1388,7 @@ H.ReturnShuckie = function(vm)
   end
   if mon.species ~= SHUCKLE
       or mon.otId ~= Specials.MANIA_OT_ID
-      or mon.ot ~= Specials.MANIA_OT then
+      or mon.ot ~= romLine(vm, Specials.MANIA_OT) then
     answer(vm, Specials.SHUCKIE_WRONG_MON)
     return
   end
@@ -1646,9 +1605,12 @@ end
 
 -- ---- 85 Kurt and the apricorns --------------------------------------------
 
--- The CANCEL row Kurt_SelectApricorn's .Name draws itself (`db "CANCEL@"`)
--- rather than taking from the item names, because item 0 has no name.
-local CANCEL = Strings.source("CANCEL")
+-- engine/menus/menu_2.asm:249
+local KURT_CANCEL = {
+  gs = "Kurt_SelectApricorn.Cancel",
+  -- ../pokecrystal/engine/menus/scrolling_menu.asm:408
+  crystal = "ScrollingMenu_UpdateDisplay.CancelString",
+}
 
 -- .MenuHeader: MENU_BACKUP_TILES, `menu_coords 0, 0, 14, 17`, .MenuData and a
 -- default option of 1; .MenuData's own byte is STATICMENU_CURSOR |
@@ -1691,7 +1653,7 @@ H.SelectApricornForKurt = function(vm)
   for index, apricorn in ipairs(list) do
     rows[index] = (h.itemName and h.itemName(apricorn)) or apricorn
   end
-  rows[list.cancel] = Strings(CANCEL)
+  rows[list.cancel] = romLine(vm, KURT_CANCEL[GameVersion.engine()] or KURT_CANCEL.gs)
 
   local choice = Specials.block(vm, function(done)
     if not h.scriptMenu then return done(0) end
@@ -1856,32 +1818,14 @@ end
 -- branches on (which of three lines the barber says) and the HAPPINESS_* action
 -- applied to the mon.
 --
--- The three tables are data/events/happiness_probabilities.asm, transcribed
--- because the extractor never reaches them.  Rows are
--- { weight, scriptVar, happinessChange } where `weight` is the macro's own
--- `N percent` (`* $ff / 100`, integer) and -1 is 255, the catch-all last row:
---
---   Older    30%  -> 2,  50%+1 -> 3,  rest -> 4
---   Younger  60%+1 -> 2, 30%   -> 3,  rest -> 4
---   Daisy    always -> 2
---
--- The wScriptVar values really are 2, 3 and 4 -- not 0-based -- because the
--- barber's script branches on them with `ifequal`.
-Specials.HAIRCUT_TABLES = {
-  older = {
-    { 76, 2, "OLDERCUT1" },   -- 30 percent
-    { 128, 3, "OLDERCUT2" },  -- 50 percent + 1
-    { 255, 4, "OLDERCUT3" },  -- -1
-  },
-  younger = {
-    { 154, 2, "YOUNGCUT1" },  -- 60 percent + 1
-    { 76, 3, "YOUNGCUT2" },   -- 30 percent
-    { 255, 4, "YOUNGCUT3" },  -- -1
-  },
-  daisy = {
-    { 255, 2, "GROOMING" },
-  },
-}
+-- data/events/happiness_probabilities.asm:1
+local function haircutTables(vm)
+  local dataset = data(vm)
+  local events = dataset and dataset.gen2EventTables
+  local tables = events and events.haircutTables
+  if not tables then error("events.lua has no haircutTables", 2) end
+  return tables
+end
 
 -- HappinessChanges (data/events/happiness_changes.asm) is transcribed ONCE, in
 -- src/core/gen2/Happiness.lua, alongside the tier pick and the two clamps.
@@ -1919,7 +1863,8 @@ local function haircut(vm, which)
     return
   end
   nameMon(vm, mon.nickname or mon.species)
-  local rows = Specials.HAIRCUT_TABLES[which] or Specials.HAIRCUT_TABLES.daisy
+  local tables = haircutTables(vm)
+  local rows = tables[which] or tables.daisy
   -- `call Random / .loop: sub [hl] / jr c, .ok`: subtract each row's weight
   -- from the rolled byte until it borrows.
   local roll = Specials.random(0, 255)
@@ -1953,74 +1898,10 @@ H.DaisysGrooming = function(vm) haircut(vm, "daisy") end
 -- (OaksLab's dex-completeness check goes straight to it, skipping the
 -- yes/no), and it is the one this builds.
 --
--- data/text/common_2.asm _OakPCText2/_OakPCText3, transcribed the way
--- MOVE_DELETER_TEXT above transcribes its own bank.  The seen/owned counts
--- are formatted straight into the text with %d instead of through {STRBUF}:
--- the cart puts them in two DIFFERENT buffers (wStringBuffer3,
--- wStringBuffer4) in the one textbox, and the VM's {STRBUF} substitution
--- only ever carries one value.
--- `para` is `\f` (home/text.asm:403), `cont` is `\v` (home/text.asm:442), the
+-- engine/events/prof_oaks_pc.asm:107-113
 local OAK_PC_TEXT = {
-  completion = Strings.source("Current #DEX\ncompletion level:"),
-  counts = Strings.source(
-    "%d #MON seen\n%d #MON owned\fPROF.OAK's\nRating:"),
-}
-
--- OakRatings (data/events/pokedex_ratings.asm).  Each row is (cap, sfx,
--- text); FindOakRating walks the table with `cp c / jr nc, .match` against
--- ascending caps, which is "the first row whose cap covers the caught
--- count" -- exactly what findOakRating below does.  sfx is the Gold sfx
--- table's own label (audio/sfx_pointers.asm dba lines), not a pokered
--- fanfare name.
-local OAK_RATINGS = {
-  { max = 9, sfx = "Sfx_DexFanfareLessThan20", text = Strings.source(
-    "Look for #MON\nin grassy areas!") },
-  { max = 19, sfx = "Sfx_DexFanfareLessThan20", text = Strings.source(
-    "Good. I see you\nunderstand how to\vuse # BALLS.") },
-  { max = 34, sfx = "Sfx_DexFanfare2049", text = Strings.source(
-    "You're getting\ngood at this.\fBut you have a\nlong way to go.") },
-  { max = 49, sfx = "Sfx_DexFanfare2049", text = Strings.source(
-    "You need to fill\nup the #DEX.\fCatch different\nkinds of #MON!") },
-  { max = 64, sfx = "Sfx_DexFanfare5079", text = Strings.source(
-    "You're trying--I\ncan see that.\fYour #DEX is\ncoming together.") },
-  { max = 79, sfx = "Sfx_DexFanfare5079", text = Strings.source(
-    "To evolve, some\n#MON grow,\fothers use the\neffects of STONES.") },
-  { max = 94, sfx = "Sfx_DexFanfare80109", text = Strings.source(
-    "Have you gotten a\nfishing ROD? You\fcan catch #MON\nby fishing.") },
-  { max = 109, sfx = "Sfx_DexFanfare80109", text = Strings.source(
-    "Excellent! You\nseem to like col-\vlecting things!") },
-  { max = 124, sfx = "Sfx_CaughtMon", text = Strings.source(
-    "Some #MON only\nappear during\fcertain times of\nthe day.") },
-  { max = 139, sfx = "Sfx_CaughtMon", text = Strings.source(
-    "Your #DEX is\nfilling up. Keep\vup the good work!") },
-  { max = 154, sfx = "Sfx_DexFanfare140169", text = Strings.source(
-    "I'm impressed.\nYou're evolving\f#MON, not just\ncatching them.") },
-  { max = 169, sfx = "Sfx_DexFanfare140169", text = Strings.source(
-    "Have you met KURT?\nHis custom #\vBALLS should help.") },
-  { max = 184, sfx = "Sfx_DexFanfare170199", text = Strings.source(
-    "Wow. You've found\nmore #MON than\fthe last #DEX\nresearch project.") },
-  { max = 199, sfx = "Sfx_DexFanfare170199", text = Strings.source(
-    "Are you trading\nyour #MON?\fIt's tough to do\nthis alone!") },
-  { max = 214, sfx = "Sfx_DexFanfare200229", text = Strings.source(
-    "Wow! You've hit\n200! Your #DEX\vis looking great!") },
-  { max = 229, sfx = "Sfx_DexFanfare200229", text = Strings.source(
-    "You've found so\nmany #MON!\fYou've really\nhelped my studies!") },
-  { max = 239, sfx = "Sfx_DexFanfare230Plus", text = Strings.source(
-    "Magnificent! You\ncould become a\f#MON professor\nright now!") },
-  { max = 248, sfx = "Sfx_DexFanfare230Plus", text = Strings.source(
-    "Your #DEX is\namazing! You're\fready to turn\nprofessional!") },
-  -- The top band (251 real species, the table's cap of 255 covers it): this
-  -- is the ONLY place the ROM checks "has the player finished the #DEX", and
-  -- it does it here rather than handing off to anything.  The actual diploma
-  -- is not this special's business -- GameFreakGameDesignerScript in
-  -- Celadon Mansion 3F reads VAR_DEXCAUGHT for itself and is what runs
-  -- `special Diploma` (H.Diploma below, src/ui/gen2/Diploma.lua) and
-  -- then sets EVENT_ENABLE_DIPLOMA_PRINTING for the Graphic Artist's
-  -- `special PrintDiploma` (H.PrintDiploma, specials/crystal_extras.lua).
-  -- A finished #DEX here just means every rating after this one is this
-  -- same line.
-  { max = 255, sfx = "Sfx_DexFanfare230Plus", text = Strings.source(
-    "Whoa! A perfect\n#DEX! I've\fdreamt about this!\nCongratulations!") },
+  completion = "_OakPCText2",
+  counts = "_OakPCText3",
 }
 
 -- CountSetBits over wPokedexSeen/wPokedexCaught.  The port's dex is a
@@ -2039,25 +1920,33 @@ local function dexCounts(record)
   return seen, caught
 end
 
+-- data/events/pokedex_ratings.asm:7
+local function oakRatings(dataset)
+  local events = dataset and dataset.gen2EventTables
+  local rows = events and events.oakRatings
+  if not rows then error("events.lua has no oakRatings", 2) end
+  return rows
+end
+
 -- FindOakRating.  NUM_POKEMON is 251, so `caught` never exceeds the table's
 -- own top cap of 255 and this never falls off the end.
-local function findOakRating(caught)
-  for _, row in ipairs(OAK_RATINGS) do
+local function findOakRating(ratings, caught)
+  for _, row in ipairs(ratings) do
     if caught <= row.max then return row end
   end
-  return OAK_RATINGS[#OAK_RATINGS]
+  return ratings[#ratings]
 end
 
 H.ProfOaksPCBoot = function(vm)
-  vm:showRaw(Strings(OAK_PC_TEXT.completion))
+  vm:showRaw(romLine(vm, OAK_PC_TEXT.completion))
   local seen, caught = dexCounts(save(vm))
-  vm:showRaw(Strings(OAK_PC_TEXT.counts, seen, caught))
-  local rating = findOakRating(caught)
+  vm:showRaw(romLine(vm, OAK_PC_TEXT.counts, seen, caught))
+  local rating = findOakRating(oakRatings(data(vm)), caught)
   local h = hooks(vm)
   -- pokegold engine/events/prof_oaks_pc.asm:18-20 PlaySFX / JoyWaitAorB / WaitSFX
   drainSfx()
   if h.playSfxNamed then h.playSfxNamed(rating.sfx) end
-  vm:showRaw(Strings(rating.text), nil, nil, true)
+  vm:showRaw(romLine(vm, rating.text), nil, nil, true)
 end
 
 -- The whose-PC menu's PROF.OAK's PC row (src/ui/gen2/CenterPcMenu.lua) runs
@@ -2066,6 +1955,7 @@ end
 -- than transcribed a second time.
 Specials.dexCounts = dexCounts
 Specials.findOakRating = findOakRating
+Specials.oakRatings = oakRatings
 Specials.OAK_PC_TEXT = OAK_PC_TEXT
 
 -- ---- 101-102 the console and the Trainer House ----------------------------
@@ -2109,18 +1999,9 @@ end
 -- 40, and each HP byte is zeroed under the asm's own comment "generate new
 -- stats" -- a roamer has no rolled stats until it is first met.
 --
--- The roster and the walk both live in src/core/gen2/Roamers.lua, which is the
--- ONE writer of save.roamers: this file used to carry a second copy of the
--- three rows, and two transcriptions of one table is how a renumbered slot
--- sends Suicune's damage to Raikou's byte.  Specials.ROAMERS is kept as an
--- alias of that table so a reader landing here still sees what the routine
--- writes.
---
 -- `force` because the asm stores unconditionally.  Roamers.init's default is
 -- the port's own re-entry guard, which is the right default for a caller that
 -- is not the cart's own command; the command itself has to be the cart.
-Specials.ROAMERS = Roamers.SPECIES
-
 H.InitRoamMons = function(vm)
   local record = save(vm)
   if not record then return end
@@ -2170,39 +2051,24 @@ end
 -- for a yes/no here to change, and the conversation falls straight through to
 -- MomJustDoWhatYouCanText the way it does once DSTChecks itself returns.
 --
--- data/text/common_1.asm, transcribed the way MOVE_DELETER_TEXT above
--- transcribes its own bank, and with the cart's own page structure: `para` is
--- a page break (`\f` -- the box clears and WAITS for A), `cont` is the
--- scrolled third line (`\v`, which also waits).  Folding paras into plain
--- `\n`s let the whole of MomLeavingText1 type itself out as one page with no
--- button waits at all, straight through to the savings prompt.
+-- engine/events/mom.asm:567
 local MOM_TEXT = {
-  leaving1 = Strings.source(
-    "Wow, that's a cute\n#MON.\fWhere did you get\nit?\f…\f"
-    .. "So, you're leaving\non an adventure…\fOK!\nI'll help too.\f"
-    .. "But what can I do\nfor you?\fI know! I'll save\nmoney for you.\f"
-    .. "On a long journey,\nmoney's important.\fDo you want me to\n"
-    .. "save your money?"),
-  leaving2 = Strings.source("OK, I'll take care\nof your money.\f…"),
-  leaving3 = Strings.source(
-    "Be careful.\f#MON are your\nfriends. You need\vto work as a team.\f"
-    .. "Now, go on!"),
-  isThisAboutMoney = Strings.source(
-    "Hi! Welcome home!\nYou're trying very\vhard, I see.\f"
-    .. "I've kept your\nroom tidy.\fOr is this about\nyour money?"),
-  whatDoYouWantToDo = Strings.source("What do you want\nto do?"),
-  storeMoney = Strings.source("How much do you\nwant to save?"),
-  takeMoney = Strings.source("How much do you\nwant to take?"),
-  saveMoney = Strings.source("Do you want to\nsave some money?"),
-  haventSavedThatMuch = Strings.source("You haven't saved\nthat much."),
-  notEnoughRoomInWallet = Strings.source("You can't take\nthat much."),
-  insufficientFundsInWallet = Strings.source("You don't have\nthat much."),
-  notEnoughRoomInBank = Strings.source("You can't save\nthat much."),
-  startSavingMoney = Strings.source(
-    "OK, I'll save your\nmoney. Trust me!\f{PLAYER}, stick\nwith it!"),
-  storedMoney = Strings.source("Your money's safe\nhere! Get going!"),
-  takenMoney = Strings.source("{PLAYER}, don't\ngive up!"),
-  justDoWhatYouCan = Strings.source("Just do what\nyou can."),
+  leaving1 = "_MomLeavingText1",
+  leaving2 = "_MomLeavingText2",
+  leaving3 = "_MomLeavingText3",
+  isThisAboutMoney = "_MomIsThisAboutYourMoneyText",
+  whatDoYouWantToDo = "_MomBankWhatDoYouWantToDoText",
+  storeMoney = "_MomStoreMoneyText",
+  takeMoney = "_MomTakeMoneyText",
+  saveMoney = "_MomSaveMoneyText",
+  haventSavedThatMuch = "_MomHaventSavedThatMuchText",
+  notEnoughRoomInWallet = "_MomNotEnoughRoomInWalletText",
+  insufficientFundsInWallet = "_MomInsufficientFundsInWalletText",
+  notEnoughRoomInBank = "_MomNotEnoughRoomInBankText",
+  startSavingMoney = "_MomStartSavingMoneyText",
+  storedMoney = "_MomStoredMoneyText",
+  takenMoney = "_MomTakenMoneyText",
+  justDoWhatYouCan = "_MomJustDoWhatYouCanText",
 }
 
 -- constants/script_constants.asm.
@@ -2212,12 +2078,18 @@ local MOM_MAX_MONEY = 999999
 -- BankOfMom_MenuHeader: `menu_coords 0, 0, 10, 10`, STATICMENU_CURSOR, four
 -- items, cursor starting on GET.  Answers through the same "menu" yield
 -- Script_verticalmenu uses, so Gen2ScriptMenu draws it with no new screen.
-local BANK_MENU_HEADER = {
-  left = 0, top = 0, right = 10, bottom = 10,
+local function bankMenuHeader(vm)
+  local items = {}
+  for i = 1, 4 do
+    items[i] = romLine(vm, "BankOfMom_MenuHeader.MenuData#" .. i)
+  end
+  return {
+    left = 0, top = 0, right = 10, bottom = 10,
   dataFlags = 0x80, -- STATICMENU_CURSOR
-  items = { "GET", "SAVE", "CHANGE", "CANCEL" },
-  cursor = 1,
-}
+    items = items,
+    cursor = 1,
+  }
+end
 
 local function bankMoney(vm, account)
   local h = hooks(vm)
@@ -2284,27 +2156,27 @@ H.BankOfMom = function(vm)
   local mom = record.mom
 
   local function justDoWhatYouCan()
-    vm:showRaw(Strings(MOM_TEXT.justDoWhatYouCan))
+    vm:showRaw(romLine(vm, MOM_TEXT.justDoWhatYouCan))
   end
 
   -- .CheckIfBankInitialized / .InitializeBank: the very first visit, before
   -- MOM_ACTIVE_F is ever set.  Skips IsThisAboutYourMoney entirely.
   if not mom.active then
     -- engine/events/mom.asm:50-53, PrintText then `call YesNoBox`.
-    showRawHeld(vm, Strings(MOM_TEXT.leaving1))
+    showRawHeld(vm, romLine(vm, MOM_TEXT.leaving1))
     local wantsToSave = coroutine.yield({ kind = "yesorno" })
     mom.active = true
     if wantsToSave then
       mom.savingMoney = true
-      vm:showRaw(Strings(MOM_TEXT.leaving2))
+      vm:showRaw(romLine(vm, MOM_TEXT.leaving2))
     end
-    vm:showRaw(Strings(MOM_TEXT.leaving3))
+    vm:showRaw(romLine(vm, MOM_TEXT.leaving3))
     return
   end
 
   -- .IsThisAboutYourMoney
   -- engine/events/mom.asm:71-74, the same PrintText / YesNoBox pair.
-  showRawHeld(vm, Strings(MOM_TEXT.isThisAboutMoney))
+  showRawHeld(vm, romLine(vm, MOM_TEXT.isThisAboutMoney))
   local aboutMoney = coroutine.yield({ kind = "yesorno" })
   if not aboutMoney then
     -- .nope: DSTChecks does not apply here; see the header note above.
@@ -2313,26 +2185,26 @@ H.BankOfMom = function(vm)
   end
 
   -- .AccessBankOfMom
-  vm:showRaw(Strings(MOM_TEXT.whatDoYouWantToDo))
+  vm:showRaw(romLine(vm, MOM_TEXT.whatDoYouWantToDo))
   local choice = coroutine.yield({ kind = "menu", style = "vertical",
-    header = BANK_MENU_HEADER })
+    header = bankMenuHeader(vm) })
 
   if choice == 1 then
     -- .withdraw -> .TakeMoney
     while true do
-      vm:showRaw(Strings(MOM_TEXT.takeMoney))
+      vm:showRaw(romLine(vm, MOM_TEXT.takeMoney))
       local amount = bankOfMomAmount(vm, "withdraw")
       if not amount or amount == 0 then justDoWhatYouCan() return end
       if amount > bankMoney(vm, MOMS_MONEY) then
-        vm:showRaw(Strings(MOM_TEXT.haventSavedThatMuch))
+        vm:showRaw(romLine(vm, MOM_TEXT.haventSavedThatMuch))
       else
         local _, overflowed = giveMoneyClamped(vm, YOUR_MONEY, amount)
         if overflowed then
-          vm:showRaw(Strings(MOM_TEXT.notEnoughRoomInWallet))
+          vm:showRaw(romLine(vm, MOM_TEXT.notEnoughRoomInWallet))
         else
           takeMoneyFloored(vm, MOMS_MONEY, amount)
           transactionSfx(vm)
-          vm:showRaw(Strings(MOM_TEXT.takenMoney))
+          vm:showRaw(romLine(vm, MOM_TEXT.takenMoney))
           return
         end
       end
@@ -2340,19 +2212,19 @@ H.BankOfMom = function(vm)
   elseif choice == 2 then
     -- .deposit -> .StoreMoney
     while true do
-      vm:showRaw(Strings(MOM_TEXT.storeMoney))
+      vm:showRaw(romLine(vm, MOM_TEXT.storeMoney))
       local amount = bankOfMomAmount(vm, "deposit")
       if not amount or amount == 0 then justDoWhatYouCan() return end
       if amount > bankMoney(vm, YOUR_MONEY) then
-        vm:showRaw(Strings(MOM_TEXT.insufficientFundsInWallet))
+        vm:showRaw(romLine(vm, MOM_TEXT.insufficientFundsInWallet))
       else
         local _, overflowed = giveMoneyClamped(vm, MOMS_MONEY, amount)
         if overflowed then
-          vm:showRaw(Strings(MOM_TEXT.notEnoughRoomInBank))
+          vm:showRaw(romLine(vm, MOM_TEXT.notEnoughRoomInBank))
         else
           takeMoneyFloored(vm, YOUR_MONEY, amount)
           transactionSfx(vm)
-          vm:showRaw(Strings(MOM_TEXT.storedMoney))
+          vm:showRaw(romLine(vm, MOM_TEXT.storedMoney))
           return
         end
       end
@@ -2360,11 +2232,11 @@ H.BankOfMom = function(vm)
   elseif choice == 3 then
     -- .stopsaving -> .StopOrStartSavingMoney
     -- engine/events/mom.asm:255-258, the same PrintText / YesNoBox pair.
-    showRawHeld(vm, Strings(MOM_TEXT.saveMoney))
+    showRawHeld(vm, romLine(vm, MOM_TEXT.saveMoney))
     local wantsToSave = coroutine.yield({ kind = "yesorno" })
     if wantsToSave then
       mom.savingMoney = true
-      vm:showRaw(Strings(MOM_TEXT.startSavingMoney))
+      vm:showRaw(romLine(vm, MOM_TEXT.startSavingMoney))
     else
       mom.savingMoney = false
       justDoWhatYouCan()
@@ -2416,10 +2288,6 @@ end
 -- it never writes wScriptVar (no `ld [wScriptVar], a` anywhere in the
 -- routine), so this leaves vm.scriptVar exactly as `special` found it.
 --
--- data/text/common_1.asm _WhichMonPhotoText/_HoldStillText/
--- _PrestoAllDoneText/_NoPhotoText/_EggPhotoText, transcribed the way
--- MOVE_DELETER_TEXT above transcribes its own bank.
---
 -- farcall PrintPartymon (engine/printer/printer.asm) is the actual camera:
 -- it draws the portrait card (src/ui/gen2/PhotoStudio.lua transcribes that
 -- layout, PrintPartyMonPage1) and then SendScreenToPrinter walks it out the
@@ -2430,11 +2298,12 @@ end
 -- hardwired to the nz arm below: the portrait shows, then the print always
 -- comes back as though the printer errored, which is the honest answer for
 -- a cartridge with nothing plugged into its link port.
+-- engine/events/print_photo.asm:32
 local PHOTO_STUDIO_TEXT = {
-  whichMon = Strings.source("Which #MON\nshould I photo-\ngraph?"),
-  holdStill = Strings.source("All righty. Hold\nstill for a bit."),
-  noPhoto = Strings.source("Oh, no picture?\nCome again, OK?"),
-  eggPhoto = Strings.source("An EGG? My talent\nis worth more…"),
+  whichMon = "_WhichMonPhotoText",
+  holdStill = "_HoldStillText",
+  noPhoto = "_NoPhotoText",
+  eggPhoto = "_EggPhotoText",
 }
 
 local function showPhotoStudio(vm, mon)
@@ -2446,10 +2315,10 @@ local function showPhotoStudio(vm, mon)
 end
 
 H.PhotoStudio = function(vm)
-  vm:showRaw(Strings(PHOTO_STUDIO_TEXT.whichMon))
+  vm:showRaw(romLine(vm, PHOTO_STUDIO_TEXT.whichMon))
   local _, mon = selectMon(vm, "choose")
   if not mon then
-    vm:showRaw(Strings(PHOTO_STUDIO_TEXT.noPhoto))
+    vm:showRaw(romLine(vm, PHOTO_STUDIO_TEXT.noPhoto))
     return
   end
 
@@ -2457,14 +2326,14 @@ H.PhotoStudio = function(vm)
   -- in this port (src/core/gen2/Breeding.lua), same test H.MoveDeletion and
   -- H.NameRater make.
   if mon.isEgg then
-    vm:showRaw(Strings(PHOTO_STUDIO_TEXT.eggPhoto))
+    vm:showRaw(romLine(vm, PHOTO_STUDIO_TEXT.eggPhoto))
     return
   end
 
-  vm:showRaw(Strings(PHOTO_STUDIO_TEXT.holdStill))
+  vm:showRaw(romLine(vm, PHOTO_STUDIO_TEXT.holdStill))
   showPhotoStudio(vm, mon)
   -- hPrinter reads as an error unconditionally; see the header comment.
-  vm:showRaw(Strings(PHOTO_STUDIO_TEXT.noPhoto))
+  vm:showRaw(romLine(vm, PHOTO_STUDIO_TEXT.noPhoto))
 end
 
 -- ---- 21 the quick save -----------------------------------------------------
@@ -2483,14 +2352,12 @@ end
 -- write here, where src/ui/gen2/SaveMenu.lua:107 already puts it, rather than
 -- after the saved page has typed.
 
--- data/text/common_2.asm:1279-1299.
+-- engine/menus/save.asm:1057-1071
 local SAVE_TEXT = {
-  already = Strings.source(
-    "There is already a\nsave file. Is it\vOK to overwrite?"),
-  another = Strings.source(
-    "There is another\nsave file. Is it\vOK to overwrite?"),
-  saving = Strings.source("SAVING… DON'T TURN\nOFF THE POWER."),
-  saved = Strings.source("%s saved\nthe game."),
+  already = "_AlreadyASaveFileText",
+  another = "_AnotherSaveFileText",
+  saving = "_SavingDontTurnOffThePowerText",
+  saved = "_SavedTheGameText",
 }
 
 -- engine/menus/save.asm:247 the 16 frames under SAVING and :251 the 32 the
@@ -2507,12 +2374,12 @@ H.TryQuickSave = function(vm)
   local exists, sameId = false, false
   if h.saveFileState then exists, sameId = h.saveFileState() end
   if exists then
-    showRawHeld(vm, Strings(sameId and SAVE_TEXT.already or SAVE_TEXT.another))
+    showRawHeld(vm, romLine(vm, sameId and SAVE_TEXT.already or SAVE_TEXT.another))
     if not coroutine.yield({ kind = "yesorno" }) then
       return answer(vm, FALSE)
     end
   end
-  vm:showRaw(Strings(SAVE_TEXT.saving), true, SAVING_HOLD)
+  vm:showRaw(romLine(vm, SAVE_TEXT.saving), true, SAVING_HOLD)
   -- _SaveGameData (:273).  A veto from the save.write mod hook is the one way
   -- this port can refuse a write the cart always completes, and a refusal is
   -- the same FALSE the overwrite prompt's NO gives.
@@ -2522,7 +2389,7 @@ H.TryQuickSave = function(vm)
   if h.playSfxNamed then h.playSfxNamed("Sfx_Save") end
   local record = save(vm)
   local name = (record and record.player and record.player.name) or ""
-  vm:showRaw(Strings(SAVE_TEXT.saved, name), true, SAVED_HOLD)
+  vm:showRaw(romLine(vm, SAVE_TEXT.saved, name), true, SAVED_HOLD)
   answer(vm, TRUE)
 end
 
@@ -2686,7 +2553,6 @@ local STUB_ROWS = {
   { "Function17d2ce", 0, "Mobile System GB: mobile menu chrome" },
   { "Function11c1ab", nil, "Mobile System GB: the fixed-word entry screen" },
   { "UnusedFindItemInPCOrBag", 0, "Mobile System GB: unreferenced" },
-  { "GiveOddEgg", nil, "the Odd Egg roster is not ported; Route 34 is later" },
   { "DisplayUnownWords", nil, "needs the Unown wall word box" },
   { "HoOhChamber", nil, "the Ruins of Alph secret chambers are not ported" },
   { "OmanyteChamber", nil, "the Ruins of Alph secret chambers are not ported" },

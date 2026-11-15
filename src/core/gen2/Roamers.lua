@@ -26,6 +26,7 @@
 -- pair InitRoamMons never writes and BattleEnd_HandleRoamMons writes when a
 -- beast is caught or beaten -- is nil.
 
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local GameVersion = require("src.core.GameVersion")
 local Mon = require("src.battle.gen2.Mon")
 local Runtime = require("src.mods.Runtime")
@@ -60,75 +61,24 @@ end
 -- The beasts
 --------------------------------------------------------------------------
 
--- InitRoamMons, written out.  The species order IS the slot order -- Raikou 1,
--- Entei 2, Suicune 3 -- because CheckEncounterRoamMon indexes the structs by a
--- random 0..2 and GetRoamMonHP walks them by species, so renumbering them
--- would send Suicune's damage to Raikou's byte.
-Roamers.SPECIES = {
-  { species = "RAIKOU", level = 40, map = "ROUTE_42" },
-  { species = "ENTEI", level = 40, map = "ROUTE_37" },
-  { species = "SUICUNE", level = 40, map = "ROUTE_38" },
-}
-Roamers.LEVEL = 40
-
--- pokecrystal/engine/overworld/wildmons.asm:493 seeds Raikou and Entei only,
--- so the roster is read out of the cache when the cache carries one.
-local function startMapFor(species)
-  for _, row in ipairs(Roamers.SPECIES) do
-    if row.species == species then return row.map end
-  end
-  return nil
-end
-
+-- engine/overworld/wildmons.asm:488 (pokegold), :493 (pokecrystal)
 function Roamers.roster(encounters)
   local extracted = encounters and encounters.roamMons
-  if type(extracted) ~= "table" or #extracted == 0 then return Roamers.SPECIES end
-  local rows = {}
-  for _, row in ipairs(extracted) do
-    rows[#rows + 1] = {
-      species = row.species,
-      level = row.level or Roamers.LEVEL,
-      map = row.map or startMapFor(row.species),
-    }
+  if type(extracted) ~= "table" or #extracted == 0 then
+    error("encounters.lua has no roamMons", 2)
   end
-  return rows
+  return extracted
 end
 
--- data/wild/roammon_maps.asm, entry for entry and in order.  The order matters
--- twice over: `.Update` picks a connection by a two-bit index into the list, so
--- shuffling one row changes which route a beast walks to, and JumpRoamMon picks
--- an ENTRY by a four-bit index, so shuffling the rows changes where a
--- teleport drops it.
---
--- Route 40 and Route 41 are deliberately absent (they are water routes, and
--- CheckEncounterRoamMon refuses to fire while the player is surfing anyway).
+-- data/wild/roammon_maps.asm:17
 Roamers.NUM_MAPS = 16
-Roamers.MAPS = {
-  { map = "ROUTE_29", to = { "ROUTE_30", "ROUTE_46" } },
-  { map = "ROUTE_30", to = { "ROUTE_29", "ROUTE_31" } },
-  { map = "ROUTE_31", to = { "ROUTE_30", "ROUTE_32", "ROUTE_36" } },
-  { map = "ROUTE_32", to = { "ROUTE_36", "ROUTE_31", "ROUTE_33" } },
-  { map = "ROUTE_33", to = { "ROUTE_32", "ROUTE_34" } },
-  { map = "ROUTE_34", to = { "ROUTE_33", "ROUTE_35" } },
-  { map = "ROUTE_35", to = { "ROUTE_34", "ROUTE_36" } },
-  { map = "ROUTE_36", to = { "ROUTE_35", "ROUTE_31", "ROUTE_32", "ROUTE_37" } },
-  { map = "ROUTE_37", to = { "ROUTE_36", "ROUTE_38", "ROUTE_42" } },
-  { map = "ROUTE_38", to = { "ROUTE_37", "ROUTE_39", "ROUTE_42" } },
-  { map = "ROUTE_39", to = { "ROUTE_38" } },
-  { map = "ROUTE_42", to = { "ROUTE_43", "ROUTE_44", "ROUTE_37", "ROUTE_38" } },
-  { map = "ROUTE_43", to = { "ROUTE_42", "ROUTE_44" } },
-  { map = "ROUTE_44", to = { "ROUTE_42", "ROUTE_43", "ROUTE_45" } },
-  { map = "ROUTE_45", to = { "ROUTE_44", "ROUTE_46" } },
-  { map = "ROUTE_46", to = { "ROUTE_45", "ROUTE_29" } },
-}
 
--- RomExtractorGen2 emits `encounters.roamMaps` in exactly the shape above, so
--- the table above is the fallback for a cache built before it did (and for a
--- caller with no cache at all, which every unit test here is).
 function Roamers.mapTable(encounters)
   local extracted = encounters and encounters.roamMaps
-  if type(extracted) == "table" and #extracted > 0 then return extracted end
-  return Roamers.MAPS
+  if type(extracted) ~= "table" or #extracted == 0 then
+    error("encounters.lua has no roamMaps", 2)
+  end
+  return extracted
 end
 
 -- `.Update`'s search: walk RoamMaps for the entry whose START map is `mapId`.
@@ -383,7 +333,7 @@ function Roamers.beginBattle(save, index, data)
   local slot = Roamers.slot(save, index)
   if not Roamers.active(slot) then return nil end
   local fresh = (slot.hp or 0) == 0
-  local mon = Mon.new(data, slot.species, slot.level or Roamers.LEVEL, {
+  local mon = Mon.new(data, slot.species, slot.level, {
     wild = true,
     dvs = (not fresh) and slot.dvs or nil,
   })
@@ -562,42 +512,42 @@ function Swarm.setFishing(save, kind)
   return true
 end
 
-function Swarm.active(save, kind, resolveId)
+function Swarm.active(save, kind)
   if type(save) == "table" and save.version == "crystal" then
-    local function set(name, id)
-      id = resolveId and resolveId(name, id) or id
+    local function set(name)
+      local id = EngineFlags.id(name)
       return save.engineFlags and save.engineFlags[id] == true or false
     end
-    if kind == "DUNSPARCE" or kind == 0 then return set("ENGINE_DUNSPARCE_SWARM", 160) end
-    if kind == "YANMA" or kind == 1 then return set("ENGINE_YANMA_SWARM", 161) end
-    if kind == "fishing" then return set("ENGINE_QWILFISH_SWARM", 82) end
-    return set("ENGINE_DUNSPARCE_SWARM", 160) or set("ENGINE_YANMA_SWARM", 161)
-      or set("ENGINE_QWILFISH_SWARM", 82)
+    if kind == "DUNSPARCE" or kind == 0 then return set("ENGINE_DUNSPARCE_SWARM") end
+    if kind == "YANMA" or kind == 1 then return set("ENGINE_YANMA_SWARM") end
+    if kind == "fishing" then return set("ENGINE_QWILFISH_SWARM") end
+    return set("ENGINE_DUNSPARCE_SWARM") or set("ENGINE_YANMA_SWARM")
+      or set("ENGINE_QWILFISH_SWARM")
   end
   return type(save) == "table" and save.dailyFlags ~= nil
     and save.dailyFlags.swarm == true
 end
 
-function Swarm.mapId(save, kind, resolveId)
-  if not Swarm.active(save, kindName(kind), resolveId) then return nil end
+function Swarm.mapId(save, kind)
+  if not Swarm.active(save, kindName(kind)) then return nil end
   local maps = Swarm.maps(save)
   return maps and maps[kindName(kind)] or nil
 end
 
 -- pokecrystal/engine/overworld/wildmons.asm:414-451 tests Dunsparce first and
 -- falls through to Yanma, so a map both are on answers Dunsparce.
-function Swarm.onMap(save, mapId, resolveId)
+function Swarm.onMap(save, mapId)
   if mapId == nil then return nil end
   local maps = Swarm.maps(save)
   if not maps then return nil end
   for _, name in ipairs(Swarm.KIND_ORDER) do
-    if maps[name] == mapId and Swarm.active(save, name, resolveId) then return name end
+    if maps[name] == mapId and Swarm.active(save, name) then return name end
   end
   return nil
 end
 
-function Swarm.fishing(save, resolveId)
-  if not Swarm.active(save, "fishing", resolveId) then return Swarm.FISH_NONE end
+function Swarm.fishing(save)
+  if not Swarm.active(save, "fishing") then return Swarm.FISH_NONE end
   return (save.dailyFlags and save.dailyFlags.fishingSwarm) or Swarm.FISH_NONE
 end
 
@@ -651,28 +601,24 @@ end
 -- (`call LookUpWildmonsForMapDE / jr nc, .noSwarm`), which is what keeps a
 -- fishing swarm from blanking the grass on Route 32.
 --
--- The reader below looks for `encounters.swarmGrass` and
--- `encounters.swarmWater`, keyed by map id in exactly the shape
--- `encounters.grass` / `encounters.water` already use -- which is what
--- RomExtractorGen2 writes, since the cart's swarm tables ARE grass and water
--- records.  A cache built before it did simply has no swarm rows and every
--- lookup here falls through to the map's own list.
-function Swarm.entry(save, encounters, mapId, kind, resolveId)
+-- data/wild/swarm_grass.asm:3, data/wild/swarm_water.asm:3
+function Swarm.entry(save, encounters, mapId, kind)
   if not encounters then return nil end
-  if not Swarm.onMap(save, mapId, resolveId) then return nil end
-  local table_ = (kind == "water") and encounters.swarmWater
-    or encounters.swarmGrass
-  return table_ and table_[mapId] or nil
+  if not Swarm.onMap(save, mapId) then return nil end
+  local key = (kind == "water") and "swarmWater" or "swarmGrass"
+  local table_ = encounters[key]
+  if type(table_) ~= "table" then error("encounters.lua has no " .. key, 2) end
+  return table_[mapId]
 end
 
 -- An `encounters` view with the swarm's rows in front of the map's own, for a
 -- caller that wants to keep using src/battle/gen2/Encounter.lua unchanged.
 -- Returns the ORIGINAL table when no swarm applies, so the common step pays
 -- nothing.
-function Swarm.tables(save, encounters, mapId, resolveId)
+function Swarm.tables(save, encounters, mapId)
   if not encounters then return encounters end
-  local grass = Swarm.entry(save, encounters, mapId, "grass", resolveId)
-  local water = Swarm.entry(save, encounters, mapId, "water", resolveId)
+  local grass = Swarm.entry(save, encounters, mapId, "grass")
+  local water = Swarm.entry(save, encounters, mapId, "water")
   if not (grass or water) then return encounters end
   local view = {}
   for key, value in pairs(encounters) do view[key] = value end

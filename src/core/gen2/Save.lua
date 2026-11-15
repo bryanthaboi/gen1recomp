@@ -31,6 +31,7 @@ local Logger = require("src.core.Logger")
 -- installs the live buses, so a mod-free boot and every headless test pay
 -- nothing for the call.
 local Runtime = require("src.mods.Runtime")
+local RomText = require("src.core.RomText")
 local SaveSerializer = require("src.core.SaveSerializer")
 
 local function rand(a, b)
@@ -158,33 +159,36 @@ local function fs()
   return love.filesystem
 end
 
--- The first PlayerNameArray row -- pokegold data/player_names.asm:12-22, and
--- Crystal's gender-split arrays at data/player_names.asm:12-16, :31-35.
-Save.DEFAULT_PLAYER_NAMES = {
-  gold = "GOLD",
-  silver = "SILVER",
-  crystal = "CHRIS",
-}
-
--- FemalePlayerNameArray's first row, the `.Kris` dname NamePlayer falls back to
--- (data/player_names.asm:31-32, engine/menus/intro_menu.asm:768-781).
-Save.DEFAULT_PLAYER_NAMES_FEMALE = {
-  crystal = "KRIS",
-}
-
 -- wPlayerGender as this save spells it (constants/ram_constants.asm:176-177).
 function Save.isFemale(save)
   local player = type(save) == "table" and save.player
   return (player and player.gender) == "female"
 end
 
-function Save.defaultPlayerName(version, gender)
-  version = version or GameVersion.get()
-  if gender == "female" then
-    local female = Save.DEFAULT_PLAYER_NAMES_FEMALE[version]
-    if female then return female end
+-- data/player_names.asm:12; ../pokecrystal/data/player_names.asm:12, :31
+local function presetArray(data, gender)
+  local text = data and data.text
+  if text and text["MalePlayerNameArray#1"] then
+    return gender == "female" and "FemalePlayerNameArray#" or "MalePlayerNameArray#"
   end
-  return Save.DEFAULT_PLAYER_NAMES[version] or "GOLD"
+  return "PlayerNameArray#"
+end
+
+function Save.presetNames(data, gender)
+  local prefix = presetArray(data, gender)
+  local out = {}
+  for i = 1, 4 do out[i] = RomText(data, prefix .. i) end
+  return out
+end
+
+-- data/player_names.asm:25; ../pokecrystal/data/player_names.asm:18, :37
+function Save.presetTitle(data, gender)
+  return RomText(data, presetArray(data, gender) .. "5")
+end
+
+-- engine/menus/intro_menu.asm:643; ../pokecrystal/engine/menus/intro_menu.asm:769
+function Save.defaultPlayerName(data, gender)
+  return Save.presetNames(data, gender)[1]
 end
 
 -- A fresh Gen 2 save.  `opts` carries what the intro collected: player name,
@@ -197,7 +201,7 @@ function Save.newGame(opts)
     generation = 2,
     player = {
       name = opts.playerName
-        or Save.defaultPlayerName(nil, opts.gender or "male"),
+        or (opts.data and Save.defaultPlayerName(opts.data, opts.gender or "male")),
       -- _ResetWRAM rolls wPlayerID out of hRandomSub/hRandomAdd
       -- (engine/menus/intro_menu.asm:41-49).
       id = opts.trainerId or rand(0, 65535),
@@ -562,7 +566,7 @@ end
 
 -- Fill in anything a save (or an older save) is missing, so callers can index
 -- freely.  Runs on both newGame and load.
-function Save.normalize(save)
+function Save.normalize(save, dataset)
   if type(save) ~= "table" then return nil end
   save.format = save.format or Save.FORMAT
   if not (GameVersion.VERSIONS[save.version]
@@ -575,7 +579,7 @@ function Save.normalize(save)
   -- writes it -- constants/ram_constants.asm:177.
   save.player.gender = save.player.gender or "male"
   save.player.name = save.player.name
-    or Save.defaultPlayerName(save.version, save.player.gender)
+    or (dataset and Save.defaultPlayerName(dataset, save.player.gender))
   save.player.id = save.player.id or rand(0, 65535)
   save.player.money = math.max(0, math.min(save.player.money or 0, Save.MAX_MONEY))
   save.player.coins = math.max(0, math.min(save.player.coins or 0, Save.MAX_COINS))
@@ -957,7 +961,7 @@ end
 -- Returns save, recovered ("bak"/"tmp" when a staged or backup copy had to be
 -- promoted), err, report (the quarantine ledger from Save.validate; empty for
 -- any save this port wrote itself).
-function Save.load(version)
+function Save.load(version, dataset)
   local main, backup, tmp = saveNames(version)
   local data, err = readTable(main)
   local recovered
@@ -972,7 +976,7 @@ function Save.load(version)
   end
   if not data then return nil, nil, err end
   Save.migrate(data)
-  Save.normalize(data)
+  Save.normalize(data, dataset)
   local report = Save.validate(data)
   if not Save.emptyReport(report) then
     -- Gold has no report screen of its own yet; the log is what keeps a

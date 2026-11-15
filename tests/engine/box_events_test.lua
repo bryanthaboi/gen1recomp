@@ -34,7 +34,7 @@ local function feedFor(version)
   local fam=Events.FAMILY[version]
   if fam=="rs" then return {cards={},news={},events={{key="rs_eon_ticket",label="EON TICKET",bytes=EON_EVENT}}} end
   local cards={}
-  for _,b in ipairs(Gift.builtins(fam)) do cards[#cards+1]={key=b.key,card=b.card} end
+  for _,b in ipairs(require("tests.fixtures.game3_gift_cards").cards(fam)) do cards[#cards+1]={key=b.key,card=b.card} end
   return {cards=cards,news={}}
 end
 for _,version in ipairs({"firered","leafgreen","emerald","ruby","sapphire"}) do Events.setFeed(version,feedFor(version)) end

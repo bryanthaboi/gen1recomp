@@ -22,11 +22,13 @@ check(Permissions.isWarpCollision(0x71), "COLL_DOOR is a warp")
 check(Permissions.isLedge(0xa0), "COLL_HOP_DOWN is a ledge")
 eq(Permissions.of(0xff), Permissions.WALL, "a missing coll reads as wall")
 
-local bare = {}
-Roamers.init(bare)
-eq(#bare.roamers, 3, "no cache -> the three-beast Gold roster")
-check(Roamers.SPECIES ~= nil and #Roamers.SPECIES == 3,
-  "Roamers.SPECIES survives as the ROM-free fallback")
+check(not pcall(Roamers.init, {}), "no roamMons in the cache is an error")
+check(not pcall(Roamers.init, {}, { encounters = { roamMaps = {} } }),
+  "an encounters table without roamMons is an error")
+local crystalRoster = {}
+Roamers.init(crystalRoster,
+  { encounters = require("tests.fixtures.gen2_roamers").encounters("crystal") })
+eq(#crystalRoster.roamers, 2, "crystal's InitRoamMons seeds two beasts")
 
 -- pokecrystal/constants/script_constants.asm:256-257
 local pair = {}

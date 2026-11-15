@@ -38,10 +38,9 @@
 -- leader's own palette.
 
 local Chrome = require("src.ui.gen2.Chrome")
-local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Gen2Save = require("src.core.gen2.Save")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 local TileSheet = require("src.ui.gen2.TileSheet")
 
 local TrainerCard = {}
@@ -62,40 +61,9 @@ local TILE_STATUS = { 0x29, 0x2a, 0x2b, 0x2c, 0x2d }
 local TILE_BADGES_CAPTION = { 0x79, 0x7a, 0x7b, 0x7c, 0x7d }
 local TILE_COLON = 0x2e
 
--- Johto then Kanto, in badge order.
 local JOHTO_BADGES = {
-  Strings.source("ZEPHYR"), Strings.source("HIVE"), Strings.source("PLAIN"),
-  Strings.source("FOG"), Strings.source("STORM"), Strings.source("MINERAL"),
-  Strings.source("GLACIER"), Strings.source("RISING"),
+  "ZEPHYR", "HIVE", "PLAIN", "FOG", "STORM", "MINERAL", "GLACIER", "RISING",
 }
-local KANTO_BADGES = {
-  Strings.source("BOULDER"), Strings.source("CASCADE"),
-  Strings.source("THUNDER"), Strings.source("RAINBOW"), Strings.source("SOUL"),
-  Strings.source("MARSH"), Strings.source("VOLCANO"), Strings.source("EARTH"),
-}
-local JOHTO_BADGES_LABEL = Strings.source("JOHTO BADGES")
-local KANTO_BADGES_LABEL = Strings.source("KANTO BADGES")
-
--- Badge captions have room for four font glyphs, not four Lua bytes.  The
--- distinction matters as soon as a translation starts with an accented
--- character (or uses a multi-byte charmap sequence).
-local function badgeCaption(text)
-  text = text or ""
-  local spans = Font.split(text)
-  if #spans <= 4 then return text end
-  -- Same "#" -> POKé trap src/ui/gen2/PrizeMenu.lua's clampToTiles guards
-  -- against: the 4-glyph cut can land inside a macro's multi-glyph expansion
-  -- (four spans sharing one source byte's `to`), and text:sub there would
-  -- still copy the whole source byte, re-expanding past the budget on the
-  -- next Font.split. Back up to the last span whose source byte the next
-  -- span does NOT share.
-  local cut = 4
-  while cut > 0 and spans[cut].to == spans[cut + 1].to do
-    cut = cut - 1
-  end
-  if cut == 0 then return "" end
-  return text:sub(1, spans[cut].to)
-end
 
 -- The two slots _CGB_TrainerCard swaps by gender: CHRIS and FALKNER/KrisPalette.
 -- ../pokecrystal/engine/gfx/cgb_layouts.asm:619-624, data/trainers/palettes.asm:9-12
@@ -116,6 +84,24 @@ local BADGE_OAM_ORDER = {
   "ZEPHYR", "HIVE", "PLAIN", "FOG", "MINERAL", "STORM", "GLACIER", "RISING",
 }
 
+local function lines(text)
+  local out = {}
+  for line in (text .. "\n"):gmatch("(.-)\n") do out[#out + 1] = line end
+  return out
+end
+
+-- engine/menus/trainer_card.asm:269 .Name_Money, :306 .Dex_PlayTime, :313 .Badges
+local function cardText(data)
+  local nameMoney = lines(RomText(data, "TrainerCard_PrintTopHalfOfCard.Name_Money"))
+  local dexTime = lines(RomText(data, "TrainerCard_Page1_PrintDexCaught_GameTime.Dex_PlayTime"))
+  local badges = RomText(data, "TrainerCard_Page1_PrintDexCaught_GameTime.Badges")
+  return {
+    name = nameMoney[1], money = nameMoney[3],
+    dex = dexTime[1], playTime = dexTime[2],
+    badges = (badges:gsub("^ +", ""):gsub("\xe2\x96\xb6$", "")),
+  }
+end
+
 function TrainerCard:wantsFillScale() return true end
 function TrainerCard:drawsWidescreen() return true end
 
@@ -129,19 +115,27 @@ function TrainerCard.new(game, opts)
   self.palettes = opts.palettes or data.gen2Palettes
   self.sprites = opts.sprites or data.gen2Sprites
   self.onClose = opts.onClose
+  self.text = cardText(game and game.data)
+  self.defaultName = Gen2Save.presetNames(game and game.data,
+    self.save and self.save.player and self.save.player.gender)[1]
   self.page = 1 -- 1 card, 2 Johto badges, 3 Kanto badges
   self.frames = 0
 
   local gfx = (opts.menuGfx or data.gen2MenuGfx or {}).trainerCard
+  if type(gfx) ~= "table" then error("menu_gfx.lua has no trainerCard", 2) end
   self.gfx = gfx
-  self.female = Gen2Save.isFemale(self.save) and gfx ~= nil
-    and gfx.cardFemale ~= nil
-  if gfx then
+  local function need(key)
+    local value = gfx[key]
+    if value == nil then error("menu_gfx.lua trainerCard has no " .. key, 3) end
+    return value
+  end
+  self.female = Gen2Save.isFemale(self.save) and gfx.cardFemale ~= nil
+  do
     -- One palette lookup per cell, flattened from the FillBoxCGB zones the
     -- way PackGfx does it.  Anything outside a zone is palette 1.
     self.zone = {}
     self.zoneDefault = BORDER_PALETTE
-    for _, z in ipairs(gfx.paletteZones or {}) do
+    for _, z in ipairs(need("paletteZones")) do
       for y = z[2], z[2] + z[4] - 1 do
         for x = z[1], z[1] + z[3] - 1 do
           self.zone[y * SCREEN_W + x] = z[5]
@@ -162,28 +156,27 @@ function TrainerCard.new(game, opts)
       return self:colorsAt(tx, ty)
     end
     self.card = TileSheet.new({
-      path = (self.female and gfx.cardFemale) or gfx.card,
-      wide = gfx.cardTilesWide or 16, firstTile = 0,
+      path = (self.female and gfx.cardFemale) or need("card"),
+      wide = need("cardTilesWide"), firstTile = 0,
       paletteFor = paletteFor,
     })
     self.status = TileSheet.new({
-      path = gfx.status, wide = gfx.statusWide or 6,
-      firstTile = gfx.statusFirstTile or 0x29, paletteFor = paletteFor,
+      path = need("status"), wide = need("statusWide"),
+      firstTile = need("statusFirstTile"), paletteFor = paletteFor,
     })
     self.leaders = TileSheet.new({
-      path = gfx.leaders, wide = gfx.leadersWide or 10,
-      firstTile = gfx.leadersFirstTile or 0x29, paletteFor = paletteFor,
+      path = need("leaders"), wide = need("leadersWide"),
+      firstTile = need("leadersFirstTile"), paletteFor = paletteFor,
     })
     self.badges = TileSheet.new({
-      path = gfx.badges, wide = gfx.badgesWide or 2, firstTile = 0,
-      palette = gfx.badgePalette,
+      path = need("badges"), wide = need("badgesWide"), firstTile = 0,
+      palette = need("badgePalette"),
     })
+    for _, key in ipairs({ "portraitWide", "portraitTiles", "leaderClasses", "badgeOam" }) do
+      need(key)
+    end
   end
   return self
-end
-
-function TrainerCard:styled()
-  return self.card ~= nil and self.card:available()
 end
 
 -- The eight BG palettes _CGB_TrainerCard loads: the player's, then the seven
@@ -194,7 +187,7 @@ function TrainerCard:palette(index)
   if index == 1 then
     return self:pair(pals.trainers and pals.trainers.PLAYER)
   end
-  local classes = self.gfx and self.gfx.leaderClasses or {}
+  local classes = self.gfx.leaderClasses
   return self:pair(pals.trainers and pals.trainers[classes[index - 1]])
 end
 
@@ -287,8 +280,8 @@ end
 
 -- The 5x7 portrait: running tile ids from $00, row-major, at (14,1).
 function TrainerCard:drawPortrait()
-  local wide = self.gfx and self.gfx.portraitWide or 5
-  local high = math.floor((self.gfx and self.gfx.portraitTiles or 35) / wide)
+  local wide = self.gfx.portraitWide
+  local high = math.floor(self.gfx.portraitTiles / wide)
   for row = 0, high - 1 do
     for col = 0, wide - 1 do
       self:tile(self.card, row * wide + col, 14 + col, 1 + row)
@@ -310,12 +303,12 @@ end
 function TrainerCard:drawTopHalf()
   local player = (self.save or {}).player or {}
   self:frame(0, 5)
-  self:print(Strings("NAME/"), 2, 2)
-  self:print(player.name or "GOLD", 7, 2)
+  self:print(self.text.name, 2, 2)
+  self:print(player.name or self.defaultName, 7, 2)
   self:tile(self.card, TILE_ID_NO[1], 2, 4)
   self:tile(self.card, TILE_ID_NO[2], 3, 4)
   self:print(Chrome.number(player.id or 0, 5, true), 5, 4)
-  self:print(Strings("MONEY"), 2, 6)
+  self:print(self.text.money, 2, 6)
   self:print(moneyText(player.money), 7, 6)
   for x = 1, 12 do self:tile(self.card, TILE_DIVIDER, x, 3) end
   self:tile(self.card, TILE_DIVIDER_END, 13, 3)
@@ -334,8 +327,8 @@ function TrainerCard:drawCard()
 
   -- `#` is the compression byte for POKé, four tiles, so spelling it out is
   -- what the cart actually draws.
-  self:print(Strings("POKéDEX"), 2, 10)
-  self:print(Strings("PLAY TIME"), 2, 12)
+  self:print(self.text.dex, 2, 10)
+  self:print(self.text.playTime, 2, 12)
   self:print(Chrome.number(self:caughtCount(), 3), 15, 10)
 
   local time = save.playTime or {}
@@ -348,7 +341,7 @@ function TrainerCard:drawCard()
   end
   self:print(Chrome.number(time.minutes or 0, 2, true), 16, 12)
 
-  self:print(Strings("BADGES"), 12, 15)
+  self:print(self.text.badges, 12, 15)
   self:cursor(18, 15)
 end
 
@@ -419,63 +412,13 @@ function TrainerCard:drawBadges(names, owned)
   for i, id in ipairs(TILE_BADGES_CAPTION) do
     self:tile(self.leaders, id, 1 + i, 8)
   end
-  local id = self.gfx and self.gfx.leadersFirstTile or 0x29
+  local id = self.gfx.leadersFirstTile
   for face = 0, 3 do id = self:drawLeaderFace(id, 2 + face * 4, 10) end
   for face = 0, 3 do id = self:drawLeaderFace(id, 2 + face * 4, 13) end
   self:drawBadgeSprites(owned, names)
 end
 
--- ------------------------------------------------------------------ fallback
-
-function TrainerCard:drawPlain()
-  local save = self.save or {}
-  local player = save.player or {}
-  Chrome.clear()
-  if self.page == 1 then
-    Chrome.box(0, 0, 20, 9)
-    Chrome.printThrough(Strings("NAME/"), 2, 2, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(player.name or "GOLD", 7, 2, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Strings("ID No"), 2, 4, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Chrome.number(player.id or 0, 5, true), 5, 4, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Strings("MONEY"), 2, 6, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(moneyText(player.money), 7, 6, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.box(0, 8, 20, 10)
-    Chrome.printThrough(Strings("POKéDEX"), 2, 10, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Chrome.number(self:caughtCount(), 3), 15, 10, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Strings("PLAY TIME"), 2, 12, Chrome.DEFAULT_BOX_PALETTE)
-    local time = save.playTime or {}
-    Chrome.printThrough(Chrome.number(time.hours or 0, 4), 11, 12, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(":", 15, 12, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Chrome.number(time.minutes or 0, 2, true), 16, 12, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough(Strings("BADGES"), 12, 15, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.cursorThrough(18, 15, Chrome.DEFAULT_BOX_PALETTE)
-    return
-  end
-  local names = self.page == 2 and JOHTO_BADGES or KANTO_BADGES
-  -- TrainerCard_Page3_Joypad hands TrainerCard_Page2_3_AnimateBadges the
-  -- exact same TrainerCard_JohtoBadgesOAM pointer page 2 uses, and that
-  -- table's own header word is `dw wJohtoBadges` -- so page 3 never once
-  -- reads wKantoBadges, it just relabels the Johto flags.  held stays
-  -- player.badges on both pages to match.
-  local held = player.badges or {}
-  Chrome.box(0, 0, 20, 9)
-  Chrome.printThrough(Strings(self.page == 2 and JOHTO_BADGES_LABEL or
-    KANTO_BADGES_LABEL), 2, 2, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.box(0, 8, 20, 10)
-  for i, name in ipairs(names) do
-    local tx = 2 + ((i - 1) % 4) * 4
-    local ty = 10 + math.floor((i - 1) / 4) * 3
-    local label = (held[i] or held[name]) and badgeCaption(Strings(name)) or "----"
-    Chrome.printThrough(label, tx, ty, Chrome.DEFAULT_BOX_PALETTE)
-  end
-end
-
 function TrainerCard:drawPanel()
-  if not self:styled() then
-    self:drawPlain()
-    love.graphics.setColor(1, 1, 1, 1)
-    return
-  end
   Chrome.paletteFill(0, 0, SCREEN_W * 8, SCREEN_H * 8, Chrome.DEFAULT_BOX_PALETTE)
   local player = (self.save and self.save.player) or {}
   if self.page == 1 then
@@ -508,7 +451,6 @@ function TrainerCard:drawWidescreen(winW, winH)
 end
 
 TrainerCard.JOHTO_BADGES = JOHTO_BADGES
-TrainerCard.KANTO_BADGES = KANTO_BADGES
 TrainerCard.BADGE_OAM_ORDER = BADGE_OAM_ORDER
 TrainerCard.moneyText = moneyText
 

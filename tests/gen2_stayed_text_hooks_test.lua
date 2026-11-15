@@ -6,6 +6,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 stayed text hooks")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -13,6 +14,8 @@ require("src.core.Logger").warn = function() end
 
 local Vm = require("src.script.gen2.Vm")
 local World = require("src.world.gen2.World")
+local PHONE = require("tests.fixtures.gen2_phone_events")
+PHONE.install()
 
 love.filesystem.write("data/generated/maps.lua", [[
 return {
@@ -27,6 +30,15 @@ love.filesystem.write("data/generated/tilesets.lua", "return { TEST = {} }")
 love.filesystem.write("data/generated/landmarks.lua", [[
 return { spawns = { SPAWN_NEW_BARK = { map = "TEST_MAP", x = 1, y = 1 } } }
 ]])
+love.filesystem.write("data/generated/marts.lua",
+  "return { lists = {}, bargain = {} }")
+love.filesystem.write("data/generated/initial_events.lua",
+  "return { flags = {}, engineFlags = {}, sprites = {} }")
+love.filesystem.write("data/generated/menu_gfx.lua", [[
+return { emotes = { grassRustle = "r.png", jumpShadow = "j.png",
+  cutGrass = "c.png", fishing = "f.png" },
+  healMachine = { sheet = "h.png", palette = { 0, 0, 0, 0 } } }
+]])
 
 local top
 local stack = {
@@ -34,7 +46,8 @@ local stack = {
   push = function(_, state) top = state end,
   pop = function() top = nil end,
 }
-local world = World.new({ data = {}, save = { party = {}, inventory = {} },
+local world = World.new({ data = { gen2EventTables = PHONE.events,
+      gen2Constants = { engineFlagOrder = require("tests.fixture_data.gen2_engine_flags").order("gold") } }, save = { party = {}, inventory = {} },
   stack = stack })
 world.setMap = function(_self, mapId)
   world.map = { id = mapId }

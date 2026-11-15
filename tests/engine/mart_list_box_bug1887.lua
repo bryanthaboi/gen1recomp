@@ -43,7 +43,7 @@ local pressed
 local game
 game = {
   data = {
-    text = {},
+    text = dofile("tests/fixture_data/text.lua"),
     items = {
       POKE_BALL = { name = "POKe BALL", price = 200 },
       GREAT_BALL = { name = "GREAT BALL", price = 600 },

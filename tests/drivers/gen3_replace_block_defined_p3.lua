@@ -118,7 +118,11 @@ return function(game)
 
   Field.setMetatile(tx, ty, 0, false)
   local zero = cellPixels(renderField(game), ox, oy)
-  Field.setMetatile(tx, ty, undefined, false)
+  local landOk = pcall(Field.setMetatile, tx, ty, undefined, false)
+  S.check(not landOk, "a passable write of undefined metatile " .. undefined .. " raises instead of becoming LAND")
+  S.check(Field.metatileOverrideAt(Map.current, tx, ty) ~= nil
+    and Field.metatileOverrideAt(Map.current, tx, ty).metatile == 0, "the raised write leaves metatile 0 in place")
+  Field.setMetatile(tx, ty, undefined, true)
   local hole = cellPixels(renderField(game), ox, oy)
   local flat = {}
   for i = 1, #zero do flat[i] = zero[1] end

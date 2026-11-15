@@ -3,7 +3,7 @@ local version = os.getenv("POKEPORT_VERSION") or "firered"
 require("src.core.GameVersion").set(version)
 require("src.import.gba.versions").select(version)
 local Cache = require("tests.game3_cache")
-if not Cache.mount() then
+if not Cache.mount(version) then
   print("[skip] cursor2766 integration: " .. tostring(Cache.reason))
   os.exit(0)
 end

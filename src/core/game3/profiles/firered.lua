@@ -200,5 +200,6 @@ return {
     "credits_extract",
     "league_extract",
     "roamer_extract",
+    "mail_extract",
   },
 }

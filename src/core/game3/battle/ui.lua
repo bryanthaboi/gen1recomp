@@ -552,8 +552,14 @@ local function confirm_link_forfeit(act)
   Ui._selCmd = nil
   Ui._selReturn = "menu"
   Ui._mode = "selmsg"
-  -- pokeemerald/src/battle_message.c:1422
-  Ui.askYesNo(Strings("Would you like to forfeit the match\nand quit now?"), function(yes)
+  local text
+  if act.forfeit or BattleChrome.layout() == "emerald" then
+    -- pokeemerald/data/battle_scripts_1.s:4548
+    text = BattleText.get("STRINGID_QUESTIONFORFEITMATCH")
+  else
+    text = Strings("Would you like to forfeit the match\nand quit now?")
+  end
+  Ui.askYesNo(text, function(yes)
     if yes then Ui._selCmd = act end
   end)
 end

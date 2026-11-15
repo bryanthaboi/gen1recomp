@@ -33,6 +33,10 @@ local Zoom = require("src.render.Zoom")
 local romText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 
+local function romLine(data, label, ...)
+  return romText(data, label, nil, ...)
+end
+
 -- isOverworld marks the live world state for WorldAPI's stack scan
 local OverworldState = { isOpaque = true, isOverworld = true }
 
@@ -1212,8 +1216,7 @@ function OverworldState:useFlashFieldMove(onClose)
   local wasDark = self.dark
   if wasDark then Game.save.flashLit = true end
   Game.stack:push(TextBox.new(Game,
-    Game.data.text._FlashLightsAreaText
-      or Strings("A blinding FLASH\nlights the area!"), function()
+    romLine(Game.data, "_FlashLightsAreaText"), function()
       if onClose then onClose() end
       if wasDark then self:setDark(false) end
       Game.stack:push(Transition.whiteFlash(Game))
@@ -1227,11 +1230,9 @@ function OverworldState:useStrengthFieldMove(mon, onClose)
   local def = Game.data.pokemon[mon.species]
   local name = mon.nickname or def.name
   self.strengthActive = true
-  local first = (Game.data.text._UsedStrengthText
-    or Strings("{RAM:wNameBuffer} used\nSTRENGTH."))
+  local first = (romLine(Game.data, "_UsedStrengthText"))
     :gsub("{RAM:wNameBuffer}", name)
-  local second = (Game.data.text._CanMoveBouldersText
-    or Strings("{RAM:wNameBuffer} can\nmove boulders."))
+  local second = (romLine(Game.data, "_CanMoveBouldersText"))
     :gsub("{RAM:wNameBuffer}", name)
   Game.stack:push(TextBox.new(Game, first, function()
     Game.stack:push(TextBox.new(Game, second, function()
@@ -1250,7 +1251,7 @@ function OverworldState:useSoftboiledFieldMove(user, target)
       or target == user or target.hp <= 0
       or target.hp >= target.stats.hp or user.hp <= heal then
     Game.stack:push(TextBox.new(Game,
-      romText(Game.data, "_ItemUseNoEffectText", "It won't have\nany effect.")))
+      romLine(Game.data, "_ItemUseNoEffectText")))
     return false
   end
   local before = target.hp
@@ -1261,7 +1262,7 @@ function OverworldState:useSoftboiledFieldMove(user, target)
   -- _PotionText's second slot is the recovered amount, same as
   -- ItemEffects.lua's potion message -- the engine fallback never shows it
   Game.stack:push(TextBox.new(Game,
-    romText(Game.data, "_PotionText", "%s's HP\nwas restored!",
+    romLine(Game.data, "_PotionText",
       target.nickname or def.name, target.hp - before)))
   return true
 end
@@ -2602,15 +2603,15 @@ function OverworldState:fishVerdict(enc, nothingHere)
   if not enc then
     -- engine/overworld/player_animations.asm:463
     local text = nothingHere
-      and romText(Game.data, "_NothingHereText", "Looks like there's\nnothing here.")
-      or romText(Game.data, "_NoNibbleText", "Not even a nibble!")
+      and romLine(Game.data, "_NothingHereText")
+      or romLine(Game.data, "_NoNibbleText")
     Game.stack:push(TextBox.new(Game, text, function()
       self.fishing = nil
       self.fishPose = 10
     end))
     return
   end
-  Game.stack:push(TextBox.new(Game, romText(Game.data, "_ItsABiteText", "Oh!\nIt's a bite!"), function()
+  Game.stack:push(TextBox.new(Game, romLine(Game.data, "_ItsABiteText"), function()
     self.fishing = nil
     self.player.fishing = nil
     local BattleState = require("src.battle.BattleState")
@@ -2825,8 +2826,7 @@ function OverworldState:tryBookshelf(fx, fy)
   if entry.screen then
     -- engine/events/hidden_events/town_map.asm:1
     Game.stack:push(TextBox.new(Game,
-      t[entry.text] or t._TownMapText
-      or romText(Game.data, "_TownMapText", "A TOWN MAP."),
+      t[entry.text] or romLine(Game.data, "_TownMapText"),
       function() pcall(Screens.push, Game, entry.screen) end))
     return true
   end
@@ -2836,25 +2836,21 @@ function OverworldState:tryBookshelf(fx, fy)
     -- MANSION tileset + faced cell's top-left tile $38
     if self.map.def.tileset == "MANSION"
        and self.map:tileAt(fx * 2, fy * 2) == 0x38 then
-      Game.stack:push(TextBox.new(Game, t._DiglettSculptureText
-        or romText(Game.data, "_DiglettSculptureText", "It's a sculpture\nof DIGLETT.")))
+      Game.stack:push(TextBox.new(Game, romLine(Game.data, "_DiglettSculptureText")))
       return true
     end
-    Game.stack:push(TextBox.new(Game, t._PokemonBooksText
-      or Strings("Crammed full of\nPOKéMON books!")))
+    Game.stack:push(TextBox.new(Game, romLine(Game.data, "_PokemonBooksText")))
   elseif kind == "stuff" then
-    Game.stack:push(TextBox.new(Game, t._PokemonStuffText
-      or Strings("There's a slew of\nPOKéMON stuff!")))
+    Game.stack:push(TextBox.new(Game, romLine(Game.data, "_PokemonStuffText")))
   elseif kind == "elevator" then
-    Game.stack:push(TextBox.new(Game, t._ElevatorText
-      or Strings("An elevator!")))
+    Game.stack:push(TextBox.new(Game, romLine(Game.data, "_ElevatorText")))
   elseif kind == "statues" then
     -- engine/events/hidden_events/indigo_plateau_statues.asm:5
-    local line = (self.player.cellX % 2 == 1) and t._IndigoPlateauStatuesText2
-                 or t._IndigoPlateauStatuesText3
+    local line = (self.player.cellX % 2 == 1) and "_IndigoPlateauStatuesText2"
+                 or "_IndigoPlateauStatuesText3"
     Game.stack:push(TextBox.new(Game,
-      (t._IndigoPlateauStatuesText1 or romText(Game.data, "_IndigoPlateauStatuesText1", "INDIGO PLATEAU")) .. "\f"
-      .. (line or Strings("POKéMON LEAGUE HQ"))))
+      romLine(Game.data, "_IndigoPlateauStatuesText1") .. "\f"
+      .. romLine(Game.data, line)))
   end
   return true
 end
@@ -2924,10 +2920,9 @@ function OverworldState:tryHiddenObject(fx, fy)
         -- leaves the spot unfound; _CantCarryMoreText is the Toss line (#872)
         local name = Game.data.items[h.item] and Game.data.items[h.item].name or h.item
         Game.stack:push(TextBox.new(Game,
-          romText(Game.data, "_FoundHiddenItemText", "%s found\n%s!",
+          romLine(Game.data, "_FoundHiddenItemText",
             save.player.name, name) .. "\f"
-          .. romText(Game.data, "_HiddenItemBagFullText",
-                     "But, {PLAYER} has\nno more room for\vother items!")))
+          .. romLine(Game.data, "_HiddenItemBagFullText")))
         return true
       end
       save.hiddenTaken[key] = true
@@ -2936,7 +2931,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       -- text_asm tail runs it as PlaySoundWaitForCurrent +
       -- WaitForSoundToFinish once the box has printed (hidden_items.asm)
       Game.stack:push(TextBox.new(Game,
-        romText(Game.data, "_FoundHiddenItemText", "%s found\n%s!",
+        romLine(Game.data, "_FoundHiddenItemText",
           save.player.name, name),
         nil, TextBox.soundOpts(Game, "Get_Item2", {auto = true})))
       return true
@@ -2951,31 +2946,30 @@ function OverworldState:tryHiddenObject(fx, fy)
     if h.x == fx and h.y == fy then
       if h.state == "out_of_order" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutOfOrderText
-          or romText(Game.data, "_GameCornerOutOfOrderText", "OUT OF ORDER\nThis is broken.")))
+          or romLine(Game.data, "_GameCornerOutOfOrderText")))
       elseif h.state == "out_to_lunch" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerOutToLunchText
-          or romText(Game.data, "_GameCornerOutToLunchText", "OUT TO LUNCH\nThis is reserved.")))
+          or romLine(Game.data, "_GameCornerOutToLunchText")))
       elseif h.state == "keys" then
         Game.stack:push(TextBox.new(Game, txt._GameCornerSomeonesKeysText
-          or romText(Game.data, "_GameCornerSomeonesKeysText", "Someone's keys!\nThey'll be back.")))
+          or romLine(Game.data, "_GameCornerSomeonesKeysText")))
       elseif self.player.facing ~= "left" and self.player.facing ~= "right" then
         -- engine/slots/game_corner_slots2.asm:2-4
         return true
       elseif not save.inventory.COIN_CASE then
         Game.stack:push(TextBox.new(Game, txt._GameCornerCoinCaseText
-          or romText(Game.data, "_GameCornerCoinCaseText", "A COIN CASE is\nrequired!")))
+          or romLine(Game.data, "_GameCornerCoinCaseText")))
       elseif (save.coins or 0) == 0 then
         -- AbleToPlaySlotsCheck: a COIN CASE with no coins can't play
         Game.stack:push(TextBox.new(Game, txt._GameCornerNoCoinsText
-          or romText(Game.data, "_GameCornerNoCoinsText", "You don't have\nany coins!")))
+          or romLine(Game.data, "_GameCornerNoCoinsText")))
       else
         -- one machine per visit is secretly lucky
         -- (wLuckySlotHiddenEventIndex, engine/slots/game_corner_slots.asm)
         local lucky = seatIndex == self.luckySlot
         -- PromptUserToPlaySlots: engine/slots/slot_machine.asm:9-23
         Game.stack:push(TextBox.new(Game, txt._PlaySlotMachineText
-          or romText(Game.data, "_PlaySlotMachineText",
-                     "A slot machine!\nWant to play?"), nil, {
+          or romLine(Game.data, "_PlaySlotMachineText"), nil, {
           choice = function(yes)
             if not yes then return end
             self.emote = {
@@ -2997,9 +2991,14 @@ function OverworldState:tryHiddenObject(fx, fy)
       save.hiddenTaken[key] = true
       local paid = OverworldState.hiddenCoinPayout(h.coins)
       save.coins = math.min(9999, (save.coins or 0) + paid)
-      Game.stack:push(TextBox.new(Game,
-        Strings("%s found\n%d coins!", save.player.name, paid),
-        nil, TextBox.soundOpts(Game, "Get_Item2")))
+      -- engine/events/hidden_items.asm:107-117
+      local full = save.coins >= 9999
+      local text = romLine(Game.data, full and "_FoundHiddenCoins2Text" or "_FoundHiddenCoinsText",
+        save.player.name, paid)
+      if full then
+        text = text:gsub("{DONE}$", "") .. romLine(Game.data, "_DroppedHiddenCoinsText")
+      end
+      Game.stack:push(TextBox.new(Game, text, nil, TextBox.soundOpts(Game, "Get_Item2")))
       return true
     end
   end
@@ -3026,7 +3025,7 @@ function OverworldState:tryHiddenObject(fx, fy)
         -- engine/menus/players_pc.asm:16
         Game.stack:push(TextBox.new(Game,
           (Game.data.text or {})._TurnedOnPC2Text
-          or romText(Game.data, "_TurnedOnPC2Text", "{PLAYER} turned on\nthe PC."),
+          or romLine(Game.data, "_TurnedOnPC2Text"),
           function()
             -- direct access: ExitPlayerPC rings SFX_TURN_OFF_PC (players_pc.asm, #960)
             Screens.push(Game, "PlayerPC", { direct = true })
@@ -3068,8 +3067,7 @@ function OverworldState:tryHiddenObject(fx, fy)
       local gym = require("data.scripts.gyms")[self.map.id]
       if gym then
         local key = save.inventory[gym.badge] and "_GymStatueText2" or "_GymStatueText1"
-        local text = Game.data.text[key]
-                     or Strings("{RAM}\nPOKéMON GYM\nLEADER: {RAM}")
+        local text = romLine(Game.data, key)
         text = text:gsub("{RAM:wGymCityName}", gym.city)
                    :gsub("{RAM:wGymLeaderName}", gym.leader)
         Game.stack:push(TextBox.new(Game, text))
@@ -3082,7 +3080,7 @@ function OverworldState:tryHiddenObject(fx, fy)
   for _, h in ipairs(extras.printTrash and extras.printTrash[self.map.id] or {}) do
     if h.x == fx and h.y == fy then
       Game.stack:push(TextBox.new(Game, txt._VermilionGymTrashText
-        or romText(Game.data, "_VermilionGymTrashText", "Nope, there's\nonly trash here.")))
+        or romLine(Game.data, "_VermilionGymTrashText")))
       return true
     end
   end
@@ -3124,7 +3122,7 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   local t = Game.data.text
   if not Game.save.inventory.CARD_KEY then
     Game.stack:push(TextBox.new(Game,
-      t._CardKeyFailText or romText(Game.data, "_CardKeyFailText", "Darn! It needs a\nCARD KEY!")))
+      romLine(Game.data, "_CardKeyFailText")))
     return true
   end
   local bx, by = math.floor(fx / 2), math.floor(fy / 2)
@@ -3143,9 +3141,9 @@ function OverworldState:tryCardKeyDoor(fx, fy)
   end
   -- ../pokered/engine/events/card_key.asm:63-67
   Game.stack:push(TextBox.new(Game,
-    TextBox.strip(t._CardKeySuccessText1 or Strings("Bingo!"))
+    TextBox.strip(romLine(Game.data, "_CardKeySuccessText1"))
     .. TextBox.PAUSE
-    .. (t._CardKeySuccessText2 or romText(Game.data, "_CardKeySuccessText2", "\nThe CARD KEY\nopened the door!")),
+    .. (romLine(Game.data, "_CardKeySuccessText2")),
     openDoor, { pauseSounds = { "Get_Item1" }, pauseSoundWait = true }))
   return true
 end
@@ -3163,7 +3161,7 @@ function OverworldState:trashCanSwitch(canIndex)
   local t = Game.data.text
   local save = Game.save
   local tc = Game.data.field.hiddenExtras.trashCans
-  local trashText = t._VermilionGymTrashText or romText(Game.data, "_VermilionGymTrashText", "Nope, there's\nonly trash here.")
+  local trashText = romLine(Game.data, "_VermilionGymTrashText")
   -- "Don't do the trash can puzzle if it's already been done."
   if save.flags.EVENT_2ND_LOCK_OPENED then
     Game.stack:push(TextBox.new(Game, trashText))
@@ -3222,8 +3220,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- engine/events/hidden_events/vermilion_gym_trash.asm:130 (text_asm tail:
     -- SFX_SWITCH once the text has printed, before the button wait) (#1702)
     Game.stack:push(TextBox.new(Game,
-      t._VermilionGymTrashSuccessText1
-      or Strings("Hey! There's a\nswitch under the\ntrash!\fThe 1st electric\nlock opened!"),
+      romLine(Game.data, "_VermilionGymTrashSuccessText1"),
       nil, TextBox.soundOpts(Game, "Switch")))
     return
   end
@@ -3240,8 +3237,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- engine/events/hidden_events/vermilion_gym_trash.asm:153 beeps as the
     -- text finishes; scripts/VermilionGym.asm:30 beeps on the swap (#1702)
     Game.stack:push(TextBox.new(Game,
-      t._VermilionGymTrashSuccessText3
-      or Strings("The 2nd electric\nlock opened!\fThe motorized door\nopened!"),
+      romLine(Game.data, "_VermilionGymTrashSuccessText3"),
       function()
         require("src.core.Sound").play(Game.data, "Go_Inside")
         self:replaceBlock(door.bx, door.by, door.block)
@@ -3256,8 +3252,7 @@ function OverworldState:trashCanSwitch(canIndex)
     -- engine/events/hidden_events/vermilion_gym_trash.asm:162 (text_asm tail:
     -- SFX_DENIED once the text has printed, before the button wait) (#1702)
     Game.stack:push(TextBox.new(Game,
-      t._VermilionGymTrashFailText
-      or Strings("Nope! There's\nonly trash here.\fHey! The electric\nlocks were reset!"),
+      romLine(Game.data, "_VermilionGymTrashFailText"),
       nil, TextBox.soundOpts(Game, "Denied")))
   end
 end
@@ -3278,12 +3273,10 @@ function OverworldState:billsHousePC()
   end
   if flags.EVENT_USED_CELL_SEPARATOR_ON_BILL
      or not flags.EVENT_BILL_SAID_USE_CELL_SEPARATOR then
-    Game.stack:push(TextBox.new(Game, t._BillsHouseMonitorText
-      or romText(Game.data, "_BillsHouseMonitorText", "TELEPORTER is\ndisplayed on the\nPC monitor.")))
+    Game.stack:push(TextBox.new(Game, romLine(Game.data, "_BillsHouseMonitorText")))
     return
   end
-  Game.stack:push(TextBox.new(Game, t._BillsHouseInitiatedText
-    or Strings("{PLAYER} initiated\nTELEPORTER's Cell\nSeparator!"), function()
+  Game.stack:push(TextBox.new(Game, romLine(Game.data, "_BillsHouseInitiatedText"), function()
     -- BillsHouseInitiatedText's text_asm stops the music only after the
     -- prompt button -- bills_house_pc.asm:55
     require("src.core.Music").stop()
@@ -3332,7 +3325,7 @@ function OverworldState:billsHousePokemonList()
       })
     end
     local function closeHeld() Game.stack:pop() end
-    table.insert(items, { label = Strings("CANCEL"), onSelect = closeHeld })
+    table.insert(items, { label = romLine(Game.data, "CancelTextString"), onSelect = closeHeld })
     -- TextBoxBorder b=10,c=9 at (0,0) -> total tw=11, th=12
     local menu = Menu.new(Game, items,
       { tx = 0, ty = 0, tw = 11, th = 12, onCancel = closeHeld })
@@ -3341,8 +3334,7 @@ function OverworldState:billsHousePokemonList()
     Game.stack:push(TextBox.new(Game, t._BillsHousePokemonListText2, nil,
       { stay = { onShown = function() Game.stack:push(menu) end } }))
   end
-  Game.stack:push(TextBox.new(Game, t._BillsHousePokemonListText1
-    or Strings("BILL's favorite\nPOKéMON list!"), openList))
+  Game.stack:push(TextBox.new(Game, romLine(Game.data, "_BillsHousePokemonListText1"), openList))
 end
 
 -- BillsHouseBillExitsMachineScript: human Bill appears inside the machine
@@ -3454,7 +3446,7 @@ function OverworldState:trySurf(fx, fy, onClose)
   if not mon then return end
   local name = mon.nickname or Game.data.pokemon[mon.species].name
   local p = self.player
-  local text = (Game.data.text._SurfingGotOnText or Strings("{PLAYER} got on\n{RAM:wNameBuffer}!"))
+  local text = (romLine(Game.data, "_SurfingGotOnText"))
                :gsub("{RAM:wNameBuffer}", name)
   -- UseItem prints the got-on text with the party menu still on screen and
   -- GBPalWhiteOutWithDelay3 + .goBackToMap only run after it
@@ -3536,7 +3528,7 @@ function OverworldState:tryCut(fx, fy)
   -- gen 1 confirms nothing (engine/overworld/cut.asm UsedCut): the
   -- _UsedCutText message, then the tree vanishes with dust + SFX_CUT
   local name = mon.nickname or Game.data.pokemon[mon.species].name
-  local text = (Game.data.text._UsedCutText or Strings("{RAM:wNameBuffer} hacked\naway with CUT!"))
+  local text = (romLine(Game.data, "_UsedCutText"))
                :gsub("{RAM:wNameBuffer}", name)
   Game.stack:push(TextBox.new(Game, text, function()
     self.cutBlocks = self.cutBlocks or {}
@@ -3675,11 +3667,10 @@ function OverworldState:talkTo(npc)
       -- pick_up_item.asm .BagFull prints _NoMoreRoomForItemText, not the
       -- Toss-screen _CantCarryMoreText; Yellow announces the find first,
       -- then the refusal (#872)
-      local noRoom = romText(Game.data, "_NoMoreRoomForItemText",
-        "No more room for\nitems!")
+      local noRoom = romLine(Game.data, "_NoMoreRoomForItemText")
       if GameVersion.isYellow() then
         local name = Game.data.items[d.item] and Game.data.items[d.item].name or d.item
-        noRoom = romText(Game.data, "_FoundItemText", "%s found\n%s!",
+        noRoom = romLine(Game.data, "_FoundItemText",
                    Game.save.player.name, name) .. "\f" .. noRoom
       end
       Game.stack:push(TextBox.new(Game, noRoom))
@@ -3695,7 +3686,7 @@ function OverworldState:talkTo(npc)
     end
     local name = Game.data.items[d.item] and Game.data.items[d.item].name or d.item
     Game.stack:push(TextBox.new(Game,
-      romText(Game.data, "_FoundItemText", "%s found\n%s!",
+      romLine(Game.data, "_FoundItemText",
         Game.save.player.name, name), nil,
       TextBox.soundOpts(Game,
         "Get_Item1", {auto = true})))
@@ -3706,8 +3697,8 @@ function OverworldState:talkTo(npc)
   -- legendary birds, Mewtwo, the Vermilion Machop, ...)
   if d.pokemon then
     self:makeNpcFacePlayer(npc)
-    local text = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or Strings("Gyaoo!")
+    local text = (Game.data:resolveText(self.map.def.label, d.text))
+    if not text then error("ROM text " .. tostring(d.text) .. " is not in the cache") end
     local BattleState = require("src.battle.BattleState")
     Game.stack:push(TextBox.new(Game, text, function()
       local battle = BattleState.newWild(Game, d.pokemon, d.level)
@@ -3815,10 +3806,8 @@ function OverworldState:openPC(onDone)
       require("src.core.Sound").play(Game.data, "Enter_PC")
       -- engine/menus/pc.asm:73 BillsPC prints the access text before the farcall
       local accessed = metBill
-        and romText(Game.data, "_AccessedBillsPCText",
-          "Accessed BILL's\nPC.\fAccessed POKéMON\nStorage System.")
-        or romText(Game.data, "_AccessedSomeonesPCText",
-          "Accessed someone's\nPC.\fAccessed POKéMON\nStorage System.")
+        and romLine(Game.data, "_AccessedBillsPCText")
+        or romLine(Game.data, "_AccessedSomeonesPCText")
       Game.stack:push(TextBox.new(Game, accessed, function()
         openSub("BoxMenu")
       end))
@@ -3837,8 +3826,7 @@ function OverworldState:openPC(onDone)
       -- before the farcall (engine/menus/pc.asm:54, #960)
       require("src.core.Sound").play(Game.data, "Enter_PC")
       Game.stack:push(TextBox.new(Game,
-        romText(Game.data, "_AccessedMyPCText",
-          "Accessed my PC.\fAccessed Item\nStorage System."),
+        romLine(Game.data, "_AccessedMyPCText"),
         function() openSub("PlayerPC") end))
       done()
     end,
@@ -3869,8 +3857,7 @@ function OverworldState:openPC(onDone)
           -- AccessedHoFPCText (engine/menus/pc.asm:67, league_pc.asm:2)
           require("src.core.Sound").play(Game.data, "Enter_PC")
           Game.stack:push(TextBox.new(Game,
-            romText(Game.data, "_AccessedHoFPCText",
-              "Accessed POKéMON\nLEAGUE's site.\fAccessed the HALL\nOF FAME List."),
+            romLine(Game.data, "_AccessedHoFPCText"),
             function() openSub("LeaguePC") end))
           done()
         end,
@@ -3890,16 +3877,13 @@ function OverworldState:openPC(onDone)
   -- localization until after ui.pc.items has inspected/reordered/replaced
   -- them, then translate any source labels it chose to retain.
   local translatedLabels = {
+    -- engine/pokemon/bills_pc.asm:88-92
     [boxPcLabel] = function()
-      -- engine/pokemon/bills_pc.asm:88-89
-      local source = metBill and "BILL'S PC" or "SOMEONE'S PC"
-      local label = metBill and Strings("BILL'S PC") or Strings("SOMEONE'S PC")
-      if label == source then return (source:gsub("'S PC$", "'s PC")) end
-      return label
+      return romLine(Game.data, metBill and "BillsPCText" or "SomeonesPCText")
     end,
-    [playerPcLabel] = function() return Strings("%s's PC", playerName) end,
-    ["PROF.OAK's PC"] = function() return Strings("PROF.OAK's PC") end,
-    ["<PK><MN>LEAGUE"] = function() return Strings("<PK><MN>LEAGUE") end,
+    [playerPcLabel] = function() return playerName .. romLine(Game.data, "PlayersPCText") end,
+    ["PROF.OAK's PC"] = function() return romLine(Game.data, "OaksPCText") end,
+    ["<PK><MN>LEAGUE"] = function() return romLine(Game.data, "PKMNLeaguePCText") end,
   }
   for _, item in ipairs(items) do
     local translate = translatedLabels[item.label]
@@ -3910,7 +3894,8 @@ function OverworldState:openPC(onDone)
     require("src.core.Sound").play(Game.data, "Turn_Off_PC")
     done()
   end
-  table.insert(items, { label = Strings("LOG OFF"), onSelect = logOff })
+  -- engine/pokemon/bills_pc.asm:93
+  table.insert(items, { label = romLine(Game.data, "LogOffPCText"), onSelect = logOff })
   -- BIT_NO_MENU_BUTTON_SOUND for the whole PC session; DisplayPCMainMenu's
   -- TextBoxBorder c=14 interior -> tw 16 (engine/overworld/pokecenter_pc.asm)
   menu = Menu.new(Game, items,
@@ -3920,7 +3905,7 @@ function OverworldState:openPC(onDone)
   -- engine/menus/pc.asm:5
   Game.stack:push(TextBox.new(Game,
     (Game.data.text or {})._TurnedOnPC1Text
-    or romText(Game.data, "_TurnedOnPC1Text", "{PLAYER} turned on\nthe PC."),
+    or romLine(Game.data, "_TurnedOnPC1Text"),
     function() Game.stack:push(menu) end))
 end
 
@@ -3931,12 +3916,9 @@ end
 function OverworldState:openOaksPC(onDone)
   local done = onDone or function() end
   local text = Game.data.text or {}
-  local accessed = text._AccessedOaksPCText
-    or Strings("Accessed PROF.\nOAK's PC.\fAccessed POKéDEX\nRating System.")
-  local rated = text._GetDexRatedText
-    or Strings("Want to get your\nPOKéDEX rated?")
-  local closed = text._ClosedOaksPCText
-    or Strings("Closed link to\nPROF.OAK's PC.")
+  local accessed = romLine(Game.data, "_AccessedOaksPCText")
+  local rated = romLine(Game.data, "_GetDexRatedText")
+  local closed = romLine(Game.data, "_ClosedOaksPCText")
   local function close()
     Game.stack:push(TextBox.new(Game, closed, done))
   end
@@ -3987,9 +3969,8 @@ function OverworldState:dexRating(onDone)
     local lo = math.floor(owned / 10) * 10
     key = ("_DexRatingText_Own%dTo%d"):format(lo, lo + 9)
   end
-  local rating = Game.data.text[key] or Strings("Keep it up!")
-  local completion = Game.data.text._DexCompletionText
-    or Strings("POKéDEX comp-\nletion is:\f{NUM:hDexRatingNumMonsSeen} POKéMON seen\n{NUM:hDexRatingNumMonsOwned} POKéMON owned\fPROF.OAK's\nRating:")
+  local rating = romLine(Game.data, key)
+  local completion = romLine(Game.data, "_DexCompletionText")
   completion = completion
     :gsub("{NUM:hDexRatingNumMonsSeen[^}]*}", tostring(seen))
     :gsub("{NUM:hDexRatingNumMonsOwned[^}]*}", tostring(owned))
@@ -4053,16 +4034,15 @@ function OverworldState:nurseHeal(onDone, npc)
   local t = Game.data.text
   if self.map.id == "PEWTER_POKECENTER" and self.pikachuPewterSleepScene then
     Game.stack:push(TextBox.new(Game,
-      t._LooksContentText or Strings("PIKACHU looks\ncontent."), onDone))
+      romLine(Game.data, "_LooksContentText"), onDone))
     return
   end
-  local bye = t._PokemonCenterFarewellText or romText(Game.data, "_PokemonCenterFarewellText", "We hope to see\nyou again!")
-  local hello = t._PokemonCenterWelcomeText
-                or Strings("Welcome to our\nPOKéMON CENTER!")
+  local bye = romLine(Game.data, "_PokemonCenterFarewellText")
+  local hello = romLine(Game.data, "_PokemonCenterWelcomeText")
   if not Game.save.usedPokecenter then
     Game.save.usedPokecenter = true -- BIT_USED_POKECENTER
     hello = hello .. "\f"
-            .. (t._ShallWeHealYourPokemonText or Strings("Shall we heal your\nPOKéMON?"))
+            .. (romLine(Game.data, "_ShallWeHealYourPokemonText"))
   end
   -- Yellow's companion has its own beat threaded through this sequence
   local Follower = require("src.world.PikachuFollower")
@@ -4072,7 +4052,7 @@ function OverworldState:nurseHeal(onDone, npc)
       Game.stack:push(TextBox.new(Game, bye, onDone))
       return
     end
-    local need = t._NeedYourPokemonText or Strings("OK. We'll need\nyour POKéMON.")
+    local need = romLine(Game.data, "_NeedYourPokemonText")
     -- accepting the heal sends the companion up onto the counter to Nurse
     -- Joy first: pokecenter.asm runs `callfar PikachuWalksToNurseJoy`
     -- between SetLastBlackoutMap and NeedYourPokemonText, and the hop has
@@ -4151,14 +4131,14 @@ function OverworldState:nurseHeal(onDone, npc)
         -- pokeyellow engine/events/pokecenter.asm:39
       end, { auto = { delay = GameVersion.isYellow() and 64 or 0 } }))
     end)
-  end, choiceLabels = { Strings("HEAL"), Strings("CANCEL") },
+  end, choiceLabels = { romLine(Game.data, "TwoOptionMenuStrings.HealCancelMenu"):match("^(.-)\n(.*)$") }, -- data/yes_no_menu_strings.asm:44
     choiceBox = Theme.healCancelBox }))
 end
 
 -- pokecenter.asm bows the nurse between the two PrintText calls (#995)
 function OverworldState:finishNurseHeal(bye, onDone, npc)
   local t = Game.data.text
-  local fit = t._PokemonFightingFitText or Strings("Your POKéMON are\nfighting fit!")
+  local fit = romLine(Game.data, "_PokemonFightingFitText")
   Game.stack:push(TextBox.new(Game, fit, function()
     local function farewell()
       Game.stack:push(TextBox.new(Game, bye, function()
@@ -4196,23 +4176,21 @@ end
 -- for the original serial handshake; declining prints "Please come again!"
 function OverworldState:cableClubReceptionist(onDone)
   local t = Game.data.text
-  local welcome = t._CableClubNPCWelcomeText or romText(Game.data, "_CableClubNPCWelcomeText", "Welcome to the\nCable Club!")
+  local welcome = romLine(Game.data, "_CableClubNPCWelcomeText")
   -- engine/link/cable_club_npc.asm:4
   if require("src.world.PikachuFollower").isFollowingDisabled(self)
       or not Game.save.flags.EVENT_GOT_POKEDEX then
     -- CableClubNPC .didNotConnect path before the pokedex
     Game.stack:push(TextBox.new(Game, welcome .. "\f"
-      .. (t._CableClubNPCMakingPreparationsText
-          or romText(Game.data, "_CableClubNPCMakingPreparationsText", "We're making\npreparations.\vPlease wait.")), onDone))
+      .. (romLine(Game.data, "_CableClubNPCMakingPreparationsText")), onDone))
     return
   end
-  local apply = t._CableClubNPCPleaseApplyHereHaveToSaveText
-    or romText(Game.data, "_CableClubNPCPleaseApplyHereHaveToSaveText", "Please apply here.\fBefore opening\nthe link, we have\vto save the game.")
+  local apply = romLine(Game.data, "_CableClubNPCPleaseApplyHereHaveToSaveText")
   Game.stack:push(TextBox.new(Game, welcome .. "\f" .. apply, nil,
     { choice = function(yes)
       if not yes then
         Game.stack:push(TextBox.new(Game,
-          t._CableClubNPCPleaseComeAgainText or romText(Game.data, "_CableClubNPCPleaseComeAgainText", "Please come\nagain!"), onDone))
+          romLine(Game.data, "_CableClubNPCPleaseComeAgainText"), onDone))
         return
       end
       Game:writeSave()
@@ -4325,8 +4303,8 @@ function OverworldState:engageTrainer(npc, onDone, endBattleText, skipBattleText
   local header = Game.data:trainerHeader(self.map.def.label, d.index)
   local battleText = header and header.battle and Game.data.text[header.battle]
   if not battleText then
-    battleText = select(1, Game.data:resolveText(self.map.def.label, d.text))
-                 or Strings("I like shorts!\nThey're comfy and\neasy to wear!")
+    battleText = (Game.data:resolveText(self.map.def.label, d.text))
+    if not battleText then error("ROM text " .. tostring(d.text) .. " is not in the cache") end
   end
   -- `endBattleText` is a caller-supplied stand-in for header.won: the
   -- text_asm trainers that hand their loss line to the battle through
@@ -4853,7 +4831,7 @@ function OverworldState:applyFieldPoison()
   local queue = {}
   for _, mon in ipairs(fainted) do
     local name = mon.nickname or Game.data.pokemon[mon.species].name
-    table.insert(queue, romText(Game.data, "_PokemonFaintedText", "%s\nfainted!", name))
+    table.insert(queue, romLine(Game.data, "_PokemonFaintedText", name))
   end
   local alive = false
   for _, mon in ipairs(save.party) do
@@ -4868,8 +4846,7 @@ function OverworldState:applyFieldPoison()
     if not alive then
       -- home/text_script.asm:197
       Game.stack:push(TextBox.new(Game,
-        romText(Game.data, "_PlayerBlackedOutText",
-          "%s is out of\nuseable POKéMON!\f%s blacked\nout!",
+        romLine(Game.data, "_PlayerBlackedOutText",
           save.player.name, save.player.name), function()
         local Pokemon = require("src.pokemon.Pokemon")
         for _, mon in ipairs(save.party) do Pokemon.heal(mon) end
@@ -5049,7 +5026,7 @@ function OverworldState:onStepComplete()
     if Game.save.repelSteps == 0 then
       -- no encounter on the exact wear-off step (wild_encounters.asm
       -- .lastRepelStep returns CantEncounter)
-      Game.stack:push(TextBox.new(Game, romText(Game.data, "_RepelWoreOffText", "REPEL's effect\nwore off.")))
+      Game.stack:push(TextBox.new(Game, romLine(Game.data, "_RepelWoreOffText")))
       return
     end
   end
@@ -5206,15 +5183,15 @@ function OverworldState:checkBadgeGate()
             Flags.set(Game.save, passedFlag)
             -- Route22GateGuardGoRightAheadText carries sound_get_item_1
             Game.stack:push(TextBox.new(Game,
-              t["_" .. g.passText] or Strings("Go right ahead!"),
+              romLine(Game.data, "_" .. g.passText),
               nil, TextBox.soundOpts(Game, "Get_Item1")))
           end
           return false
         end
         -- scripts/Route22Gate.asm:79
         Game.stack:push(TextBox.new(Game,
-          TextBox.strip(t["_" .. g.failText] or Strings("You don't have the\nBOULDERBADGE yet!"))
-          .. TextBox.PAUSE .. (t._Route22GateGuardICantLetYouPassText or ""), function()
+          TextBox.strip(romLine(Game.data, "_" .. g.failText))
+          .. TextBox.PAUSE .. romLine(Game.data, "_Route22GateGuardICantLetYouPassText"), function()
             self:scriptMove(p, "down", 1, nil, { collide = true })
           end, { pauseSounds = { "Denied" }, pauseSoundWait = true }))
         return true
@@ -5243,16 +5220,16 @@ function OverworldState:route23BadgeCheck(badge, event, onDone)
   if Game.save.inventory[badge] then
     Flags.set(Game.save, event)
     -- scripts/Route23.asm:237
-    local text = (t["_" .. (g.passText or "Route23OhThatIsTheBadgeText")] or
-                  Strings("Oh! That is the\n{RAM}!")):gsub("{RAM:wNameBuffer}", badgeName)
+    local text = romLine(Game.data, "_" .. (g.passText or "Route23OhThatIsTheBadgeText"))
+      :gsub("{RAM:wNameBuffer}", badgeName)
     Game.stack:push(TextBox.new(Game,
-      TextBox.strip(text) .. TextBox.PAUSE .. (t._Route23GoRightAheadText or ""),
+      TextBox.strip(text) .. TextBox.PAUSE .. romLine(Game.data, "_Route23GoRightAheadText"),
       onDone, { pauseSounds = { "Get_Item1" }, pauseSoundWait = true }))
     return true
   end
   -- scripts/Route23.asm:229
-  local text = (t["_" .. (g.failText or "Route23YouDontHaveTheBadgeYetText")] or
-                Strings("You don't have the\n{RAM} yet!")):gsub("{RAM:wNameBuffer}", badgeName)
+  local text = romLine(Game.data, "_" .. (g.failText or "Route23YouDontHaveTheBadgeYetText"))
+    :gsub("{RAM:wNameBuffer}", badgeName)
   Game.stack:push(TextBox.new(Game, text, function()
     -- scripts/Route23.asm:123
     self:scriptMove(self.player, "down", 1, onDone, { collide = true })
@@ -5287,7 +5264,7 @@ function OverworldState:checkForcedMovement()
           Game.save.forcedBike = true
           require("src.core.Music").playMap(Game.data, self.map.id, true)
         else
-          Game.stack:push(TextBox.new(Game, Strings("You need a\nBICYCLE for the\nCycling Road!"),
+          Game.stack:push(TextBox.new(Game, romLine(Game.data, "_Route18Gate1FGuardYouNeedABicycleText"),
             function()
               local back = ({ up = "down", down = "up",
                               left = "right", right = "left" })[p.facing]
@@ -5452,7 +5429,7 @@ function OverworldState:safariStep()
     st.steps = st.steps - 1
     return false
   end
-  self:safariGameOver(romText(Game.data, "_TimesUpText", "PA: Ding-dong!\nTime's up!"))
+  self:safariGameOver(romLine(Game.data, "_TimesUpText"))
   return true
 end
 
@@ -5462,7 +5439,7 @@ function OverworldState:safariGameOver(text)
   -- SetEvent EVENT_SAFARI_GAME_OVER -- engine/events/hidden_events/safari_game.asm:54
   Game.save.safariGameOver = true
   local t = Game.data.text
-  local over = t._GameOverText or romText(Game.data, "_GameOverText", "PA: Your SAFARI\nGAME is over!")
+  local over = romLine(Game.data, "_GameOverText")
   Game.stack:push(TextBox.new(Game,
     text and (text .. "\f" .. over) or over,
     function()

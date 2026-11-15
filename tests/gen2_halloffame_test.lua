@@ -33,6 +33,7 @@ local Core = require("src.core.gen2.HallOfFame")
 local Credits = require("src.ui.gen2.Credits")
 local GameVersion = require("src.core.GameVersion")
 local HallOfFame = require("src.ui.gen2.HallOfFame")
+local HOF_TEXT = require("tests.fixtures.gen2_common_text").text()
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
 
@@ -252,29 +253,35 @@ eq(at(egg, 7, 16), "<ID>№/", "but still prints its ID")
 
 -- ---- the two header lines -------------------------------------------------
 
-local induct = HallOfFame.headerPlacements("induct", 1)
-eq(at(induct, 1, 2), HallOfFame.NEW_FAMER, "the induction says New Hall of Famer!")
-eq(HallOfFame.NEW_FAMER, "New Hall of Famer!", ".String_NewHallOfFamer")
+local induct = HallOfFame.headerPlacements("induct", 1, HOF_TEXT)
+eq(at(induct, 1, 2), "New Hall of Famer!", ".String_NewHallOfFamer")
 
-local viewed = HallOfFame.headerPlacements("view", 12)
+local viewed = HallOfFame.headerPlacements("view", 12, HOF_TEXT)
 eq(at(viewed, 1, 2), "    -Time Famer", ".TimeFamer, spaces and all")
 eq(at(viewed, 2, 2), " 12", "and PrintNum writes over them at hlcoord 2,2")
 
 -- BUG (docs/bugs_and_glitches.md): the counter stops at HOF_MASTER_COUNT and
 -- the title needs HOF_MASTER_COUNT + 1, so "HOF Master!" is unreachable.
-eq(at(HallOfFame.headerPlacements("view", Core.MASTER_COUNT), 1, 2),
+eq(at(HallOfFame.headerPlacements("view", Core.MASTER_COUNT, HOF_TEXT), 1, 2),
   "    -Time Famer", "200 wins is still a -Time Famer")
-eq(at(HallOfFame.headerPlacements("view", Core.MASTER_COUNT + 1), 1, 2),
+eq(at(HallOfFame.headerPlacements("view", Core.MASTER_COUNT + 1, HOF_TEXT), 1, 2),
   "    HOF Master!", "and only an impossible 201 reaches the title")
 
 -- ---- HOF_AnimatePlayerPic's layout ----------------------------------------
 
 save = newSave()
-local card = HallOfFame.playerPlacements(save)
+local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
+local card = HallOfFame.playerPlacements(save, { text = S7B.text() })
 eq(at(card, 2, 4), "GOLD", "hlcoord 2,4 is wPlayerName")
 eq(at(card, 1, 6), "<ID>№/", "hlcoord 1,6 is the ID caption")
 eq(at(card, 4, 6), "12345", "hlcoord 4,6 is wPlayerID, 5 digits")
 eq(at(card, 1, 8), "PLAY TIME", ".PlayTime")
+eq(at(HallOfFame.playerPlacements(save,
+  { text = S7B.text({ ["HOF_AnimatePlayerPic.PlayTime"] = "TEMPS" }) }), 1, 8),
+  "TEMPS", "HOF_AnimatePlayerPic.PlayTime is read from the cache")
+check(not pcall(HallOfFame.playerPlacements, save,
+  { text = S7B.without("HOF_AnimatePlayerPic.PlayTime") }),
+  "a cache without HOF_AnimatePlayerPic.PlayTime is an error")
 eq(at(card, 3, 9), " 42", "hlcoord 3,9 is the hours in three columns")
 eq(at(card, 6, 9), ":", "then HALLOFFAME_COLON")
 eq(at(card, 7, 9), "07", "then the minutes with a leading zero")
@@ -285,7 +292,8 @@ save = newSave()
 row = Core.induct(save, save.party)
 local finished = false
 local screen = HallOfFame.new({ data = { pokemon = POKEMON } }, {
-  save = save, entry = row, onDone = function() finished = true end,
+  save = save, entry = row, text = HOF_TEXT,
+  onDone = function() finished = true end,
 })
 eq(screen.mode, "induct", "the default mode is the induction")
 eq(screen.phase, "backpic", "which opens on AnimateHOFMonEntrance")
@@ -351,7 +359,8 @@ end
 function input:isDown() return false end
 
 local viewer = HallOfFame.new({ data = { pokemon = POKEMON }, input = input }, {
-  mode = "view", save = save, onDone = function() closed = true end,
+  mode = "view", save = save, text = HOF_TEXT,
+  onDone = function() closed = true end,
 })
 eq(viewer.phase, "display", "the viewer opens straight on a mon")
 eq(viewer.team, 1, "on the newest team")
@@ -367,7 +376,8 @@ eq(closed, true, "and running off the roster ends the viewer")
 
 closed = false
 viewer = HallOfFame.new({ data = { pokemon = POKEMON }, input = input }, {
-  mode = "view", save = save, onDone = function() closed = true end,
+  mode = "view", save = save, text = HOF_TEXT,
+  onDone = function() closed = true end,
 })
 input:press("b")
 viewer:update(0)
@@ -377,7 +387,8 @@ eq(closed, true, "B backs out at once")
 -- first update so it cannot pop a state that has not been pushed.
 closed = false
 local empty = HallOfFame.new({ data = {}, input = input }, {
-  mode = "view", save = newSave(), onDone = function() closed = true end,
+  mode = "view", save = newSave(), text = HOF_TEXT,
+  onDone = function() closed = true end,
 })
 eq(closed, false, "an empty roster does not call onDone during construction")
 empty:update(0)
@@ -400,7 +411,8 @@ local CRYSTAL = {
 closed = false
 local animView = HallOfFame.new(
   { data = { pokemon = CRYSTAL }, input = input },
-  { mode = "view", save = save, onDone = function() closed = true end })
+  { mode = "view", save = save, text = HOF_TEXT,
+    onDone = function() closed = true end })
 check(animView.picAnim ~= nil, "a Crystal cache animates the HOF frontpic")
 input:press("a")
 animView:update(0)
@@ -419,11 +431,12 @@ eq(animView.index, 2, "and A walks the roster again once it has")
 
 local goldView = HallOfFame.new(
   { data = { pokemon = POKEMON }, input = input },
-  { mode = "view", save = save, onDone = function() end })
+  { mode = "view", save = save, text = HOF_TEXT, onDone = function() end })
 eq(goldView.picAnim, nil, "a Gold cache has no anim row and stays static")
 
 local animInduct = HallOfFame.new({ data = { pokemon = CRYSTAL } },
-  { save = save, entry = Core.team(save, 1), onDone = function() end })
+  { save = save, entry = Core.team(save, 1), text = HOF_TEXT,
+    onDone = function() end })
 local inductTicks = 0
 while animInduct.phase ~= "display" and inductTicks < 300 do
   animInduct:step()
@@ -555,17 +568,8 @@ eq(banner.lyOverride, 0, "wCreditsLYOverride starts at zero")
 banner:advanceLY()
 eq(banner.lyOverride, 2, "and gains two a pass")
 
--- Four scene palettes, straight off gfx/credits/credits.pal.  GetCreditsPalette
--- masks the scene with %11, so there are exactly four and no fifth.
-check(Credits.PALETTES[3] ~= nil, "four palettes, indexed from zero")
-eq(Credits.PALETTES[4], nil, "and nothing past the %11 mask")
-eq(Credits.PALETTES[0][1][1], 255, "colour 0 is white")
-eq(Credits.PALETTES[0][4][1], 58, "and colour 3 the near-black RGB 07,07,07")
-
 -- ---- the credits: gfx/credits/ --------------------------------------------
 
--- RomExtractorGen2:extractCredits puts the real sheets in the cache as
--- data.gen2Credits, and every one of them has to beat the mon-icon fallback.
 local GFX = {
   border = "assets/generated/credits/border.png",
   borderTiles = 9,
@@ -588,6 +592,7 @@ local GFX = {
     { { 17, 17, 17 }, { 18, 18, 18 }, { 19, 19, 19 }, { 20, 20, 20 } },
     { { 21, 21, 21 }, { 22, 22, 22 }, { 23, 23, 23 }, { 24, 24, 24 } },
   },
+  palettesPerScene = 1,
 }
 
 local withGfx = Credits.new({ data = { gen2Credits = GFX } }, {})
@@ -606,13 +611,11 @@ eq(withGfx:sheetQuad(sentretImage, sentret, 4).y, 3 * 32,
   "while Sentret's fourth block is its own")
 eq(withGfx:sheetQuad(bellossomImage, bellossom, 1).y, 0, "frame 1 is block 0")
 
--- CreditsPalettes wins over the transcribed table, and the %11 mask still
--- picks the same four sets it always did.
 eq(withGfx:palette()[1][1], 1, "scene 0 takes the first extracted set")
 withGfx.scene = 3
 eq(withGfx:palette()[1][1], 13, "scene 3 the fourth")
-eq(Credits.new({ data = {} }, {}):palette()[1][1], 255,
-  "and a cache without the table keeps the transcribed one")
+check(not pcall(function() Credits.new({ data = {} }, {}):palette() end),
+  "a cache without CreditsPalettes errors")
 
 -- DrawCreditsBorder starts at $24 on row 4 and $20 on row 13, so the two
 -- strips are DIFFERENT quarters of the 9-tile block.
@@ -622,9 +625,9 @@ local borderImage = withGfx:image(GFX.border)
 eq(withGfx:borderQuad(borderImage, 5).x, 4 * 8, "tile 5 is the fifth column")
 eq(withGfx:borderQuad(borderImage, 1).x, 0, "and tile 1 the first")
 
-check(withGfx:theEndImage() ~= nil, "TheEndGFX replaces the printed words")
-eq(Credits.new({ data = {} }, {}):theEndImage(), nil,
-  "and is absent from a cache without it")
+check(withGfx:theEndImage() ~= nil, "TheEndGFX is drawn")
+check(not pcall(function() Credits.new({ data = {} }, {}):theEndImage() end),
+  "a cache without TheEndGFX errors")
 
 -- ---- the credits: skipping ------------------------------------------------
 

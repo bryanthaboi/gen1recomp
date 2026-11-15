@@ -308,7 +308,7 @@ function Player:draw(ox, oy, scale, oamRow)
     G.scale(scale, scale)
     -- Chris is PAL_OW_RED; World:applyPalettes keeps the SpriteRenderer's
     -- OBJ palette current.
-    if self.fishing and self.fishSheet then
+    if self.fishing then
       self:drawFishing(yOffset)
     else
       local facing, phase = self.facing, self:walkPhase()

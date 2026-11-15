@@ -205,10 +205,10 @@ end
 print("[test] 9. SLICE rows extend to the full window width")
 BattleTransition.start(ID.SLICE, { skipIntro = true })
 for _ = 1, 20 do BattleTransition.tick(1 / 60) end
-local even = BattleTransition.blackSpans(0, -120, 360)
-local odd = BattleTransition.blackSpans(1, -120, 360)
-check(even[1] == -120 and even[2] > -120, "even rows grow from the left window edge")
-check(odd[2] == 360 and odd[1] < 360, "odd rows grow from the right window edge")
+local even = BattleTransition.blackSpans(1, -120, 360)
+local odd = BattleTransition.blackSpans(2, -120, 360)
+check(even[1] == -120 and even[2] > -120, "screen row 1 (buffer row 0, even) grows from the left window edge")
+check(odd[2] == 360 and odd[1] < 360, "screen row 2 (buffer row 1, odd) grows from the right window edge")
 BattleTransition.abort()
 
 print("[test] 10. CLOCKWISE_WIPE sweeps the top-left quarter")
@@ -220,6 +220,14 @@ check(hn == 2 and hs[1] == 0 and hs[2] == 40 and hs[3] == 120 and hs[4] == 240,
 check(H.winHSpans(H.WIN_RANGE(243, 244), hs) == 0, "WIN0H past the screen edge is empty")
 hn = H.winHSpans(H.WIN_RANGE(80, 120), hs)
 check(hn == 1 and hs[1] == 80 and hs[2] == 120, "WIN0H with left < right is one span")
+check(H.winH == nil, "only the hardware WIN0H decoder is exported")
+hn = H.winOutside(H.WIN_RANGE(120, 40), hs)
+check(hn == 1 and hs[1] == 40 and hs[2] == 120, "outside of a wrapped WIN0H is the gap between its two spans")
+hn = H.winOutside(H.WIN_RANGE(243, 244), hs)
+check(hn == 1 and hs[1] == 0 and hs[2] == 240, "outside of an empty WIN0H is the whole row")
+hn = H.winInside(H.WIN_RANGE(80, 120), hs, H.winInside(H.WIN_RANGE(120, 40), hs))
+check(hn == 3 and hs[1] == 0 and hs[2] == 40 and hs[3] == 120 and hs[4] == 240 and hs[5] == 80 and hs[6] == 120,
+  "inside spans of two windows append in order")
 
 local function clockwise(label)
   local cw = BattleTransition.ID.CLOCKWISE_WIPE
@@ -261,99 +269,264 @@ Profile.reset()
 GameVersion.set("emerald")
 clockwise("RSE")
 
-print("[test] 11. SHRED_SPLIT decodes WIN0H like the hardware window")
+print("[test] 11. SHRED_SPLIT decodes WIN0H like the hardware window, one scanline late")
+local FULL = { 0, 240 }
+local function same(a, b)
+  if #a ~= #b then return false end
+  for i = 1, #a do if a[i] ~= b[i] then return false end end
+  return true
+end
+local function spansOf(fn, v)
+  local ws = {}
+  local n = fn(v, ws)
+  local out = {}
+  for i = 1, 2 * n do out[i] = ws[i] end
+  return out
+end
 local function shred(cameraX, frames)
-  local seen = { right = 0, left = 0, row0 = 0, margin = 0, strip = 0 }
-  local bad = { right = 0, left = 0, row0 = 0, margin = 0, strip = 0 }
-  local function edgeBlack(s1, e)
-    local v = s1[e]
-    local win
-    if e % 2 == 0 then
-      local p4 = (cameraX - v) % 0x10000
-      win = (p4 * 256 + 241) % 0x10000
-    else
-      local p4 = (v - cameraX) % 0x10000
-      win = (240 - p4) % 0x10000
-    end
-    local ws = {}
-    local k = H.winHSpans(win, ws)
-    local out, x = {}, 0
-    for i = 1, k do
-      if ws[2 * i - 1] > x then out[#out + 1] = x; out[#out + 1] = ws[2 * i - 1] end
-      x = ws[2 * i]
-    end
-    if x < 240 then out[#out + 1] = x; out[#out + 1] = 240 end
-    return out
-  end
-  local function same(a, b)
-    if #a ~= #b then return false end
-    for i = 1, #a do if a[i] ~= b[i] then return false end end
-    return true
-  end
-  local row0Want = { 0, 240 }
-  local hn0 = H.winHSpans(cameraX - 240, hs)
-  if hn0 == 1 and hs[1] == 0 then row0Want = { hs[2], 240 } end
+  local keys = { "rows", "right", "left", "alias", "follow", "black", "strip" }
+  local seen, bad = {}, {}
+  for _, k in ipairs(keys) do seen[k], bad[k] = 0, 0 end
+  local aliasWin = (cameraX - 240) % 0x10000
+  local aliasWant = spansOf(H.winOutside, aliasWin)
   local finished = false
+  local last159
   BattleTransition.start(BattleTransition.ids().ID.SHRED_SPLIT, { skipIntro = true, cameraX = cameraX },
     function() finished = true end)
   for _ = 1, frames do
     BattleTransition.tick(1 / 60)
     local fx = BattleTransition._fx
-    if finished or not fx or fx.state > 2 then break end
+    if finished or not fx or fx.pal.slots[0].y >= 16 then break end
     local s1 = fx.shred1
+    local rows, lit = {}, false
     for y = 0, 159 do
-      local v = s1 and s1[160 + y]
+      local win
+      if y == 0 then win = last159 else win = s1[160 + y - 1] end
       local s = BattleTransition.blackSpans(y, 0, 240)
-      if y == 0 and v == (cameraX - 240) % 0x10000 then
-        seen.row0 = seen.row0 + 1
-        if not (#s == 2 and s[1] == row0Want[1] and s[2] == row0Want[2]) then bad.row0 = bad.row0 + 1 end
-      elseif v == 0xFFFA then
+      rows[y] = s
+      if y ~= 1 and not same(s, FULL) then lit = true end
+      if win then
+        seen.rows = seen.rows + 1
+        if not same(s, spansOf(H.winOutside, win)) then bad.rows = bad.rows + 1 end
+      end
+      if win == 0xFFFA then
         seen.right = seen.right + 1
         if #s ~= 0 then bad.right = bad.right + 1 end
-      elseif v == 0xF6F1 then
+      elseif win == 0xF6F1 then
         seen.left = seen.left + 1
         if #s ~= 0 then bad.left = bad.left + 1 end
       end
     end
-    if s1 then
-      local alias = s1[160] == (cameraX - 240) % 0x10000
-      local top, bottom = edgeBlack(s1, 0), edgeBlack(s1, 159)
-      for d = 1, 16 do
-        local up = BattleTransition.blackSpans(-d, 0, 240)
-        local down = BattleTransition.blackSpans(159 + d, 0, 240)
-        seen.margin = seen.margin + 2
-        if not same(up, top) then bad.margin = bad.margin + 1 end
-        if not same(down, bottom) then bad.margin = bad.margin + 1 end
-        if alias then
-          seen.strip = seen.strip + 1
-          if same(up, row0Want) then bad.strip = bad.strip + 1 end
-        end
+    local alias = s1[160] == aliasWin
+    if alias then
+      seen.alias = seen.alias + 1
+      if not same(rows[1], aliasWant) then bad.alias = bad.alias + 1 end
+    end
+    for d = 1, 16 do
+      local up = BattleTransition.blackSpans(-d, 0, 240)
+      local down = BattleTransition.blackSpans(159 + d, 0, 240)
+      if lit then
+        seen.follow = seen.follow + 2
+        if not same(up, rows[0]) then bad.follow = bad.follow + 1 end
+        if not same(down, rows[159]) then bad.follow = bad.follow + 1 end
+      else
+        seen.black = seen.black + 2
+        if not same(up, FULL) then bad.black = bad.black + 1 end
+        if not same(down, FULL) then bad.black = bad.black + 1 end
+      end
+      if alias then
+        seen.strip = seen.strip + 1
+        if same(up, aliasWant) then bad.strip = bad.strip + 1 end
       end
     end
+    last159 = s1[160 + 159]
   end
   BattleTransition.abort()
-  return seen, bad, row0Want
+  return seen, bad, aliasWant
 end
-local seen, bad, want0 = shred(0, 400)
+local function shredChecks(label, seen, bad)
+  check(seen.rows > 0 and bad.rows == 0,
+    string.format("SHRED_SPLIT %s screen row y shows WIN0H buffer row y-1, row 0 the last frame's row 159 (%d of %d wrong)",
+      label, bad.rows, seen.rows))
+  check(seen.follow > 0 and bad.follow == 0,
+    string.format("SHRED_SPLIT %s margin rows follow the edge rows while the field shows (%d of %d wrong)", label,
+      bad.follow, seen.follow))
+  check(seen.black > 0 and bad.black == 0,
+    string.format("SHRED_SPLIT %s margin rows go black once the shred covers the screen (%d of %d wrong)", label,
+      bad.black, seen.black))
+  check(seen.strip > 0 and bad.strip == 0,
+    string.format("SHRED_SPLIT %s alias strip stays one row tall (%d of %d margin rows show it)", label,
+      bad.strip, seen.strip))
+end
+local seen, bad, aliasWant = shred(0, 400)
 check(seen.right > 0 and bad.right == 0,
   string.format("SHRED_SPLIT right-row overshoot 0xFFFA shows the whole row (%d of %d black)", bad.right, seen.right))
 check(seen.left > 0 and bad.left == 0,
   string.format("SHRED_SPLIT left-row overshoot 0xF6F1 shows the whole row (%d of %d black)", bad.left, seen.left))
-check(want0[1] == 16 and seen.row0 > 0 and bad.row0 == 0,
-  string.format("SHRED_SPLIT row 0 alias 0xFF10 shows x 0..15 (%d of %d wrong)", bad.row0, seen.row0))
-local function marginChecks(label)
-  check(seen.margin > 0 and bad.margin == 0,
-    string.format("SHRED_SPLIT %s margin rows take the edge row's own window (%d of %d wrong)", label, bad.margin,
-      seen.margin))
-  check(seen.strip > 0 and bad.strip == 0,
-    string.format("SHRED_SPLIT %s row 0 alias strip stays one row tall (%d of %d margin rows show it)", label,
-      bad.strip, seen.strip))
+check(aliasWant[1] == 16 and seen.alias > 0 and bad.alias == 0,
+  string.format("SHRED_SPLIT row 0 alias 0xFF10 reaches screen row 1 and shows x 0..15 (%d of %d wrong)", bad.alias,
+    seen.alias))
+shredChecks("cameraX 0", seen, bad)
+seen, bad, aliasWant = shred(208, 400)
+check(aliasWant[1] == 224 and seen.alias > 0 and bad.alias == 0,
+  string.format("SHRED_SPLIT panned camera alias 0xFFE0 reaches screen row 1 and shows x 0..223 (%d of %d wrong)",
+    bad.alias, seen.alias))
+shredChecks("cameraX 208", seen, bad)
+
+print("[test] 12. Scanline buffers reach the screen one row late")
+local bit = require("bit")
+local function runFrames(name, frames, perFrame)
+  local finished = false
+  BattleTransition.start(BattleTransition.ids().ID[name], { skipIntro = true }, function() finished = true end)
+  for f = 1, frames do
+    BattleTransition.tick(1 / 60)
+    local fx = BattleTransition._fx
+    if finished or not fx or fx.pal.slots[0].y >= 16 then break end
+    perFrame(fx, f)
+  end
+  BattleTransition.abort()
 end
-marginChecks("cameraX 0")
-seen, bad, want0 = shred(208, 400)
-check(want0[1] == 224 and seen.row0 > 0 and bad.row0 == 0,
-  string.format("SHRED_SPLIT panned camera row 0 alias 0xFFE0 shows x 0..223 (%d of %d wrong)", bad.row0, seen.row0))
-marginChecks("cameraX 208")
+
+local function winCase(label, name, field, decode, row0)
+  local seen, bad, prev = 0, 0, nil
+  runFrames(name, 600, function(fx)
+    local buf = fx[field]
+    if buf then
+      for y = 0, 159 do
+        local want
+        if y > 0 then
+          want = spansOf(decode, buf[y - 1])
+        elseif row0 == "first" then
+          want = spansOf(decode, buf[0])
+        elseif prev then
+          want = spansOf(decode, prev[1])
+        else
+          want = {}
+        end
+        seen = seen + 1
+        if not same(BattleTransition.blackSpans(y), want) then bad = bad + 1 end
+      end
+    end
+    prev = buf and { buf[159] } or nil
+  end)
+  check(seen > 0 and bad == 0, string.format("%s %s row y shows buffer row y-1, row 0 %s (%d of %d wrong)", label, name,
+    row0 == "first" and "buffer row 0" or "the last frame's row 159", bad, seen))
+end
+
+local function waveX(w, y)
+  local x = w.x + H.Sin(bit.band(w.idx + 4 * y, 0xFF), 40)
+  if x < 0 then x = 0 end
+  if x > 240 then x = 240 end
+  return x
+end
+local function waveCase(label)
+  local seen, bad, prevW = 0, 0, nil
+  runFrames("WAVE", 200, function(fx)
+    local w = fx.wv1
+    if w then
+      for y = 0, 159 do
+        local src = y > 0 and w or prevW
+        local x = src and waveX(src, y > 0 and y - 1 or 159) or 0
+        local want = x > 0 and { 0, x } or {}
+        seen = seen + 1
+        if not same(BattleTransition.blackSpans(y), want) then bad = bad + 1 end
+      end
+    end
+    prevW = w
+  end)
+  check(seen > 0 and bad == 0, string.format("%s WAVE row y shows waveX(y-1), row 0 last frame's row 159 (%d of %d wrong)",
+    label, bad, seen))
+end
+
+local function sliceCase(label)
+  local seen, bad, prevE = 0, 0, 0
+  runFrames("SLICE", 200, function(fx)
+    local e = fx.sl1 or 0
+    for y = 0, 159 do
+      local ee, odd = e, y > 0 and (y - 1) % 2 == 1
+      if y == 0 then ee, odd = prevE, true end
+      local want = {}
+      if ee > 0 then want = odd and { 240 - ee, 240 } or { 0, ee } end
+      local dx = BattleTransition.rowShift(y)
+      seen = seen + 1
+      if not same(BattleTransition.blackSpans(y), want) or dx ~= (odd and ee or -ee) then bad = bad + 1 end
+    end
+    prevE = e
+  end)
+  check(seen > 0 and bad == 0,
+    string.format("%s SLICE rows and HOFS follow buffer row y-1, row 0 last frame's row 159 (%d of %d wrong)", label,
+      bad, seen))
+end
+
+local function shiftCase(label, name, field, formula)
+  local seen, bad = 0, 0
+  runFrames(name, 300, function(fx)
+    local w = fx[field]
+    if w then
+      for y = 0, 159 do
+        local wantX, wantY = formula(w, y > 0 and y - 1 or 0)
+        local dx, dy = BattleTransition.rowShift(y)
+        seen = seen + 1
+        if dx ~= wantX or dy ~= wantY then bad = bad + 1 end
+      end
+    end
+  end)
+  check(seen > 0 and bad == 0, string.format("%s %s row y scrolls by buffer row y-1, row 0 by row 0 (%d of %d wrong)",
+    label, name, bad, seen))
+end
+local function swirl(w, y) return H.Sin(w.idx + 2 * y, w.amp), 0 end
+local function shuffle(s, y) return 0, H.Sin(bit.rshift(H.u16(s.sinVal + 4224 * y), 8), s.amp) end
+local function ripple(s, y) return 0, H.Sin(bit.rshift(H.u16(s.sinVal + 384 * y), 8), s.amp) end
+
+local function scanlineCases(label)
+  waveCase(label)
+  sliceCase(label)
+  shiftCase(label, "SWIRL", "wave1", swirl)
+  shiftCase(label, "SHUFFLE", "sh1", shuffle)
+  shiftCase(label, "RIPPLE", "rp1", ripple)
+  winCase(label, "CLOCKWISE_WIPE", "buf1", H.winHSpans, "first")
+  winCase(label, "ANGLED_WIPES", "buf1", H.winOutside, "first")
+end
+
+scanlineCases("FRLG")
+winCase("FRLG", "BIG_POKEBALL", "mask1", H.winOutside, "prev")
+Profile.reset()
+GameVersion.set("emerald")
+scanlineCases("Emerald")
+winCase("Emerald", "BIG_POKEBALL", "mask1", H.winOutside, "prev")
+winCase("Emerald", "BLACKHOLE", "hole1", H.winHSpans, "prev")
+winCase("Emerald", "BLACKHOLE_PULSATE", "hole1", H.winHSpans, "prev")
+
+local function whiteBarsRow0(label)
+  local def = BattleTransition.defs()[BattleTransition.ids().ID.WHITE_BARS_FADE]
+  local rows, alpha = {}, 0
+  local G = {
+    setColor = function(_, _, _, a) alpha = a or 1 end,
+    rectangle = function(_, x, y, w, h)
+      if h == 1 then rows[y] = { x = x, w = w, v = math.floor(alpha * 16 + 0.5) } end
+    end,
+  }
+  local R = { X0 = 0, X1 = 240, Y0 = 0, Y1 = 160, hmap = function(x) return x end, hmapR = function(x) return x end }
+  local seen, bad, darkTop, prev319 = 0, 0, 0, nil
+  runFrames("WHITE_BARS_FADE", 400, function(fx)
+    if fx.darkenPhase or not fx.buf1 then return end
+    rows = {}
+    def.post(fx, R, G)
+    local want = math.min(16, bit.band(fx.buf1[227] or 0, 0x1F))
+    local got = rows[0] and rows[0].v or 0
+    if prev319 and prev319 < 240 then
+      seen = seen + 1
+      if got ~= want then bad = bad + 1 end
+    end
+    if got == 0 and rows[1] and rows[1].v == 16 then darkTop = darkTop + 1 end
+    prev319 = fx.buf1[319]
+  end)
+  check(seen > 0 and bad == 0, string.format("%s WHITE_BARS_FADE row 0 BLDY is buffer entry 227 (%d of %d wrong)",
+    label, bad, seen))
+  check(darkTop > 0, string.format("%s WHITE_BARS_FADE row 0 stays unlit while row 1 is white (%d frames)", label,
+    darkTop))
+end
+whiteBarsRow0("Emerald")
 Profile.reset()
 GameVersion.set("firered")
 

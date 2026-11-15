@@ -8,15 +8,17 @@ love = require("tests.love_stub")
 local T = require("tests.harness")
 local Events = require("src.world.gen2.Events")
 local Mon = require("src.battle.gen2.Mon")
-local PrizeMenu = require("src.ui.gen2.PrizeMenu")
+local COUNTERS = require("tests.fixture_data.gen2_prize_counters_s7_f2")
 local Save = require("src.core.gen2.Save")
 local Specials = require("src.script.gen2.Specials")
 local Vm = require("src.script.gen2.Vm")
+local World = require("src.world.gen2.World")
 
 -- constants/landmark_constants.asm
 local GOLDENROD = 12
 
 local DATA = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(),
   constants = { bagSize = 20 },
   items = { BERRY = { name = "BERRY", pocket = "ITEM" } },
   moves = {
@@ -81,14 +83,16 @@ do
 end
 
 
-local counter = PrizeMenu.COUNTERS.GOLDENROD_MON
-local abra = counter.prizes[1]
+local abra = COUNTERS.prizes(COUNTERS.scripts, COUNTERS.keys.goldenrodMon)[1]
+
+local function prizeWorld(save)
+  return setmetatable({ game = { data = DATA, save = save },
+    map = { def = { landmark = GOLDENROD } }, tod = "DAY" }, { __index = World })
+end
 
 do
   local save = newSave("crystal", 9999)
-  local where = { landmark = GOLDENROD, timeOfDay = 1,
-    playerGender = "female" }
-  T.eq(PrizeMenu.buy(save, counter, abra, DATA, where), "ok",
+  T.check(prizeWorld(save):givePoke(abra.species, abra.level, 0) ~= nil,
     "the prize is handed over")
   local mon = save.party[1]
   T.eq(mon.caughtLocation, GOLDENROD,
@@ -100,8 +104,8 @@ end
 
 do
   local save = newSave("gold", 9999)
-  T.eq(PrizeMenu.buy(save, counter, abra, DATA,
-    { landmark = GOLDENROD, timeOfDay = 1 }), "ok", "Gold buys it too")
+  T.check(prizeWorld(save):givePoke(abra.species, abra.level, 0) ~= nil,
+    "Gold buys it too")
   T.eq(save.party[1].caughtLocation, nil, "and stamps nothing")
 end
 

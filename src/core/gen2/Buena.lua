@@ -1,19 +1,12 @@
 -- pokecrystal/engine/pokegear/radio.asm:1461
 local Save = require("src.core.gen2.Save")
 local BugContest = require("src.core.gen2.BugContest")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 
 local Buena = {}
 
 function Buena.metadata(data)
   return data and data.gen2EventTables and data.gen2EventTables.buenaPassword
-end
-
-function Buena.flagId(data, name, fallback)
-  local order = data and data.gen2Constants and data.gen2Constants.engineFlagOrder
-  for index, flag in ipairs(order or {}) do
-    if flag == name then return index - 1 end
-  end
-  return fallback
 end
 
 function Buena.captured(save, data)
@@ -43,7 +36,7 @@ function Buena.broadcast(save, data, sample)
   if not metadata or not metadata.categories then return nil end
   local flags = save.engineFlags or {}
   save.engineFlags = flags
-  local listened = Buena.flagId(data, "ENGINE_BUENAS_PASSWORD", 95)
+  local listened = EngineFlags.id("ENGINE_BUENAS_PASSWORD")
   local category, index = Buena.captured(save, data)
   local state = save.crystal and save.crystal.buenaPassword
   local imported = flags[listened] == nil and state and type(state.day) == "number"
@@ -70,20 +63,19 @@ function Buena.broadcast(save, data, sample)
 end
 
 -- pokecrystal/engine/pokegear/radio.asm:1612
-function Buena.clearListening(save, data, resolveId)
+function Buena.clearListening(save)
   if not save or save.version ~= "crystal" then return end
-  local id = resolveId and resolveId("ENGINE_BUENAS_PASSWORD", 95)
-    or Buena.flagId(data, "ENGINE_BUENAS_PASSWORD", 95)
+  local id = EngineFlags.id("ENGINE_BUENAS_PASSWORD")
   if save.engineFlags then save.engineFlags[id] = nil end
   local state = save.crystal and save.crystal.buenaPassword
   if state then state.day = nil end
 end
 
 -- pokecrystal/engine/overworld/time.asm:103
-function Buena.dailyReset(save, resolveId)
+function Buena.dailyReset(save)
   if not save or save.version ~= "crystal" then return end
-  Buena.clearListening(save, nil, resolveId)
-  local id = resolveId and resolveId("ENGINE_BUENAS_PASSWORD_2", 96) or 96
+  Buena.clearListening(save)
+  local id = EngineFlags.id("ENGINE_BUENAS_PASSWORD_2")
   if save.engineFlags then save.engineFlags[id] = nil end
 end
 

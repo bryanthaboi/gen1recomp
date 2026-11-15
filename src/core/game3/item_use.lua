@@ -101,6 +101,7 @@ local function not_the_time(session)
   end
   return (RomText.box("gText_OakForbidsUseOfItemHere", { playerName = player_name(session) }))
 end
+ItemUse.notTheTimeText = not_the_time
 
 local function no_pokemon_text()
   return (RomText.box("gText_ThereIsNoPokemon"))
@@ -111,11 +112,7 @@ local function wont_have_effect()
 end
 
 local function cant_dismount_bike_text()
-  if RomText.has and RomText.has("gText_CantDismountBike") then
-    local ok, res = pcall(RomText.box, "gText_CantDismountBike")
-    if ok and res then return res end
-  end
-  return "You can't dismount your BIKE here."
+  return (RomText.box("gText_CantDismountBike"))
 end
 
 -- pokefirered/src/data/pokemon/item_effects.h:80
@@ -311,6 +308,7 @@ local function bag_full_text(itemId)
   end
   return RomText.box("gText_BagFullCouldNotRemoveItem", { stringVars = { name } })
 end
+ItemUse.bagFullText = bag_full_text
 
 local function held_item(mon)
   local prev = mon and (mon.item or mon.heldItem)

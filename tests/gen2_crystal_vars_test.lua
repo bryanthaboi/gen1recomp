@@ -67,6 +67,7 @@ local VAR_KENJI_BREAK = 0x1a
 
 local DATA = {
   audio = {},
+  text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(),
   items = {
     LEVEL_BALL = { index = 5, name = "LEVEL BALL" },
     RED_APRICORN = { index = 78, name = "RED APRICORN" },

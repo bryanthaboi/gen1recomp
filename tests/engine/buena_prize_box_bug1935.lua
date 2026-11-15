@@ -41,7 +41,9 @@ end
 local prizes = {}
 for i = 1, 6 do prizes[i] = { name = "PRIZE " .. i, cost = i } end
 
-local screen = BuenaPassword.new({}, { mode = "prize", prizes = prizes, balance = 1 })
+local screen = BuenaPassword.new({ data = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_f2").crystal,
+} }, { mode = "prize", prizes = prizes, balance = 1 })
 screen:draw()
 
 local drawn = boxes()

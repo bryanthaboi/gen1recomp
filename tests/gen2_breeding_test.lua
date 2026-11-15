@@ -54,7 +54,7 @@ local function species(id, opts)
     evolutions = opts.evolutions or {},
     levelMoves = opts.levelMoves or { { level = 1, move = "TACKLE" } },
     tmhm = opts.tmhm or {},
-    eggMoves = opts.eggMoves,
+    eggMoves = opts.eggMoves or {},
   }
   return POKEMON[id]
 end
@@ -414,9 +414,17 @@ eq(select(2, Breeding.canInheritMove(DATA, "BULBASAUR", "HEADBUTT",
   motherMoves)), "tmhm", "a TM/HM the baby can learn")
 check(not Breeding.canInheritMove(DATA, "BULBASAUR", "FISSURE", motherMoves),
   "and nothing else gets through")
--- The reader falls back safely on a cache with no egg_moves.asm in it.
 check(not Breeding.canInheritMove(DATA, "GEODUDE", "LIGHT_SCREEN", {}),
-  "a species with no eggMoves list simply has no egg moves")
+  "a species whose eggMoves list is empty has no egg moves")
+do
+  local saved = POKEMON.GEODUDE.eggMoves
+  POKEMON.GEODUDE.eggMoves = nil
+  local ok, err = pcall(Breeding.canInheritMove, DATA, "GEODUDE",
+    "LIGHT_SCREEN", {})
+  POKEMON.GEODUDE.eggMoves = saved
+  check(not ok and tostring(err):find("pokemon.lua has no eggMoves for GEODUDE",
+    1, true), "a species with no eggMoves field is an error")
+end
 
 -- LoadEggMove: the first empty slot, or over the OLDEST once full.
 local slots = { { id = "A" }, { id = "B" }, { id = "C" } }
@@ -789,6 +797,9 @@ eq(dc.egg.dvs.defense, 7, "and a freshly rolled egg behind it")
 -- replaced through the Screens registry so this stays a logic test.
 local Screens = require("src.ui.Screens")
 local DayCareMenu = require("src.ui.gen2.DayCareMenu")
+local DC_TEXT = require("tests.fixtures.gen2_common_text").text()
+local DC_REF = DayCareMenu.new(nil,
+  { save = { daycare = {} }, side = "man", text = DC_TEXT }).TEXT
 
 local function newInput()
   local input = { pressed = {} }
@@ -851,14 +862,14 @@ end
 -- what DayCareIntroText's `inc a` picks while DAYCARE_INTRO_SEEN_F is clear.
 local depositSave = newSave({ mother, father, mon("GEODUDE") })
 local depositGame, depositInput = newGame(depositSave)
-local screen = DayCareMenu.new(depositGame, { save = depositSave,
+local screen = DayCareMenu.new(depositGame, { text = DC_TEXT, save = depositSave,
   side = "man", rng = rolls(200, 0x9C, 0x35) })
-eq(#screen.confirm.pages, #DayCareMenu.TEXT.manIntroEgg,
+eq(#screen.confirm.pages, #DC_REF.manIntroEgg,
   "the first visit is the long egg explanation")
 check(Breeding.side(depositSave, "man").introSeen,
   "and DAYCARE_INTRO_SEEN_F is set by showing it")
 -- Walk to the last page, where the YES/NO box comes up, then answer YES.
-pressA(screen, depositInput, #DayCareMenu.TEXT.manIntroEgg - 1)
+pressA(screen, depositInput, #DC_REF.manIntroEgg - 1)
 eq(screen.confirm.choice, 1, "the box opens on YES")
 pressA(screen, depositInput, 1)
 check(screen.message ~= nil, "YES asks which mon to raise")
@@ -875,8 +886,8 @@ eq(Breeding.side(depositSave, "man").mon.species, "BULBASAUR",
 -- gets _BackAlreadyText rather than "Are we geniuses".
 local withdrawGame, withdrawInput = newGame(depositSave)
 depositSave.player.money = 500
-screen = DayCareMenu.new(withdrawGame, { save = depositSave, side = "man" })
-eq(#screen.confirm.pages, #DayCareMenu.TEXT.backAlready("X"),
+screen = DayCareMenu.new(withdrawGame, { text = DC_TEXT, save = depositSave, side = "man" })
+eq(#screen.confirm.pages, #DC_REF.backAlready("X"),
   "no growth means one yes/no over _BackAlreadyText")
 pressA(screen, withdrawInput, #screen.confirm.pages - 1)
 pressA(screen, withdrawInput, 1)
@@ -889,12 +900,12 @@ Breeding.dayCare(grownSave).man.mon = mon("BULBASAUR",
   { level = 10, experience = 1900 })
 Breeding.side(grownSave, "man").introSeen = true
 local grownGame, grownInput = newGame(grownSave)
-screen = DayCareMenu.new(grownGame, { save = grownSave, side = "man" })
+screen = DayCareMenu.new(grownGame, { text = DC_TEXT, save = grownSave, side = "man" })
 eq(screen.grown, 2, "two levels of growth")
 eq(screen.price, 300, "and a ¥300 bill")
-pressA(screen, grownInput, #DayCareMenu.TEXT.geniuses("X"))
+pressA(screen, grownInput, #DC_REF.geniuses("X"))
 check(screen.confirm ~= nil, "the second question follows the first")
-pressA(screen, grownInput, #DayCareMenu.TEXT.hasGrown("X", 2, 300))
+pressA(screen, grownInput, #DC_REF.hasGrown("X", 2, 300))
 eq(grownSave.player.money, 700, "and paying takes the 300")
 eq(#grownSave.party, 3, "the mon is home")
 
@@ -902,7 +913,7 @@ eq(#grownSave.party, 3, "the mon is home")
 -- yes, which is the branch that writes wScriptVar = TRUE.
 local eggSave = newSave()
 local eggGame, eggInput = newGame(eggSave)
-screen = DayCareMenu.new(eggGame, { save = eggSave, side = "outside" })
+screen = DayCareMenu.new(eggGame, { text = DC_TEXT, save = eggSave, side = "outside" })
 eq(screen.message.pages[1][1], "Not yet…", "no egg, no conversation")
 
 eggSave = newSave()
@@ -912,17 +923,17 @@ Breeding.initBreeding(DATA, eggSave, { rng = rolls(200, 0x9C, 0x35) })
 eggDc.hasEgg = true
 for _ = 1, 6 do eggSave.party[#eggSave.party + 1] = mon("GEODUDE") end
 eggGame, eggInput = newGame(eggSave)
-screen = DayCareMenu.new(eggGame, { save = eggSave, side = "outside",
+screen = DayCareMenu.new(eggGame, { text = DC_TEXT, save = eggSave, side = "outside",
   rng = rolls(200, 0x9C, 0x35) })
-pressA(screen, eggInput, #DayCareMenu.TEXT.foundAnEgg)
+pressA(screen, eggInput, #DC_REF.foundAnEgg)
 eq(screen.scriptVar, 1, "a full party sets wScriptVar to TRUE")
 check(eggDc.hasEgg, "and he keeps the egg")
 
 eggSave.party = {}
 eggGame, eggInput = newGame(eggSave)
-screen = DayCareMenu.new(eggGame, { save = eggSave, side = "outside",
+screen = DayCareMenu.new(eggGame, { text = DC_TEXT, save = eggSave, side = "outside",
   rng = rolls(200, 0x9C, 0x35) })
-pressA(screen, eggInput, #DayCareMenu.TEXT.foundAnEgg)
+pressA(screen, eggInput, #DC_REF.foundAnEgg)
 eq(#eggSave.party, 1, "with room, the egg is handed over")
 check(Breeding.isEgg(eggSave.party[1]), "as an egg")
 eq(screen.scriptVar, 0, "and wScriptVar stays FALSE")
@@ -1013,24 +1024,24 @@ check(Breeding.isNoEggs(cached.PICHU), "PICHU cannot breed")
 check(Breeding.groupsCompatible(cachedData, "PIKACHU", "PIKACHU"),
   "PIKACHU can")
 
--- Egg moves: absent from the cache today.  The reader is built against the
--- field that should exist, so this reports which it is rather than failing.
-local withEggMoves = 0
-for _, def in pairs(cached) do
-  if type(def) == "table" and type(def.eggMoves) == "table" then
-    withEggMoves = withEggMoves + 1
+-- data/pokemon/egg_moves.asm
+local withEggMoves, withoutEggMoves = 0, {}
+for id, def in pairs(cached) do
+  if type(def) == "table" and def.baseStats then
+    if type(def.eggMoves) == "table" then
+      withEggMoves = withEggMoves + 1
+    else
+      withoutEggMoves[#withoutEggMoves + 1] = tostring(id)
+    end
   end
 end
-if withEggMoves > 0 then
-  check(withEggMoves > 100,
-    "the cache carries egg moves for " .. withEggMoves .. " species")
-  check(#(cached.BULBASAUR.eggMoves or {}) > 0, "including BULBASAUR's")
-  eq(select(2, Breeding.canInheritMove(cachedData, "BULBASAUR",
-    cached.BULBASAUR.eggMoves[1], {})), "eggMove",
-    "and GetEggMove's first branch reads them")
-else
-  check(true,
-    "the cache has no eggMoves field yet - SKIP (see the extractor note)")
-end
+eq(table.concat(withoutEggMoves, ","), "",
+  "every species in the cache carries an eggMoves list")
+check(withEggMoves >= 251,
+  "the cache carries egg moves for " .. withEggMoves .. " species")
+check(#cached.BULBASAUR.eggMoves > 0, "including BULBASAUR's")
+eq(select(2, Breeding.canInheritMove(cachedData, "BULBASAUR",
+  cached.BULBASAUR.eggMoves[1], {})), "eggMove",
+  "and GetEggMove's first branch reads them")
 
 S.finish()

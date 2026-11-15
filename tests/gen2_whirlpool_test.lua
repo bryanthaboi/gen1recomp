@@ -22,6 +22,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 whirlpool")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq, same = S.check, S.eq, S.same
 
 local Movement = require("src.script.gen2.Movement")

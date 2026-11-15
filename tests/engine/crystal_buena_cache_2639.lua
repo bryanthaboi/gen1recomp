@@ -33,8 +33,9 @@ end
 for _, version in ipairs({ "gold", "silver" }) do
   T.check(not Contract.formatFor(version):find("crystal", 1, true), version .. " marker has no Crystal password category")
   files[Version.cachePrefix(version) .. Contract.MARKER_PATH] = Contract.markerFor(version)
+  T.check(Contract.isReady(version, fs), version .. " is ready with its events.lua")
   files[Version.cachePrefix(version) .. "data/generated/events.lua"] = nil
-  T.check(Contract.isReady(version, fs), version .. " does not require Crystal password output")
+  T.check(not Contract.isReady(version, fs), version .. " without events.lua (MagikarpLengths) is not ready")
 end
 T.eq(fs.prefix, "caller/", "all publication probes restore filesystem prefix")
 T.finish("Crystal Buena cache #2639")

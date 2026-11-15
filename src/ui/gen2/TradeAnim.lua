@@ -9,12 +9,7 @@
 --
 -- gfx/trade/ comes out of the cache as data.gen2Trade
 -- (RomExtractorGen2:extractTrade): one 49-tile sheet the two tilemaps index,
--- plus the ball, the poof, the tube bulge and the bubble as OAM sheets.  A
--- cache built before that stage leaves every one of them nil, and then
--- everything below the frontpics falls back to the shapes those tiles are,
--- drawn at the coordinates the tilemap puts them, the same way
--- src/ui/gen2/EvolutionAnim.lua draws its balls of light.  Art and shapes
--- alike go through GbcPalette so the COLOR option still reaches them.
+-- plus the ball, the poof, the tube bulge and the bubble as OAM sheets.
 --
 -- THE OBJECTS ARE QUADRANTS.  data/sprite_anims/oam.asm builds the poof and
 -- the bubble out of a 2x2 block drawn four times (X-flipped, Y-flipped, both)
@@ -51,8 +46,8 @@ local MonAnimView = require("src.render.MonAnimView")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
+local RomText = require("src.core.RomText")
 local Sprites = require("src.pokemon.Sprites")
-local Strings = require("src.core.Strings")
 local TradeMenu = require("src.ui.gen2.TradeMenu")
 local Unown = require("src.core.gen2.Unown")
 
@@ -67,7 +62,7 @@ local PANEL_INNER_W, PANEL_INNER_H = 13, 6
 local WINDOW_Y = 0x50
 
 -- TradeLinkTubeTilemap at hlcoord 8, 2.
-local TUBE_X, TUBE_Y, TUBE_W, TUBE_H = 64, 16, 96, 24
+local TUBE_X, TUBE_Y, TUBE_W = 64, 16, 96
 
 -- The ball, the poof and the bulge, from their depixel rows.
 local BALL_X, BALL_Y = 80, 68
@@ -85,14 +80,8 @@ local POOF_FRAMES = 16
 -- one at hlcoord 10, 6 with the cable turning down at column 17 -- and state 2
 -- is only ever seen after the window has wrapped, so its columns sit a full
 -- $100 further along.
-local GB_W, GB_H = 48, 64
 local GB_A_X, GB_A_Y = 24, 16
 local GB_B_X, GB_B_Y = 0x100 + 80, 48
-local CABLE_Y = 3 * 8 + 4
-local CABLE_FROM = 72
-local CABLE_TURN = 0x100 + 17 * 8
-local CABLE_DOWN_TO = 7 * 8
-local CABLE_IN = 0x100 + 16 * 8
 
 -- The same scene as tiles.  TradeAnim_TubeAnimJumptable ByteFills the cable
 -- around the two TradeGameBoyTilemap stamps rather than drawing it from a
@@ -163,45 +152,12 @@ local GET_BEATS = {
   getmon_poof = true, getmon_hold = true, take_care = true,
 }
 
--- Fallbacks for a cache built before the extractor reached the animation's own
--- lines (data/text/common_1.asm).  Each is transcribed with the buffer list
--- its text_ram rows name, so the two mons and the two trainers cannot swap.
-local FALLBACK = {
-  _MonWasSentToText = {
-    text = Strings.source("{STRBUF} was\nsent to {STRBUF}."),
-    buffers = { "wPlayerTrademonSpeciesName", "wOTTrademonSenderName" },
-  },
-  _ForYourMonSendsText = {
-    text = Strings.source("For {STRBUF}'s\n{STRBUF},"),
-    buffers = { "wPlayerTrademonSenderName", "wPlayerTrademonSpeciesName" },
-  },
-  _OTSendsText = {
-    text = Strings.source("{STRBUF} sends\n{STRBUF}."),
-    buffers = { "wOTTrademonSenderName", "wOTTrademonSpeciesName" },
-  },
-  _BidsFarewellToMonText = {
-    text = Strings.source("{STRBUF} bids\nfarewell to"),
-    buffers = { "wOTTrademonSenderName" },
-  },
-  _MonNameBidsFarewellText = {
-    text = Strings.source("{STRBUF}."),
-    buffers = { "wOTTrademonSpeciesName" },
-  },
-  _TakeGoodCareOfMonText = {
-    text = Strings.source("Take good care of\n{STRBUF}."),
-    buffers = { "wOTTrademonSpeciesName" },
-  },
-}
-
 -- TrademonStats_MonTemplate's own string, placed at hlcoord 4, 0.  `next` in a
 -- text box steps TWO rows, which is why the template's four lines land on the
 -- rows PrintSpeciesName / PrintOTName / PrintTrademonID write into (0, 2, 4
 -- and 6).
-local TEMPLATE_ROWS = {
-  { row = 0, text = "─── №." },
-  { row = 4, text = "OT/" },
-  { row = 6, text = "<ID>№." },
-}
+-- engine/movie/trade_animation.asm:939
+local TEMPLATE = "TrademonStats_MonTemplate.OTMonData"
 
 -- gfx/sgb/predef.pal:29
 local function scale5(value) return math.floor(value * 255 / 31 + 0.5) end
@@ -403,19 +359,17 @@ function TradeAnimView.fill(body, names, buffers)
   end))
 end
 
--- The line a beat prints, as up to two rows.  The cache wins; the fallback is
--- the same string with the same buffer order.
+-- The line a beat prints, as up to two rows.
 function TradeAnimView:lines(id)
   local label = Anim.TEXT[id]
   if not label then return nil end
-  local texts = self.eventTables.tradeTexts or {}
+  local texts = self.eventTables.tradeTexts
+  if type(texts) ~= "table" then error("events.lua has no tradeTexts", 2) end
   local body = texts[label]
-  local buffers = (self.eventTables.tradeBuffers or {})[label]
   if type(body) ~= "string" then
-    local fallback = FALLBACK[label]
-    if not fallback then return nil end
-    body, buffers = fallback.text, fallback.buffers
+    error("events.lua tradeTexts has no " .. tostring(label), 2)
   end
+  local buffers = (self.eventTables.tradeBuffers or {})[label]
   local pages = TradeMenu.paginate(
     TradeAnimView.fill(body, self:buffers(), buffers))
   return pages[1]
@@ -425,11 +379,6 @@ end
 -- Draw helpers
 --------------------------------------------------------------------------
 
--- Every shape on this screen is one of the four colours of the text palette,
--- which is what SCGB_TRADE_TUBE and TradeAnim_NormalPals leave the background
--- reading through.
--- `index` is a GB shade, 0 (white) to 3 (black); GbcPalette.color counts from
--- 1, as the palettes themselves do.
 function TradeAnimView:bgColors()
   local id = (self.beat or {}).id or ""
   local pan = id:find("_pan_", 1, true)
@@ -444,22 +393,6 @@ function TradeAnimView:bgColors()
   return colors
 end
 
-function TradeAnimView:shade(index)
-  local colors = self:bgColors()
-  local rgb = GbcPalette.color(colors, index + 1)
-    or ({ { 255, 255, 255 }, { 168, 168, 168 }, { 96, 96, 96 },
-          { 0, 0, 0 } })[index + 1]
-  return rgb[1] / 255, rgb[2] / 255, rgb[3] / 255
-end
-
-function TradeAnimView:setShade(index)
-  love.graphics.setColor(self:shade(index))
-end
-
--- Art and shapes read through the same four colours, so a sheet is blitted
--- inside the palette the way a mon pic is: the PNG's own greys are shades 0-3
--- and GbcPalette maps them.  A driver with no shader draws the greys, which
--- is the DMG ramp and not a black frame.
 function TradeAnimView:through(body)
   local colors = self:bgColors()
   love.graphics.setColor(1, 1, 1, 1)
@@ -472,37 +405,33 @@ function TradeAnimView:through(body)
 end
 
 function TradeAnimView:image(path)
-  if not path then return nil end
   local cached = self.imageCache[path]
-  if cached == nil then
-    local ok, image = pcall(Assets.image, path)
-    cached = ok and image or false
-    if cached then cached:setFilter("nearest", "nearest") end
+  if not cached then
+    cached = Assets.image(path)
+    cached:setFilter("nearest", "nearest")
     self.imageCache[path] = cached
   end
-  return cached or nil
+  return cached
+end
+
+function TradeAnimView:need(key)
+  local value = self.gfx and self.gfx[key]
+  if value == nil then error("trade.lua has no " .. key, 2) end
+  return value
 end
 
 -- One of the object sheets (ball, poof, bulge, bubble, arrows), as its image
--- and how many tiles across it is.  nil for a cache that predates
--- RomExtractorGen2:extractTrade, which is what puts every caller on its
--- fallback shape.
+-- and how many tiles across it is.
 function TradeAnimView:art(key)
-  local entry = self.gfx and self.gfx[key]
-  if type(entry) ~= "table" then return nil end
-  local image = self:image(entry.image)
-  if not image then return nil end
-  return image, entry.sheetTiles or 1
+  local entry = self:need(key)
+  return self:image(entry.image), entry.sheetTiles
 end
 
 -- TradeGameBoyLZ's 49 tiles, plus the base tile id every tilemap byte counts
 -- from ($31, because the BG runs in $8800 mode and the sheet went to vTiles2).
 function TradeAnimView:sheet()
-  local gfx = self.gfx
-  if not (gfx and gfx.image) then return nil end
-  local image = self:image(gfx.image)
-  if not image then return nil end
-  return image, gfx.sheetTiles or 7, gfx.baseTile or 0x31
+  return self:image(self:need("image")), self:need("sheetTiles"),
+    self:need("baseTile")
 end
 
 function TradeAnimView:quad(image, across, index)
@@ -529,11 +458,9 @@ function TradeAnimView:blit(image, across, index, x, y, flipX, flipY)
 end
 
 -- A tilemap stamp (TradeAnim_CopyBoxFromDEtoHL), at the pixel its hlcoord
--- lands on.  false when there is no cache art, so the caller can fall back.
+-- lands on.
 function TradeAnimView:drawTilemap(map, x, y)
-  if type(map) ~= "table" or type(map.tiles) ~= "table" then return false end
   local image, across, base = self:sheet()
-  if not image then return false end
   self:through(function()
     for index = 0, map.width * map.height - 1 do
       local id = map.tiles[index + 1]
@@ -543,7 +470,6 @@ function TradeAnimView:drawTilemap(map, x, y)
       end
     end
   end)
-  return true
 end
 
 -- An object built out of one mirrored quadrant: `side` tiles square, drawn
@@ -621,8 +547,10 @@ function TradeAnimView:drawStats(record, offset)
   -- and PrintNum overwrite the border's own tile at cols 4-12, row 0.
   G.setColor(1, 1, 1, 1)
   G.rectangle("fill", (PANEL_X + 1) * 8, PANEL_Y * 8, 9 * 8, 8)
-  for _, row in ipairs(TEMPLATE_ROWS) do
-    Chrome.print(Strings(row.text), PANEL_X + 1, row.row)
+  local row = 0
+  for line in (RomText(self.data, TEMPLATE) .. "\n"):gmatch("(.-)\n") do
+    if line ~= "" then Chrome.print(line, PANEL_X + 1, row) end
+    row = row + 2
   end
   Chrome.print(Chrome.number(record.dex or 0, 3, true), PANEL_X + 7, 0)
   Chrome.print(record.name, PANEL_X + 1, 2)
@@ -635,15 +563,7 @@ end
 -- middle rows are hollow, which is what lets the bulge read as something
 -- moving INSIDE it.
 function TradeAnimView:drawTube(offset)
-  local G = love.graphics
-  local x = TUBE_X - offset
-  if self:drawTilemap(self.gfx and self.gfx.tube, x, TUBE_Y) then return end
-  self:setShade(3)
-  G.rectangle("line", x + 0.5, TUBE_Y + 0.5, TUBE_W - 1, TUBE_H - 1, 6, 6)
-  self:setShade(2)
-  G.rectangle("fill", x + 4, TUBE_Y + 4, TUBE_W - 8, 2)
-  G.rectangle("fill", x + 4, TUBE_Y + TUBE_H - 6, TUBE_W - 8, 2)
-  G.setColor(1, 1, 1, 1)
+  self:drawTilemap(self:need("tube"), TUBE_X - offset, TUBE_Y)
 end
 
 -- TradeBallGFX, on .Frameset_TradePokeBallWobble: four frames of 3 ticks
@@ -652,62 +572,36 @@ end
 -- mirrored; frame 2 is tiles 2-5 in a plain 2x2.  x, y is the origin, so the
 -- object hangs 8 pixels up and left of it.
 function TradeAnimView:drawBall(x, y, rocking)
-  local G = love.graphics
   local image, across = self:art("ball")
-  if image then
-    local step = rocking and math.floor((self.offset or 0) / 3) % 4 or 0
-    self:through(function()
-      if step % 2 == 0 then
-        self:blit(image, across, 0, x - 8, y - 8)
-        self:blit(image, across, 0, x, y - 8, true)
-        self:blit(image, across, 1, x - 8, y)
-        self:blit(image, across, 1, x, y, true)
-      else
-        -- The fourth frame's B_OAM_XFLIP mirrors the whole object, so the
-        -- two columns swap places as well as flipping.
-        local flip = (step == 3)
-        for index = 0, 3 do
-          local column = index % 2
-          if flip then column = 1 - column end
-          self:blit(image, across, 2 + index,
-            x - 8 + column * 8, y - 8 + math.floor(index / 2) * 8, flip)
-        end
+  local step = rocking and math.floor((self.offset or 0) / 3) % 4 or 0
+  self:through(function()
+    if step % 2 == 0 then
+      self:blit(image, across, 0, x - 8, y - 8)
+      self:blit(image, across, 0, x, y - 8, true)
+      self:blit(image, across, 1, x - 8, y)
+      self:blit(image, across, 1, x, y, true)
+    else
+      -- The fourth frame's B_OAM_XFLIP mirrors the whole object, so the
+      -- two columns swap places as well as flipping.
+      local flip = (step == 3)
+      for index = 0, 3 do
+        local column = index % 2
+        if flip then column = 1 - column end
+        self:blit(image, across, 2 + index,
+          x - 8 + column * 8, y - 8 + math.floor(index / 2) * 8, flip)
       end
-    end)
-    return
-  end
-  local lean = 0
-  if rocking then lean = (math.floor(self.offset / 8) % 2 == 0) and -1 or 1 end
-  local cx, cy = x + 4 + lean, y + 4
-  self:setShade(3)
-  G.circle("fill", cx, cy, 5)
-  self:setShade(0)
-  G.circle("fill", cx, cy, 4)
-  self:setShade(3)
-  G.rectangle("fill", cx - 4, cy - 1, 9, 2)
-  G.circle("fill", cx, cy, 1.5)
-  G.setColor(1, 1, 1, 1)
+    end
+  end)
 end
 
 -- TradePoofGFX on .Frameset_TradePoof: three 4-tile frames at 4 ticks each,
 -- then oamdelete.  Each frame is a 2x2 quadrant mirrored into a 32x32 puff.
 function TradeAnimView:drawPoof(x, y, t)
-  local G = love.graphics
   local image, across = self:art("poof")
-  if image then
-    local frame = math.min(2, math.floor(t / 4))
-    self:through(function()
-      self:drawQuadrant(image, across, frame * 4, 2, x, y)
-    end)
-    return
-  end
-  local step = math.floor(t / 4)
-  local radius = 4 + step * 3
-  self:setShade(3 - math.min(2, step))
-  G.setLineWidth(2)
-  G.circle("line", x + 4, y + 4, radius)
-  G.setLineWidth(1)
-  G.setColor(1, 1, 1, 1)
+  local frame = math.min(2, math.floor(t / 4))
+  self:through(function()
+    self:drawQuadrant(image, across, frame * 4, 2, x, y)
+  end)
 end
 
 -- The unrolled Game Boy scene the two pans travel: the player's Game Boy, the
@@ -717,22 +611,11 @@ function TradeAnimView:drawScene(pan)
   G.push()
   G.translate(-pan, 0)
   local image, across, base = self:sheet()
-  if image and self.gfx.gameBoy then
-    self:through(function()
-      for _, cell in ipairs(CABLE_CELLS) do
-        self:blit(image, across, cell[3] - base, cell[1] * 8, cell[2] * 8)
-      end
-    end)
-    self:drawGameBoy(GB_A_X, GB_A_Y)
-    self:drawGameBoy(GB_B_X, GB_B_Y)
-    G.pop()
-    G.setColor(1, 1, 1, 1)
-    return
-  end
-  self:setShade(3)
-  G.rectangle("fill", CABLE_FROM, CABLE_Y, CABLE_TURN - CABLE_FROM, 2)
-  G.rectangle("fill", CABLE_TURN, CABLE_Y, 2, CABLE_DOWN_TO - CABLE_Y)
-  G.rectangle("fill", CABLE_IN, CABLE_DOWN_TO, CABLE_TURN - CABLE_IN + 2, 2)
+  self:through(function()
+    for _, cell in ipairs(CABLE_CELLS) do
+      self:blit(image, across, cell[3] - base, cell[1] * 8, cell[2] * 8)
+    end
+  end)
   self:drawGameBoy(GB_A_X, GB_A_Y)
   self:drawGameBoy(GB_B_X, GB_B_Y)
   G.pop()
@@ -741,20 +624,7 @@ end
 
 -- TradeGameBoyTilemap, 6x8 tiles: a body with a screen in its top half.
 function TradeAnimView:drawGameBoy(x, y)
-  local G = love.graphics
-  if self:drawTilemap(self.gfx and self.gfx.gameBoy, x, y) then return end
-  self:setShade(3)
-  G.rectangle("fill", x, y, GB_W, GB_H, 5, 5)
-  self:setShade(1)
-  G.rectangle("fill", x + 4, y + 4, GB_W - 8, GB_H - 26, 2, 2)
-  self:setShade(0)
-  G.rectangle("fill", x + 8, y + 8, GB_W - 16, GB_H - 34)
-  self:setShade(1)
-  G.circle("fill", x + GB_W - 12, y + GB_H - 16, 3)
-  G.circle("fill", x + GB_W - 22, y + GB_H - 12, 3)
-  G.rectangle("fill", x + 8, y + GB_H - 17, 8, 3)
-  G.rectangle("fill", x + 10, y + GB_H - 19, 3, 8)
-  G.setColor(1, 1, 1, 1)
+  self:drawTilemap(self:need("gameBoy"), x, y)
 end
 
 -- TradeCableGFX on .Frameset_TradeTubeBulge: two one-tile frames at 3 ticks
@@ -763,7 +633,6 @@ end
 -- $12/$13 dictionary offsets point at, which is the only thing that reads it.
 function TradeAnimView:drawBulge(x, y, t)
   local image, across = self:art("bulge")
-  if not image then return self:drawBall(x, y, false) end
   local frame = math.floor((t or 0) / 3) % 2
   self:through(function()
     self:drawQuadrant(image, across, frame, 1, x, y)
@@ -775,25 +644,15 @@ end
 -- (.OAMData_RedWalk), both centred on the same origin; the icon is the party
 -- icon sheet's first frame, which is what LoadMenuMonIcon hands the sprite.
 function TradeAnimView:drawBubble(record, x, y)
-  local G = love.graphics
   local image, across = self:art("bubble")
-  if image then
-    self:through(function()
-      self:drawQuadrant(image, across, 0, 2, x, y)
-    end)
-  else
-    self:setShade(0)
-    G.circle("fill", x, y, 11)
-    self:setShade(3)
-    G.circle("line", x + 0.5, y + 0.5, 11)
-    G.setColor(1, 1, 1, 1)
-  end
+  self:through(function()
+    self:drawQuadrant(image, across, 0, 2, x, y)
+  end)
   self:drawIcon(record, x - 8, y - 8)
 end
 
 -- The window strip the two pans run over: the rule, the two trainers and the
--- six arrows between them.  The arrows are the only part that is art, so a
--- cache with no gfx/trade still gets the names.
+-- six arrows between them.
 function TradeAnimView:drawTubeStrip(sending)
   local G = love.graphics
   G.push()
@@ -802,14 +661,12 @@ function TradeAnimView:drawTubeStrip(sending)
   Chrome.print(self.give.senderName, 0, STRIP_NAME_ROW)
   Chrome.printRight(self.get.senderName, Chrome.SCREEN_W, STRIP_OT_ROW)
   local image, across = self:art("arrows")
-  if image then
-    self:through(function()
-      for column = 0, STRIP_ARROWS - 1 do
-        self:blit(image, across, sending and 0 or 1,
-          (STRIP_ARROW_X + column) * 8, STRIP_ARROW_ROW * 8)
-      end
-    end)
-  end
+  self:through(function()
+    for column = 0, STRIP_ARROWS - 1 do
+      self:blit(image, across, sending and 0 or 1,
+        (STRIP_ARROW_X + column) * 8, STRIP_ARROW_ROW * 8)
+    end
+  end)
   G.pop()
   G.setColor(1, 1, 1, 1)
 end

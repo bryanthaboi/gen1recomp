@@ -18,14 +18,13 @@ local romText = require("src.core.RomText")
 
 local ShopMenu = { isMenu = true }
 
-local function txt(game, key, fallback)
-  return game.data.text[key] or fallback
+local function txt(game, key)
+  return romText(game.data, key, nil)
 end
 
 -- pokered engine/events/pokemart.asm:204
 local function anythingElse(game)
-  return txt(game, "_PokemartAnythingElseText",
-             Strings("Is there anything\nelse I can do?"))
+  return txt(game, "_PokemartAnythingElseText")
 end
 
 -- engine/events/pokemart.asm:131-133
@@ -74,12 +73,10 @@ local function buy(game, stock, menu)
       })
     end
   end
-  items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
-  local greet = txt(game, "_PokemartBuyingGreetingText", "Take your time.")
-  local notEnough = txt(game, "_PokemartNotEnoughMoneyText",
-                        Strings("You don't have\nenough money."))
-  local bagFull = txt(game, "_PokemartItemBagFullText",
-                      Strings("You can't carry\nany more items."))
+  items[#items + 1] = { cancel = true, label = txt(game, "CancelTextString") }
+  local greet = txt(game, "_PokemartBuyingGreetingText")
+  local notEnough = txt(game, "_PokemartNotEnoughMoneyText")
+  local bagFull = txt(game, "_PokemartItemBagFullText")
   local list
   list = ListMenu.new(game, nil, items, {
     dialogue = true,
@@ -116,8 +113,7 @@ local function buy(game, stock, menu)
           local cost = qty * def.price
           -- engine/events/pokemart.asm:159-169
           game.stack:push(TextBox.new(game,
-            romText(game.data, "_PokemartTellBuyPriceText",
-              "%s?\nThat will be\n¥%d. OK?", def.name, cost),
+            romText(game.data, "_PokemartTellBuyPriceText", nil, def.name, cost),
             nil,
             { choice = function(yes)
                 if not yes then
@@ -136,8 +132,7 @@ local function buy(game, stock, menu)
                 game.save.money = game.save.money - cost
                 -- SFX_PURCHASE drains before the receipt -- pokemart.asm:193
                 game.stack:push(TextBox.new(game,
-                  txt(game, "_PokemartBoughtItemText",
-                      Strings("Here you are!\nThank you!")),
+                  txt(game, "_PokemartBoughtItemText"),
                   function()
                     dropQty()
                     relist(list, greet)
@@ -170,7 +165,7 @@ local function sellItems(game)
       stack = row.count,
     })
   end
-  items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
+  items[#items + 1] = { cancel = true, label = txt(game, "CancelTextString") }
   return items
 end
 
@@ -181,15 +176,12 @@ local function sell(game, menu)
   -- right-aligned ¥ price made long names overlap (issue #116).
   local items = sellItems(game)
   -- engine/events/pokemart.asm:50
-  local greet = txt(game, "_PokemonSellingGreetingText",
-                    Strings("What would you\nlike to sell?"))
+  local greet = txt(game, "_PokemonSellingGreetingText")
   if #Bag.order(game.save) == 0 then
-    refuse(game, menu, nil, txt(game, "_PokemartItemBagEmptyText",
-                                Strings("You don't have\nanything to sell.")))
+    refuse(game, menu, nil, txt(game, "_PokemartItemBagEmptyText"))
     return
   end
-  local unsellable = txt(game, "_PokemartUnsellableItemText",
-                         Strings("I can't put a\nprice on that."))
+  local unsellable = txt(game, "_PokemartUnsellableItemText")
   local list
   list = ListMenu.new(game, nil, items, {
     dialogue = true,
@@ -249,8 +241,7 @@ local function sell(game, menu)
           end
           -- engine/events/pokemart.asm:84-91
           game.stack:push(TextBox.new(game,
-            romText(game.data, "_PokemartTellSellPriceText",
-              "I can pay you\n¥%d for that.", unit * qty),
+            romText(game.data, "_PokemartTellSellPriceText", nil, unit * qty),
             nil,
             { choice = function(yes)
                 dropQty()
@@ -328,7 +319,7 @@ function ShopMenu.new(game, stock, onQuit)
   -- engine/events/pokemart.asm:220 .done, reached by QUIT and by B alike
   local function farewell()
     game.stack:push(TextBox.new(game,
-      txt(game, "_PokemartThankYouText", "Thank you!"), function()
+      txt(game, "_PokemartThankYouText"), function()
         if game.stack:top() == menu then game.stack:pop() end
         if onQuit then onQuit() end
       end))
@@ -345,8 +336,7 @@ function ShopMenu.new(game, stock, onQuit)
   -- home/text_script.asm:141-150
   function menu:enter()
     self.hidden = true
-    say(game, self, txt(game, "_PokemartGreetingText",
-                        Strings("Hi there!\nMay I help you?")),
+    say(game, self, txt(game, "_PokemartGreetingText"),
         function() self.hidden = false end)
   end
   menu.draw = function(self)

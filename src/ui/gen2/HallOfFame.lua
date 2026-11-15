@@ -50,6 +50,7 @@ local Gen2Save = require("src.core.gen2.Save")
 local MonAnimView = require("src.render.MonAnimView")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
 local Sprites = require("src.pokemon.Sprites")
 local TileSheet = require("src.ui.gen2.TileSheet")
@@ -84,16 +85,7 @@ local END_FRAMES = 8
 
 local HOF_MUSIC = "Music_HallOfFame"
 
--- The three strings the two modes print at hlcoord 1, 2.  Their leading
--- spaces are load bearing: PrintNum writes the count over the first of them
--- at hlcoord 2, 2, so "    -Time Famer" becomes "  12-Time Famer".
-HallOfFame.NEW_FAMER = "New Hall of Famer!"
-HallOfFame.TIME_FAMER = "    -Time Famer"
-HallOfFame.HOF_MASTER = "    HOF Master!"
-
--- ...and the labels they live under in the cart.  All three are plain
--- `db "…@"` inside engine/events/halloffame.asm rather than text streams, so
--- nothing but the routine that prints them names them.
+-- engine/events/halloffame.asm:129,398,401
 local LABELS = {
   NEW_FAMER = "AnimateHallOfFame.String_NewHallOfFamer",
   TIME_FAMER = "_HallOfFamePC.TimeFamer",
@@ -175,32 +167,27 @@ end
 -- BUG (docs/bugs_and_glitches.md): "HOF Master!" is compared against
 -- HOF_MASTER_COUNT + 1 while the counter itself stops AT HOF_MASTER_COUNT, so
 -- the title can never print.  Transcribed with the off-by-one intact.
---
--- `text` is data/generated/text.lua: the three strings are seeded into it by
--- name (RomExtractorGen2's NAMED_TEXT) because nothing points at them, and the
--- constants above are what a cache built before that seed falls back to.
 function HallOfFame.headerPlacements(mode, winCount, text)
   local out = {}
-  local function line(label, fallback)
-    local extracted = CommonText.plain(CommonText.get(text, label))
-    return extracted or fallback
+  local function line(label)
+    return CommonText.plain(CommonText.get(text, label))
   end
   if mode == "induct" then
-    put(out, line(LABELS.NEW_FAMER, HallOfFame.NEW_FAMER), 1, 2)
+    put(out, line(LABELS.NEW_FAMER), 1, 2)
     return out
   end
   winCount = tonumber(winCount) or 0
   if winCount >= Core.MASTER_COUNT + 1 then
-    put(out, line(LABELS.HOF_MASTER, HallOfFame.HOF_MASTER), 1, 2)
+    put(out, line(LABELS.HOF_MASTER), 1, 2)
     return out
   end
-  put(out, line(LABELS.TIME_FAMER, HallOfFame.TIME_FAMER), 1, 2)
+  put(out, line(LABELS.TIME_FAMER), 1, 2)
   put(out, Chrome.number(winCount, 3), 2, 2)
   return out
 end
 
 -- HOF_AnimatePlayerPic's text, once both pics have finished sliding.
-function HallOfFame.playerPlacements(save)
+function HallOfFame.playerPlacements(save, data)
   save = save or {}
   local player = save.player or {}
   local time = save.playTime or {}
@@ -208,7 +195,8 @@ function HallOfFame.playerPlacements(save)
   put(out, player.name or "GOLD", 2, 4)
   put(out, "<ID>№/", 1, 6)
   put(out, Chrome.number(player.id or 0, 5, true), 4, 6)
-  put(out, "PLAY TIME", 1, 8)
+  -- engine/events/halloffame.asm:609
+  put(out, RomText(data, "HOF_AnimatePlayerPic.PlayTime", nil), 1, 8)
   -- `ld de, wGameTimeHours / lb bc, 2, 3`: a two-byte value in three columns,
   -- then HALLOFFAME_COLON, then the minutes with leading zeros in two.
   put(out, Chrome.number(time.hours or 0, 3), 3, 9)
@@ -260,6 +248,9 @@ function HallOfFame.new(game, opts)
   -- halloffame.asm:520-530, ../pokecrystal/engine/gfx/player_gfx.asm:123-128).
   local female = Gen2Save.isFemale(self.save)
   local hud = menuGfx.battleHud or {}
+  if data.gen2MenuGfx and not (hud.playerBack and hud.trainerPics) then
+    error("menu_gfx.lua battleHud has no playerBack / trainerPics")
+  end
   -- player.sprite, the same hook Gen 1's Hall of Fame raises through
   -- Sprites.playerPath (src/ui/HallOfFame.lua:100).
   self.playerBackPath = require("src.pokemon.Sprites").playerPic(
@@ -692,7 +683,8 @@ function HallOfFame:drawPlayerPanel()
   Chrome.textbox(0, 2, 9, 8)
   Chrome.textbox(0, 12, 18, 4)
   self:drawPortrait(TRAINERPIC_X, TRAINERPIC_Y)
-  self:drawPlacements(HallOfFame.playerPlacements(self.save))
+  self:drawPlacements(HallOfFame.playerPlacements(self.save,
+    self.game and self.game.data))
 end
 
 function HallOfFame:drawPanel()

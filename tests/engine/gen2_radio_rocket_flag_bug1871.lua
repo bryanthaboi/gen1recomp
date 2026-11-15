@@ -3,14 +3,16 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
+local EngineFlagsFixture = require("tests.fixture_data.gen2_engine_flags")
+EngineFlagsFixture.bind("gold")
 local check = T.check
 love = love or require("tests.love_stub")
 
-local FlagNames = require("src.core.gen2.FlagNames")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local Pokegear = require("src.ui.gen2.Pokegear")
 
-local TOWER = FlagNames.engine.ENGINE_ROCKETS_IN_RADIO_TOWER
-local SIGNAL = FlagNames.engine.ENGINE_ROCKET_SIGNAL_ON_CH20
+local TOWER = EngineFlags.id("ENGINE_ROCKETS_IN_RADIO_TOWER")
+local SIGNAL = EngineFlags.id("ENGINE_ROCKET_SIGNAL_ON_CH20")
 
 local function newGear(save, world)
   local gear = setmetatable({
@@ -40,13 +42,11 @@ local legacy = newGear({ flags = { ROCKETS_IN_RADIO_TOWER = true } })
 check(legacy:radioData().rocketsInRadioTower == false,
   "save.flags is not the takeover's store")
 
-local crystal = newGear({ engineFlags = { [TOWER + 1] = true } }, {
-  engineFlagId = function(_, name)
-    return name == "ENGINE_ROCKETS_IN_RADIO_TOWER" and TOWER + 1 or nil
-  end,
-})
+EngineFlagsFixture.bind("crystal")
+local crystal = newGear({ engineFlags = { [19] = true } })
 check(crystal:radioData().rocketsInRadioTower == true,
-  "and Crystal's shifted id resolves through the world")
+  "and Crystal's ENGINE_ROCKETS_IN_RADIO_TOWER is flag 19")
+EngineFlagsFixture.bind("gold")
 
 local rage = newGear({ engineFlags = { [SIGNAL] = true } })
 check(rage:radioContext().rocketSignal == true,

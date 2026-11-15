@@ -50,18 +50,25 @@ local POKEGEAR_ONLY_STATIONS = { "POKE_FLUTE_RADIO", "EVOLUTION_RADIO" }
 --
 -- src/mods/Builtins.lua seeds these engine-owned, so a mod's register of
 -- ROCKET_RADIO collides and has to say override.
+local function seededName(data, station)
+  local label = Pokegear.STATION_LABELS[station]
+  local text = data and data.text
+  if not (label and type(text) == "table" and text[label]) then return nil end
+  return Pokegear.stationNameFrom(data, station)
+end
+
 function MapRadio.registerInto(registry, data, owner)
   local count = 0
   for channel, station in pairs(STATIONS) do
     registry:register(station, { channel = channel,
-                                 name = Pokegear.STATION_NAMES[station] }, owner)
+                                 name = seededName(data, station) }, owner)
     count = count + 1
   end
   -- Two Pokegear-only signals have no MAPRADIO_* index.  They still belong in
   -- the same registry because the tuner resolves their display names by id;
   -- leaving `channel` absent keeps wall-radio lookup unambiguous.
   for _, station in ipairs(POKEGEAR_ONLY_STATIONS) do
-    registry:register(station, { name = Pokegear.STATION_NAMES[station] }, owner)
+    registry:register(station, { name = seededName(data, station) }, owner)
     count = count + 1
   end
   local metadata = Buena.metadata(data)
@@ -87,7 +94,7 @@ function MapRadio.channelRecord(data, channel)
   end
   local station = STATIONS[channel]
   if not station then return nil end
-  return { channel = channel, name = Pokegear.STATION_NAMES[station] }, station
+  return { channel = channel, name = Pokegear.stationNameFrom(data, station) }, station
 end
 
 -- The player's landmark, the way Game2:currentLandmark reads it: the map
@@ -167,11 +174,10 @@ function MapRadio:resolveStation(channel)
 end
 
 -- The name quoted in the text box.  A loaded game resolves it through the
--- same registry as the Pokegear; STATION_NAMES is only the loader-free fallback.
+-- same registry as the Pokegear.
 function MapRadio:name()
   if self.stationName then return self.stationName end
-  return self.gear and self.gear:stationName(self.station)
-    or Pokegear.STATION_NAMES[self.station]
+  return self.gear:stationName(self.station)
 end
 
 function MapRadio:close()

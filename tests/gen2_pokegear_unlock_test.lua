@@ -20,6 +20,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 pokegear unlock")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -54,7 +55,10 @@ local function newGame(save)
     input = newInput(),
     save = save,
     options = save and save.options or Save.defaultOptions(),
-    data = { audio = {}, pokemon = {}, items = {} },
+    data = { audio = {}, pokemon = {}, items = {},
+      text = require("tests.fixture_data.gen2_rom_text_s7_c").text(
+        require("tests.fixture_data.gen2_rom_text_s7_d").text()),
+      gen2Landmarks = require("tests.fixture_data.gen2_landmarks_s7_d").table("gold") },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -232,11 +236,11 @@ end
 -- RadioChannels (engine/pokegear/pokegear.asm): knob 78 (20.0) is the Poke
 -- Flute channel, Kanto plus EXPN only; knob 52 (13.5) resolves ????? only at
 -- the Ruins of Alph.  Both were unreachable while the flags never arrived.
-local LANDMARKS = { landmarks = {
+local LANDMARKS = require("tests.fixture_data.gen2_landmarks_s7_d").anchored({ landmarks = {
   LANDMARK_NEW_BARK_TOWN = { index = 2 },
   LANDMARK_RUINS_OF_ALPH = { index = 10 },
   LANDMARK_VERMILION_CITY = { index = 50 },
-} }
+} })
 
 local function stationAt(save, landmark, knob)
   local gear = Pokegear.new(newGame(save), {
@@ -267,8 +271,8 @@ do
 end
 
 -- Station presentation is the radio_channels registry's concern; the show id
--- and dial mechanics stay unchanged.  Fixed show prose resolves through the
--- strings catalog only when the machine prints it.
+-- and dial mechanics stay unchanged.  Fixed show prose and the phone prompt
+-- are the cache's own text.
 do
   local save = Save.newGame()
   local world = newWorld(save)
@@ -290,32 +294,15 @@ do
   eq(gear:stations()[7].name, "FLÛTE RADIO",
     "a mod-authored station name is not translated a second time")
 
-  Strings.load({ strings = {
-    CLOCK = "HORLOGE", MAP = "CARTE", PHONE = "TÉLÉPHONE",
-    RADIO = "RADIO FR", FLY = "VOL", AM = "MATIN", PM = "SOIR",
-    ["Whom do you want to call?"] = "Qui voulez-vous appeler ?",
-  } })
-  eq(gear:cardLabel(Pokegear.CARDS[1]), "HORLOGE", "CLOCK is localizable")
-  eq(gear:cardLabel(Pokegear.CARDS[2]), "CARTE", "MAP is localizable")
-  eq(gear:cardLabel(Pokegear.CARDS[3]), "TÉLÉPHONE", "PHONE is localizable")
-  eq(gear:cardLabel(Pokegear.CARDS[4]), "RADIO FR", "RADIO is localizable")
-  local flyGear = Pokegear.new(game, {
-    save = save, landmarks = LANDMARKS,
-    currentLandmark = "LANDMARK_VERMILION_CITY",
-    fly = { { name = "VERMILION", landmark = "LANDMARK_VERMILION_CITY" } },
-  })
-  eq(flyGear:cardLabel(), "VOL", "FLY is localizable")
-  eq(gear:phoneText("AskWhoCall"), "Qui voulez-vous appeler ?",
-    "the complete built-in phone prompt is localizable")
+  eq(gear:phoneText("AskWhoCall"), "Whom do you want\nto call?",
+    "the phone prompt is the cache's _PokegearAskWhoCallText")
 
-  Strings.load({ strings = {
-    ["MARY: PROF.OAK'S"] = "MARIE : PROF.CHEN",
-  } })
-  local radio = Pokegear.Radio.new()
+  local radio = Pokegear.Radio.new({ data = { text = {
+    OPT_IntroText1 = "\nMARIE : PROF.CHEN{DONE}" } } })
   radio:tune("OAKS_POKEMON_TALK")
   radio:step()
   eq(radio.top, "MARIE : PROF.CHEN",
-    "radio show prose resolves through the strings catalog")
+    "radio show prose is the cache's OPT_IntroText1")
   Strings.load(nil)
 end
 

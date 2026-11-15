@@ -350,13 +350,9 @@ GbcPalette.setBgp(0xff)
 local through = Chrome.throughPalette(ramp)
 checkColor("printThrough colour0 takes the byte", through[1], 3, 3, 3)
 checkColor("printThrough colour3 takes the byte", through[4], 3, 3, 3)
--- $d8 (`dc 3, 1, 2, 0`... colours 1 and 2 swap) applied to the un-inverted
--- palette: invert has to run first, so the swap lands on the substituted
--- entries, not the caller's original ones.
+-- engine/pokedex/pokedex.asm:2452-2461
 GbcPalette.setBgp(0xd8)
 local inverted = Chrome.throughPalette(mon, true)
--- Un-inverted mon is white,255/222/0,255/58/41,black; inverted (before the
--- fold) is black,255/58/41,255/222/0,white; $d8 then swaps colours 1 and 2.
 checkColor("invert then fold keeps colour0", inverted[1], 0, 0, 0)
 checkColor("invert then fold swaps 1 for 2", inverted[2], 255, 222, 0)
 checkColor("invert then fold swaps 2 for 1", inverted[3], 255, 58, 41)

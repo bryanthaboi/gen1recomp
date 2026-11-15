@@ -29,7 +29,7 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local BankOfMom = {}
 BankOfMom.__index = BankOfMom
@@ -47,13 +47,11 @@ local MAX_MONEY = 999999
 -- `.DigitQuantities`' first (and only reachable) six entries, 10^5..10^0.
 local PLACE_VALUES = { 100000, 10000, 1000, 100, 10, 1 }
 
--- No line marker in any of these four (Mom_SavedString, Mon_WithdrawString,
--- Mom_DepositString, Mom_HeldString are one word each), so they are plain
--- literals here the way MartMenu's BUY/SELL/CANCEL labels are.
-local SAVED_LABEL = Strings.source("SAVED")
-local HELD_LABEL = Strings.source("HELD")
-local DEPOSIT_LABEL = Strings.source("DEPOSIT")
-local WITHDRAW_LABEL = Strings.source("WITHDRAW")
+-- engine/events/mom.asm:631-641
+local SAVED_LABEL = "Mom_SavedString"
+local HELD_LABEL = "Mom_HeldString"
+local DEPOSIT_LABEL = "Mom_DepositString"
+local WITHDRAW_LABEL = "Mon_WithdrawString"
 
 -- charmap.asm: ¥ is the currency glyph, same one MartMenu's moneyText uses.
 local YEN = "\xc2\xa5"
@@ -128,11 +126,11 @@ end
 
 function BankOfMom:drawPanel()
   Chrome.box(BOX_X, BOX_Y, BOX_W, BOX_H)
-  Chrome.print(Strings(SAVED_LABEL), SAVED_LABEL_X, SAVED_Y)
+  Chrome.print(RomText(self.data, SAVED_LABEL, nil), SAVED_LABEL_X, SAVED_Y)
   Chrome.print(moneyText(self.saved), MONEY_X, SAVED_Y)
-  Chrome.print(Strings(HELD_LABEL), HELD_LABEL_X, HELD_Y)
+  Chrome.print(RomText(self.data, HELD_LABEL, nil), HELD_LABEL_X, HELD_Y)
   Chrome.print(moneyText(self.held), MONEY_X, HELD_Y)
-  Chrome.print(Strings(self.kind == "withdraw" and WITHDRAW_LABEL or DEPOSIT_LABEL),
+  Chrome.print(RomText(self.data, self.kind == "withdraw" and WITHDRAW_LABEL or DEPOSIT_LABEL, nil),
     KIND_LABEL_X, KIND_Y)
   Chrome.print(moneyTextZeroed(self.amount), MONEY_X, KIND_Y)
   -- `hlcoord 13, 6 / ... / ld [hl], ' '` blanks the digit under the cursor

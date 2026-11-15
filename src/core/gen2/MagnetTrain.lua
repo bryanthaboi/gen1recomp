@@ -105,8 +105,7 @@ end
 -- reads it as "and a / jr nz, .ToGoldenrod".
 --
 -- opts.bgTiles is MagnetTrainBGTiles (a 2x18 tilemap) and opts.fgTilemap is
--- MagnetTrainTilemap (20x4); both come from the extracted cache and either may
--- be missing, in which case :tilemap() answers nil and the ride still runs.
+-- MagnetTrainTilemap (20x4); both come from the extracted cache.
 function MagnetTrain.new(opts)
   opts = opts or {}
   local self = setmetatable({}, MagnetTrain)
@@ -272,12 +271,11 @@ end
 -- DrawMagnetTrain.  Rows 0-17 are MagnetTrainBGTiles' two-tile pair for that
 -- row repeated across all 32 columns (`.FillAlt`, TILEMAP_WIDTH / 2 times),
 -- and then MagnetTrainTilemap's four 20-tile lines are laid over rows 6-9.
---
--- Answers nil when the cache carries no tilemaps, which is what a cache built
--- before the extractor learned about them looks like.
 function MagnetTrain:tilemap()
   local bg = self.bgTiles
-  if not (bg and #bg >= SCREEN_HEIGHT * 2) then return nil end
+  if not (bg and #bg >= SCREEN_HEIGHT * 2) then
+    error("magnetTrain has no MagnetTrainBGTiles", 2)
+  end
   local rows = {}
   for row = 0, SCREEN_HEIGHT - 1 do
     local even, odd = bg[row * 2 + 1], bg[row * 2 + 2]
@@ -288,12 +286,13 @@ function MagnetTrain:tilemap()
     rows[row + 1] = line
   end
   local fg = self.fgTilemap
-  if fg and #fg >= SCREEN_WIDTH * FG_ROWS then
-    for line = 0, FG_ROWS - 1 do
-      local row = rows[FG_ROW + line + 1]
-      for col = 0, SCREEN_WIDTH - 1 do
-        row[col + 1] = fg[line * SCREEN_WIDTH + col + 1]
-      end
+  if not (fg and #fg >= SCREEN_WIDTH * FG_ROWS) then
+    error("magnetTrain has no MagnetTrainTilemap", 2)
+  end
+  for line = 0, FG_ROWS - 1 do
+    local row = rows[FG_ROW + line + 1]
+    for col = 0, SCREEN_WIDTH - 1 do
+      row[col + 1] = fg[line * SCREEN_WIDTH + col + 1]
     end
   end
   return rows

@@ -331,6 +331,44 @@ for _, name in ipairs({ "AnimateTeleporterHousing", "AnimateTeleporterCable" }) 
   for _, v in ipairs(tw) do if v ~= true then allSolid = false end end
   check(allSolid, name .. " writes every metatile with MAPGRID_COLLISION_MASK")
 end
+
+local labels = require("src.core.game3.constants").of("firered").metatile_labels.byName
+local L, savedLabels = {}, {}
+for k, v in pairs(labels) do
+  if k:find("^METATILE_SeaCottage_Teleporter_") then
+    savedLabels[k] = v
+    labels[k] = v + 0x40
+    L[k] = v + 0x40
+  end
+end
+local function seqOf(name)
+  local fn
+  Task.spawn = function(f) fn = f end
+  local mids = {}
+  Field.setMetatile = function(_, _, mid) mids[#mids + 1] = mid end
+  Cutscene.HANDLERS[Std.SPECIAL[name]](newCtx(), {})
+  for _ = 1, 1000 do if not fn or fn() then break end end
+  return mids
+end
+local housing = seqOf("AnimateTeleporterHousing")
+-- pokefirered/src/special_field_anim.c:257
+eq(housing[1], L.METATILE_SeaCottage_Teleporter_Light_Yellow, "housing even frame lights yellow")
+eq(housing[2], L.METATILE_SeaCottage_Teleporter_Door_HalfGlowing, "housing even frame door half glowing")
+-- pokefirered/src/special_field_anim.c:262
+eq(housing[3], L.METATILE_SeaCottage_Teleporter_Light_Red, "housing odd frame lights red")
+eq(housing[4], L.METATILE_SeaCottage_Teleporter_Door_FullGlowing, "housing odd frame door full glowing")
+-- pokefirered/src/special_field_anim.c:278
+eq(housing[#housing - 1], L.METATILE_SeaCottage_Teleporter_Light_Green, "housing ends on the green light")
+eq(housing[#housing], L.METATILE_SeaCottage_Teleporter_Door, "housing ends on the closed door")
+eq(#housing, 13 * 2 + 2, "housing writes 13 flashes plus the final pair")
+local cable = seqOf("AnimateTeleporterCable")
+-- pokefirered/src/special_field_anim.c:324
+eq(cable[1], L.METATILE_SeaCottage_Teleporter_CableBall_Top, "cable starts with the ball top")
+eq(cable[2], L.METATILE_SeaCottage_Teleporter_CableBall_Bottom, "cable starts with the ball bottom")
+-- pokefirered/src/special_field_anim.c:308
+eq(cable[3], L.METATILE_SeaCottage_Teleporter_Cable_Top, "cable restores the cable top behind the ball")
+eq(cable[4], L.METATILE_SeaCottage_Teleporter_Cable_Bottom, "cable restores the cable bottom behind the ball")
+for k, v in pairs(savedLabels) do labels[k] = v end
 Task.spawn, Field.setMetatile = realSpawn, realSet
 
 if failed > 0 then

@@ -134,7 +134,7 @@ local function applyLoaded(path, statusVerb)
     S.loadError = false
     S.allowSave = true
   elseif existed then
-    S.save = Gen.newGame(S.version)
+    S.save = Gen.newGame(S.version, Data)
     S.status = "Corrupt save at "
       .. path
       .. " ("
@@ -144,7 +144,7 @@ local function applyLoaded(path, statusVerb)
     S.loadError = true
     S.allowSave = false
   else
-    S.save = Gen.newGame(S.version)
+    S.save = Gen.newGame(S.version, Data)
     S.status = "No save at " .. path .. " (" .. tostring(err) .. "),  editing new game stub"
     kind = "info"
     S.loadError = false
@@ -232,9 +232,12 @@ function App.load(pathOverride, opts)
   if opts.version then
     require("src.core.GameVersion").set(opts.version)
   end
+  local editGeneration = Gen.of(nil, opts.version)
+  local runGeneration = require("src.core.GameVersion").generation()
   if
-    (Gen.of(nil, opts.version) == 3 or require("src.core.GameVersion").generation() == 3)
-    and not Gen.game3CacheReady()
+    ((editGeneration == 3 or runGeneration == 3) and not Gen.game3CacheReady())
+    or (editGeneration ~= 3 and runGeneration ~= 3 and (editGeneration == 2 or runGeneration == 2)
+      and not Gen.gen2CacheReady(opts.version))
   then
     S.path = pathOverride or SaveIO.defaultPath()
     S.missingCache = Gen.missingCacheMessage(opts.version)

@@ -452,7 +452,7 @@ check(Damage.compute(ruleset, confused, confused, confMove,
 -- MIST blocks primary stat drops but NOT side-effect drops
 -- (StatModifierDownEffect's side-effect branch skips MoveHitTest)
 local MoveEffects = require("src.battle.MoveEffects")
-local sideRng = { rng = function() return 0 end }
+local sideRng = { rng = function() return 0 end, data = Data }
 -- player attacker: effects.asm:552's 25 percent miss is the enemy's branch
 local sideUser = { isPlayer = true, stages = {}, mon = {} }
 local misted = { stages = {}, mist = true, name = "MISTY", mon = {} }
@@ -471,7 +471,7 @@ check(subUser.substituteHP ~= nil and subUser.mon.hp == 0,
       "substitute built at exactly 1/4 max HP leaves 0 HP")
 local subUserClean = { mon = { stats = { hp = 40 }, hp = 10 }, name = "SUBBY" }
 local subMsgsClean = MoveEffects.primary.SUBSTITUTE_EFFECT(
-  { rng = sideRng.rng, ruleset = { substituteZeroHpBug = false } }, subUserClean)
+  { rng = sideRng.rng, data = Data, ruleset = { substituteZeroHpBug = false } }, subUserClean)
 check(subUserClean.substituteHP == nil and subUserClean.mon.hp == 10
       and subMsgsClean[1]:find("weak", 1, true) ~= nil,
       "modern_clean refuses the substitute at exactly 1/4 max HP")
@@ -706,7 +706,7 @@ check(SlotMachine.checkForMatch(wTop, { 1, 1, 1 }, 1, true, false) == "nomatch",
 -- reroll counter (wSlotMachineRerollCounter): a winnable no-match spin
 -- rolls wheel 3 toward a match, burning one charge per symbol
 local smStub = setmetatable({
-  game = { data = {}, save = { coins = 10 } },
+  game = { data = Data, save = { coins = 10 } },
   wheels = { { "A", "A", "A" }, { "B", "B", "B" }, { "C", "C", "C" } },
   bet = 1, canWin = true, sevenBar = false,
   offset = { 1, 1, 1 }, stopping = 3, slip = { 0, 0 }, reroll = 4,
@@ -1150,13 +1150,13 @@ do
   -- pre-built Status messages get the prefix spliced in
   local MoveFx = require("src.battle.MoveEffects")
   local parMsgs = MoveFx.primary.PARALYZE_EFFECT(
-    { rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
-  eq(parMsgs[1], "Enemy RATTATA's\nparalyzed! It may\nnot attack!",
+    { data = Data, rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
+  eq(parMsgs[1], "Enemy RATTATA's\nparalyzed! It may\vnot attack!{PROMPT}",
      "_ParalyzedMayNotAttackText wording + prefix")
   -- move_effects/paralyze.asm:12
   local failMsgs = MoveFx.primary.PARALYZE_EFFECT(
-    { rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
-  eq(failMsgs[1], "It didn't affect\nEnemy RATTATA!",
+    { data = Data, rng = mkseq({}) }, pb.player, pb.enemy, Data.moves.THUNDER_WAVE)
+  eq(failMsgs[1], "It didn't affect\nEnemy RATTATA!{PROMPT}",
      "an already-statused target is DidntAffect, not ButItFailed")
   local TextBox = require("src.render.TextBox")
   eq(TextBox.strip(Data.text._ButItFailedText):gsub("%s+$", ""),

@@ -5,6 +5,7 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
 
 local T = require("tests.harness")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local Breeding = require("src.core.gen2.Breeding")
 local Catching = require("src.battle.gen2.Catching")
 local Mon = require("src.battle.gen2.Mon")
@@ -44,7 +45,7 @@ local DATA = {
     type = "NORMAL", accuracy = 100, pp = 35, effect = "EFFECT_NORMAL_HIT" } },
   type_chart = { types = {}, matchups = {} },
   items = {},
-  text = { _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}" },
+  text = require("tests.gen2_capture_text_fixture")(),
 }
 
 local function newSave(version, gender)

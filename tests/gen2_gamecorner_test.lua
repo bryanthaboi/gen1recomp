@@ -49,7 +49,7 @@ love.timer = love.timer or { getTime = function() return 0 end }
 require("src.core.Logger").warn = function() end
 
 local CardFlip = require("src.ui.gen2.CardFlip")
-local PrizeMenu = require("src.ui.gen2.PrizeMenu")
+local CoinCase = require("src.core.gen2.CoinCase")
 local Save = require("src.core.gen2.Save")
 local SlotMachine = require("src.ui.gen2.SlotMachine")
 
@@ -468,41 +468,41 @@ check("a spin only ever pays its own bias, Golem aside", offBias, 0)
 -- ============================================================== coin case
 --
 -- engine/events/money.asm GiveCoins / TakeCoins, and Save.MAX_COINS.
-check("the cap is 9999", PrizeMenu.MAX_COINS, 9999)
+check("the cap is 9999", CoinCase.MAX_COINS, 9999)
 check("and the save agrees", Save.MAX_COINS, 9999)
 
 local case = newSave(0)
-check("a fresh case is empty", PrizeMenu.coins(case), 0)
-local after, capped = PrizeMenu.giveCoins(case, 50)
+check("a fresh case is empty", CoinCase.coins(case), 0)
+local after, capped = CoinCase.giveCoins(case, 50)
 check("giving adds", after, 50)
 check("and does not cap", capped, false)
 
 case.player.coins = 9990
-after, capped = PrizeMenu.giveCoins(case, 5)
+after, capped = CoinCase.giveCoins(case, 5)
 check("giving under the cap adds", after, 9995)
 check("still not capped", capped, false)
-after, capped = PrizeMenu.giveCoins(case, 500)
+after, capped = CoinCase.giveCoins(case, 500)
 check("giving over the cap clamps to 9999", after, 9999)
 check("and reports the cap", capped, true)
-after = PrizeMenu.giveCoins(case, 1)
+after = CoinCase.giveCoins(case, 1)
 check("a full case stays at 9999", after, 9999)
 
 case.player.coins = 3
-local left, borrowed = PrizeMenu.takeCoins(case, 3)
+local left, borrowed = CoinCase.takeCoins(case, 3)
 check("taking exactly empties", left, 0)
 check("without borrowing", borrowed, false)
-left, borrowed = PrizeMenu.takeCoins(case, 1)
+left, borrowed = CoinCase.takeCoins(case, 1)
 check("taking more clamps at zero", left, 0)
 check("and reports the borrow", borrowed, true)
 
 -- CheckCoins -> CompareMoneyAction.
 case.player.coins = 100
-check("more than", PrizeMenu.checkCoins(case, 50), PrizeMenu.HAVE_MORE)
-check("exactly", PrizeMenu.checkCoins(case, 100), PrizeMenu.HAVE_AMOUNT)
-check("less than", PrizeMenu.checkCoins(case, 101), PrizeMenu.HAVE_LESS)
-check("HAVE_MORE is 0", PrizeMenu.HAVE_MORE, 0)
-check("HAVE_AMOUNT is 1", PrizeMenu.HAVE_AMOUNT, 1)
-check("HAVE_LESS is 2", PrizeMenu.HAVE_LESS, 2)
+check("more than", CoinCase.checkCoins(case, 50), CoinCase.HAVE_MORE)
+check("exactly", CoinCase.checkCoins(case, 100), CoinCase.HAVE_AMOUNT)
+check("less than", CoinCase.checkCoins(case, 101), CoinCase.HAVE_LESS)
+check("HAVE_MORE is 0", CoinCase.HAVE_MORE, 0)
+check("HAVE_AMOUNT is 1", CoinCase.HAVE_AMOUNT, 1)
+check("HAVE_LESS is 2", CoinCase.HAVE_LESS, 2)
 
 -- Save.normalize re-clamps a file that was edited past the cap.
 local overflowing = newSave(0)
@@ -515,151 +515,157 @@ check("and clamps below zero", overflowing.player.coins, 0)
 
 -- ========================================================= prize counters
 --
--- The prices are the map scripts' EQU blocks.
-local counters = PrizeMenu.COUNTERS
-check("TM32 costs 1500", counters.CELADON_TM.prizes[1].cost, 1500)
-check("TM29 costs 3500", counters.CELADON_TM.prizes[2].cost, 3500)
-check("TM15 costs 7500", counters.CELADON_TM.prizes[3].cost, 7500)
-check("MR.MIME costs 3333", counters.CELADON_MON.prizes[1].cost, 3333)
-check("EEVEE costs 6666", counters.CELADON_MON.prizes[2].cost, 6666)
-check("PORYGON costs 9999", counters.CELADON_MON.prizes[3].cost, 9999)
-check("PORYGON costs the whole case", counters.CELADON_MON.prizes[3].cost,
-  PrizeMenu.MAX_COINS)
-check("PORYGON arrives at level 20", counters.CELADON_MON.prizes[3].level, 20)
-check("the Goldenrod TMs are all 5500",
-  counters.GOLDENROD_TM.prizes[1].cost + counters.GOLDENROD_TM.prizes[2].cost
-  + counters.GOLDENROD_TM.prizes[3].cost, 16500)
-check("ABRA costs 200", counters.GOLDENROD_MON.prizes[1].cost, 200)
-check("DRATINI costs 2100", counters.GOLDENROD_MON.prizes[3].cost, 2100)
-check("Gold sells EKANS", counters.GOLDENROD_MON.prizes[2].id, "EKANS")
-check("Silver sells SANDSHREW",
-  counters.GOLDENROD_MON.prizes[2].silver.id, "SANDSHREW")
-check("the coin vendor sells 50 for 1000",
-  counters.COIN_VENDOR.prizes[1].cost, 1000)
-check("and 500 for 10000", counters.COIN_VENDOR.prizes[2].cost, 10000)
+-- The extracted counter scripts themselves: the prices, prizes and levels are
+-- read out of their bytecode, and every refusal is the script run through the
+-- VM, in the order the script checks.
+local Events = require("src.world.gen2.Events")
+local Vm = require("src.script.gen2.Vm")
+local COUNTERS = require("tests.fixture_data.gen2_prize_counters_s7_f2")
 
--- A data double: enough for Bag.add's capacity check and for Mon.new.
-local data = {
-  constants = { bagSize = 20 },
-  items = { TM_DOUBLE_TEAM = { name = "TM32", pocket = "TM_HM" } },
-  moves = {},
-  pokemon = {
-    growthRates = { MEDIUM_FAST = {} },
-    PORYGON = { name = "PORYGON", baseStats = { hp = 65, attack = 60,
-      defense = 70, speed = 40, spAttack = 85, spDefense = 75 },
-      types = { "NORMAL" }, growthRate = "MEDIUM_FAST", levelMoves = {} },
-  },
-}
+local function driveCounter(bundle, key, opts)
+  opts = opts or {}
+  local save = opts.save or newSave(opts.coins or 0, opts.money or 0)
+  local log, seen, asked = {}, {}, 0
+  local vm
+  vm = Vm.new(bundle.scripts, bundle.text, Events.new(), {
+    specialOrder = bundle.specialOrder,
+    specials = { save = function() return save end,
+      monName = function(index) return "MON" .. tostring(index) end },
+    showText = function(body, onDone) log[#log + 1] = body; onDone() end,
+    facePlayer = function() end,
+    yesorno = function(onChoose)
+      asked = asked + 1
+      onChoose(opts.yes ~= false)
+    end,
+    openMenu = function(header, _style, onChoose)
+      seen[#seen + 1] = { balance = vm.balanceKind, items = header.items }
+      vm.balanceKind = nil
+      onChoose(#seen == 1 and (opts.pick or 0) or 0)
+    end,
+    showCoins = function() vm.balanceKind = "coins" end,
+    showMoney = function(kind) vm.balanceKind = kind or "money" end,
+    hasItem = function() return opts.coinCase ~= false end,
+    giveItem = function(index, qty)
+      if opts.bagFull then return false end
+      save.inventory[index] = (save.inventory[index] or 0) + (qty or 1)
+      return true
+    end,
+    givePoke = function(species, level)
+      save.party[#save.party + 1] = { species = species, level = level }
+    end,
+    getCoins = function() return save.player.coins end,
+    setCoins = function(value) save.player.coins = value end,
+    getMoney = function() return save.player.money end,
+    setMoney = function(_account, value) save.player.money = value end,
+    getItemName = function(index) return "ITEM" .. tostring(index) end,
+    getMonName = function(index) return "MON" .. tostring(index) end,
+    readVar = function() return #save.party end,
+    playSound = function() end,
+    waitSfx = function() return true end,
+  })
+  vm:start(key)
+  for _ = 1, 400 do vm:update() end
+  return save, seen, log, asked
+end
+
+local scripts, keys = COUNTERS.scripts, COUNTERS.keys
+local celadonTm = COUNTERS.prizes(scripts, keys.celadonTm)
+local celadonMon = COUNTERS.prizes(scripts, keys.celadonMon)
+local goldenrodTm = COUNTERS.prizes(scripts, keys.goldenrodTm)
+local goldenrodMon = COUNTERS.prizes(scripts, keys.goldenrodMon)
+local silverMon = COUNTERS.prizes(scripts, keys.goldenrodMon, true)
+local coinVendor = COUNTERS.prizes(scripts, keys.coinVendor)
+
+check("TM32 costs 1500", celadonTm[1].cost, 1500)
+check("TM29 costs 3500", celadonTm[2].cost, 3500)
+check("TM15 costs 7500", celadonTm[3].cost, 7500)
+check("MR.MIME costs 3333", celadonMon[1].cost, 3333)
+check("EEVEE costs 6666", celadonMon[2].cost, 6666)
+check("PORYGON costs 9999", celadonMon[3].cost, 9999)
+check("PORYGON costs the whole case", celadonMon[3].cost, CoinCase.MAX_COINS)
+check("PORYGON arrives at level 20", celadonMon[3].level, 20)
+check("the Goldenrod TMs are all 5500",
+  goldenrodTm[1].cost + goldenrodTm[2].cost + goldenrodTm[3].cost, 16500)
+check("ABRA costs 200", goldenrodMon[1].cost, 200)
+check("DRATINI costs 2100", goldenrodMon[3].cost, 2100)
+check("Gold sells EKANS", goldenrodMon[2].species, 23)
+check("Silver sells SANDSHREW", silverMon[2].species, 27)
+check("at the same price", silverMon[2].cost, goldenrodMon[2].cost)
+check("the coin vendor sells 50 for 1000",
+  coinVendor[1].amount * 10000 + coinVendor[1].cost, 50 * 10000 + 1000)
+check("and 500 for 10000",
+  coinVendor[2].amount * 100000 + coinVendor[2].cost, 500 * 100000 + 10000)
 
 -- The item counter's ladder: coins are checked first, and the PACK only after
 -- the player has said yes -- so a broke player is never told about the bag.
-local tmCounter = counters.CELADON_TM
-local tm32 = tmCounter.prizes[1]
-local broke = newSave(1499)
-check("1499 coins is not enough for TM32",
-  PrizeMenu.check(broke, tmCounter, tm32, data), "coins")
-check("and buying refuses without charging",
-  PrizeMenu.buy(broke, tmCounter, tm32, data), "coins")
-check("the coins are untouched", broke.player.coins, 1499)
-check("and nothing was added", broke.inventory.TM_DOUBLE_TEAM, nil)
+local tm32 = celadonTm[1]
+local broke, _, _, brokeAsked = driveCounter(COUNTERS, keys.celadonTm,
+  { coins = tm32.cost - 1, pick = 1 })
+check("one coin short of TM32 is refused", broke.player.coins, tm32.cost - 1)
+check("before the question", brokeAsked, 0)
+check("and nothing was added", broke.inventory[tm32.item], nil)
 
-local exact = newSave(1500)
-check("exactly 1500 passes the check",
-  PrizeMenu.check(exact, tmCounter, tm32, data), "ok")
-check("and buys", PrizeMenu.buy(exact, tmCounter, tm32, data), "ok")
-check("leaving nothing", exact.player.coins, 0)
-check("with the TM in the bag", exact.inventory.TM_DOUBLE_TEAM, 1)
+local exact = driveCounter(COUNTERS, keys.celadonTm, { coins = tm32.cost, pick = 1 })
+check("exactly the price buys it, leaving nothing", exact.player.coins, 0)
+check("with the TM in the bag", exact.inventory[tm32.item], 1)
 
--- A full ITEM pocket does NOT block a TM: they live in different pockets
--- (item_data_constants.asm).  The filler ids have no pocket def, so they
--- resolve to ITEM; the TM goes to TM_HM, which is empty here.
-local fullItems = newSave(5000)
-for i = 1, 20 do fullItems.inventory["FILLER_" .. i] = 1 end
-check("a full ITEM pocket does not block a TM purchase",
-  PrizeMenu.buy(fullItems, tmCounter, tm32, data), "ok")
-check("and the TM lands in the TM/HM pocket",
-  fullItems.inventory.TM_DOUBLE_TEAM, 1)
-
--- A full TM/HM pocket is what actually refuses a TM.  giveitem discovers it,
--- so the pre-confirm check still says ok.
-local fullTms = newSave(5000)
-for i = 1, 64 do
-  local id = "OTHER_TM_" .. i
-  data.items[id] = { name = id, pocket = "TM_HM" }
-  fullTms.inventory[id] = 1
-end
-check("a full TM/HM pocket passes the pre-confirm check",
-  PrizeMenu.check(fullTms, tmCounter, tm32, data), "ok")
-check("but the purchase itself refuses",
-  PrizeMenu.buy(fullTms, tmCounter, tm32, data), "room")
-check("and the coins are not taken", fullTms.player.coins, 5000)
+local full, _, _, fullAsked = driveCounter(COUNTERS, keys.celadonTm,
+  { coins = 5000, pick = 1, bagFull = true })
+check("a full pocket is found after the question", fullAsked, 1)
+check("and the coins are not taken", full.player.coins, 5000)
 
 -- The mon counter checks the PARTY before asking, so a full party never gets
 -- the question at all.
-local monCounter = counters.CELADON_MON
-local porygon = monCounter.prizes[3]
-local fullParty = newSave(9999)
-for i = 1, Save.PARTY_SIZE do fullParty.party[i] = { species = "RATTATA" } end
-check("a full party is refused before the question",
-  PrizeMenu.check(fullParty, monCounter, porygon, data), "room")
-check("and the purchase refuses too",
-  PrizeMenu.buy(fullParty, monCounter, porygon, data), "room")
-check("with the coins untouched", fullParty.player.coins, 9999)
+local porygon = celadonMon[3]
+local crowded = newSave(9999)
+for i = 1, Save.PARTY_SIZE do crowded.party[i] = { species = "RATTATA" } end
+local _, _, _, crowdedAsked = driveCounter(COUNTERS, keys.celadonMon,
+  { save = crowded, pick = 3 })
+check("a full party is refused before the question", crowdedAsked, 0)
+check("with the coins untouched", crowded.player.coins, 9999)
+check("and no seventh member", #crowded.party, Save.PARTY_SIZE)
 
-local roomy = newSave(9999)
-check("nine thousand nine hundred and ninety nine is exactly enough",
-  PrizeMenu.check(roomy, monCounter, porygon, data), "ok")
-check("and the mon is handed over",
-  PrizeMenu.buy(roomy, monCounter, porygon, data), "ok")
-check("the party grew", #roomy.party, 1)
+local roomy = driveCounter(COUNTERS, keys.celadonMon, { coins = 9999, pick = 3 })
+check("the mon is handed over", #roomy.party, 1)
 check("the mon is the prize", roomy.party[1] and roomy.party[1].species,
-  "PORYGON")
+  porygon.species)
 check("at the scripted level", roomy.party[1] and roomy.party[1].level, 20)
 check("the case is empty", roomy.player.coins, 0)
--- `special GameCornerPrizeMonCheckDex` right before the givepoke.
-check("and the dex was told", roomy.pokedex.caught.PORYGON, true)
-check("seen as well", roomy.pokedex.seen.PORYGON, true)
--- AddPartyMon stamps the buyer's identity onto it (move_mon.asm:44-56, :143-149).
-check("the prize mon carries the player's OT ID", roomy.party[1].otId,
-  roomy.player.id)
-check("and the player's OT name", roomy.party[1].ot, roomy.player.name)
+check("and the dex was told",
+  roomy.pokedex and roomy.pokedex.caught["MON" .. porygon.species], true)
 
-local shortByOne = newSave(9998)
-check("one coin short is refused",
-  PrizeMenu.check(shortByOne, monCounter, porygon, data), "coins")
+local shortByOne = driveCounter(COUNTERS, keys.celadonMon, { coins = 9998, pick = 3 })
+check("one coin short is refused", #shortByOne.party, 0)
+check("and keeps its coins", shortByOne.player.coins, 9998)
 
 -- The coin vendor asks about ROOM first and money second, which is why a player
 -- with a full case and an empty wallet hears about the case.
-local coinCounter = counters.COIN_VENDOR
-local fifty = coinCounter.prizes[1]
-local fullCase = newSave(9999, 0)
-check("a full case is reported before the wallet",
-  PrizeMenu.check(fullCase, coinCounter, fifty, data), "room")
--- MAX_COINS - 50 is 9949: exactly that still fits, one more does not.
-local atHeadroom = newSave(9949, 1000)
-check("exactly the headroom still fits",
-  PrizeMenu.check(atHeadroom, coinCounter, fifty, data), "ok")
-local overHeadroom = newSave(9950, 1000)
-check("one coin past the headroom is full",
-  PrizeMenu.check(overHeadroom, coinCounter, fifty, data), "room")
+local function lastLine(opts)
+  local save, _, log = driveCounter(COUNTERS, keys.coinVendor, opts)
+  return log[#log], save
+end
+local fullPoor, fullCase = lastLine({ coins = 9999, money = 0, pick = 1 })
+local fullRich = lastLine({ coins = 9999, money = 1000, pick = 1 })
+local roomPoor = lastLine({ coins = 0, money = 0, pick = 1 })
+check("a full case is reported before the wallet", fullPoor, fullRich)
+check("which is not the money refusal", fullPoor ~= roomPoor, true)
+check("and nothing changes hands", fullCase.player.coins, 9999)
 
-local poor = newSave(0, 999)
-check("¥999 does not buy 50 coins",
-  PrizeMenu.check(poor, coinCounter, fifty, data), "money")
-check("and buying refuses", PrizeMenu.buy(poor, coinCounter, fifty, data),
-  "money")
-check("with the wallet untouched", poor.player.money, 999)
+local _, atHeadroom = lastLine({ coins = 9949, money = 1000, pick = 1 })
+check("exactly the headroom still fits", atHeadroom.player.coins, 9999)
+check("and the money is gone", atHeadroom.player.money, 0)
+local _, overHeadroom = lastLine({ coins = 9950, money = 1000, pick = 1 })
+check("one coin past the headroom is full", overHeadroom.player.coins, 9950)
+check("with the wallet untouched", overHeadroom.player.money, 1000)
 
-local buyer = newSave(0, 1000)
-check("¥1000 buys 50 coins", PrizeMenu.buy(buyer, coinCounter, fifty, data),
-  "ok")
-check("the coins arrive", buyer.player.coins, 50)
+local _, poor = lastLine({ coins = 0, money = 999, pick = 1 })
+check("¥999 does not buy 50 coins", poor.player.coins, 0)
+check("and keeps its money", poor.player.money, 999)
+local _, buyer = lastLine({ coins = 0, money = 1000, pick = 1 })
+check("¥1000 buys 50 coins", buyer.player.coins, 50)
 check("and the money is gone", buyer.player.money, 0)
-
--- Buying 500 near the cap clamps rather than overflowing.
-local nearCap = newSave(9900, 10000)
-check("500 into a nearly full case is refused",
-  PrizeMenu.check(nearCap, coinCounter, coinCounter.prizes[2], data), "room")
+local _, nearCap = lastLine({ coins = 9900, money = 10000, pick = 2 })
+check("500 into a nearly full case is refused", nearCap.player.coins, 9900)
 
 -- ================================================================ card flip
 --
@@ -910,7 +916,7 @@ local function newGame(save)
   return {
     input = input,
     save = save,
-    data = nil, -- no audio and no music in this harness
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_f2") },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -930,7 +936,8 @@ slotInput:press("a")
 slots:update(1 / 60)
 check("two coins cannot cover a bet of three", slots.phase, "bet")
 check("and nothing was deducted", slotSave.player.coins, 2)
-check("the refusal is on screen", slots.message, SlotMachine.TEXTS.notEnough)
+check("the refusal is on screen", table.concat(slots.message, "\n"),
+  table.concat(SlotMachine.lines(slotGame.data, "notEnough"), "\n"))
 slotInput:press("a")
 slots:update(1 / 60) -- dismiss
 slotInput:press("down")
@@ -1030,61 +1037,6 @@ capFlip.phase = "payout"
 for _ = 1, 400 do capFlip:update(1 / 60) end
 check("a payout past the cap clamps", capSave.player.coins, 9999)
 
--- The prize counter screen: no COIN CASE is the very first refusal.
-local caseless = newSave(5000)
-local caselessGame, caselessInput = newGame(caseless)
-local counter = PrizeMenu.new(caselessGame, { save = caseless,
-  counter = "CELADON_TM", texts = "CELADON", data = data,
-  onClose = function() caseless.closed = true end })
-check("the intro plays first", counter.message ~= nil, true)
--- Three pages of Welcome, then the refusal, then the door.
-for _ = 1, 3 do
-  caselessInput:press("a")
-  counter:update(1 / 60)
-end
-check("the counter never opens its menu", counter.phase, nil)
-caselessInput:press("a")
-counter:update(1 / 60)
-check("a player with no COIN CASE is turned away", caseless.closed, true)
-
-local shopper = newSave(5000)
-shopper.inventory.COIN_CASE = 1
-local shopGame, shopInput = newGame(shopper)
-local shop = PrizeMenu.new(shopGame, { save = shopper, counter = "CELADON_TM",
-  texts = "CELADON", data = data,
-  onClose = function() shopper.closed = true end })
-for _ = 1, 3 do
-  shopInput:press("a")
-  shop:update(1 / 60)
-end
-check("the menu opens", shop.phase, "menu")
-check("with four rows including CANCEL", #shop.prizes, 4)
-check("and the cursor on the first prize", shop.index, 1)
-shopInput:press("a")
-shop:update(1 / 60)
-check("choosing TM32 asks first", shop.confirm ~= nil, true)
-shopInput:press("a")
-shop:update(1 / 60)
-check("yes buys it", shopper.inventory.TM_DOUBLE_TEAM, 1)
-check("and takes the coins", shopper.player.coins, 3500)
--- The second TM costs 3500, which is exactly what is left.
-shopInput:press("down")
-shop:update(1 / 60)
-shopInput:press("a")
-shop:update(1 / 60) -- dismiss "Here you go!"
-check("the loop returns to the menu", shop.phase, "menu")
-
--- The Goldenrod mon counter's checkver swap.
-local silverShop = PrizeMenu.new(newGame(newSave(0)),
-  { save = newSave(0), counter = "GOLDENROD_MON", texts = "GOLDENROD",
-    version = "silver", data = data, hasCoinCase = true })
-check("Silver's second prize is SANDSHREW", silverShop.prizes[2].id,
-  "SANDSHREW")
-local goldShop = PrizeMenu.new(newGame(newSave(0)),
-  { save = newSave(0), counter = "GOLDENROD_MON", texts = "GOLDENROD",
-    version = "gold", data = data, hasCoinCase = true })
-check("Gold's second prize is EKANS", goldShop.prizes[2].id, "EKANS")
-
 -- ============================================ the counters the GAME reaches
 --
 -- Everything above is a model.  None of it says a prize counter can be OPENED,
@@ -1095,8 +1047,6 @@ check("Gold's second prize is EKANS", goldShop.prizes[2].id, "EKANS")
 -- `giveitem` / `givepoke`, `takecoins`.  So this drives the REAL extracted
 -- script through the VM off the map's own bg event, which is the only assertion
 -- that says the counter works where a player stands.
-local Events = require("src.world.gen2.Events")
-local Vm = require("src.script.gen2.Vm")
 
 local cache = os.getenv("GOLD_CACHE")
   or ((os.getenv("HOME") or "") .. "/Library/Application Support/LOVE/gold-dev/gold")
@@ -1110,52 +1060,9 @@ local cacheScripts = loadCache("scripts")
 local cacheText = loadCache("text")
 local cacheConsts = loadCache("constants")
 
--- One counter conversation, driven to a stop.  `pick` answers every
--- `verticalmenu`; the log is what the player would have seen.
 local function runCounter(key, opts)
-  opts = opts or {}
-  local save = opts.save or newSave(opts.coins or 0, opts.money or 0)
-  local log, seen = {}, {}
-  local vm
-  vm = Vm.new(cacheScripts, cacheText, Events.new(), {
-    specialOrder = cacheConsts and cacheConsts.specialOrder,
-    specials = { save = function() return save end,
-      monName = function(index) return "MON" .. tostring(index) end },
-    showText = function(body, onDone) log[#log + 1] = body; onDone() end,
-    facePlayer = function() end,
-    yesorno = function(onChoose) onChoose(opts.yes ~= false) end,
-    -- Every counter LOOPS back to its own menu after a sale, so only the first
-    -- pass buys and the second cancels out; otherwise the run below empties
-    -- the case rather than making one purchase.
-    openMenu = function(header, _style, onChoose)
-      seen[#seen + 1] = { balance = vm.balanceKind, items = header.items }
-      vm.balanceKind = nil
-      onChoose(#seen == 1 and (opts.pick or 0) or 0)
-    end,
-    -- The two seams the balance boxes hang off: engine/menus/menu_2.asm draws
-    -- them and returns, and the `loadmenu` that follows is what shows them.
-    showCoins = function() vm.balanceKind = "coins" end,
-    showMoney = function(kind) vm.balanceKind = kind or "money" end,
-    hasItem = function() return opts.coinCase ~= false end,
-    giveItem = function(index, qty)
-      save.inventory[index] = (save.inventory[index] or 0) + (qty or 1)
-      return true
-    end,
-    givePoke = function(species, level)
-      save.party[#save.party + 1] = { species = species, level = level }
-    end,
-    getCoins = function() return save.player.coins end,
-    setCoins = function(value) save.player.coins = value end,
-    getMoney = function() return save.player.money end,
-    setMoney = function(_account, value) save.player.money = value end,
-    getItemName = function(index) return "ITEM" .. tostring(index) end,
-    getMonName = function(index) return "MON" .. tostring(index) end,
-    readVar = function() return #save.party end,
-    playSound = function() end,
-    waitSfx = function() return true end,
-  })
-  vm:start(key)
-  for _ = 1, 400 do vm:update() end
+  local save, seen, log = driveCounter({ scripts = cacheScripts, text = cacheText,
+    specialOrder = cacheConsts and cacheConsts.specialOrder }, key, opts)
   return save, seen, log
 end
 
@@ -1258,7 +1165,7 @@ local mockInput = {
 local mockSlotGame = {
   save = mockSave,
   input = mockInput,
-  data = {},
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_f2") },
 }
 
 -- Test Slot Machine 500-spin continuous loop

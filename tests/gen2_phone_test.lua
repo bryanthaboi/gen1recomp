@@ -11,6 +11,7 @@
 -- pokegold routine it is pinning down.
 
 package.path = "./?.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 
 local drawn = {}
 love = love or {}
@@ -83,12 +84,47 @@ end
 
 -- ------------------------------------------------------ the contact table
 
+check("no hand-typed contact rows before events.lua is read",
+  next(Phone.CONTACTS), nil)
+check("no hand-typed non-trainer names either",
+  next(Phone.NON_TRAINER_NAMES), nil)
+check("no hand-typed special calls either", next(Phone.SPECIAL_CALLS), nil)
+check("no hand-typed script keys before events.lua is read",
+  Phone.scriptKey("JoeyPhoneCallerScript"), nil)
+check("events.lua with no phoneScripts is an error",
+  pcall(Phone.useExtracted, { phone = {}, phoneNames = {}, specialCalls = {} }),
+  false)
+check("events.lua with no phoneNames is an error",
+  pcall(Phone.useExtracted, { phone = {}, phoneScripts = {}, specialCalls = {} }),
+  false)
+check("events.lua with no specialCalls is an error",
+  pcall(Phone.useExtracted, { phone = {}, phoneScripts = {}, phoneNames = {} }),
+  false)
+check("a trainer row with no trainer constants is an error",
+  pcall(Phone.useExtracted, { phone = { [15] = { trainerClass = 22, number = 1 } },
+    phoneScripts = {}, phoneNames = {}, specialCalls = {} }), false)
+
+local PHONE = require("tests.fixtures.gen2_phone_events")
+Phone.useRegistry({ gen2EventTables = PHONE.events, gen2Constants = PHONE.constants })
+check("useExtracted takes the fixture's rows", Phone.useExtracted(PHONE.events), true)
+
 -- data/phone/phone_contacts.asm, `assert_table_length NUM_PHONE_CONTACTS + 1`.
 check("the contact table is zero based", Phone.CONTACTS[0] ~= nil, true)
-check("and runs to NUM_PHONE_CONTACTS",
-  Phone.CONTACTS[Phone.NUM_PHONE_CONTACTS] ~= nil, true)
+check("and runs to the last PhoneContacts row",
+  Phone.CONTACTS[#PHONE.constants.phoneContactOrder - 1] ~= nil, true)
 check("with nothing past it",
-  Phone.CONTACTS[Phone.NUM_PHONE_CONTACTS + 1], nil)
+  Phone.CONTACTS[#PHONE.constants.phoneContactOrder], nil)
+check("a trainer row carries its class from the cache",
+  Phone.CONTACTS[15].class, "YOUNGSTER")
+check("and its member", Phone.CONTACTS[15].member, "JOEY1")
+check("special calls come from SpecialPhoneCallList",
+  Phone.SPECIAL_CALLS[Phone.SPECIALCALL.SPECIALCALL_BIKESHOP].condition,
+  "anywhere")
+check("with SpecialCallOnlyWhenOutside read as outside",
+  Phone.SPECIAL_CALLS[Phone.SPECIALCALL.SPECIALCALL_ROBBED].condition,
+  "outside")
+check("and no row past SPECIALCALL_MASTERBALL",
+  Phone.SPECIAL_CALLS[#PHONE.constants.specialCallOrder], nil)
 
 -- constants/trainer_constants.asm opens the non-trainer block with
 -- `const_def 1`.  A zero-based reading here would shift every name by one and
@@ -116,12 +152,11 @@ check("but Joey does", Phone.CONTACTS[15].callerTime, Phone.ANYTIME)
 check("and Elm can still be called", Phone.CONTACTS[4].calleeTime,
   Phone.ANYTIME)
 
--- The scripts live in ROM bank $41, which the importer does not reach yet, so
--- a contact carries the label and the key that label will have.
 check("a contact names its caller script",
   Phone.CONTACTS[15].caller, "JoeyPhoneCallerScript")
 check("and resolves it to a scripts.lua key",
-  Phone.scriptKey("JoeyPhoneCallerScript"), "41:4368")
+  Phone.scriptKey("JoeyPhoneCallerScript"),
+  PHONE.events.phoneScripts.JoeyPhoneCallerScript.script)
 
 -- ------------------------------------------------------ the contact list
 
@@ -443,32 +478,16 @@ do
     "MomPhoneLectureScript")
 end
 
--- A queued call fires exactly once.  On the cart the called script clears the
--- queue itself (`specialphonecall SPECIALCALL_NONE`); bank $41 is not
--- extracted, so Phone.endCall clears it for a call whose script never ran.
+-- engine/phone/phone.asm:431
 do
   local save = newSave()
   Phone.queueSpecialCall(save, Phone.SPECIALCALL.SPECIALCALL_ASSISTANT)
   local call = Phone.checkSpecialCall(save, { map = ROUTE_30 })
   check("the queued call fires", call ~= nil, true)
-  check("and is still queued while it runs", Phone.hasSpecialCall(save), true)
   Phone.endCall(save, call, at(9, 0))
-  check("hanging up clears it", Phone.hasSpecialCall(save), false)
-  check("so it does not fire twice",
-    Phone.checkSpecialCall(save, { map = ROUTE_30 }), nil)
-  check("and the receive timer restarts", save.phone.delayMins, 20)
-end
-
--- Once the VM can run bank $41, the script's own clear is what fires and the
--- fallback must keep its hands off.
-do
-  local save = newSave()
-  Phone.queueSpecialCall(save, Phone.SPECIALCALL.SPECIALCALL_ASSISTANT)
-  local call = Phone.checkSpecialCall(save, { map = ROUTE_30 })
-  call.ranScript = true
-  Phone.endCall(save, call, at(9, 0))
-  check("a call whose script ran clears itself",
+  check("hanging up leaves the queue to the script",
     Phone.hasSpecialCall(save), true)
+  check("and the receive timer restarts", save.phone.delayMins, 20)
 end
 
 -- ------------------------------------------------------ rematches
@@ -553,7 +572,8 @@ local function newGear(save, opts)
   local game = {
     input = input,
     save = save,
-    data = { audio = {}, pokemon = {}, items = {} },
+    data = { audio = {}, pokemon = {}, items = {},
+      text = require("tests.fixture_data.gen2_rom_text_s7_d").text() },
     stack = { push = function() end, pop = function() end },
   }
   -- Pokegear:visibleCards keys off wPokegearFlags; without the PHONE bit the
@@ -711,16 +731,18 @@ do
   check("MOM's row is her name and a colon", name, "MOM:")
 end
 
--- The phone text lives in ROM bank $66, which is not extracted; the card
--- prefers the extracted string and falls back to the transcription.
+-- data/text/common_3.asm:43
 do
   local save = newSave()
   local gear = newGear(save)
-  check("the fallback prompt is the cart's",
-    gear:phoneText("AskWhoCall"), "Whom do you want to call?")
-  gear.textData = { ["66:4089"] = "EXTRACTED" }
-  check("and extracted text wins when it arrives",
+  check("the prompt is the cache's _PokegearAskWhoCallText",
+    gear:phoneText("AskWhoCall"), "Whom do you want\nto call?")
+  gear.textData = { _PokegearAskWhoCallText = "EXTRACTED{DONE}" }
+  check("read from rom_text by label",
     gear:phoneText("AskWhoCall"), "EXTRACTED")
+  gear.textData = {}
+  check("and a cache without the label is an error",
+    pcall(gear.phoneText, gear, "AskWhoCall"), false)
 end
 
 -- ------------------------------------------------------ the save
@@ -763,7 +785,7 @@ do
     local scripts = assert(loadfile(
       cacheDir .. "/data/generated/scripts.lua"))()
     check("useExtracted takes the cache's rows", Phone.useExtracted(events), true)
-    for index = 0, Phone.NUM_PHONE_CONTACTS do
+    for index = 0, #PHONE.constants.phoneContactOrder - 1 do
       local row = Phone.CONTACTS[index]
       local was = Phone.SCRIPT_KEYS[row.callee]
       check(("contact %d callee key matches the transcription"):format(index),

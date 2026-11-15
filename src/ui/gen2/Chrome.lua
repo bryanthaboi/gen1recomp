@@ -12,6 +12,7 @@
 
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
+local RomText = require("src.core.RomText")
 
 local WHITE = { 255, 255, 255 }
 local BLACK = { 0, 0, 0 }
@@ -247,23 +248,12 @@ end
 -- palette's colour 3, and painting colour 0 behind the string first supplies
 -- the cell background the sheet does not carry.  Without a shader this
 -- degrades to the ordinary black print rather than drawing nothing.
---
--- The palette printThrough actually draws with: COLOR mode resolved,
--- inverted if asked, and the active rBGP byte folded in last -- the same
--- order GbcPalette.use follows.  Split out so the fold can be checked
--- without a real shader (GbcPalette.available() is false in a driverless
--- test harness, which used to hide this from every suite).
---
--- The substitution has to happen before the reversal or an inverted string
--- would come back through an un-reversed grey ramp and print black on white,
--- and the rBGP fold has to come after both: it REORDERS the four entries
--- this palette already settled on (colour 0 in the low bits, so
--- `dc 3,2,1,0` packs to $e4), it does not tint them, so folding it before
--- the invert reversal would permute the wrong four colours.
+
+-- ../pokecrystal/engine/pokedex/pokedex.asm:2452-2461, home/fade.asm:50-51
 function Chrome.throughPalette(palette, invert)
-  local pal = GbcPalette.resolve(palette)
+  local pal = GbcPalette.remap(GbcPalette.resolve(palette), GbcPalette.bgp)
   if invert then pal = { pal[4], pal[3], pal[2], pal[1] } end
-  return GbcPalette.remap(pal, GbcPalette.bgp)
+  return pal
 end
 
 function Chrome.rawPalette(palette, invert)
@@ -512,20 +502,21 @@ end
 -- DisplayCoinCaseBalance: Textbox at (11,0) with a 7x1 interior, "COIN" at
 -- (12,0) -- yes, in the border row -- and the four-digit count at (13,1) with
 -- PRINTNUM_LEADINGZEROS.
-function Chrome.coinBalanceBox(coins)
+-- engine/menus/menu_2.asm:106 MoneyString, :108 CoinString
+function Chrome.coinBalanceBox(data, coins)
   Chrome.textbox(11, 0, 7, 1)
-  Chrome.printThrough("COIN", 12, 0, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(RomText(data, "CoinString"), 12, 0, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.number(coins, 4, true), 13, 1, Chrome.DEFAULT_BOX_PALETTE)
 end
 
 -- DisplayMoneyAndCoinBalance: one Textbox at (5,0) with a 13x3 interior
 -- holding both fields, "MONEY" at (6,1) with the yen field at (12,1) and
 -- "COIN" at (6,3) with the four-digit count at (15,3).
-function Chrome.moneyAndCoinBalanceBox(money, coins)
+function Chrome.moneyAndCoinBalanceBox(data, money, coins)
   Chrome.textbox(5, 0, 13, 3)
-  Chrome.printThrough("MONEY", 6, 1, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(RomText(data, "MoneyString"), 6, 1, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.money(money), 12, 1, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.printThrough("COIN", 6, 3, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(RomText(data, "CoinString"), 6, 3, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.number(coins, 4, true), 15, 3, Chrome.DEFAULT_BOX_PALETTE)
 end
 

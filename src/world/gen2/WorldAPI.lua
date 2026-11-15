@@ -31,7 +31,6 @@ local Bike = require("src.world.gen2.Bike")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Permissions = require("src.world.gen2.Permissions")
 local Mail = require("src.core.gen2.Mail")
-local Strings = require("src.core.Strings")
 
 local WorldAPI = {}
 WorldAPI.__index = WorldAPI
@@ -261,8 +260,7 @@ function WorldAPI:useFieldAction(id, opts)
     local user, target = party[sourceSlot], party[targetSlot]
     local before, after = FieldMoves.softboiledTransfer(user, target, cost)
     if not before then return nil, "softboiled target unavailable" end
-    -- data/text/common_1.asm:40 _RecoveredSomeHPText
-    world:showText(Strings("%s\nrecovered %dHP!",
+    world:showText(world:romLine("_RecoveredSomeHPText",
       target.nickname or target.species, after - before))
     return true
   end

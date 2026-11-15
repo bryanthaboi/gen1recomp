@@ -9,6 +9,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 fly map")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -48,6 +49,7 @@ LANDMARKS.landmarks.LANDMARK_ROUTE_27 = {
   index = 0x5b, name = "ROUTE 27", x = 40, y = 64,
 }
 LANDMARKS.order[0x5b] = "LANDMARK_ROUTE_27"
+require("tests.fixture_data.gen2_landmarks_s7_d").anchored(LANDMARKS)
 
 local function visited(...)
   local save = { engineFlags = {} }
@@ -77,6 +79,7 @@ local function flyScreen(save, opts)
     flyRegion = opts.passRegion and shown or nil,
     onFly = function(spawn) chosen = spawn end,
     onClose = function() closed = true end,
+    text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
   })
   return screen, input, points,
     function() return chosen end, function() return closed end
@@ -215,13 +218,11 @@ for _, passRegion in ipairs({ true, false }) do
   end
 end
 
--- Drawing must not throw: the plain path (no town-map art in the cache) is
--- what a headless run and an older cache take.
 do
   local save = visited("SPAWN_NEW_BARK", "SPAWN_VIOLET")
   local screen = flyScreen(save)
-  local ok, err = pcall(function() screen:drawPanel() end)
-  check(ok, "the unstyled fly picker draws (" .. tostring(err) .. ")")
+  check(not pcall(function() screen:drawPanel() end),
+    "a cache without pokegear art is an error")
 end
 
 -- IsInJohto (home/region.asm:10, :23)

@@ -28,7 +28,7 @@ local function newBattle()
     kind = "wild",
     queue = {},
     frame = 0,
-    data = { text = {}, pokemon = {} },
+    data = { text = T.fixtures.load().text, pokemon = {} },
     enemy = { name = "MAROWAK", sprite = REAL_SPRITE,
               mon = { species = "MAROWAK", level = 30 } },
   }, BattleState)

@@ -17,7 +17,7 @@ for _,edition in ipairs({"gold","silver","crystal"})do
  require("src.core.GameVersion").set(edition)
  local root=os.getenv("POKEPORT_GEN2_"..edition:upper().."_DATA")
  if not root then print("SKIP H07 actual "..edition.." data")else
-  local text=assert(loadfile(root.."/text.lua"))()
+  local text=assert(loadfile(root.."/rom_text.lua"))()
   local save=Save.newGame({trainerId=1234});save.engineFlags={};for i=0,500 do save.engineFlags[i]=true end
   local game={save=save,data={},input={wasPressed=function()return false end}}
   local gear=Gear.new(game,{save=save,text=text,clock={hour=12},mapDef={phoneService=false}})
@@ -25,7 +25,7 @@ for _,edition in ipairs({"gold","silver","crystal"})do
   gear.mode="card"
   for _,kind in ipairs({"idle","nosignal"})do
    if kind=="nosignal" then gear:callContact(1);T.eq(gear.call.kind,"nosignal",edition.." real no-service producer")end
-   for _,style in ipairs({"drawPhone","drawPlain"})do
+   for _,style in ipairs({"drawPhone"})do
     rows={};gear[style](gear)
     local out=speech()
     T.eq(#out,2,edition.." "..kind.." "..style.." two source lines")

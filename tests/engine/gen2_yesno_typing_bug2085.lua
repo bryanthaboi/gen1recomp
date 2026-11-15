@@ -32,7 +32,8 @@ local input = newInput()
 local save = Save.newGame({ playerName = "GOLD", trainerId = 1 })
 save.options = save.options or {}
 save.options.textSpeed = "MID"
-local game = { input = input, save = save }
+local game = { input = input, save = save,
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } }
 
 local menu = SaveMenu.new(game, {
   save = save, existed = true,

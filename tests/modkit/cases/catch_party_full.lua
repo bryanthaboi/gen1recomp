@@ -31,7 +31,11 @@ local FIXTURE = {
 }
 
 local function fullBattle(species)
-  local data = { pokemon = {}, text = {} }
+  local data = { pokemon = {}, text = {
+    _ItemUseBallText06 = "New POKéDEX data\nwill be added for\011{RAM:wEnemyMonNick}!{DONE}",
+    _ItemUseBallText07 = "{RAM:wBoxMonNicks} was\ntransferred to\011BILL's PC!{PROMPT}",
+    _ItemUseBallText08 = "{RAM:wBoxMonNicks} was\ntransferred to\011someone's PC!{PROMPT}",
+  } }
   local party = {}
   for _ = 1, 6 do party[#party + 1] = { species = "RATTATA", moves = {} } end
   local save = {
@@ -63,7 +67,7 @@ battle:storeCaughtMon()
 T.eq(battle.result, "caught", "no mod: the catch still lands")
 T.eq(#battle.game.save.party, 6, "no mod: the party is untouched")
 T.eq(boxTotal(battle.game.save), 1, "no mod: the mon was deposited")
-T.eq(battle.queue[#battle.queue].text, "PIDGEY was\ntransferred to\nsomeone's PC!",
+T.eq(battle.queue[#battle.queue].text, "PIDGEY was\ntransferred to\011someone's PC!{PROMPT}",
   "no mod: with the transfer text")
 vanilla.release()
 

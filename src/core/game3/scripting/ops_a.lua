@@ -749,6 +749,12 @@ local function dispatch(vm, row)
     return false
   elseif op == "setworldmapflag" then
     local flag = row.flag or row[1]
+    do
+      local Runtime = package.loaded["src.core.game3.runtime"]
+      local session = Runtime and Runtime.getSession and Runtime.getSession()
+      -- pokefirered/src/scrcmd.c:600
+      require("src.core.game3.quest_log_recorder").recordEnteredMap(session, flag, Flags.getFlag(store, ctx, flag) == true)
+    end
     -- MapPreview_SetFlag: capture the pre-visit state for the forest preview
     -- duration, then set the flag (map_preview_screen.c:605).
     do

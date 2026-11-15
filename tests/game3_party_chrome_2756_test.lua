@@ -139,13 +139,8 @@ if frRoot then
   partyChecks("firered cache", frRoot)
 end
 
-local identity = os.getenv("POKEPORT_IDENTITY")
-local home = os.getenv("HOME")
-local emRoot = identity and identity ~= "" and home
-  and (home .. "/Library/Application Support/LOVE/" .. identity .. "/emerald/data/generated/gba") or nil
-local meta = emRoot and readAt(emRoot, "meta.json")
-local emVersion = require("src.import.gba.games.emerald").CACHE_VERSION
-if meta and tonumber(meta:match('"cache_version"%s*:%s*(%d+)')) == emVersion then
+local emRoot = require("tests.game3_cache").root("emerald")
+if emRoot then
   ranAny = true
   partyChecks("emerald cache", emRoot)
   local png = readAt(emRoot, "rse/summary/buttons.png")

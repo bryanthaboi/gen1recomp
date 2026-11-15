@@ -23,7 +23,8 @@
 -- (src/core/gen2/Save.lua) and writes the two accounts on it, so the battle
 -- engine, the world and the tests all reach the same routine.
 
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 
 local Prize = {}
 
@@ -55,26 +56,24 @@ local MOM_SAVING_ALL = MOM_SAVING_SOME + MOM_SAVING_HALF
 -- the rest of the battle, so the coin still pays after its holder has fainted.
 Prize.AMULET_COIN = "AMULET_COIN"
 
--- data/text/battle.asm.  Declared here and formatted at the call site so
--- Strings.source is what registers them, the same way Decorations declares
--- its own five.  No line markers: every battle message in this port is one
--- flowing string that Chrome.wrap breaks to the box, except SentSomeToMomText,
--- which keeps the cart's own `line`/`cont` breaks because it does not fit two
--- rows.
-local GOT_MONEY = Strings.source("%s got %s%d for winning!")
--- data/text/battle.asm:179-185
-local SENT_SOME = Strings.source("%s got %s%d\nfor winning!\vSent some to MOM!")
+-- data/text/battle.asm:162
+local GOT_MONEY = "GotMoneyForWinningText"
+-- data/text/battle.asm:179
+local SENT_SOME = "SentSomeToMomText"
 -- The half and all texts really are this short on the cart: they replace the
 -- money line rather than following it, which is a quirk no Gold player can
 -- see because BankOfMom only ever writes MOM_SAVING_SOME_MONEY_F.
-local SENT_HALF = Strings.source("Sent half to MOM!")
-local SENT_ALL = Strings.source("Sent all to MOM!")
--- BattleText_PlayerPickedUpPayDayMoney (data/text/battle.asm:3-8).
-local PICKED_UP = Strings.source("%s picked up %s%d!")
+-- data/text/battle.asm:187
+local SENT_HALF = "SentHalfToMomText"
+-- data/text/battle.asm:191
+local SENT_ALL = "SentAllToMomText"
+-- data/text/battle.asm:3
+local PICKED_UP = "BattleText_PlayerPickedUpPayDayMoney"
 
--- charmap.asm: the currency glyph, the same one Chrome.money floats in front
--- of a six-digit field.
-local YEN = "\xc2\xa5"
+local function rom(data, label, playerName, amount)
+  return CommonText.plain(RomText(data, label, nil,
+    { PLAYER = playerName, NUM = amount }))
+end
 
 --------------------------------------------------------------------------
 -- ComputeTrainerReward
@@ -213,16 +212,15 @@ function Prize.award(save, opts)
 end
 
 -- The line StdBattleTextbox prints, chosen by .SentToMomTexts / .KeepItAll.
-function Prize.message(award, playerName)
-  local name = playerName or "PLAYER"
+function Prize.message(data, award, playerName)
   local total = (award and award.total) or 0
   local mode = (award and award.mode) or 0
-  if mode == MOM_SAVING_ALL then return Strings(SENT_ALL) end
-  if mode == MOM_SAVING_HALF then return Strings(SENT_HALF) end
+  if mode == MOM_SAVING_ALL then return rom(data, SENT_ALL) end
+  if mode == MOM_SAVING_HALF then return rom(data, SENT_HALF) end
   if mode == MOM_SAVING_SOME then
-    return Strings(SENT_SOME, name, YEN, total)
+    return rom(data, SENT_SOME, playerName, total)
   end
-  return Strings(GOT_MONEY, name, YEN, total)
+  return rom(data, GOT_MONEY, playerName, total)
 end
 
 -- CheckPayDay (engine/battle/core.asm:8014-8042): the Amulet Coin doubles the
@@ -234,8 +232,8 @@ function Prize.payDay(save, amount, amuletCoin)
   return amount
 end
 
-function Prize.payDayMessage(amount, playerName)
-  return Strings(PICKED_UP, playerName or "PLAYER", YEN, amount or 0)
+function Prize.payDayMessage(data, amount, playerName)
+  return rom(data, PICKED_UP, playerName, amount or 0)
 end
 
 return Prize

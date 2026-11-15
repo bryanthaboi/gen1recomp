@@ -82,9 +82,13 @@ do
     "a translated cache line replaces the English one and still receives the battler name")
 end
 
-T.eq(Effects.stageMessage("PIKACHU", "attack", 2),
-  "PIKACHU: ATTAQUE monte beaucoup!",
-  "stat labels and the complete stage template are both translated")
+local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
+local S7A = require("tests.fixture_data.gen2_rom_text_s7_a")
+T.eq(Effects.stageMessage({ text = S7B.text({
+    Text_BattleEffectActivate = "{USER}:\n{STRBUF}", ["StatNames#1"] = "ATTAQUE",
+    _BattleStatWentWayUpText = "\rmonte beaucoup!{PROMPT}" }) }, "PIKACHU", "attack", 2),
+  "PIKACHU:\nATTAQUE\rmonte beaucoup!",
+  "the stage template and the stat label both come from the cache")
 
 do
   local data = {
@@ -94,29 +98,35 @@ do
       DITTO = { name = "METAMORPH", types = { "NORMAL" } },
       RAW_SPECIES = { name = "BELLE ESPECE", types = { "NORMAL" } },
     },
+    text = S7A.text({
+      WasDisabledText = "{TARGET}: {STRBUF} neutralisee!{PROMPT}",
+      TransformedText = "{USER} copie {STRBUF}!{PROMPT}",
+      EnemyUsedOnText = "{ENEMY} emploie {STRBUF} sur {STRBUF}!{PROMPT}",
+    }),
   }
   local battle, player, enemy = battleStub(data)
   enemy.moves = { { id = "RAW_MOVE", pp = 5 } }
   enemy.volatile.lastMove = "RAW_MOVE"
   Battle.MOVE_EFFECTS.EFFECT_DISABLE(battle, player, enemy)
   T.eq(battle.events[#battle.events].text, "Enemy CIBLE: JOLI MOUV neutralisee!",
-    "a multi-argument template receives the move's display name, not its id")
+    "a translated WasDisabledText receives the move's display name, not its id")
 
   battle.events = {}
   Battle.MOVE_EFFECTS.EFFECT_TRANSFORM(battle, player, enemy)
   T.eq(battle.events[1].text, "DITTO copie BELLE ESPECE!",
-    "TRANSFORM keeps the actor name and resolves the target species name")
+    "TransformedText keeps the actor name and resolves the target species name")
 
   battle.events = {}
   battle.trainer = { name = "DRESSEUR", items = { "RAW_ITEM" } }
   battle:enemyUseItem("RAW_ITEM")
-  T.eq(battle.events[#battle.events].text, "DRESSEUR emploie BEL OBJET!",
-    "trainer items resolve their display name before formatting")
+  T.eq(battle.events[#battle.events].text, "DRESSEUR emploie BEL OBJET sur CIBLE!",
+    "EnemyUsedOnText gets the item's display name and the foe's nickname")
 
   battle.events = {}
+  battle.data.text = S7B.text({ DownpourText = "La pluie commence!{PROMPT}" })
   Battle.MOVE_EFFECTS.EFFECT_RAIN_DANCE(battle, player, enemy)
   T.eq(battle.events[1].text, "La pluie commence!",
-    "weather table sources are translated when emitted, after module load")
+    "the weather line is the cache's DownpourText")
 end
 
 do
@@ -128,22 +138,31 @@ do
     burn = "MON est brule!",
     freeze = "MON est gele!",
   }
+  local text = S7A.text({
+    FellAsleepText = "{TARGET} s'endort!{PROMPT}",
+    WasPoisonedText = "{TARGET} est empoisonne!{PROMPT}",
+    BadlyPoisonedText = "{TARGET} est gravement empoisonne!{PROMPT}",
+    ParalyzedText = "{TARGET} est paralyse!{PROMPT}",
+    WasBurnedText = "{TARGET} est brule!{PROMPT}",
+    WasFrozenText = "{TARGET} est gele!{PROMPT}",
+    HurtByPoisonText = "{USER} souffre du poison!{PROMPT}",
+  })
   for status, want in pairs(expected) do
-    local battle = battleStub({})
+    local battle = battleStub({ text = text })
     local mon = { nickname = "MON", hp = 16, maxHp = 16, volatile = {} }
     battle.player = mon
     T.check(battle:applyStatus(mon, status), status .. " can be inflicted")
     T.eq(battle.events[#battle.events].text, want,
-      status .. " uses its complete translated template")
+      status .. " uses its translated cache line")
   end
 
-  local battle = battleStub({})
+  local battle = battleStub({ text = text })
   local mon = { nickname = "MON", hp = 16, maxHp = 16,
     status = "poison", volatile = {} }
   battle.player = mon
   battle:tickStatus(mon)
   T.eq(battle.events[1].text, "MON souffre du poison!",
-    "a deferred residual status message is translated at emission")
+    "the residual line is the cache's translated HurtByPoisonText")
 end
 
 do
@@ -166,10 +185,13 @@ do
   T.eq(merged.poison.hudLabel, nil,
     "a real label-only Registry patch has no stale vanilla hudLabel")
   local state = setmetatable({ contest = false,
-    game = { data = { gen2Statuses = merged } },
+    game = { data = { gen2Statuses = merged, text = S7B.text({
+      ["BattleMenuHeader.Text#1"] = "COMBAT", ["BattleMenuHeader.Text#2"] = "EQUIPE",
+      ["BattleMenuHeader.Text#3"] = "SAC", ["BattleMenuHeader.Text#4"] = "FUITE",
+      ["ContestBattleMenuHeader.Text#3"] = "BALLS:  ", PsnString = "PSN-ROM" }) } },
   }, { __index = BattleState })
   T.same(state:menuLabels(), { "COMBAT", "EQUIPE", "SAC", "FUITE" },
-    "the four battle menu labels are looked up without changing action ids")
+    "the four battle menu labels come from BattleMenuHeader.Text in the cache")
   T.eq(state:statusTag({ status = "poison" }, "player"), "PSN-FR",
     "a label-only registry patch controls the HUD without a second lookup")
   T.eq(state:statusTag({ status = "custom" }, "player"), "CUSTOM",
@@ -180,18 +202,24 @@ do
   state.contest = true
   state.save = { bugContest = { balls = 7 } }
   T.eq(state:menuLabels()[3], "BALLS:07",
-    "the contest ball label and count use a harvested format template")
+    "PrintParkBallsRemaining writes the count over the cache label's last two tiles")
 
+  state.game.data.gen2Statuses = nil
+  T.eq(state:statusTag({ status = "poison" }, "player"), "PSN-ROM",
+    "with no registry the HUD tag is the cache's PsnString")
   state.game = nil
-  T.eq(state:statusTag({ status = "poison" }, "player"), "PSN-CATALOGUE",
-    "only the built-in no-dataset fallback uses the strings catalog")
+  T.check(not pcall(state.statusTag, state, { status = "poison" }, "player"),
+    "and with no dataset at all it is an error, not the strings catalog")
   T.eq(state:statusTag({ status = "confuse" }, "player"), nil,
     "built-in confusion remains a substatus and never gets a HUD tag")
 end
 
 do
-  local state = setmetatable({}, { __index = BattleState })
-  state:refuseSwitch(false, "%s is already out.", "PIKA")
+  local state = setmetatable({ game = { data = { text = S7B.text({
+    BattleText_MonIsAlreadyOut = "{STRBUF} SORT DEJA.{PROMPT}",
+    BattleText_TheresNoWillToBattle = "AUCUNE VOLONTE!{PROMPT}" }) } } },
+    { __index = BattleState })
+  state:refuseSwitch(false, "BattleText_MonIsAlreadyOut", "PIKA")
   T.eq(state.message, "PIKA SORT DEJA.",
     "refuseSwitch translates and formats its source exactly once")
   state:refuseShift()
@@ -234,6 +262,8 @@ do
   GbcPalette.setBgp = function() return nil end
 
   local state = setmetatable({
+    game = { data = { text = S7B.text({ ["YesNoMenuHeader.MenuData#1"] = "OUI",
+      ["YesNoMenuHeader.MenuData#2"] = "NON" }) } },
     battle = { player = {}, enemy = {} },
     phase = "ask-nickname", messageTimer = 0, nicknameIndex = 1,
     palettes = { battleText = {
@@ -247,7 +277,7 @@ do
   local seen = {}
   for _, text in ipairs(drawn) do seen[text] = true end
   T.check(seen.OUI and seen.NON,
-    "battle YES/NO choices are translated at draw time")
+    "battle YES/NO choices are YesNoMenuHeader's cache strings")
 end
 
 Strings.load({})

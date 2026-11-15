@@ -118,16 +118,25 @@ do
 end
 
 do
-  eq(BattleState.battleStartText("RATTATA", nil), "Wild RATTATA appeared!",
+  local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
+  local gold = { text = S7B.text() }
+  local crystal = { text = S7B.text(nil, "crystal") }
+  eq(BattleState.battleStartText(gold, "RATTATA", nil), "Wild RATTATA\nappeared!",
     "WildPokemonAppearedText is the default arm")
-  eq(BattleState.battleStartText("MAGIKARP", Battle.BATTLETYPE_FISH),
-    "The hooked MAGIKARP attacked!", "HookedPokemonAttackedText for a rod")
-  eq(BattleState.battleStartText("HERACROSS", Battle.BATTLETYPE_TREE),
-    "HERACROSS fell out of the tree!", "PokemonFellFromTreeText for a headbutt")
-  eq(BattleState.battleStartText("CELEBI", Battle.BATTLETYPE_CELEBI),
-    "Wild CELEBI appeared!", "WildCelebiAppearedText reads the same")
-  eq(BattleState.battleStartText("MAGIKARP", "fish"),
-    "The hooked MAGIKARP attacked!", "the string form folds onto the byte")
+  eq(BattleState.battleStartText(gold, "MAGIKARP", Battle.BATTLETYPE_FISH),
+    "The hooked\nMAGIKARP\vattacked!", "HookedPokemonAttackedText for a rod")
+  eq(BattleState.battleStartText(gold, "HERACROSS", Battle.BATTLETYPE_TREE),
+    "HERACROSS fell\nout of the tree!", "PokemonFellFromTreeText for a headbutt")
+  eq(BattleState.battleStartText(crystal, "CELEBI", Battle.BATTLETYPE_CELEBI),
+    "Wild CELEBI\nappeared!", "WildCelebiAppearedText reads the same")
+  eq(BattleState.battleStartText(gold, "MAGIKARP", "fish"),
+    "The hooked\nMAGIKARP\vattacked!", "the string form folds onto the byte")
+  eq(BattleState.battleStartText({ text = S7B.text({
+    WildPokemonAppearedText = "Un {STRBUF}\nsauvage!{PROMPT}" }) }, "RATTATA", nil),
+    "Un RATTATA\nsauvage!", "the line is the cache's, not a Lua literal")
+  check(not pcall(BattleState.battleStartText,
+    { text = S7B.without("WildPokemonAppearedText") }, "RATTATA", nil),
+    "a cache without WildPokemonAppearedText is an error")
 end
 
 do

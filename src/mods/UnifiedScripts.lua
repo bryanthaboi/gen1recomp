@@ -715,7 +715,7 @@ function UnifiedScripts.new(env)
     local function show(value, subs, ask, opts)
       if generation == 1 then
         local Commands = req("src.script.Commands")
-        return ownUI(ask and Commands.ask or Commands.show_text, ctx, value, subs, opts)
+        return ownUI(ask and Commands.ask or Commands.show_text, ctx, Commands.modText(value), subs, opts)
       end
       local body = text(value, subs)
       local cry, cryWait, sound, engage = ctx.pendingCry, ctx.pendingCryWait,
@@ -1369,6 +1369,9 @@ function UnifiedScripts.new(env)
       runner.pc, runner.script = index, rows
       runner.co = coroutine.create(function()
         if generation == 1 and not ARITY[row[1]] and not plans[index].custom then
+          if row[1] == "save_end_battle_text" and type(row[2]) == "string" then
+            return runner:exec({ { row[1], req("src.script.Commands").modText(row[2]), unpack(row, 3, #row) } }, ctx)
+          end
           return runner:exec({ row }, ctx)
         end
         local function invoke(hctx, _, args)

@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 love = love or require("tests.love_stub")
 
 local T = require("tests.modkit")
@@ -13,7 +14,7 @@ local DATA = {
       levelMoves = {}, evolutions = {} },
   },
   moves = {}, items = {}, type_chart = { types = {}, matchups = {} },
-  text = { _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}" },
+  text = require("tests.gen2_capture_text_fixture")(),
 }
 
 local function newState(opts)
@@ -103,7 +104,7 @@ do
   T.eq(queued(state, "ask-nickname"), 0, "SPIKE: no nickname question is queued")
   T.eq(enemy.nickname, nil, "SPIKE: the mon keeps its species name while the caught text is queued")
   local gotcha = indexOf(state, function(e)
-    return e.kind == "message" and e.text:find("Gotcha! RATTATA was caught!", 1, true) ~= nil
+    return e.kind == "message" and e.text:find("Gotcha! RATTATA\nwas caught!", 1, true) ~= nil
   end)
   local naming = indexOf(state, function(e) return e.kind == "set-nickname" end)
   T.check(gotcha ~= nil, "SPIKE: the Gotcha line names RATTATA")

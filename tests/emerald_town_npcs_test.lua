@@ -20,6 +20,10 @@ for _, r in ipairs(roots) do
   end
 end
 if not ROOT then
+  local dir = require("tests.game3_cache").gameDir("emerald", "rse/misc/manifest.lua")
+  ROOT = dir and dir .. "/"
+end
+if not ROOT then
   print("SKIP emerald_town_npcs_test: no Emerald cache with rse/misc (set POKEPORT_IDENTITY to a current import)")
   os.exit(0)
 end

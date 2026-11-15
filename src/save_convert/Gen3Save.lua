@@ -558,13 +558,13 @@ local function build(L)
     return b:str()
   end
 
-  local function readItems(s, off, count, key)
+  local function readItems(s, off, count, key, all)
     local out = {}
     for i = 0, count - 1 do
       local id = u16(s, off + i * L.ITEM_SLOT_SIZE)
       local q = u16(s, off + i * L.ITEM_SLOT_SIZE + 2)
       if key then q = bxor(q, key % 65536) % 65536 end
-      if id ~= 0 then out[#out + 1] = { id = id, qty = q } end
+      if all or id ~= 0 then out[#out + 1] = { id = id, qty = q } end
     end
     return out
   end
@@ -790,9 +790,12 @@ local function build(L)
       out.party[#out.party + 1] = Gen3Save.decodePartyMon(sb1:sub(o + 1, o + L.PARTY_MON_SIZE))
     end
     out.pcItems = readItems(sb1, L.PC_ITEMS.off, L.PC_ITEMS.count, nil)
-    out.pockets = {}
+    out.pockets, out.pocketSlots = {}, {}
     -- src/load_save.c:286
-    for _, p in ipairs(L.POCKETS) do out.pockets[p.key] = readItems(sb1, p.off, p.count, key) end
+    for _, p in ipairs(L.POCKETS) do
+      out.pockets[p.key] = readItems(sb1, p.off, p.count, key)
+      out.pocketSlots[p.key] = readItems(sb1, p.off, p.count, key, true)
+    end
     local OE, E = L.OBJECT_EVENTS, L.OBJECT_EVENT
     for i = 0, OE.count - 1 do
       local o = OE.off + i * OE.size
@@ -1765,6 +1768,86 @@ local function build(L)
     return out
   end
 
+  local function slotCounts(list, into, sign)
+    for _, it in ipairs(list or {}) do
+      if it.id ~= 0 and it.qty > 0 then
+        local k = it.id * 65536 + it.qty
+        into[k] = (into[k] or 0) + sign
+      end
+    end
+    return into
+  end
+
+  local function balanced(counts)
+    for _, n in pairs(counts) do
+      if n ~= 0 then return false end
+    end
+    return true
+  end
+
+  local function containerItems(game)
+    if not game then return {} end
+    local C = require("src.core.game3.constants").of(game)
+    local bag = require("src.core.game3.profile").of(game).bag
+    local out = {}
+    for pocket, row in pairs(type(bag) == "table" and bag.containers or {}) do out[pocket] = C:require("items", row.item) end
+    return out
+  end
+
+  local function sortedPockets(game)
+    if not game then return {} end
+    local bag = require("src.core.game3.profile").of(game).bag
+    local out = {}
+    if type(bag) ~= "table" then return out end
+    for pocket in pairs(bag.sortHmsFirst or {}) do out[pocket] = true end
+    for pocket in pairs(bag.sortById or {}) do out[pocket] = true end
+    return out
+  end
+
+  local function filledSlots(list)
+    local out = {}
+    for _, it in ipairs(list or {}) do
+      if it.id ~= 0 and it.qty > 0 then out[#out + 1] = it end
+    end
+    return out
+  end
+
+  local function sameSlots(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+      if a[i].id ~= b[i].id or a[i].qty ~= b[i].qty then return false end
+    end
+    return true
+  end
+
+  local function keepCartPockets(c, orig, game)
+    local sorted, same = sortedPockets(game), {}
+    for _, p in ipairs(L.POCKETS) do
+      if sorted[p.key] then
+        same[p.key] = balanced(slotCounts(orig.pockets[p.key], slotCounts(c.pockets[p.key], {}, 1), -1))
+      else
+        same[p.key] = sameSlots(filledSlots(c.pockets[p.key]), filledSlots(orig.pockets[p.key]))
+      end
+    end
+    if c.pockets.KEY_ITEMS and not same.KEY_ITEMS then
+      -- src/item.c:233
+      local granted = {}
+      for pocket, item in pairs(containerItems(game)) do
+        local held = false
+        for _, it in ipairs(orig.pockets.KEY_ITEMS) do held = held or it.id == item end
+        if same[pocket] and #(orig.pockets[pocket] or {}) > 0 and not held then granted[item] = true end
+      end
+      local keys = {}
+      for _, it in ipairs(filledSlots(c.pockets.KEY_ITEMS)) do
+        if granted[it.id] and it.qty == 1 then granted[it.id] = nil else keys[#keys + 1] = it end
+      end
+      same.KEY_ITEMS = sameSlots(keys, filledSlots(orig.pockets.KEY_ITEMS))
+    end
+    for _, p in ipairs(L.POCKETS) do
+      if same[p.key] and orig.pocketSlots then c.pockets[p.key] = orig.pocketSlots[p.key] end
+    end
+  end
+
   local function cartBoxName(name, b)
     if name == nil or name == string.format("BOX %d", b) then return L.DEFAULT_BOX_NAME:format(b) end
     return trunc(name, L.BOX_NAME_LENGTH)
@@ -1954,7 +2037,10 @@ local function build(L)
     c.dynamicWarp = Gen3Save.cartWarp(save.dynamicWarp) or L.EMPTY_WARP
     c.escapeWarp = Gen3Save.cartWarp(save.escapeWarp) or L.EMPTY_WARP
     local ci = type(save.modData) == "table" and type(save.modData.cartImport) == "table" and save.modData.cartImport or {}
-    local heal = Gen3Save.cartWarp(ci.lastHealLocation) or (opts.healWarp and opts.healWarp(save.healMap, tonumber(save.healX), tonumber(save.healY)))
+    local heal = Gen3Save.cartWarp(ci.lastHealLocation)
+    if not heal and opts.healWarp and (save.healMap ~= nil or not orig) then
+      heal = opts.healWarp(save.healMap, tonumber(save.healX), tonumber(save.healY))
+    end
     if heal then
       c.lastHealLocation = heal
     elseif not blocks then
@@ -1994,6 +2080,7 @@ local function build(L)
     local pockets = type(save.bag) == "table" and type(save.bag.pockets) == "table" and save.bag.pockets or {}
     c.pockets = {}
     for _, p in ipairs(L.POCKETS) do c.pockets[p.key] = itemList(pockets[p.key], p.count, ctx) end
+    if orig then keepCartPockets(c, orig, opts.version or L.GAME) end
 
     local T = flagTables()
     local flags = {}

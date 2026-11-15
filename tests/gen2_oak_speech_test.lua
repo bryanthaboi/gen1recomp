@@ -16,18 +16,37 @@ do
     stack = { push = function() end, pop = function() end, top = function() end },
     input = { wasPressed = function() return false end },
   }
-  local speech = OakSpeech.new(stub, { data = { text = {
+  local PICS = { playerPic = "assets/generated/intro/cal.png",
+    shrink1 = "assets/generated/intro/shrink1.png",
+    shrink2 = "assets/generated/intro/shrink2.png",
+    oakPic = "assets/generated/intro/oak.png",
+    marillPic = "assets/generated/battle/front/marill.png",
+    demoSpecies = "MARILL", music = "Music_Route30" }
+  local function speechData(text)
+    local out = { text = text }
+    for key, value in pairs(PICS) do out[key] = value end
+    return out
+  end
+  for key in pairs(PICS) do
+    local partial = speechData({})
+    partial[key] = nil
+    check(not pcall(OakSpeech.new, stub, { data = partial }),
+      "an oak_speech.lua without " .. key .. " is an error")
+  end
+  local speech = OakSpeech.new(stub, { data = speechData({
     _OakText7 = "{PLAYER}, are you\nready?\fI'll be seeing you\nlater!{DONE}",
-  } } })
+  }) })
+  check(not pcall(speech.text, speech, "_OakText1"),
+    "a missing _OakText is an error, not a transcription")
   local lines = speech:lastPageLines("_OakText7")
   eq(#lines, 2, "the shrink page keeps its two rows")
   eq(lines[1], "I'll be seeing you", "row one of the shrink page")
   eq(lines[2], "later!", "DoneText leaves no glyph on row two")
   check(not table.concat(lines, "|"):find("DONE", 1, true),
     "the {DONE} terminator never reaches Font.draw")
-  local prompt = OakSpeech.new(stub, { data = { text = {
+  local prompt = OakSpeech.new(stub, { data = speechData({
     _OakText7 = "See you!{PROMPT}",
-  } } })
+  }) })
   eq(prompt:lastPageLines("_OakText7")[1], "See you!",
     "nor does {PROMPT}")
 end

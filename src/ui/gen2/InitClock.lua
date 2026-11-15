@@ -25,36 +25,36 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local Clock = require("src.core.gen2.Clock")
+local CommonText = require("src.core.gen2.CommonText")
 local GbcPalette = require("src.render.GbcPalette")
 local IntroFade = require("src.ui.gen2.IntroFade")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 local Typer = require("src.ui.gen2.Typer")
 
 local InitClock = {}
 InitClock.__index = InitClock
 InitClock.isOpaque = true
 
--- data/text/common_1.asm.  None of these are extracted: PrintText reaches them
--- from engine code, so no script pointer walks them and the extractor never
--- sees them.
+-- data/text/common_1.asm:96-154
 local TEXT = {
-  wokeUp = Strings.source(
-    "Zzz... Hm? Wha...?\nYou woke me up!"
-    .. "\fWill you check the\nclock for me?"),
-  whatTime = Strings.source("What time is it?"),
-  whatHours = Strings.source("What?\n%s?"),
-  howManyMinutes = Strings.source("How many minutes?"),
-  whoaMinutes = Strings.source("Whoa!\n%d min.?"),
-  -- OakText_ResponseToSetTime prints the time it has just been given and then
-  -- picks its line off the hour: NITE and before MORN_HOUR is "So dark...",
-  -- through DAY_HOUR is "I overslept!", and the rest of the day is "Yikes!".
-  soDark = Strings.source("%s!\nIt's so dark!"),
-  overslept = Strings.source("%s!\nI overslept!"),
-  yikes = Strings.source("%s!\nYikes! I over-\nslept!"),
-  whatDay = Strings.source("What day is it?"),
-  confirmDay = Strings.source("%s, is that right?"),
+  wokeUp = "_OakTimeWokeUpText",
+  whatTime = "_OakTimeWhatTimeIsItText",
+  whatHours = "_OakTimeWhatHoursText",
+  hoursQuestion = "_OakTimeHoursQuestionMarkText",
+  howManyMinutes = "_OakTimeHowManyMinutesText",
+  whoaMinutes = "_OakTimeWhoaMinutesText",
+  minutesQuestion = "_OakTimeMinutesQuestionMarkText",
+  soDark = "_OakTimeSoDarkText",
+  overslept = "_OakTimeOversleptText",
+  yikes = "_OakTimeYikesText",
+  whatDay = "_OakTimeWhatDayIsItText",
+  isIt = "_OakTimeIsItText",
 }
 InitClock.TEXT = TEXT
+
+local function rom(data, key)
+  return (CommonText.plain(RomText(data, TEXT[key] or key)):gsub("\v", "\n"))
+end
 
 -- constants/misc_constants.asm:37-39.  DAY_HOUR is 10, not 9: it read 9 here,
 -- which moved Oak's line an hour early -- 10 o'clock answered "Yikes! I
@@ -77,13 +77,6 @@ function InitClock:palette()
   return InitClock.PALETTE
 end
 
--- Clock.DAY_NAMES / Clock.weekdayName is the single translated home for this
--- table: MainMenu's clock box and the Pokegear's clock card read the same
--- weekday off the same save and must never disagree about what it is
--- called.
-local DAYS = Clock.DAY_NAMES
-InitClock.DAYS = DAYS
-
 -- ../pokecrystal/engine/rtc/timeset.asm:385
 function InitClock:wantsFillScale() return self.mode ~= "day" end
 function InitClock:drawsWidescreen() return self.mode ~= "day" end
@@ -103,23 +96,25 @@ function InitClock:drawsWidescreen() return self.mode ~= "day" end
 -- below DAY_HOUR, DAY below NITE_HOUR, NITE after) off the real constants.
 -- One source for it means the clock Oak reads out cannot disagree with the
 -- palette the world is lit by.
-function InitClock.hourString(hour)
+function InitClock.hourString(hour, data)
   local h = math.floor(hour or 0) % 24
   local display = h % 12
   if display == 0 then display = 12 end
-  -- Clock.daytimeLabel, not Palettes.clockDaytime: the printed word,
-  -- translated -- this string reaches the player as-is, unlike the internal
-  -- MORN/DAY/NITE key other palette code compares against.
-  local word = Clock.daytimeLabel(h)
-  return ("%s %d"):format(word, display)
+  return ("%s %d"):format(Clock.daytimeLabel(h, data), display)
 end
 
-function InitClock.oclockString(hour)
-  return Strings("%s o'clock", InitClock.hourString(hour))
+-- engine/rtc/timeset.asm:183 DisplayHourOClock
+function InitClock.oclockString(hour, data)
+  return InitClock.hourString(hour, data) .. " " .. RomText(data, "String_oclock")
 end
 
-function InitClock.timeString(hour, minute)
-  return ("%s:%02d"):format(InitClock.hourString(hour),
+-- engine/rtc/timeset.asm:271 DisplayMinutesWithMinString
+function InitClock.minutesString(minute, data)
+  return tostring(math.floor(minute or 0) % 60) .. " " .. RomText(data, "String_min")
+end
+
+function InitClock.timeString(hour, minute, data)
+  return ("%s:%02d"):format(InitClock.hourString(hour, data),
     math.floor(minute or 0) % 60)
 end
 
@@ -235,36 +230,44 @@ function InitClock:step(delta)
 end
 
 -- The line printed above the picker.
+function InitClock:romData()
+  return self.game and self.game.data
+end
+
 function InitClock:question()
-  if self.phase == "intro" then return Strings(TEXT.wokeUp) end
-  if self.phase == "hour" then return Strings(TEXT.whatTime) end
-  if self.phase == "minute" then return Strings(TEXT.howManyMinutes) end
-  if self.phase == "day" then return Strings(TEXT.whatDay) end
+  local data = self:romData()
+  if self.phase == "intro" then return rom(data, "wokeUp") end
+  if self.phase == "hour" then return rom(data, "whatTime") end
+  if self.phase == "minute" then return rom(data, "howManyMinutes") end
+  if self.phase == "day" then return rom(data, "whatDay") end
+  -- engine/rtc/timeset.asm:300 OakTimeWhatHoursText
   if self.phase == "confirm-hour" then
-    return Strings(TEXT.whatHours, InitClock.oclockString(self.hour))
+    return rom(data, "whatHours") .. "\n"
+      .. InitClock.oclockString(self.hour, data) .. rom(data, "hoursQuestion")
   end
+  -- engine/rtc/timeset.asm:320 OakTimeWhoaMinutesText
   if self.phase == "confirm-minute" then
-    return Strings(TEXT.whoaMinutes, self.minute)
+    return rom(data, "whoaMinutes") .. "\n"
+      .. InitClock.minutesString(self.minute, data) .. rom(data, "minutesQuestion")
   end
+  -- engine/rtc/timeset.asm:526 .ConfirmWeekdayText
   if self.phase == "confirm-day" then
-    return Strings(TEXT.confirmDay, Clock.weekdayName(self.day + 1) or "?")
+    return Clock.setDayName(self.day + 1, data) .. rom(data, "isIt")
   end
+  -- engine/rtc/timeset.asm:333 OakText_ResponseToSetTime
   if self.phase == "response" then
-    return Strings(TEXT[InitClock.responseKey(self.hour)],
-      InitClock.timeString(self.hour, self.minute))
+    return InitClock.timeString(self.hour, self.minute, data)
+      .. rom(data, InitClock.responseKey(self.hour))
   end
   return ""
 end
 
--- data/text/common_1.asm's "@MIN." suffix (DisplayMinutesWithMinString),
--- separate from TEXT.whoaMinutes' own "%d min.?" confirmation line above.
-local MINUTES = Strings.source("%d min.")
-
 -- The value the picker box shows, or nil while a page is up with no picker.
 function InitClock:display()
-  if self.phase == "hour" then return InitClock.oclockString(self.hour) end
-  if self.phase == "minute" then return Strings(MINUTES, self.minute) end
-  if self.phase == "day" then return Clock.weekdayName(self.day + 1) or "?" end
+  local data = self:romData()
+  if self.phase == "hour" then return InitClock.oclockString(self.hour, data) end
+  if self.phase == "minute" then return InitClock.minutesString(self.minute, data) end
+  if self.phase == "day" then return Clock.setDayName(self.day + 1, data) end
   return nil
 end
 
@@ -439,8 +442,8 @@ function InitClock:drawPanel()
   if self:confirming() then
     -- ../pokecrystal/home/menu.asm:418
     Chrome.paletteBox(14, 7, 6, 5, palette)
-    Chrome.printThrough(Strings("YES"), 16, 8, palette)
-    Chrome.printThrough(Strings("NO"), 16, 10, palette)
+    Chrome.printThrough(RomText(self:romData(), "YesNoMenuHeader.MenuData#1"), 16, 8, palette)
+    Chrome.printThrough(RomText(self:romData(), "YesNoMenuHeader.MenuData#2"), 16, 10, palette)
     Chrome.cursorThrough(15, self.yesNo == 1 and 8 or 10, palette)
   end
 end

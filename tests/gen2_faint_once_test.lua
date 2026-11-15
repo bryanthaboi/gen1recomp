@@ -33,6 +33,7 @@ local function stub(party)
   local st = {
     said = {},
     happiness = 0,
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_a").text() },
   }
   st.player = party[1]
   st.party = party

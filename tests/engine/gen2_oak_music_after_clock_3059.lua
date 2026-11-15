@@ -32,6 +32,7 @@ local function newGame(crystal)
     tokens = require("src.render.TextBox").TOKENS,
     gen2Sprites = crystal
       and { [FieldMoves.STATE_SPRITE_FEMALE.normal] = 1 } or nil,
+    text = require("tests.fixture_data.gen2_rom_text_s7_c").text(nil, crystal and "crystal" or nil),
   }
   game.stack = {
     states = {},
@@ -60,7 +61,8 @@ end
 do
   reset()
   local game = newGame(false)
-  local speech = OakSpeech.new(game, { data = { music = "Music_Route30" } })
+  local speech = OakSpeech.new(game, { data = require("tests.fixtures.gen2_oak_speech")
+    .data({ music = "Music_Route30" }) })
   speech.autoConfirm = true
   speech:enter()
   eq(pushed[1] and pushed[1].id, "Gen2InitClock",
@@ -75,7 +77,8 @@ end
 do
   reset()
   local game = newGame(true)
-  local speech = OakSpeech.new(game, { data = { music = "Music_Route30" } })
+  local speech = OakSpeech.new(game, { data = require("tests.fixtures.gen2_oak_speech")
+    .data({ music = "Music_Route30" }) })
   speech.autoConfirm = true
   speech:enter()
   eq(pushed[1] and pushed[1].id, "Gen2GenderSelect",
@@ -94,7 +97,8 @@ end
 do
   reset()
   local game = newGame(false)
-  local speech = OakSpeech.new(game, { data = { music = "Music_Route30" } })
+  local speech = OakSpeech.new(game, { data = require("tests.fixtures.gen2_oak_speech")
+    .data({ music = "Music_Route30" }) })
   speech.autoConfirm = true
   local base = OakSpeech.buildSteps
   speech.buildSteps = function(self)

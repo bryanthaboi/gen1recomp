@@ -19,7 +19,7 @@ return {
       for _, c in ipairs(BIKE_DISPLAYS) do
         if c[1] == fx and c[2] == fy then
           game.stack:push(TextBox.new(game,
-            (game.data.text or {})._NewBicycleText or "A shiny new\nBICYCLE!"))
+            game.data.text._NewBicycleText))
           return true
         end
       end

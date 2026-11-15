@@ -234,7 +234,7 @@ end
 function BattleItems.canUseOn(st, itemId, partySlot, mon, moveSlot)
   local session = st and st.session
   if not mon or not itemId then return false, wont_have_effect() end
-  if mon.isEgg then return false, Strings("An EGG can't be used on.") end
+  if mon.isEgg then return false end
   if ItemUse.modEffect(itemId) then return true end
   if (ItemsData.toNumericId(itemId) or tonumber(itemId)) == 175 and require("src.core.game3.rs.enigma").matches(session) then
     if ItemUse.fieldUseKind(itemId, session, true) == "none" then return false, wont_have_effect() end
@@ -445,7 +445,9 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
 
   if BattleItems.isEscapeItem(itemId) then
     if not st.wild then
-      say(Strings("This can't be used right now."))
+      -- pokefirered/src/item_use.c:830
+      -- pokeemerald/src/item_use.c:1048
+      say(ItemUse.notTheTimeText(session))
       return "error", msgs, false, false
     end
     Bag.remove(bag, itemId, 1)
@@ -626,7 +628,8 @@ function BattleItems.use(st, adapter, bag, session, itemId, partySlot, battlerId
     return "heal", msgs, true, false, ItemUse.medicineText(mon, hpBefore, cured)
   end
 
-  say(Strings("This can't be used right now."))
+  -- pokeemerald/src/item_use.c:1123
+  say(ItemUse.notTheTimeText(session))
   return "error", msgs, false, false
 end
 

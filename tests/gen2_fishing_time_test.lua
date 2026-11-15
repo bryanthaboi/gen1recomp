@@ -22,6 +22,7 @@ end
 
 local function fakeData()
   return {
+    text = require("tests.fixture_data.gen2_rom_text_s7_g").text(),
     pokemon = {
       MAGIKARP = mon("MAGIKARP"),
       KRABBY = mon("KRABBY"),

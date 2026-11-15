@@ -36,7 +36,7 @@ local function buildItems(game)
   end
   -- the $ff terminator's row: CANCEL is selectable and exits like B
   -- (home/list_menu.asm:105-110, 523-528) #1685
-  items[#items + 1] = { cancel = true, label = Strings("CANCEL") }
+  items[#items + 1] = { cancel = true, label = romText(game.data, "CancelTextString", nil) }
   return items
 end
 
@@ -185,7 +185,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     -- (#513).  The gate sits ahead of UseItem, before ItemUseBicycle ever
     -- runs, which is why it precedes the mount/dismount here.
     if game.save.forcedBike then
-      showMessages(game, { Strings("You can't get off\nhere.") })
+      showMessages(game, { romText(game.data, "_CannotGetOffHereText", nil) })
       return
     end
     local ow = game.overworld
@@ -220,7 +220,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
     else
       -- NoCyclingAllowedHere -> ItemUseFailed zeroes the result byte and
       -- .useItem_closeMenu loops back (item_effects.asm:2305-2319)
-      showMessages(game, { Strings("No cycling\nallowed here.") })
+      showMessages(game, { romText(game.data, "_NoCyclingAllowedHereText", nil) })
     end
     return
   end
@@ -239,8 +239,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
 
   if result == "ball" then
     if not battle then
-      showMessages(game, { Strings("OAK: %s!\nThis isn't the\ntime to use that!",
-                              game.save.player.name) })
+      showMessages(game, { romText(game.data, "_ItemUseNotTimeText", nil, game.save.player.name) })
       return
     end
     consume(game, id, list)
@@ -263,7 +262,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
         table.insert(target.moves, { id = moveId, pp = mdef.pp })
         -- LearnedMove1Text: text_far, sound_get_item_1, text_promptbutton
         -- (learn_move.asm), so the jingle rides the box
-        showMessages(game, { Strings("%s learned\n%s!", target.nickname or
+        showMessages(game, { romText(game.data, "_LearnedMove1Text", nil, target.nickname or
           game.data.pokemon[target.species].name, mdef.name) }, closePicker,
           TextBox.soundOpts(game, "Get_Item1"))
         if result == "learn" then consume(game, id, list) end
@@ -373,9 +372,7 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
       -- departure helper -- the same path Dig/Teleport take from the party menu
       ow:beginTeleportOut()
     else
-      showMessages(game, { Strings(
-        "OAK: %s!\nThis isn't the\ntime to use that!",
-        game.save.player.name) })
+      showMessages(game, { romText(game.data, "_ItemUseNotTimeText", nil, game.save.player.name) })
     end
     return
   end
@@ -476,7 +473,8 @@ local function vanillaUseOn(game, battle, id, target, list, moveIndex, picker)
               require("src.world.PikachuFollower")
                 .onMoveLearned(game.save, target, moveId)
               local name = target.nickname or def.name
-              showMessages(game, { Strings("%s learned\n%s!", name, mdef.name) },
+              -- engine/pokemon/learn_move.asm:93
+              showMessages(game, { romText(game.data, "_LearnedMove1Text", nil, name, mdef.name) },
                            nextStep, TextBox.soundOpts(game, "Get_Item1"))
             else
               require("src.ui.Screens").push(game, "MoveLearnMenu",
@@ -595,10 +593,8 @@ local function pickTargetAndUse(game, battle, id, list)
       end
       -- engine/items/item_effects.asm:1973
       local prompt = (id == "PP_UP")
-        and romText(game.data, "_RaisePPWhichTechniqueText",
-                    "Raise PP of which\ntechnique?")
-        or romText(game.data, "_RestorePPWhichTechniqueText",
-                   "Restore PP of\nwhich technique?")
+        and romText(game.data, "_RaisePPWhichTechniqueText", nil)
+        or romText(game.data, "_RestorePPWhichTechniqueText", nil)
       require("src.ui.Screens").push(game, "MoveSelectMenu", mon, prompt,
         function(moveIndex)
           useOn(game, battle, id, mon, list, moveIndex, picker)
@@ -635,12 +631,11 @@ local function useItem(game, battle, id, list)
       local moveDef = game.data.moves[def.machine.move]
       local moveName = moveDef and moveDef.name or def.machine.move
       local booted = def.machine.kind == "HM"
-        and romText(game.data, "_BootedUpHMText", "Booted up an HM!")
-        or romText(game.data, "_BootedUpTMText", "Booted up a TM!")
+        and romText(game.data, "_BootedUpHMText", nil)
+        or romText(game.data, "_BootedUpTMText", nil)
       -- engine/items/item_effects.asm:2177 (#1686)
       showMessages(game, { booted,
-        romText(game.data, "_TeachMachineMoveText",
-          "It contained\n%s!\fTeach %s\nto a POKéMON?", moveName, moveName) },
+        romText(game.data, "_TeachMachineMoveText", nil, moveName, moveName) },
         nil, { choice = function(yes)
           if yes then pickTargetAndUse(game, battle, id, list) end
         end })
@@ -752,10 +747,8 @@ function BagMenu.new(game, opts)
             end
             -- KeyItemFlags + HMs decide tossability (not price:
             -- MOON STONE is price 0 but tossable)
-            local t = game.data.text or {}
             if not def or def.keyItem or id:find("^HM_") then
-              showMessages(game, { t._TooImportantToTossText
-                or Strings("That's too impor-\ntant to toss!") },
+              showMessages(game, { romText(game.data, "_TooImportantToTossText", nil) },
                 function() itemMenuLoop(1) end)
               return
             end
@@ -768,8 +761,7 @@ function BagMenu.new(game, opts)
                 local name = def and def.name or id
                 -- engine/items/item_effects.asm:2564-2591
                 game.stack:push(TextBox.new(game,
-                  (t._IsItOKToTossItemText or Strings("Is it OK to toss\n%s?", name))
-                    :gsub("{RAM:wStringBuffer}", name), nil,
+                  romText(game.data, "_IsItOKToTossItemText", nil, name), nil,
                   { stay = { prompt = true, onShown = function()
                     local ChoiceBox = require("src.ui.ChoiceBox")
                     game.stack:push(ChoiceBox.new(game, function(yes)
@@ -777,8 +769,7 @@ function BagMenu.new(game, opts)
                       if not yes then itemMenuLoop(2) return end
                       Bag.remove(game.save, id, qty, game.data, item.slot)
                       showMessages(game, {
-                        ((t._ThrewAwayItemText or Strings("Threw away\n%s.", name))
-                          :gsub("{RAM:wNameBuffer}", name)) },
+                        romText(game.data, "_ThrewAwayItemText", nil, name) },
                         function() itemMenuLoop(2) end)
                     end, { anchor = "bottom" }))
                   end } }))

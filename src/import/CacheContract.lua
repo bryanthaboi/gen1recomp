@@ -9,8 +9,8 @@ local GameVersion = require("src.core.GameVersion")
 local CacheContract = {}
 
 -- engine/battle/animations.asm:2418, engine/battle/core.asm:2051
--- engine/movie/title.asm:97
-CacheContract.FORMAT = "rom-cache-v15-gen1:"
+-- engine/movie/title.asm:97, engine/events/hidden_events/school_blackboard.asm:70
+CacheContract.FORMAT = "rom-cache-v17-gen1:"
 CacheContract.VERSION_FORMAT = {
   -- v11: Gen 2 maps carry their object list's ROM address, which a .sav
   -- export re-anchoring a save onto another map writes back into
@@ -20,17 +20,19 @@ CacheContract.VERSION_FORMAT = {
   -- data/items/catch_rate_items.asm:5
   -- data/battle/accuracy_multipliers.asm:4, data/moves/effects_pointers.asm:1
   -- data/maps/flypoints.asm:1
-  -- engine/gfx/cgb_layouts.asm:117
-  gold = "rom-cache-v19:",
-  silver = "rom-cache-v19:",
-  crystal = "rom-cache-v19-crystal8:",
+  -- engine/gfx/cgb_layouts.asm:117, data/events/magikarp_lengths.asm:1
+  gold = "rom-cache-v20:",
+  silver = "rom-cache-v20:",
+  -- data/events/odd_eggs.asm:37, engine/events/poke_seer.asm:357
+  crystal = "rom-cache-v20-crystal9:",
   -- engine/overworld/map_sprites.asm:181, engine/battle/animations.asm:2600
   -- data/pikachu/pikachu_pic_animation.asm:340, engine/movie/title.asm:76
   -- engine/pikachu/pikachu_pic_animation.asm:412, engine/battle/core.asm:2135-2138
   -- engine/battle/read_trainer_party.asm:87
   -- engine/events/diploma2.asm:6
   -- engine/events/hidden_events/vermilion_gym_trash2.asm:70
-  yellow = "rom-cache-v12-yellow7:",
+  -- engine/events/hidden_events/school_blackboard.asm:69
+  yellow = "rom-cache-v12-yellow9:",
   -- v8: M4A tracks retain reachable patterns and explicit entry offsets.
   firered = "rom-cache-v25-firered:",
   leafgreen = "rom-cache-v10-leafgreen:",
@@ -161,6 +163,23 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/marts.lua",
     -- engine/gfx/cgb_layouts.asm:495
     "data/generated/diploma.lua",
+    -- data/events/magikarp_lengths.asm:1
+    "data/generated/events.lua",
+    "data/generated/palettes.lua",
+    "data/generated/trainers.lua",
+    "data/generated/pokedex.lua",
+    "data/generated/menu_gfx.lua",
+    "data/generated/font.lua",
+    "data/generated/credits.lua",
+    "data/generated/trade.lua",
+    "data/generated/icons.lua",
+    "data/generated/encounters.lua",
+    "data/generated/initial_events.lua",
+    "data/generated/field.lua",
+    "assets/generated/intro/shrink1.png",
+    "assets/generated/intro/shrink2.png",
+    "assets/generated/splash/star.png",
+    "assets/generated/splash/sparkle.png",
     "assets/generated/fonts/font.png",
     "assets/generated/fonts/frames.png",
     "assets/generated/title/pokemon_logo.png",
@@ -201,6 +220,18 @@ CacheContract.VERSION_REQUIRED_FILES_OVERRIDE = {
     "data/generated/text.lua",
     "data/generated/rom_text.lua",
     "data/generated/events.lua",
+    "data/generated/palettes.lua",
+    "data/generated/trainers.lua",
+    "data/generated/pokedex.lua",
+    "data/generated/menu_gfx.lua",
+    "data/generated/font.lua",
+    "data/generated/credits.lua",
+    "data/generated/trade.lua",
+    "data/generated/icons.lua",
+    "data/generated/initial_events.lua",
+    "data/generated/field.lua",
+    "assets/generated/intro/shrink1.png",
+    "assets/generated/intro/shrink2.png",
     "data/generated/pokemon.lua",
     "data/generated/moves.lua",
     "data/generated/items.lua",
@@ -734,6 +765,13 @@ do
   for _, path in ipairs(require("src.import.gba.battle_anim_extract").FRLG_REQUIRED) do
     frlg[#frlg + 1] = "data/generated/gba/" .. path
   end
+  -- pokefirered/src/mail.c:141
+  frlg[#frlg + 1] = "data/generated/gba/mail/manifest.lua"
+  for d = 0, 11 do
+    for g = 0, 1 do
+      frlg[#frlg + 1] = string.format("data/generated/gba/mail/design_%02d_%d.rgba", d, g)
+    end
+  end
   -- src/trainer_card.c:155, :293
   local hoenn = "data/generated/gba/rse/trainer_card/"
   frlg[#frlg + 1] = hoenn .. "manifest.lua"
@@ -770,7 +808,7 @@ local SEMANTIC_MODULES = {
     "pokemon", "moves", "items", "type_chart", "audio", "font", "maps",
     "tilesets", "text", "rom_text", "trainers", "encounters", "sprites",
     "palettes", "icons", "battle_anims", "constants", "landmarks",
-    "menu_gfx",
+    "menu_gfx", "events",
   },
   [3] = { "maps", "intro", "audio" },
 }

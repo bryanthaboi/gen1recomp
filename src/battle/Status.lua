@@ -5,10 +5,13 @@
 -- and residual sweep.  Callers without a battle (pure-module tests) fall
 -- back to the vanilla records, which is bit-identical behavior.
 
-local Strings = require("src.core.Strings")
 local romText = require("src.core.RomText")
 
 local Status = {}
+
+local function romLine(data, label, ...)
+  return romText(data, label, nil, ...)
+end
 
 -- pokered's <USER>/<TARGET> text macros print "Enemy " before the enemy
 -- mon's nickname; these records only know the raw name -- BattleState
@@ -31,11 +34,7 @@ local function hasType(battler, wanted)
 end
 
 -- shared PSN/BRN residual: 1/16 max HP, multiplied (and advanced) by the
--- Toxic counter (HandlePoisonBurnLeechSeed).  The caller passes the whole
--- sentence rather than the noun: "hurt by poison" and "hurt by the burn"
--- decline differently once translated, so a shared fragment cannot be the
--- translatable unit.
-local function damageOverTime(label, template)
+local function damageOverTime(label)
   return function(battler, _, battle)
     local mon = battler.mon
     local base = math.max(1, math.floor(mon.stats.hp / 16))
@@ -45,7 +44,7 @@ local function damageOverTime(label, template)
       battler.toxicCounter = battler.toxicCounter + 1
     end
     mon.hp = math.max(0, mon.hp - dmg)
-    return { romText(battle and battle.data, label, template, name(battler)) }
+    return { romLine(battle and battle.data, label, name(battler)) }
   end
 end
 
@@ -77,17 +76,14 @@ Status.RECORDS = {
       if battler.sleepTurns <= 0 then
         battler.mon.status = nil
         -- wakes, loses the turn
-        return false, { romText(battle and battle.data, "_WokeUpText",
-          "%s\nwoke up!", name(battler)) }
+        return false, { romLine(battle and battle.data, "_WokeUpText", name(battler)) }
       end
-      return false, { romText(battle and battle.data, "_FastAsleepText",
-        "%s\nis fast asleep!", name(battler)) }, false, "sleep"
+      return false, { romLine(battle and battle.data, "_FastAsleepText", name(battler)) }, false, "sleep"
     end,
     onInflict = function(battle, target, opts, display)
       target.sleepTurns = battle.rng(1, 7)
       target.mon.sleepTurns = target.sleepTurns
-      return { romText(battle.data, "_FellAsleepText",
-        "%s\nfell asleep!", display) }
+      return { romLine(battle.data, "_FellAsleepText", display) }
     end,
   },
   FRZ = {
@@ -95,41 +91,34 @@ Status.RECORDS = {
     catchBonus = 25, shakeBonus = 10,
     beforeMovePriority = 30,
     beforeMove = function(battler, _, battle)
-      return false, { romText(battle and battle.data, "_IsFrozenText",
-        "%s\nis frozen solid!", name(battler)) }
+      return false, { romLine(battle and battle.data, "_IsFrozenText", name(battler)) }
     end,
     canInflict = function(target) return not hasType(target, "ICE") end,
     onInflict = function(battle, _, _, display)
-      return { romText(battle and battle.data, "_FrozenText",
-        "%s\nwas frozen solid!", display) }
+      return { romLine(battle and battle.data, "_FrozenText", display) }
     end,
   },
   PSN = {
     id = "PSN", label = "PSN",
     catchBonus = 12, shakeBonus = 5,
-    residual = damageOverTime("_HurtByPoisonText",
-      Strings.source("%s's\nhurt by poison!")),
+    residual = damageOverTime("_HurtByPoisonText"),
     canInflict = function(target) return not hasType(target, "POISON") end,
     onInflict = function(battle, target, opts, display)
       if opts.toxic then
         target.toxicCounter = 1
-        return { romText(battle and battle.data, "_BadlyPoisonedText",
-          "%s's\nbadly poisoned!", display) }
+        return { romLine(battle and battle.data, "_BadlyPoisonedText", display) }
       end
-      return { romText(battle and battle.data, "_PoisonedText",
-        "%s\nwas poisoned!", display) }
+      return { romLine(battle and battle.data, "_PoisonedText", display) }
     end,
   },
   BRN = {
     id = "BRN", label = "BRN",
     catchBonus = 12, shakeBonus = 5,
     statPenalty = { stat = "attack", div = 2 },
-    residual = damageOverTime("_HurtByBurnText",
-      Strings.source("%s's\nhurt by the burn!")),
+    residual = damageOverTime("_HurtByBurnText"),
     canInflict = function(target) return not hasType(target, "FIRE") end,
     onInflict = function(battle, _, _, display)
-      return { romText(battle and battle.data, "_BurnedText",
-        "%s\nwas burned!", display) }
+      return { romLine(battle and battle.data, "_BurnedText", display) }
     end,
   },
   PAR = {
@@ -140,8 +129,7 @@ Status.RECORDS = {
     beforeMove = function(battler, rng, battle)
       -- cp 25 percent / jr nc: fully paralyzed on rand < 63 (63/256)
       if rng(0, 255) < 63 then
-        return false, { romText(battle and battle.data, "_FullyParalyzedText",
-          "%s's\nfully paralyzed!", name(battler)) }
+        return false, { romLine(battle and battle.data, "_FullyParalyzedText", name(battler)) }
       end
       return true, {}
     end,
@@ -151,8 +139,7 @@ Status.RECORDS = {
     end,
     onInflict = function(battle, _, _, display)
       -- primary and secondary paralysis share this line
-      return { romText(battle and battle.data, "_ParalyzedMayNotAttackText",
-        "%s's\nparalyzed! It may\nnot attack!", display) }
+      return { romLine(battle and battle.data, "_ParalyzedMayNotAttackText", display) }
     end,
   },
 }
@@ -371,8 +358,7 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
   end
   if battler.flinched then
     battler.flinched = false
-    return false, { romText(battle and battle.data, "_FlinchedText",
-      "%s\nflinched!", name(battler)) }
+    return false, { romLine(battle and battle.data, "_FlinchedText", name(battler)) }
   end
   local record = Status.recordFor(battleStatuses(battle), mon.status)
   local handler = record and record.beforeMove
@@ -406,27 +392,23 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
   end
   if battler.boundTurns and battler.boundTurns > 0 then
     battler.boundTurns = battler.boundTurns - 1
-    msgs[#msgs + 1] = romText(battle and battle.data, "_CantMoveText",
-      "%s\ncan't move!", name(battler))
+    msgs[#msgs + 1] = romLine(battle and battle.data, "_CantMoveText", name(battler))
     return false, msgs, nil, onomatopoeiaKind, onomatopoeiaIndex
   end
   if battler.disabledTurns then
     battler.disabledTurns = battler.disabledTurns - 1
     if battler.disabledTurns <= 0 then
       battler.disabledTurns, battler.disabledSlot = nil, nil
-      table.insert(msgs, romText(battle and battle.data, "_DisabledNoMoreText",
-        "%s's\ndisabled no more!", name(battler)))
+      table.insert(msgs, romLine(battle and battle.data, "_DisabledNoMoreText", name(battler)))
     end
   end
   if battler.confusedTurns then
     battler.confusedTurns = battler.confusedTurns - 1
     if battler.confusedTurns <= 0 then
       battler.confusedTurns = nil
-      table.insert(msgs, romText(battle and battle.data, "_ConfusedNoMoreText",
-        "%s\nsnapped out of\nconfusion!", name(battler)))
+      table.insert(msgs, romLine(battle and battle.data, "_ConfusedNoMoreText", name(battler)))
     else
-      table.insert(msgs, romText(battle and battle.data, "_IsConfusedText",
-        "%s\nis confused!", name(battler)))
+      table.insert(msgs, romLine(battle and battle.data, "_IsConfusedText", name(battler)))
       onomatopoeiaKind, onomatopoeiaIndex = "confused", #msgs
       -- cp 50 percent + 1 / jr c: hurt itself on rand >= 128 (128/256)
       if rng(0, 255) < 128 then
@@ -451,8 +433,7 @@ function Status.beforeMove(battler, rng, battle, selectedMoveId)
       local moves = battle and battle.data and battle.data.moves
       local shown = moves and moves[selectedMoveId] and moves[selectedMoveId].name
                     or tostring(selectedMoveId)
-      table.insert(msgs, romText(battle and battle.data, "_MoveIsDisabledText",
-        "%s's\n%s is\ndisabled!", {
+      table.insert(msgs, romLine(battle and battle.data, "_MoveIsDisabledText", {
           USER = name(battler), ["RAM:wNameBuffer"] = shown,
         }))
       return false, msgs, nil, onomatopoeiaKind, onomatopoeiaIndex
@@ -509,8 +490,7 @@ function Status.residualSeed(battler, opponent, battle)
     dmg = math.min(dmg, mon.hp)
     mon.hp = mon.hp - dmg
     opponent.mon.hp = math.min(opponent.mon.stats.hp, opponent.mon.hp + dmg)
-    table.insert(msgs, romText(battle and battle.data, "_HurtByLeechSeedText",
-      "LEECH SEED saps\n%s!", name(battler)))
+    table.insert(msgs, romLine(battle and battle.data, "_HurtByLeechSeedText", name(battler)))
   end
   return msgs
 end

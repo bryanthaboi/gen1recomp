@@ -76,7 +76,7 @@ local function emeraldRoot()
   end
   return nil
 end
-local cacheRoot = emeraldRoot()
+local cacheRoot = emeraldRoot() or require("tests.game3_cache").root("emerald", "rse/frontier/manifest.lua")
 local hasCache = cacheRoot ~= nil
 if hasCache then
   require("src.core.game3.dataset").cacheRootOverride = cacheRoot

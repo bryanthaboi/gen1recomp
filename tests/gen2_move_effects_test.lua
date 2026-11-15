@@ -145,7 +145,8 @@ local POKEMON = {
 local DATA = {
   pokemon = POKEMON,
   moves = MOVES,
-  text = require("tests.gen2_battle_text_fixture")(), type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
+  text = require("tests.fixture_data.gen2_rom_text_s7_g").text(nil, require("tests.gen2_battle_text_fixture")()),
+  type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
   items = {},
 }
 
@@ -190,13 +191,13 @@ do
   eq(wild.volatile.confuseCount, 3,
     "FinishConfusingTarget: `and %11` plus two turns")
   eq(wild.status, nil, "SUBSTATUS_CONFUSED never touches the status byte")
-  check(findText(battle:takeEvents(), "Enemy MACHOP became confused!"),
+  check(findText(battle:takeEvents(), battle:romText("BecameConfusedText", player, wild)),
     "BecameConfusedText")
 
   -- A second ray answers AlreadyConfusedText and changes nothing.
   battle:useMove(player, wild, "CONFUSE_RAY")
   eq(wild.volatile.confuseCount, 3, "no re-roll on a repeat")
-  check(findText(battle:takeEvents(), "Enemy MACHOP's already confused!"),
+  check(findText(battle:takeEvents(), battle:romText("AlreadyConfusedText", player, wild)),
     "AlreadyConfusedText")
 
   -- The 50 percent self-hit: canAct decrements, then a byte under 128 hurts.
@@ -246,8 +247,8 @@ do
   battle:useMove(player, wild, "CURSE")
   eq(battle.stages.player.speed, speedBefore,
     "with Attack and Defense capped, nothing moves at all")
-  check(findText(battle:takeEvents(),
-    "MACHOP's ATTACK won't rise anymore!"), "WontRiseAnymoreText")
+  check(findText(battle:takeEvents(), battle:romText("WontRiseAnymoreText", player,
+    wild, DATA.text["StatNames#8"])), "WontRiseAnymoreText names ABILITY")
 end
 
 -- ---- Curse, Ghost arm -----------------------------------------------------
@@ -380,7 +381,7 @@ do
   local before = wild.hp
   battle:useMove(player, wild, "TACKLE")
   eq(wild.hp, before, "Tackle still cannot reach a dug-in target")
-  check(findText(battle:takeEvents(), "MACHOP's attack missed!"),
+  check(findText(battle:takeEvents(), battle:romText("AttackMissedText", player)),
     ".DigMoves: a checkhit chain misses")
 end
 
@@ -459,7 +460,7 @@ do
   battle, player, wild = newBattle({ random = rolls({}, 128) })
   battle:useMove(wild, player, "REFLECT")
   eq(battle.screens.enemy.reflect, 5, "BattleCommand_Screen: five turns")
-  check(findText(battle:takeEvents(), "Enemy MACHOP's DEFENSE rose!"),
+  check(findText(battle:takeEvents(), battle:romText("ReflectEffectText", wild)),
     "ReflectEffectText")
   local screened = wild.hp
   battle:useMove(player, wild, "TACKLE")
@@ -506,7 +507,8 @@ do
     random = rolls({ 0 }, 0) })
   battle:useMove(player, wild, "LEECH_SEED")
   eq(wild.volatile.leechSeed, true, "SUBSTATUS_LEECH_SEED on the target")
-  check(findText(battle:takeEvents(), "Enemy MACHOP was seeded!"), "WasSeededText")
+  check(findText(battle:takeEvents(), battle:romText("WasSeededText", player, wild)),
+    "WasSeededText")
 
   -- ResidualDamage: an eighth crosses to the other active mon.
   player.hp = 10
@@ -515,12 +517,12 @@ do
   local drained = seededBefore - wild.hp
   eq(drained, math.floor(wild.maxHp / 8), "an eighth of max HP drains")
   eq(player.hp, 10 + drained, "and lands on the seeder's side")
-  check(findText(battle:takeEvents(), "LEECH SEED saps Enemy MACHOP!"),
+  check(findText(battle:takeEvents(), battle:romText("LeechSeedSapsText", wild)),
     "LeechSeedSapsText")
 
   -- A second seed "evaded"; a Grass target is immune outright.
   battle:useMove(player, wild, "LEECH_SEED")
-  check(findText(battle:takeEvents(), "Enemy MACHOP evaded the attack!"),
+  check(findText(battle:takeEvents(), battle:romText("EvadedText", player, wild)),
     "a seeded target evades the repeat")
   local battle2, player2, tangela = newBattle({ wildSpecies = "TANGELA",
     playerMoves = { { id = "LEECH_SEED", pp = 10, maxPp = 10 } },
@@ -564,7 +566,7 @@ do
   eq(wild.volatile.wrapCount, 4,
     "BattleCommand_TrapTarget: `and %11` plus three")
   eq(wild.volatile.wrapMove, "WRAP", "the trapping move is remembered")
-  check(findText(battle:takeEvents(), "Enemy MACHOP was WRAPPED by MACHOP!"),
+  check(findText(battle:takeEvents(), battle:romText("WrappedByText", player, wild)),
     "WrappedByText")
 
   -- HandleWrap: decrement first, then a sixteenth -- and release at zero.
@@ -578,7 +580,8 @@ do
   battle:takeEvents()
   battle:tickWrap(wild)
   eq(wild.volatile.wrapCount, nil, "the last tick releases")
-  check(findText(battle:takeEvents(), "Enemy MACHOP was released from WRAP!"),
+  check(findText(battle:takeEvents(), battle:romText(
+    "BattleText_UserWasReleasedFromStringBuffer1", wild, wild, "WRAP")),
     "UserWasReleasedFromStringBuffer1")
 
   -- No re-trap while one is running.
@@ -678,8 +681,8 @@ do
   battle:volatile(wild).lastMove = "TACKLE"
   battle:useMove(player, wild, "SPITE")
   eq(wild.moves[1].pp, 30, "a roll of 3 takes five PP")
-  check(findText(battle:takeEvents(), "Enemy MACHOP's TACKLE was reduced by 5!"),
-    "SpiteEffectText names the move and the figure")
+  check(findText(battle:takeEvents(), battle:romText("SpiteEffectText", player, wild,
+    "TACKLE", 5)), "SpiteEffectText names the move and the figure")
 
   -- The clamp: never more than the slot still holds.
   battle, player, wild = newBattle({
@@ -695,7 +698,7 @@ do
     playerMoves = { { id = "SPITE", pp = 10, maxPp = 10 } },
     random = rolls({ 0 }, 0) })
   battle:useMove(player, wild, "SPITE")
-  check(findText(battle:takeEvents(), "It didn't affect Enemy MACHOP!"),
+  check(findText(battle:takeEvents(), battle:romText("DidntAffect1Text", player, wild)),
     "a target that has not moved yet cannot be spited")
   eq(wild.moves[1].pp, 35, "and nothing was taken")
 end
@@ -710,7 +713,7 @@ do
   player.hp = math.max(1, player.hp - 20)
   local before, healthBefore = wild.hp, player.hp
   battle:useMove(player, wild, "DREAM_EATER")
-  check(findText(battle:takeEvents(), "MACHOP's attack missed!"),
+  check(findText(battle:takeEvents(), battle:romText("AttackMissedText", player)),
     "AttackMissedText: .Miss, not ButItFailedText")
   eq(wild.hp, before, "no damage against a target that is awake")
   eq(player.hp, healthBefore, "and nothing was sapped")
@@ -948,7 +951,7 @@ do
   check(dealt > 5, "STRUGGLE swings its 50 power, not chip damage")
   eq(mine - player.hp, math.max(1, math.floor(dealt / 4)),
     "and the user takes a quarter of what it dealt")
-  check(findText(battle:takeEvents(), "MACHOP is hit with recoil!"),
+  check(findText(battle:takeEvents(), battle:romText("RecoilText", player)),
     "RecoilText")
 end
 
@@ -970,7 +973,7 @@ do
   eq(player.hp, before, "the trainer never moved")
   eq(battle.over, false, "and the battle is still running")
   eq(battle.runRefused, true, "the refusal is what stopped the round")
-  check(findText(events, "No! There's no running from a trainer battle!"),
+  check(findText(events, battle:romText("BattleText_TheresNoEscapeFromTrainerBattle")),
     "NoRunningText")
 end
 

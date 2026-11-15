@@ -3,8 +3,19 @@ local PcAnim = {}
 
 PcAnim.task = nil
 
-PcAnim.METATILE_OFF = { [0] = 0x062, [1] = 0x28F, [2] = 0x28F } -- pokefirered/include/constants/metatile_labels.h:5
-PcAnim.METATILE_ON = { [0] = 0x063, [1] = 0x28A, [2] = 0x28A } -- pokefirered/include/constants/metatile_labels.h:74
+-- pokefirered/src/field_specials.c:265
+local PC_LABELS = {
+  [0] = { off = "METATILE_Building_PCOff", on = "METATILE_Building_PCOn" },
+  [1] = { off = "METATILE_GenericBuilding1_PlayersPCOff", on = "METATILE_GenericBuilding1_PlayersPCOn" },
+  [2] = { off = "METATILE_GenericBuilding1_PlayersPCOff", on = "METATILE_GenericBuilding1_PlayersPCOn" },
+}
+PcAnim.PC_LABELS = PC_LABELS
+
+function PcAnim.metatile(var, on)
+  local row = PC_LABELS[var]
+  if not row then return nil end
+  return require("src.core.game3.constants").active():require("metatile_labels", on and row.on or row.off)
+end
 
 local function var8004(ctx)
   local Flags = require("src.core.game3.scripting.flags")
@@ -29,25 +40,12 @@ function PcAnim.setter(fn)
   PcAnim._set = fn
 end
 
-function PcAnim.drawable(mid)
-  local Map = package.loaded["src.core.game3.map"]
-  local def = Map and Map.currentDef and Map.currentDef()
-  local pair = def and (def.pair or (def.midLayout and def.midLayout.pair))
-  local okN, NativeTileset = pcall(require, "src.core.game3.tileset_native")
-  if not (pair and okN and NativeTileset and NativeTileset.ready and NativeTileset.ready(pair)) then
-    return true
-  end
-  local ts = NativeTileset.get(pair)
-  return not (ts and ts.midToSlot) or ts.midToSlot[mid] ~= nil
-end
-
 local function set_mid(mid)
   local x, y = target()
   if PcAnim._set then
     PcAnim._set(x, y, mid, true)
     return
   end
-  if not PcAnim.drawable(mid) then return end
   local Field = require("src.core.game3.field")
   Field.setMetatile(x, y, mid, true)
 end
@@ -63,13 +61,12 @@ function PcAnim.update()
   if t.timer >= 6 then
     local var = var8004(t.ctx)
     local flickerOff = (t.state % 2) == 1
-    local offTile = PcAnim.METATILE_OFF[var]
-    local onTile = PcAnim.METATILE_ON[var]
-    if not offTile or not onTile then
+    local mid = PcAnim.metatile(var, not flickerOff)
+    if not mid then
       PcAnim.task = nil
       return
     end
-    set_mid(flickerOff and offTile or onTile)
+    set_mid(mid)
     t.timer = 0
     t.state = t.state + 1
     if t.state >= 5 then
@@ -85,7 +82,7 @@ function PcAnim.turnOff(ctx)
   local t = PcAnim.task
   local effectiveCtx = ctx or (t and t.ctx)
   PcAnim.task = nil
-  set_mid(PcAnim.METATILE_OFF[var8004(effectiveCtx)] or 0)
+  set_mid(PcAnim.metatile(var8004(effectiveCtx), false) or 0)
 end
 
 function PcAnim.reset()

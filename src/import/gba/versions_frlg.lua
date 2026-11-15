@@ -43,7 +43,7 @@ Versions.ROM_SIZE = 16777216
 -- v115: LeafGreen profiles, edition-specific title assets and Deoxys stats.
 -- v121: chrome/fonts/japanese_{normal,small}_* and japanese_widths.lua, the
 --       cart's Japanese fonts, for text a Japanese translation mod prints.
-Versions.CACHE_VERSION = 142
+Versions.CACHE_VERSION = 143
 Versions.NATIVE_VERSION = 6
 Versions.OW_VERSION = 3
 Versions.ANIM_VERSION = 1
@@ -1809,6 +1809,12 @@ Versions.FAME_FLAVOR_TEXT_PTRS = 0x45F6BC
 Versions.FAME_ORIGIN_LOCATION_PTRS = 0x45F89C
 Versions.FAME_ORIGIN_OBJECT_PTRS = 0x45FA1C
 Versions.FAME_NONTRAINER_NAME_PTRS = { 0x41E5E9, 0x41E5ED, 0x41E5F3, 0x41E5F8 }
+-- src/mail.c:136
+Versions.MAIL_GENDER_PALS = 0x3EE9C0
+-- src/mail.c:141
+Versions.MAIL_GFX_HEADERS = 0x3EE9C8
+-- src/mail.c:341
+Versions.MAIL_LAYOUTS_5X2 = 0x3EEB68
 Versions.FAME_PERSON_COUNT = 16
 Versions.FAME_FLAVOR_TEXT_COUNT = 6
 

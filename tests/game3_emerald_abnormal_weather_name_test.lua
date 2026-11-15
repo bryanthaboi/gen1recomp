@@ -1,25 +1,8 @@
 #!/usr/bin/env luajit
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
-local function emeraldRoot()
-  local home, identity = os.getenv("HOME"), os.getenv("POKEPORT_IDENTITY")
-  if not (home and identity and identity ~= "") then return nil end
-  for _, base in ipairs({ home .. "/Library/Application Support/LOVE", home .. "/.local/share/love" }) do
-    local root = base .. "/" .. identity .. "/emerald/"
-    local f = io.open(root .. "data/generated/gba/rse/region_map/manifest.lua", "rb")
-    if f then
-      f:close()
-      return root
-    end
-  end
-  return nil
-end
-
-local ROOT = emeraldRoot()
-if not ROOT then
-  print("[skip] no emerald cache under POKEPORT_IDENTITY")
-  os.exit(0)
-end
+local GBA_ROOT = require("tests.game3_cache").rootOrSkip("game3_emerald_abnormal_weather_name_test", "emerald", "rse/region_map/manifest.lua")
+local ROOT = GBA_ROOT:gsub("data/generated/gba$", "")
 
 local function readFile(rel)
   local f = io.open(ROOT .. rel, "rb")

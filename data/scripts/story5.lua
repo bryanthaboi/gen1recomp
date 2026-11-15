@@ -25,28 +25,28 @@ local function gift(opts)
     local t = text(game)
     local itemName = game.data.items[opts.item].name
     local subs = { ram = itemName, player = game.save.player.name }
-    local function say(label, fallback, cb, sopts)
-      push(game, fill(t[label] or fallback, subs), cb, sopts)
+    local function say(label, cb, sopts)
+      push(game, fill(t[label], subs), cb, sopts)
     end
     if game.save.flags[opts.flag] then
-      say(opts.already or opts.explain, "It's a useful\nitem, isn't it?", done)
+      say(opts.already or opts.explain, done)
       return
     end
     if opts.setFlagFirst then game.save.flags[opts.flag] = true end
     local function give()
       if not require("src.inventory.Bag").add(game.save, opts.item, 1) then
-        say(opts.noRoom, "You have no room\nfor this item!", done)
+        say(opts.noRoom, done)
         return
       end
       game.save.flags[opts.flag] = true
       local idef = game.data.items[opts.item]
       -- the received texts carry sound_get_item_1 / sound_get_key_item, so
       -- the jingle only fires once that box has typed out
-      say(opts.received, "{PLAYER} received\n{RAM:}!", done,
+      say(opts.received, done,
         require("src.render.TextBox").soundOpts(game, opts.sound
           or ((idef and idef.keyItem) and "Get_Key_Item" or "Get_Item1")))
     end
-    if opts.pre then say(opts.pre, opts.preFallback or "", give) else give() end
+    if opts.pre then say(opts.pre, give) else give() end
   end
 end
 
@@ -115,20 +115,12 @@ M.CINNABAR_LAB_METRONOME_ROOM = {
   },
 }
 
--- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher).  The fisher's
--- YouCanHaveThisText prints before GiveItem, so this gift needs a pre
--- text (#775).  Like the SilphCo2F worker (#393) that label carries no
--- leading underscore; tools/extract/text.py now collects it regardless,
--- so preFallback below is just the safety net for a catalog without it.
+-- scripts/ViridianCity.asm:234
 M.VIRIDIAN_CITY = {
   talk = {
     TEXT_VIRIDIANCITY_FISHER = gift({
       flag = "EVENT_GOT_TM42", item = "TM_DREAM_EATER",
       pre = "ViridianCityFisherYouCanHaveThisText",
-      preFallback = "Yawn!\nI must have dozed\voff in the sun."
-        .. "\fI had this dream\nabout a DROWZEE\veating my dream."
-        .. "\vWhat's this?\vWhere did this TM\vcome from?"
-        .. "\fThis is spooky!\nHere, you can\vhave this TM.",
       received = "_ViridianCityFisherReceivedTM42Text",
       sound = "Get_Item2", -- scripts/ViridianCity.asm:263
       explain = "_ViridianCityFisherTM42ExplanationText",
@@ -142,11 +134,8 @@ M.SILPH_CO_2F = {
   talk = {
     TEXT_SILPHCO2F_SILPH_WORKER_F = gift({
       flag = "EVENT_GOT_TM36", item = "TM_SELFDESTRUCT",
-      -- the label carries no leading underscore (#393); collected like any
-      -- other text/*.asm label now, preFallback is just the safety net
+      -- scripts/SilphCo2F.asm:115
       pre = "SilphCo2FSilphWorkerFPleaseTakeThisText",
-      preFallback = "Eeek!\nNo! Stop! Help!\fOh, you're not\nwith TEAM ROCKET."
-        .. "\vI thought...\vI'm sorry. Here,\vplease take this!",
       received = "_SilphCo2FSilphWorkerFReceivedTM36Text",
       explain = "_SilphCo2FSilphWorkerFTM36ExplanationText",
       noRoom = "_SilphCo2FSilphWorkerFTM36NoRoomText",
@@ -232,7 +221,7 @@ local function stepGate(opts)
   return function(game, ow, x, y)
     if not inCoords(opts.coords, x, y) then return false end
     if not opts.blocked(game) then return false end
-    push(game, text(game)[opts.text] or opts.fallback, function()
+    push(game, text(game)[opts.text], function()
       ow.player.facing = opts.push
       if not ow:checkLedgeHop(opts.push) then
         ow:scriptMove(ow.player, opts.push, 1, nil, { collide = true })
@@ -257,7 +246,6 @@ local viridianGymLock = stepGate({
     return false
   end,
   text = "_ViridianCityGymLockedText",
-  fallback = "The GYM's doors\nare locked...",
   push = "down",
 })
 
@@ -275,7 +263,6 @@ M.CINNABAR_ISLAND = {
     coords = { { 18, 4 } },
     blocked = function(game) return not game.save.inventory.SECRET_KEY end,
     text = "_CinnabarIslandDoorIsLockedText",
-    fallback = "The door is\nlocked...",
     push = "down",
   }),
   -- CinnabarIsland_Script line 6: ResetEvent EVENT_LAB_STILL_REVIVING_
@@ -388,7 +375,6 @@ local function pewterGymEscort(game, ow)
   local Music = require("src.core.Music")
   local t = text(game)
   local follow = t._PewterCityYoungsterYoureATrainerFollowMeText
-    or "You're a trainer\nright? BROCK's\nlooking for new\nchallengers!\nFollow me!"
   -- PewterGuys only has entries for five tiles; an unmatched talk tile
   -- (e.g. (36,16) east of him) just gets the follow-me line, same as a
   -- failed coords lookup would refuse to arm the walk.
@@ -446,8 +432,7 @@ local function pewterGymEscort(game, ow)
   local function afterWalk()
     if guy then guy.stepFrames, guy.facing = nil, "left" end
     Music.playMap(game.data, "PEWTER_CITY")
-    push(game, t._PewterCityYoungsterGoTakeOnBrockText
-      or "Go take on BROCK\nat the GYM first!", walkHome)
+    push(game, t._PewterCityYoungsterGoTakeOnBrockText, walkHome)
   end
 
   local function lockstep()
@@ -834,7 +819,7 @@ M.PEWTER_POKECENTER = {
       -- also what suppresses the blinking arrow and the A dismissal
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        text(game)._PewterPokecenterJigglypuffText or "JIGGLYPUFF: Puu\npupuu!",
+        text(game)._PewterPokecenterJigglypuffText,
         done, { auto = jigglypuffDance(game, npc, ow) }))
     end,
   },
@@ -860,9 +845,9 @@ local function bikeGateGuard(coords, stopText, explainText)
     local dist = y - closestY
     local t = text(game)
     -- scripts/Route16Gate1F.asm:16-80
-    push(game, t[stopText] or "Hey! Wait up!", function()
+    push(game, t[stopText], function()
       local function explain()
-        push(game, t[explainText] or "You need a\nBICYCLE for\nCYCLING ROAD!", function()
+        push(game, t[explainText], function()
           ow:scriptMove(ow.player, "right", 1, nil, { collide = true })
         end)
       end

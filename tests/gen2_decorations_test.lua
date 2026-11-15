@@ -11,8 +11,15 @@ local check, eq = S.check, S.eq
 
 local Decorations = require("src.core.gen2.Decorations")
 local Events = require("src.world.gen2.Events")
-local Strings = require("src.core.Strings")
 local Vm = require("src.script.gen2.Vm")
+
+local TEXT = require("tests.fixture_data.gen2_rom_text_s7_g").text()
+Decorations.useRegistry({ text = TEXT })
+local function rom(label, ...)
+  local args, i = { ... }, 0
+  local body = TEXT[label]:gsub("{STRBUF}", function() i = i + 1 return args[i] end)
+  return (body:gsub("{PROMPT}", ""):gsub("{DONE}", ""))
+end
 
 -- constants/deco_constants.asm, the handful this file names.
 local BEDS, DECO_FEATHERY_BED, DECO_PINK_BED = 1, 2, 3
@@ -30,10 +37,10 @@ do
   local rows = 0
   for _ in pairs(Decorations.ATTRIBUTES) do rows = rows + 1 end
   eq(rows, 53, "DecorationAttributes is 53 rows, row 0 included")
-  eq(Decorations.ATTRIBUTES[0].name, "CANCEL", "row 0 is CANCEL")
+  eq(Decorations.name(0), TEXT["DecorationNames#1"], "row 0 is CANCEL")
   check(Decorations.ATTRIBUTES[0].action == nil,
     "and DecoAction_nothing, so it does nothing at all")
-  eq(Decorations.ATTRIBUTES[BEDS].name, "PUT IT AWAY",
+  eq(Decorations.name(BEDS), TEXT["DecorationNames#2"],
     "the category row is the PUT IT AWAY one")
   eq(Decorations.ATTRIBUTES[BEDS].action, "PUT_AWAY_BED",
     "and it puts away that category's slot")
@@ -54,15 +61,20 @@ do
   eq(Decorations.name(DECO_GOLD_TROPHY_DOLL), "GOLD TROPHY",
     "and so is the trophy")
 
-  -- The kind is a translated format template, not an English suffix welded
-  -- to the registry's base name.  A language may therefore put it first.
-  Strings.load({ strings = { ["%s BED"] = "BED <%s>",
-    ["BIG %s"] = "%s GIANT" } })
-  eq(Decorations.name(DECO_FEATHERY_BED), "BED <FEATHERY>",
-    "a translated bed template controls grammatical order")
-  eq(Decorations.name(DECO_BIG_SNORLAX_DOLL), "SNORLAX GIANT",
-    "and the big-doll template can move its modifier")
-  Strings.load(nil)
+  local respelled = {}
+  for label, body in pairs(TEXT) do respelled[label] = body end
+  respelled["DecorationNames#19"] = "COZY"
+  respelled["DecorationNames#14"] = " FUTON"
+  respelled["DecorationNames#18"] = "HUGE "
+  Decorations.useRegistry({ text = respelled })
+  eq(Decorations.name(DECO_FEATHERY_BED), "COZY FUTON",
+    "GetDecoName reads the colour and the kind out of DecorationNames")
+  eq(Decorations.name(DECO_BIG_SNORLAX_DOLL), "HUGE SNORLAX",
+    "and the BIG_ prefix too")
+  Decorations.useRegistry({ text = {} })
+  check(not pcall(Decorations.name, DECO_FEATHERY_BED),
+    "a dataset without DecorationNames is an error")
+  Decorations.useRegistry({ text = TEXT })
 end
 
 -- ---- owning ---------------------------------------------------------------
@@ -97,7 +109,7 @@ do
   Decorations.give(events, DECO_PIKACHU_DOLL)
   local cats = Decorations.ownedCategories(events)
   eq(#cats, 1, "one doll shows one category")
-  eq(cats[1].label, "ORNAMENT", "and it is the ornament menu")
+  eq(cats[1].id, DOLLS, "and it is the ornament menu")
 
   local rows = Decorations.rows(events, cats[1])
   eq(#rows, 3, "the list is the doll, PUT IT AWAY and CANCEL")
@@ -108,7 +120,7 @@ do
   -- The trophies live in the ornament list, past the twenty-one dolls.
   local trophies = Events.new()
   Decorations.give(trophies, DECO_GOLD_TROPHY_DOLL)
-  eq(Decorations.ownedCategories(trophies)[1].label, "ORNAMENT",
+  eq(Decorations.ownedCategories(trophies)[1].id, DOLLS,
     "a trophy is an ornament")
 end
 
@@ -118,29 +130,35 @@ do
   local changed, pages = Decorations.apply(state, DECO_FEATHERY_BED)
   check(changed, "setting up an empty slot changes the room")
   eq(state.bed, DECO_FEATHERY_BED, "and fills wDecoBed")
-  eq(pages[1], "Set up the\nFEATHERY BED.", "SetUpTheDecoText")
+  eq(pages[1], rom("_SetUpTheDecoText", "FEATHERY BED"), "SetUpTheDecoText")
 
   changed, pages = Decorations.apply(state, DECO_FEATHERY_BED)
   check(not changed, ".alreadythere writes nothing")
-  eq(pages[1], "That's already set\nup.", "AlreadySetUpText")
+  eq(pages[1], rom("_AlreadySetUpText"), "AlreadySetUpText")
 
   changed, pages = Decorations.apply(state, DECO_PINK_BED)
   check(changed, "a second bed replaces the first")
   eq(state.bed, DECO_PINK_BED, "the slot holds ONE thing")
   eq(#pages, 2, "PutAwayAndSetUpText is two pages")
-  eq(pages[1], "Put away the\nFEATHERY BED", "the old one is named first")
-  eq(pages[2], "and set up the\nPINK BED.", "then the new one")
+  eq(pages[1] .. "\f" .. pages[2],
+    rom("_PutAwayAndSetUpText", "FEATHERY BED", "PINK BED"),
+    "the old one is named first, then the new one")
 
   -- The PUT IT AWAY row, whose action is the category's put-away half.
   changed, pages = Decorations.apply(state, BEDS)
   check(changed, "putting a bed away changes the room too")
   eq(state.bed, 0, "and empties the slot")
-  eq(pages[1], "Put away the\nPINK BED.",
+  eq(pages[1], rom("_PutAwayTheDecoText", "PINK BED"),
     "the text names what WAS out, not the row that was picked")
 
   changed, pages = Decorations.apply(state, BEDS)
   check(not changed, "an empty slot has nothing to put away")
-  eq(pages[1], "There's nothing to\nput away.", "NothingToPutAwayText")
+  eq(pages[1], rom("_NothingToPutAwayText"), "NothingToPutAwayText")
+
+  Decorations.useRegistry({ text = {} })
+  check(not pcall(Decorations.apply, {}, DECO_FEATHERY_BED),
+    "a dataset without _SetUpTheDecoText is an error")
+  Decorations.useRegistry({ text = TEXT })
 end
 
 -- ---- the two ornament sides -----------------------------------------------

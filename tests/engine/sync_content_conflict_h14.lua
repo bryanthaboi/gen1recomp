@@ -147,13 +147,12 @@ local function produced(version)
   local oldFS, oldVersion = love.filesystem, Version.get()
   local Space, Dataset, Extract, oldBundle, oldOverride, oldRoot, oldNativeRoot
   if version == "emerald" then
-    local cacheRoot = os.getenv("POKEPORT_EMERALD_CACHE")
-    local file = cacheRoot and io.open(cacheRoot .. "/scripts/scripts.lua", "rb")
-    if not file then
-      print("[skip] H14 actual-produced Emerald controls: POKEPORT_EMERALD_CACHE requires an actual Emerald gba cache")
+    local Cache = require("tests.game3_cache")
+    local cacheRoot = Cache.root("emerald", "scripts/scripts.lua")
+    if not cacheRoot then
+      print("[skip] H14 actual-produced Emerald controls: " .. tostring(Cache.reason))
       return nil
     end
-    file:close()
     Space = require("src.core.game3.scripting.space")
     Dataset = require("src.core.game3.dataset")
     Extract = require("src.import.gba.extract_island1")

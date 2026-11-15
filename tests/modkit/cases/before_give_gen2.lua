@@ -7,7 +7,6 @@ local World = require("src.world.gen2.World")
 local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
 local Specials = require("src.script.gen2.Specials")
-local PrizeMenu = require("src.ui.gen2.PrizeMenu")
 local Breeding = require("src.core.gen2.Breeding")
 local UnifiedCallbacks = require("src.mods.UnifiedCallbacks")
 
@@ -26,6 +25,15 @@ local DATA = {
     SHUCKLE = species("SHUCKLE", 213), PICHU = species("PICHU", 172, 10), SPEAROW = species("SPEAROW", 21),
   },
   moves = { TACKLE = { id = "TACKLE", pp = 35 } }, items = {},
+  text = require("tests.fixture_data.gen2_rom_text_s7_f1").text(),
+  -- pokecrystal/data/events/odd_eggs.asm:10,37
+  gen2EventTables = { oddEggs = { ot = "ODD", rows = {
+    { probability = 0xffff, species = "PICHU", otId = 8, experience = 125, level = 5,
+      eggSteps = 20, hp = 0, nickname = "EGG",
+      moves = { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" }, pp = { 30, 20, 10 },
+      dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
+      stats = { hp = 17, attack = 9, defense = 6, speed = 11, specialAttack = 8, specialDefense = 8 } },
+  } } },
 }
 
 local function newSave(n)
@@ -140,6 +148,9 @@ local function runGive(nickname)
     ["s:eevee"] = { { op = "givepoke", species = 133, level = 20, item = 0, trainer = 0 }, { op = "end" } },
   }, {}, Events.new(), {
     givePoke = function(...) return world:givePoke(...) end,
+    specials = { data = function()
+      return { text = require("tests.fixtures.gen2_rom_text").text() }
+    end },
     showText = function(_, onDone) onDone() end,
     yesorno = function(onChoose) asked = asked + 1; onChoose(false) end,
   })
@@ -181,10 +192,8 @@ end
 do
   reset("PICHU")
   local save = newSave(1)
-  save.player.coins = 9999
-  local game = { data = DATA, save = save }
-  local result = PrizeMenu.buy(save, { kind = "mon" }, { id = "RATTATA", level = 15, cost = 100 }, DATA, nil, game)
-  T.eq(result, "ok", "prize mon: the purchase goes through")
+  local world, game = newWorld(save)
+  T.check(world:givePoke(19, 15, 0) ~= nil, "prize mon: the givepoke goes through")
   T.eq(last() and last().species, "RATTATA", "prize mon: the event fires with the prize")
   T.check(last() and last().ctx.game == game, "prize mon: ctx.game is the game")
   T.eq(save.party[2] and save.party[2].species, "PICHU", "prize mon: the species rewrite holds")

@@ -64,14 +64,14 @@ do
   mon.hp = 1 -- one poison tick (1 dmg by default) faints it
   game.save.poisonSteps = 3 -- (3+1) % 4 == 0: this step ticks poison
 
+  local saved = Data.text._PokemonFaintedText
   Data.text._PokemonFaintedText = "FAKE {RAM:wNameBuffer} FAKE!"
   fakeSelf:applyFieldPoison()
   T.eq(pushed[1] and pushed[1].text, "FAKE " .. (mon.nickname or "FIXMON A") .. " FAKE!",
     "a translated _PokemonFaintedText reaches the field-poison faint message")
-  Data.text._PokemonFaintedText = nil
+  Data.text._PokemonFaintedText = saved
 end
 
--- vanilla: no catalog entry, English literal
 do
   local game = mkGame()
   setUpvalue(OW.applyFieldPoison, "Game", game)
@@ -80,10 +80,12 @@ do
   mon.hp = 1
   game.save.poisonSteps = 3
 
-  fakeSelf:applyFieldPoison()
-  T.eq(pushed[1] and pushed[1].text,
-    (mon.nickname or "FIXMON A") .. "\nfainted!",
-    "no catalog entry falls back to the English fainted literal")
+  local saved = Data.text._PokemonFaintedText
+  Data.text._PokemonFaintedText = nil
+  local ok, err = pcall(fakeSelf.applyFieldPoison, fakeSelf)
+  Data.text._PokemonFaintedText = saved
+  T.check(not ok and tostring(err):find("_PokemonFaintedText is not in the cache", 1, true),
+    "a cache without _PokemonFaintedText is an error")
 end
 
 -- ---- useSoftboiledFieldMove: _ItemUseNoEffectText / _PotionText ----
@@ -94,12 +96,13 @@ do
   local target = Pokemon.new(Data, "FIXMON_B", 20)
   target.hp = target.stats.hp -- already full: no effect
 
+  local saved = Data.text._ItemUseNoEffectText
   Data.text._ItemUseNoEffectText = "FAKE-NOEFFECT!"
   local ok = fakeSelf:useSoftboiledFieldMove(user, target)
   T.check(ok == false, "a full-HP target reports no effect")
   T.eq(pushed[1] and pushed[1].text, "FAKE-NOEFFECT!",
     "a translated _ItemUseNoEffectText reaches the no-effect message")
-  Data.text._ItemUseNoEffectText = nil
+  Data.text._ItemUseNoEffectText = saved
 end
 
 do
@@ -109,19 +112,16 @@ do
   local target = Pokemon.new(Data, "FIXMON_B", 20)
   target.hp = target.stats.hp - 10 -- missing exactly 10 HP
 
+  local saved = Data.text._PotionText
   Data.text._PotionText = "FAKE {RAM:wNameBuffer} healed {NUM:wHPBarHPDifference, 2, 3}!"
   local ok = fakeSelf:useSoftboiledFieldMove(user, target)
   T.check(ok == true, "a damaged target heals successfully")
   T.eq(pushed[1] and pushed[1].text,
     "FAKE " .. (target.nickname or "FIXMON B") .. " healed 10!",
     "a translated _PotionText reaches the heal message, amount included")
-  Data.text._PotionText = nil
+  Data.text._PotionText = saved
 end
 
--- vanilla: no catalog entry, the fallback's single %s slot still fills
--- correctly (the amount is silently dropped by design, same as
--- ItemEffects.lua's own _PotionText fallback -- not a regression, this
--- matches the pre-fix literal's behavior exactly)
 do
   local game = mkGame()
   setUpvalue(OW.useSoftboiledFieldMove, "Game", game)
@@ -130,9 +130,8 @@ do
   target.hp = target.stats.hp - 10
   local ok = fakeSelf:useSoftboiledFieldMove(user, target)
   T.check(ok == true, "a damaged target heals successfully (vanilla)")
-  T.eq(pushed[1] and pushed[1].text,
-    (target.nickname or "FIXMON B") .. "'s HP\nwas restored!",
-    "no catalog entry falls back to the English literal (no amount shown)")
+  T.eq(pushed[1] and pushed[1].text, (target.nickname or "FIXMON B") .. "\nrecovered by "
+    .. math.floor(user.stats.hp / 5) .. "!{DONE}", "the cart's _PotionText carries the recovered amount")
 end
 
 package.loaded["src.core.Sound"] = realSound

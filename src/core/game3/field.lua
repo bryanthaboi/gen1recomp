@@ -1695,13 +1695,7 @@ function Field.finishSweetScent(payload)
     elseif type(failText) == "string" and #failText > 0 and not failText:match("^Text_") and not failText:match("^gText_") then
       textToShow = failText
     else
-      local FieldMoves = lazyReq("src.core.game3.field_moves")
-      local k = FieldMoves and FieldMoves.textKey and FieldMoves.textKey("NO_SWEET_SCENT_MONS")
-      if k and RomText and RomText.has and RomText.has(k) then
-        textToShow = RomText.box(k)
-      else
-        textToShow = "Looks like there's nothing here…"
-      end
+      textToShow = RomText.box(lazyReq("src.core.game3.field_moves").textKey("NO_SWEET_SCENT_MONS"))
     end
 
     local ok, err = pcall(function()
@@ -2323,6 +2317,8 @@ function Field.respawnAtHeal(opts)
   })
   Player.reset(hx, hy, facing)
   Player.syncToHost(Field._game)
+  -- pokefirered/src/overworld.c:1561
+  if whiteOut then lazyReq("src.core.game3.quest_log_recorder").cut(session) end
   -- pokefirered/src/heal_location.c:119 SetWhiteoutRespawnHealerNpcAsLastTalked
   local healerId = tonumber(session.healHealerLocalId)
   if healerId and not (opts and opts.fieldMove) then
@@ -2401,7 +2397,10 @@ local function passableColl(mapDef, pair, mid)
   local okR, Register = pcall(lazyReq, "src.import.gba.register")
   local midIndex = okR and Register and Register._midIndex
   local row = midIndex and pair and midIndex[pair] and midIndex[pair][mid]
-  return row and row.coll or 0x00
+  if not row then
+    error(("[gen3] metatile %d has no attributes in tileset pair %s"):format(mid, tostring(pair)), 2)
+  end
+  return row.coll
 end
 
 local undefinedMidSeen = {}
@@ -2424,8 +2423,17 @@ function Field.setMetatile(x, y, metatile, isImpassable)
   end
   x, y = tonumber(x) or 0, tonumber(y) or 0
   isImpassable = isImpassable == true or (tonumber(isImpassable) or 0) ~= 0
+  -- pokefirered/src/fieldmap.c:407
+  isImpassable = isImpassable or metatile % 0x1000 >= 0x400
+  metatile = metatile % 0x400
   local session = Field._session
   local mapId = session and session.map
+  local game = Field._game
+  local data = game and game.data and game.data.maps
+  local mapDef = mapId and data and data[mapId]
+  local layout = mapDef and mapDef.midLayout
+  local pair = layout and (mapDef.pair or layout.pair)
+  local coll = layout and (isImpassable and 0x07 or passableColl(mapDef, pair, metatile))
   if mapId then
     local bucket = Field.metatileOverrides[mapId]
     if not bucket then
@@ -2439,15 +2447,9 @@ function Field.setMetatile(x, y, metatile, isImpassable)
   if ModRuntime.wants("world.block_replaced") then
     ModRuntime.emit("world.block_replaced", { mapId = mapId, bx = x, by = y, block = metatile })
   end
-  local game = Field._game
-  local data = game and game.data and game.data.maps
-  local mapDef = mapId and data and data[mapId]
   local mid = metatile
-  if mapDef and mapDef.midLayout then
-    local layout = mapDef.midLayout
-    local pair = mapDef.pair or layout.pair
+  if layout then
     noteUndefinedMid(pair, mid, mapId, x, y)
-    local coll = isImpassable and 0x07 or passableColl(mapDef, pair, mid)
     -- pokefirered/src/fieldmap.c:407
     layout:applyOverride(x, y, mid, coll, layout:elevAt(x, y))
     Field._overrideLayouts[mapId] = layout

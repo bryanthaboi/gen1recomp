@@ -238,7 +238,7 @@ function Game2:enterArena(spec)
   if spec and spec.slotId then
     pcall(SaveData.setActiveSlot, version, spec.slotId)
   end
-  local ok, loaded = pcall(Save.load, version)
+  local ok, loaded = pcall(Save.load, version, self.data)
   if ok and loaded then
     local activeMods = self.modStatus and self.modStatus.loaded
     SaveData.runMigrations(loaded, self.mods and self.mods.migrations, activeMods)
@@ -289,6 +289,7 @@ function Game2:newGame()
   local boot = self.data and self.data.field and self.data.field.boot
   self.save = Save.newGame({
     playerName = self.save.player.name,
+    data = self.data,
     startMoney = boot and boot.startMoney,
     rivalName = boot and boot.rivalName,
   })
@@ -1268,6 +1269,8 @@ function Game2:load(opts)
   -- given it exactly once, here.
   -- seed=true keeps what entry chunks wrote through mod.save before any save
   -- existed, the way Gen 1 seeds its boot skeleton (src/core/Game.lua:78).
+  self.save.player.name = self.save.player.name
+    or Save.defaultPlayerName(self.data, self.save.player.gender)
   self:adoptSave(self.save, true)
   ModRuntime.emit("save.created", { save = self.save })
 
@@ -2273,7 +2276,7 @@ function Game2:hotkey(key)
     return true
   elseif key == "f2" then
     if not self:quickSaveAllowed() then return true end
-    local loaded = Save.load()
+    local loaded = Save.load(nil, self.data)
     if loaded then self:continueGame(loaded) end
     return true
   elseif hk == "1" then

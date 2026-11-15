@@ -361,8 +361,7 @@ function SlotMachine:resolveWin(win)
   -- engine/slots/slot_machine.asm:479-489
   self.winSymbol = sym
   self.message = require("src.render.TextBox").strip(
-    romText(self.game.data, "_LinedUpText",
-      " lined up!\nScored %d coins!", pay))
+    romText(self.game.data, "_LinedUpText", nil, pay))
   -- .flashScreenLoop: flip rBGP, wait 5 frames, b times.  The coins are not
   -- credited until the player dismisses the "lined up" text (see startPayout).
   self.stage = "flash"
@@ -374,7 +373,9 @@ end
 function SlotMachine:resolveLose()
   -- NotThisTimeText, then MainSlotMachineLoop asks "One more go?"
   self.winSymbol = nil
-  self.message = "Not this time!"
+  -- engine/slots/slot_machine.asm:411
+  self.message = require("src.render.TextBox").strip(
+    romText(self.game.data, "_NotThisTimeText", nil))
   self.stage = "message"
   self.afterMessage = "onemore"
 end
@@ -404,7 +405,9 @@ end
 function SlotMachine:afterSpin()
   if coins(self) == 0 then
     self.winSymbol = nil
-    self.message = Strings("Darn!\nRan out of coins!")
+    -- engine/slots/slot_machine.asm:130
+    self.message = require("src.render.TextBox").strip(
+      romText(self.game.data, "_OutOfCoinsSlotMachineText", nil))
     self.stage = "message"
     self.afterMessage = nil
     self.exitTimer = 60
@@ -524,7 +527,9 @@ function SlotMachine:update(dt)
     self.bet = 3 - self.betIndex
     if input:wasPressed("a") then
       if coins(self) < self.bet then
-        self.message = Strings("Not enough\ncoins!")
+        -- engine/slots/slot_machine.asm:106
+        self.message = require("src.render.TextBox").strip(
+          romText(self.game.data, "_NotEnoughCoinsSlotMachineText", nil))
         self.afterMessage = "bet"
         self.stage = "message"
         return
@@ -642,6 +647,15 @@ end
 
 -- The lower dialogue box and, when a prompt is up, the ×3/×2/×1 or YES/NO
 -- menu on the right (like MainSlotMachineLoop's TextBoxBorder + menus).
+local function romLines(game, label)
+  local lines = {}
+  local text = require("src.render.TextBox").strip(romText(game.data, label, nil))
+  for line in (text .. "\n"):gmatch("(.-)\n") do
+    if line ~= "" then lines[#lines + 1] = line end
+  end
+  return lines
+end
+
 function SlotMachine:drawBottom()
   local lines
   if self.stage == "bet" and self.betPrompt then
@@ -650,14 +664,17 @@ function SlotMachine:drawBottom()
       if line ~= "" then lines[#lines + 1] = line end
     end
   elseif self.stage == "bet" then
-    lines = { "Bet how many", "coins?" }
+    -- engine/slots/slot_machine.asm:159
+    lines = romLines(self.game, "_BetHowManySlotMachineText")
   elseif self.stage == "onemore" then
-    lines = { "One more", "go?" }
+    -- engine/slots/slot_machine.asm:171
+    lines = romLines(self.game, "_OneMoreGoSlotMachineText")
   elseif self.stage == "flash" then
-    lines = self.yeah and { "Yeah!" } or { "Start!" }
+    -- engine/slots/slot_machine.asm:163, :612
+    lines = romLines(self.game, self.yeah and "_YeahText" or "_StartSlotMachineText")
   elseif self.stage == "spinup" or self.stage == "spin"
          or self.stage == "reroll" then
-    lines = { "Start!" }
+    lines = romLines(self.game, "_StartSlotMachineText")
   elseif self.message then -- message / payout: the wrapped prompt text
     lines = {}
     for line in (self.message .. "\n"):gmatch("(.-)\n") do

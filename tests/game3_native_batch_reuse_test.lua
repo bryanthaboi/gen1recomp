@@ -186,7 +186,9 @@ drawNativeTiles(mapDef, 200, 40, W, H)
 
 -- LayoutNative wiring: applyOverride invalidates a single cell
 local LayoutNative = require("src.core.game3.layout_native")
-local real = LayoutNative.fromDecoded({ width = 64, height = 64, cells = {} }, "T", "a")
+local realCells = {}
+for i = 1, 64 * 64 do realCells[i] = { mid = 0, coll = 0, elev = 0 } end
+local real = LayoutNative.fromDecoded({ width = 64, height = 64, cells = realCells, borderMids = { 0 } }, "T", "a")
 local realDef = { midLayout = real, pair = "a" }
 drawNativeTiles(realDef, 0, 0, W, H)
 real:applyOverride(3, 4, 42, 0, 0)

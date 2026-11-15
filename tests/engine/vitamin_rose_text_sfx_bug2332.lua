@@ -83,7 +83,7 @@ do
     played = {}
     local result, msgs, extra = ItemEffects.use(Data, save, id, gengar())
     eq(result, "consumed", id .. " is consumed")
-    eq(msgs and msgs[1], "GENGAR's\n" .. stat .. " rose.",
+    eq(msgs and msgs[1], "GENGAR's\n" .. stat .. " rose.{PROMPT}",
        id .. " prints VitaminStatRoseText's layout")
     check(not (extra and extra.useJingle),
           id .. " does not defer Heal_Ailment to the end of the text")
@@ -157,7 +157,7 @@ do
       same(jingles, {}, "no end-of-text jingle is armed on the rose box")
       local box = game.stack:top()
       if check(type(box) == "table" and box.textBox, "the rose line prints") then
-        eq(box.text, "GENGAR's\nSPECIAL rose.", "with the cart's line break")
+        eq(box.text, "GENGAR's\nSPECIAL rose.{PROMPT}", "with the cart's line break")
         eq(box.opts, nil, "as a plain prompt box")
       end
       local partyUp = false

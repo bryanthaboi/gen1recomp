@@ -1087,11 +1087,7 @@ function Pokemon.moveName(moveId)
   if not Pokemon._moveNames then Pokemon.install(Pokemon._cache) end
   local n = Pokemon._moveNames and Pokemon._moveNames[num]
   if n and n ~= "" then return n end
-  local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
-  if okB and BuiltinMoves and BuiltinMoves[num] and BuiltinMoves[num].name then
-    return BuiltinMoves[num].name
-  end
-  return "MOVE " .. tostring(num)
+  error(("move %d has no name in the cache move_names.lua"):format(num), 2)
 end
 
 function Pokemon.learnset(species)
@@ -1140,14 +1136,10 @@ function Pokemon.battleMove(moveId)
   moveId = tonumber(moveId)
   if not moveId then return nil end
   if not Pokemon._battleMoves then Pokemon.install(Pokemon._cache) end
-  if Pokemon._battleMoves and Pokemon._battleMoves[moveId] then
-    return Pokemon._battleMoves[moveId]
+  if not Pokemon._battleMoves then
+    error("the cache has no battle_moves.lua", 2)
   end
-  local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
-  if okB and BuiltinMoves and BuiltinMoves[moveId] then
-    return BuiltinMoves[moveId]
-  end
-  return nil
+  return Pokemon._battleMoves[moveId]
 end
 
 function Pokemon.movePp(moveId)

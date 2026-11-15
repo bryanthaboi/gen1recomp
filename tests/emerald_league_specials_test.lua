@@ -19,6 +19,10 @@ for _, r in ipairs(roots) do
     break
   end
 end
+if not ROOT then
+  local dir = require("tests.game3_cache").gameDir("emerald", "pokemon/hoenn.lua")
+  ROOT = dir and dir .. "/"
+end
 
 local fs = {}
 function fs:read(rel)
@@ -70,7 +74,7 @@ specials[0x8004] = 0
 local _, counter = H.Script_TryGainNewFanFromCounter(ctx)
 eq(counter, 0, "no counter while the club state is not 2")
 Rse.setVar("VAR_LILYCOVE_FAN_CLUB_STATE", 2)
-for _ = 1, 9 do _, counter = H.Script_TryGainNewFanFromCounter(ctx) end
+for _i = 1, 9 do _, counter = H.Script_TryGainNewFanFromCounter(ctx) end
 eq(counter, 18, "defeating Drake adds 2 per call")
 _, counter = H.Script_TryGainNewFanFromCounter(ctx)
 eq(counter, 20, "counter pins at 20 once the player has 3 fans")
@@ -89,6 +93,30 @@ print("[test] Birch dex rating text (pokeemerald/src/birch_pc.c:24)")
 eq(FieldRse.pokedexRatingText(0), "gBirchDexRatingText_LessThan10", "0 -> LessThan10")
 eq(FieldRse.pokedexRatingText(17), "gBirchDexRatingText_LessThan20", "17 -> LessThan20")
 eq(FieldRse.pokedexRatingText(199), "gBirchDexRatingText_LessThan200", "199 -> LessThan200")
+
+print("[test] PCTurnOnEffect_SetMetatile (pokeemerald/src/field_specials.c:1046)")
+do
+  local PcRse = require("src.core.game3.scripting.natives_pc_rse")
+  local Field = require("src.core.game3.field")
+  local realSet = Field.setMetatile
+  local realMap = package.loaded["src.core.game3.map"]
+  local realTs = package.loaded["src.core.game3.tileset_native"]
+  package.loaded["src.core.game3.map"] = { currentDef = function() return { pair = "emerald_test" } end }
+  package.loaded["src.core.game3.tileset_native"] = {
+    ready = function() return true end,
+    get = function() return { midToSlot = {} } end,
+  }
+  local wrote
+  Field.setMetatile = function(_, _, mid, impassable) wrote = { mid = mid, impassable = impassable } end
+  specials[0x8004] = 0
+  PcRse.setPcMetatile(ctx, true)
+  Field.setMetatile = realSet
+  package.loaded["src.core.game3.map"] = realMap
+  package.loaded["src.core.game3.tileset_native"] = realTs
+  eq(wrote and wrote.mid, C:require("metatile_labels", "METATILE_Building_PC_On"),
+    "PC on is written with no atlas check")
+  eq(wrote and wrote.impassable, true, "PC on is written impassable")
+end
 
 if not ROOT then
   print("emerald_league_specials_test: cache checks skipped (set POKEPORT_IDENTITY to an identity with an Emerald cache)")

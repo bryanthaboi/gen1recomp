@@ -9,7 +9,7 @@ love = love or require("tests.love_stub")
 local PartyMenu = require("src.ui.PartyMenu")
 
 local game = {
-  data = { text = {}, pokemon = { LAPRAS = { name = "LAPRAS" } } },
+  data = { text = dofile("tests/fixture_data/text.lua"), pokemon = { LAPRAS = { name = "LAPRAS" } } },
   save = {
     party = { { species = "LAPRAS", hp = 50, stats = { hp = 50 },
                 level = 30, moves = {} } },

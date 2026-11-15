@@ -80,7 +80,8 @@ return function(game)
       return (tries * 7) % 100
     end
     if world:tryHeadbutt(cx, cy) == "battle" and fought and fought.wild then
-      if Encounter.treeMonAsleep(fought.wild.species, "NITE", engine) then
+      if Encounter.treeMonAsleep(fought.wild.species, "NITE", engine,
+          world.encounters) then
         slept = fought.wild.status == "sleep"
           and fought.wild.statusTurns == Encounter.TREEMON_SLEEP_TURNS
         if slept then

@@ -24,6 +24,7 @@ local Logger = require("src.core.Logger")
 local Marquee = require("src.ui.Marquee")
 local Palette = require("src.render.Palette")
 local Performance = require("src.core.Performance")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
@@ -116,63 +117,62 @@ local function colorPickerOpts(game)
   }
 end
 
--- Each row: the label, the option key it edits, and the cycle of values with
--- the exact strings the cart prints (trailing spaces included -- they are what
--- blank the longer previous value, e.g. "MID " over "SLOW").
--- Labels and cart-original display strings are wrapped in Strings.source so
--- the catalog generator harvests them even though this table is built once
--- at require time, before any mod's Strings.load has a catalog to answer
--- from (src/core/Strings.lua's own note on this).  The lookup itself happens
--- live, in drawPanel, through plain Strings(...) calls.
+-- engine/menus/options_menu.asm:74 StringOptions
 local ROWS = {
   {
-    label = Strings.source("TEXT SPEED"), key = "textSpeed",
+    rom = 1, key = "textSpeed",
     values = { "FAST", "MID", "SLOW" },
-    display = {
-      FAST = Strings.source("FAST"), MID = Strings.source("MID "),
-      SLOW = Strings.source("SLOW"),
+    -- engine/menus/options_menu.asm:163
+    romDisplay = {
+      FAST = "Options_TextSpeed.Fast", MID = "Options_TextSpeed.Mid",
+      SLOW = "Options_TextSpeed.Slow",
     },
   },
   {
-    label = Strings.source("BATTLE SCENE"), key = "battleScene",
+    rom = 3, key = "battleScene",
     values = { true, false },
-    display = {
-      [true] = Strings.source("ON "), [false] = Strings.source("OFF"),
+    -- engine/menus/options_menu.asm:227
+    romDisplay = {
+      [true] = "Options_BattleScene.On", [false] = "Options_BattleScene.Off",
     },
   },
   {
-    label = Strings.source("BATTLE STYLE"), key = "battleStyle",
+    rom = 5, key = "battleStyle",
     values = { "SHIFT", "SET" },
-    display = {
-      SHIFT = Strings.source("SHIFT"), SET = Strings.source("SET  "),
+    -- engine/menus/options_menu.asm:265
+    romDisplay = {
+      SHIFT = "Options_BattleStyle.Shift", SET = "Options_BattleStyle.Set",
     },
   },
   {
-    label = Strings.source("SOUND"), key = "sound",
+    rom = 7, key = "sound",
     values = { "MONO", "STEREO" },
-    display = {
-      MONO = Strings.source("MONO  "), STEREO = Strings.source("STEREO"),
+    -- engine/menus/options_menu.asm:310
+    romDisplay = {
+      MONO = "Options_Sound.Mono", STEREO = "Options_Sound.Stereo",
     },
   },
   {
-    label = Strings.source("PRINT"), key = "print",
+    rom = 9, key = "print",
     values = { "LIGHTEST", "LIGHTER", "NORMAL", "DARKER", "DARKEST" },
-    display = {
-      LIGHTEST = Strings.source("LIGHTEST"), LIGHTER = Strings.source("LIGHTER "),
-      NORMAL = Strings.source("NORMAL  "), DARKER = Strings.source("DARKER  "),
-      DARKEST = Strings.source("DARKEST "),
+    -- engine/menus/options_menu.asm:372
+    romDisplay = {
+      LIGHTEST = "Options_Print.Lightest", LIGHTER = "Options_Print.Lighter",
+      NORMAL = "Options_Print.Normal", DARKER = "Options_Print.Darker",
+      DARKEST = "Options_Print.Darkest",
     },
   },
   {
-    label = Strings.source("MENU ACCOUNT"), key = "menuAccount",
+    rom = 11, key = "menuAccount",
     values = { false, true },
-    display = {
-      [false] = Strings.source("OFF"), [true] = Strings.source("ON "),
+    -- engine/menus/options_menu.asm:450
+    romDisplay = {
+      [false] = "Options_MenuAccount.Off", [true] = "Options_MenuAccount.On",
     },
   },
   -- FRAME is the textbox border style, 1-8, and prints its number after the
   -- word TYPE rather than in the shared value column.
-  { label = Strings.source("FRAME"), key = "frame", frame = true },
+  { rom = 13, key = "frame", frame = true },
   -- Everything from here down is the port's, not the cart's.  They are the
   -- same settings the Gen 1 OPTION screen carries and they drive the same
   -- shared modules, so a player who learns them in Red knows them here.  The
@@ -517,7 +517,7 @@ local ROWS = {
       white = Strings.source("WHITE"), black = Strings.source("BLACK"),
       world = Strings.source("WORLD"),
     } },
-  { label = Strings.source("BACK"), cancel = true },
+  { rom = 15, cancel = true },
 }
 
 -- engine/menus/options_menu.asm:24
@@ -654,7 +654,28 @@ local function pipelineRows()
   return rows
 end
 
-local function buildRows()
+local function optionLines(data)
+  local out = {}
+  for line in (RomText(data, "StringOptions") .. "\n"):gmatch("(.-)\n") do
+    out[#out + 1] = line
+  end
+  return out
+end
+
+local function romRow(copy, lines, data)
+  copy.label = lines[copy.rom]
+  copy.romLabel = true
+  if copy.frame or copy.romDisplay then copy.valueLine = lines[copy.rom + 1] end
+  if copy.romDisplay then
+    local display = {}
+    for value, label in pairs(copy.romDisplay) do display[value] = RomText(data, label) end
+    copy.display = display
+  end
+end
+
+local function buildRows(game)
+  local data = game and game.data
+  local lines = optionLines(data)
   local rows = {}
   local env = os.getenv("POKEPORT_TOUCH")
   local osName = love.system and love.system.getOS and love.system.getOS()
@@ -678,6 +699,7 @@ local function buildRows()
     if not hidden then
       local copy = {}
       for key, value in pairs(row) do copy[key] = value end
+      if copy.rom then romRow(copy, lines, data) end
       copy.id = copy.id or copy.key or (copy.cancel and "cancel") or nil
       rows[#rows + 1] = copy
       if copy.id == "tilt" then
@@ -715,7 +737,7 @@ function OptionsMenu.new(game, opts)
   -- Unguarded, like the Gen 1 site: the screen is built once per opening.  A
   -- hook that answers with anything but a table is degraded to the vanilla
   -- rows rather than leaving the player with an empty OPTION screen.
-  local rows = buildRows()
+  local rows = buildRows(game)
   local hooked = Runtime.call("ui.options.rows", sameRows, game, rows)
   if type(hooked) == "table" then
     rows = hooked
@@ -920,17 +942,25 @@ function OptionsMenu:drawPanel()
     local hot = i == self.index
     if hot then cursorY = labelY end
     local key = tostring(row.id or row.label)
-    Chrome.print(fit(Strings(row.label), 2, hot, key), 2, labelY)
+    local label = row.romLabel and row.label or Strings(row.label)
+    Chrome.print(fit(label, 2, hot, key), 2, labelY)
+    local lead, valueLine = 8, ":"
+    if row.valueLine then
+      local spaces, rest = row.valueLine:match("^( *)(.*)$")
+      lead, valueLine = #spaces, rest
+    end
     if row.frame then
-      Chrome.print(Strings(":TYPE"), 10, labelY + 1)
+      Chrome.print(valueLine, 2 + lead, labelY + 1)
       Chrome.print(tostring(self.options.frame or 1), 16, labelY + 1)
     elseif row.text then
       Chrome.print(":", 10, labelY + 1)
       Chrome.print(fit(row.text(self.options), 11, hot, key), 11, labelY + 1)
     elseif row.values then
-      Chrome.print(":", 10, labelY + 1)
+      Chrome.print(valueLine, 2 + lead, labelY + 1)
       local value = self.options[row.key]
-      local text = row.display and Strings(row.display[value]) or tostring(value)
+      local text = row.display
+        and (row.romDisplay and row.display[value] or Strings(row.display[value]))
+        or tostring(value)
       Chrome.print(fit(text, 11, hot, key), 11, labelY + 1)
     elseif type(row.value) == "function" then
       -- the Gen 1 row's value reader (src/ui/OptionRows.lua:4), so a mod row

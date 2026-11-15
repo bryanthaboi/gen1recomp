@@ -19,6 +19,9 @@ local Flags = require("src.core.game3.scripting.flags")
 local ItemUse = require("src.core.game3.item_use")
 local Collision = require("src.core.game3.collision")
 local RomText = require("src.core.game3.rom_text")
+if not RomText.has("gText_CantDismountBike") then
+  RomText.overrides.gText_CantDismountBike = require("src.core.game3.scripting.text_ir").fromAscii("CANT DISMOUNT")
+end
 
 local session = {
   flags = {},

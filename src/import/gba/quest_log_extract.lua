@@ -160,8 +160,18 @@ local function read(rom,off)
   end
   error('Unterminated Quest Log string')
 end
+-- pokefirered/src/quest_log_events.c:442
+local function worldMapFlags(rom)
+  local base=Versions.address(0x456C50);local out={}
+  for i=0,16 do
+    local flag=rom:u16(base+i*2)
+    if flag==0 then error('Quest Log world map flag table not found in this ROM revision') end
+    out[#out+1]=flag
+  end
+  return out
+end
 function E.read(rom)
-  local base=locate(rom);local pack={version=1,text={}}
+  local base=locate(rom);local pack={version=1,text={},worldMapFlags=worldMapFlags(rom)}
   for _,entry in ipairs(ENTRIES) do pack.text[entry[1]]=read(rom,base+entry[2]) end
   return pack
 end
@@ -170,7 +180,8 @@ function E.writeExtract(rom,cache)
   for _,entry in ipairs(ENTRIES) do
     local key=entry[1];out[#out+1]=string.format('[%q]=%q,',key,pack.text[key])
   end
-  out[#out+1]='}}\n';assert(cache:write(E.PATH,table.concat(out)))
+  out[#out+1]='},worldMapFlags={'..table.concat(pack.worldMapFlags,',')..'}}\n'
+  assert(cache:write(E.PATH,table.concat(out)))
   return pack
 end
 return E

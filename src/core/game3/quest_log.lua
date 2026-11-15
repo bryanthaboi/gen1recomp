@@ -66,14 +66,34 @@ function Q.restore(value)
   return log
 end
 function Q.export(session) return Q.restore(session and session.questLog) end
+local function lastScene(session)
+  local scenes=session and session.questLog and session.questLog.scenes
+  return scenes and scenes[#scenes]
+end
+function Q.track(session)
+  local scene=lastScene(session)
+  if scene and scene.map~=session.map then scene.left=true end
+end
+local function onScene(session,scene)
+  return scene.map==session.map and not scene.left
+end
+-- pokefirered/src/quest_log.c:1457
+function Q.recording(session)
+  local scene=lastScene(session)
+  if not scene or session._questNewScene then return false end
+  return (scene.span or #scene.frames)<Q.MAX_FRAMES and #scene.events<Q.MAX_EVENTS
+end
 function Q.record(session,key,args,frame)
   if not session or not frame or not session.map then return end
   session.questLog=session.questLog or empty()
   local scenes=session.questLog.scenes
   local scene=scenes[#scenes]
-  if session._questNewScene or not scene or scene.map~=session.map or #scene.frames>=Q.MAX_FRAMES or #scene.events>=Q.MAX_EVENTS then
+  Q.track(session)
+  local live=Q.recording(session)
+  -- pokefirered/src/quest_log.c:301
+  if not live or not onScene(session,scene) then
     session._questNewScene=nil
-    scene={map=session.map,frames={copy(frame)},events={}}
+    scene={map=session.map,frames={copy(frame)},events={},span=live and (scene.span or #scene.frames) or nil}
     scenes[#scenes+1]=scene
     if #scenes>Q.MAX_SCENES then table.remove(scenes,1) end
   end
@@ -84,19 +104,19 @@ function Q.record(session,key,args,frame)
   scene.events[#scene.events+1]=event
 end
 function Q.sample(session,frame,elapsed)
-  local scenes=session and session.questLog and session.questLog.scenes
-  local scene=scenes and scenes[#scenes]
-  if session._questNewScene or not scene or scene.map~=session.map or #scene.frames>=Q.MAX_FRAMES then return end
+  local scene=lastScene(session)
+  if not Q.recording(session) then return end
   session._questSampleTicks=(session._questSampleTicks or 0)+(elapsed or 1)
   if session._questSampleTicks<6 then return end
   session._questSampleTicks=0
-  scene.frames[#scene.frames+1]=copy(frame)
+  Q.track(session)
+  scene.span=(scene.span or #scene.frames)+1
+  if onScene(session,scene) then scene.frames[#scene.frames+1]=copy(frame) end
 end
 -- Tiles are deduplicated per scene, outside the 10 Hz actor samples.
 function Q.tileScene(session)
-  local scenes=session and session.questLog and session.questLog.scenes
-  local scene=scenes and scenes[#scenes]
-  if session._questNewScene or not scene or scene.map~=session.map or #scene.frames>=Q.MAX_FRAMES then return nil end
+  local scene=lastScene(session)
+  if not Q.recording(session) or not onScene(session,scene) then return nil end
   scene.tiles=scene.tiles or {}
   return scene
 end

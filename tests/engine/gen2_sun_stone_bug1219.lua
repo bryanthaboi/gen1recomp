@@ -7,6 +7,7 @@ local Screens = require("src.ui.Screens")
 local EvolutionAnim = require("src.ui.gen2.EvolutionAnim")
 
 local data = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_g").text(),
   pokemon = {
     SUNKERN = {
       evolutions = {
@@ -61,7 +62,8 @@ T.check(evolution.force, "SUN STONE evolution sets wForceEvolution")
 T.eq(game.save.inventory.SUN_STONE, 1,
   "SUN STONE remains until evolution succeeds")
 
-local animation = EvolutionAnim.new({ data = { pokemon = data.pokemon } }, {
+local animation = EvolutionAnim.new({ data = { pokemon = data.pokemon,
+  text = require("tests.fixture_data.gen2_rom_text_s7_b").text() } }, {
   mon = game.save.party[1], entry = evolution and evolution.entry,
   force = evolution and evolution.force,
 })

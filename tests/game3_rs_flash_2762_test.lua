@@ -4,7 +4,7 @@ local version = os.getenv("POKEPORT_VERSION") or "sapphire"
 require("src.core.GameVersion").set(version)
 require("src.import.gba.versions").select(version)
 local Cache = require("tests.game3_cache")
-local root = Cache.mount()
+local root = Cache.mount(version)
 if not root then
   print("[skip] flash2762 cache integration: " .. tostring(Cache.reason))
   os.exit(0)

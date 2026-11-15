@@ -57,8 +57,11 @@ local function newWorld(defeated)
   save.itemsTaken = {}
   save.defeatedTrainers = {}
   local pushed = {}
+  local yellowText = setmetatable({
+    _RocketHideoutB4FRocketAfterBattleText = "Oh no! I dropped\nthe LIFT KEY!{DONE}",
+  }, { __index = Data.text })
   local game = {
-    data = Data,
+    data = setmetatable({ text = yellowText }, { __index = Data }),
     save = save,
     stack = { push = function(_, state) pushed[#pushed + 1] = state end },
   }

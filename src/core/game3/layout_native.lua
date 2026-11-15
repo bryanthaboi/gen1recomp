@@ -13,16 +13,19 @@ local function wrap_border(cx, cy, w, h, bw, bh)
 end
 
 function LayoutNative.fromDecoded(decoded, mapId, pair, sourceBlob)
+  if pair == nil then
+    error(("layout %s has no tileset pair"):format(tostring(mapId)), 2)
+  end
   local self = setmetatable({
     mapId = mapId,
-    pair = pair or "sevii_outdoor",
+    pair = pair,
     width = decoded.width or 0,
     height = decoded.height or 0,
     trueWidth = decoded.trueWidth or decoded.width or 0,
     trueHeight = decoded.trueHeight or decoded.height or 0,
     borderWidth = decoded.borderWidth or 1,
     borderHeight = decoded.borderHeight or 1,
-    borderMids = decoded.borderMids or { 0 },
+    borderMids = decoded.borderMids or {},
     cells = decoded.cells or {},
     overrides = {}, -- [cy*1024+cx] = { mid, coll, elev }
     _revision = 0,
@@ -50,6 +53,20 @@ function LayoutNative:workerPacked()
     borderWidth = self.borderWidth, borderHeight = self.borderHeight, borderMids = borders, overrides = overrides }
 end
 
+local function missingCell(self, cx, cy)
+  error(("layout %s has no cell at %d,%d"):format(tostring(self.mapId), cx, cy), 3)
+end
+
+local function borderMid(self, cx, cy)
+  local bx, by = wrap_border(
+    cx, cy, self.trueWidth or self.width, self.trueHeight or self.height, self.borderWidth, self.borderHeight)
+  local mid = self.borderMids[by * self.borderWidth + bx + 1]
+  if mid == nil then
+    error(("layout %s has no border metatile at %d,%d"):format(tostring(self.mapId), bx, by), 3)
+  end
+  return mid
+end
+
 function LayoutNative:cellAt(cx, cy)
   local key = cy * 1024 + cx
   local ov = self.overrides[key]
@@ -57,44 +74,36 @@ function LayoutNative:cellAt(cx, cy)
   local tw = self.trueWidth or self.width
   local th = self.trueHeight or self.height
   if cx >= 0 and cy >= 0 and cx < tw and cy < th then
-    return self.cells[cy * self.width + cx + 1]
-      or { mid = 0, coll = 0xff, elev = 0 }
+    return self.cells[cy * self.width + cx + 1] or missingCell(self, cx, cy)
   end
-  local bx, by = wrap_border(
-    cx, cy, tw, th, self.borderWidth, self.borderHeight)
-  local mid = self.borderMids[by * self.borderWidth + bx + 1] or 0
-  return { mid = mid, coll = 0xff, elev = 0 }
+  return { mid = borderMid(self, cx, cy), coll = 0xff, elev = 0 }
 end
 
 local baseCellAt = LayoutNative.cellAt
 
-local function field(self, cx, cy, name, missing, border)
+local function field(self, cx, cy, name, border)
   if self.cellAt ~= baseCellAt then return self:cellAt(cx, cy)[name] end
   local ov = self.overrides[cy * 1024 + cx]
   if ov then return ov[name] end
   local tw = self.trueWidth or self.width
   local th = self.trueHeight or self.height
   if cx >= 0 and cy >= 0 and cx < tw and cy < th then
-    local cell = self.cells[cy * self.width + cx + 1]
-    if cell then return cell[name] end
-    return missing
+    return (self.cells[cy * self.width + cx + 1] or missingCell(self, cx, cy))[name]
   end
   if border ~= nil then return border end
-  local bx, by = wrap_border(
-    cx, cy, tw, th, self.borderWidth, self.borderHeight)
-  return self.borderMids[by * self.borderWidth + bx + 1] or 0
+  return borderMid(self, cx, cy)
 end
 
 function LayoutNative:midAt(cx, cy)
-  return field(self, cx, cy, "mid", 0, nil)
+  return field(self, cx, cy, "mid", nil)
 end
 
 function LayoutNative:collAt(cx, cy)
-  return field(self, cx, cy, "coll", 0xff, 0xff)
+  return field(self, cx, cy, "coll", 0xff)
 end
 
 function LayoutNative:elevAt(cx, cy)
-  return field(self, cx, cy, "elev", 0, 0)
+  return field(self, cx, cy, "elev", 0)
 end
 
 --- Flat 1-based COLL_* array for Collision.bindMap.
@@ -122,10 +131,14 @@ function LayoutNative:collArray()
 end
 
 function LayoutNative:applyOverride(x, y, mid, coll, elev)
+  if type(mid) ~= "number" then
+    error(("layout %s: metatile %s at %s,%s is not a number"):format(tostring(self.mapId), tostring(mid),
+      tostring(x), tostring(y)), 2)
+  end
   self._revision = (self._revision or 0) + 1
   x, y = tonumber(x) or 0, tonumber(y) or 0
   self.overrides[y * 1024 + x] = {
-    mid = tonumber(mid) or 0,
+    mid = mid,
     coll = coll ~= nil and coll or 0xff,
     elev = elev or 0,
   }
@@ -173,8 +186,11 @@ function LayoutNative:stamp(src, ox, oy)
     for x = 0, sw - 1 do
       local c = src.cells[y * src.width + x + 1]
       if c then
+        if type(c.mid) ~= "number" then
+          error(("layout %s: stamped cell %d,%d has no metatile"):format(tostring(self.mapId), x, y), 2)
+        end
         self.overrides[(oy + y) * 1024 + ox + x] = {
-          mid = c.mid or 0, coll = c.coll ~= nil and c.coll or 0xff, elev = c.elev or 0,
+          mid = c.mid, coll = c.coll ~= nil and c.coll or 0xff, elev = c.elev or 0,
         }
         n = n + 1
       end
@@ -192,8 +208,11 @@ function LayoutNative:setMetatiles(rows)
   for _, r in ipairs(rows or {}) do
     local x, y = tonumber(r.x) or 0, tonumber(r.y) or 0
     local cur = self:cellAt(x, y)
+    if r.mid ~= nil and type(r.mid) ~= "number" then
+      error(("layout %s: metatile %s at %d,%d is not a number"):format(tostring(self.mapId), tostring(r.mid), x, y), 2)
+    end
     self.overrides[y * 1024 + x] = {
-      mid = tonumber(r.mid) or cur.mid or 0,
+      mid = r.mid or cur.mid,
       coll = r.coll ~= nil and r.coll or cur.coll,
       elev = r.elev ~= nil and r.elev or cur.elev or 0,
     }

@@ -13,6 +13,7 @@ local FieldMoves = require("src.core.game3.field_moves")
 local Encounters = require("src.core.game3.encounters")
 local Message = require("src.ui.game3.message")
 local Weather = require("src.core.game3.weather")
+rawset(FieldMoves.TEXT, "CANT_USE_HERE", "<gText_CantUseHere>")
 
 -- =========================================================================
 -- 1. FieldMoves.sweetScentFromMenu: PP validation & safe cache lookups
@@ -35,7 +36,8 @@ local monTableMovesNoPp = {
 local okRes = FieldMoves.sweetScentFromMenu({ mon = monWithPp })
 check(okRes.ok == true, "mon with PP: sweetScentFromMenu succeeds")
 eq(okRes.action, "sweet_scent", "action is sweet_scent")
-check(type(okRes.failText) == "string" and #okRes.failText > 0, "failText is a non-empty string fallback")
+eq(okRes.failText, nil, "no hand-typed English failText")
+eq(okRes.failKey, FieldMoves.textKey("NO_SWEET_SCENT_MONS"), "failure text is the ROM key")
 
 local noPpRes = FieldMoves.sweetScentFromMenu({ mon = monNoPp })
 check(noPpRes.ok == false, "mon with 0 PP (array): sweetScentFromMenu returns ok = false")

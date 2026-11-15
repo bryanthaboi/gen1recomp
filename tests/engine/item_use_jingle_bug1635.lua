@@ -20,7 +20,10 @@ local ITEM_IDS = {
   "X_ACCURACY", "DIRE_HIT", "GUARD_SPEC", "POKE_DOLL",
 }
 
-local Data = { items = {}, text = {} }
+local Data = { items = {}, text = setmetatable({
+  _ItemUseText001 = "{PLAYER} used{DONE}",
+  _ItemUseText002 = "{RAM:wStringBuffer}!{DONE}",
+}, { __index = dofile("tests/fixture_data/text.lua") }) }
 for _, id in ipairs(ITEM_IDS) do
   Data.items[id] = { name = id:gsub("_", " ") }
 end

@@ -129,8 +129,7 @@ function EvolutionState:pushDoneText()
   local Evolution = require("src.pokemon.Evolution")
   if self.canceled then
     game.stack:push(TextBox.new(game,
-      romText(game.data, "_StoppedEvolvingText",
-        "Huh? %s\nstopped evolving!", self.oldName),
+      romText(game.data, "_StoppedEvolvingText", nil, self.oldName),
       function()
         game.stack:pop()
         -- engine/pokemon/evos_moves.asm:296
@@ -141,8 +140,8 @@ function EvolutionState:pushDoneText()
   end
   local newName = game.data.pokemon[self.newSpecies].name
   -- engine/pokemon/evos_moves.asm:136-153
-  local msg = romText(game.data, "_EvolvedText", "%s evolved", self.oldName)
-    .. romText(game.data, "_IntoText", "\ninto %s!", newName)
+  local msg = romText(game.data, "_EvolvedText", nil, self.oldName)
+    .. romText(game.data, "_IntoText", nil, newName)
   game.stack:push(TextBox.new(game, msg,
     function()
       game.stack:pop()

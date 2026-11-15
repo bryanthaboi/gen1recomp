@@ -18,6 +18,25 @@ Mailbox.WIN = WIN
 -- pokeemerald/src/menu_specialized.c:278
 local MAX_SHOWED, UP_TEXT_Y, ITEM_X = 8, 9, 8
 
+-- pokeemerald/src/palette.c:167
+local FADE_STEP = 2
+
+local function begin_fade(dir, done)
+  Mailbox._fade = dir > 0 and 0 or 16
+  Mailbox._fadeDir, Mailbox._fadeDone = dir, done
+end
+
+function Mailbox.update()
+  local dir = Mailbox._fadeDir or 0
+  if not Mailbox.open or dir == 0 then return end
+  Mailbox._fade = Mailbox._fade + dir * FADE_STEP
+  if (dir > 0 and Mailbox._fade < 16) or (dir < 0 and Mailbox._fade > 0) then return end
+  Mailbox._fade, Mailbox._fadeDir = dir > 0 and 16 or 0, 0
+  local cb = Mailbox._fadeDone
+  Mailbox._fadeDone = nil
+  if cb then cb() end
+end
+
 local function se(name)
   local SE = require("src.core.game3.se_ids")
   pcall(function() require("src.core.game3.audio").playSe(SE[name]) end)
@@ -81,6 +100,7 @@ function Mailbox.show(opts)
   Mailbox.scroll, Mailbox.row = 0, 0
   Mailbox.state = "list"
   Mailbox.optCursor = 1
+  Mailbox._fade, Mailbox._fadeDir, Mailbox._fadeDone = 0, 0, nil
   compact()
   clamp()
   status(nil)
@@ -144,16 +164,26 @@ local function sender(mail)
   return tostring(mail and mail.playerName or "")
 end
 
--- pokeemerald/src/player_pc.c:844
+-- pokeemerald/src/player_pc.c:785 Mailbox_DoMailRead
+-- pokeruby/src/player_pc.c:1197
 local function read_mail()
   local mail = selected_mail()
-  Mailbox.state = "reading"
-  local reader = require("src.ui.game3.rs.player_pc_policy").matches(Mailbox._session)
-    and "src.ui.game3.rs.mail_reader" or "src.ui.game3.rse.mail"
-  require(reader).read(mail, {
-    session = Mailbox._session,
-    onClose = function() back_to_list() end,
-  })
+  -- pokeemerald/src/player_pc.c:791 Mailbox_FadeAndReadMail
+  begin_fade(1, function()
+    Mailbox.state = "reading"
+    status(nil)
+    local reader = require("src.ui.game3.rs.player_pc_policy").matches(Mailbox._session)
+      and "src.ui.game3.rs.mail_reader" or "src.ui.game3.rse.mail"
+    require(reader).read(mail, {
+      session = Mailbox._session,
+      -- pokeemerald/src/player_pc.c:808 Mailbox_ReshowAfterMail
+      -- pokeruby/src/player_pc.c:1218
+      onClose = function()
+        back_to_list()
+        begin_fade(-1)
+      end,
+    })
+  end)
 end
 
 -- pokeemerald/src/player_pc.c:895
@@ -172,7 +202,23 @@ local function move_to_bag()
   Mailbox.state = "message"
 end
 
--- pokeemerald/src/player_pc.c:923
+-- pokeemerald/src/party_menu.c:5545 TryGiveMailToSelectedMon
+local function give_to(PartyMenu, mon)
+  local rs = require("src.ui.game3.rs.player_pc_policy").matches(Mailbox._session)
+  if (tonumber(mon and (mon.item or mon.heldItem)) or 0) ~= 0 then
+    -- pokeruby/src/party_menu.c:3058
+    return PartyMenu.showMessage(RomText.box(rs and "gOtherText_PokeHoldingItemCantMail" or "gText_PkmnHoldingItemCantHoldMail"),
+      function() PartyMenu.close() end)
+  end
+  local mail = selected_mail()
+  Mail.giveMailToMon2(Mailbox._session, mon, Mail.copy(mail))
+  Mail.clear(mail)
+  PartyMenu.showMessage(RomText.box(rs and "gOtherText_MailTransferredMailbox" or "gText_MailTransferredFromMailbox"),
+    function() PartyMenu.close() end)
+end
+
+-- pokeemerald/src/player_pc.c:880 Mailbox_Give
+-- pokeruby/src/player_pc.c:1277
 local function give()
   local party = Mailbox._session and Mailbox._session.party or {}
   if #party == 0 then
@@ -180,38 +226,36 @@ local function give()
     Mailbox.state = "message"
     return
   end
-  Mailbox.state = "party"
-  local mail = selected_mail()
-  local ok, PartyMenu = pcall(require, "src.ui.game3.party_menu")
-  if not (ok and PartyMenu and PartyMenu.show) then
-    back_to_list()
-    return
-  end
-  PartyMenu.show({
-    session = Mailbox._session,
-    mode = "choose",
-    onSelect = function(idx)
-      local mon = idx and party[idx]
-      if mon and (tonumber(mon.item or mon.heldItem) or 0) == 0 then
-        -- pokeemerald/src/party_menu.c:5061
-        if Mail.giveMailToMon2(Mailbox._session, mon, Mail.copy(mail)) ~= Mail.MAIL_NONE then
-          Mail.clear(mail)
-          compact()
-        end
-      end
-      PartyMenu.close()
-    end,
-    onClose = function()
-      if count() == 0 then Mailbox.close() else back_to_list() end
-    end,
-  })
+  local rs = require("src.ui.game3.rs.player_pc_policy").matches(Mailbox._session)
+  -- pokeemerald/src/player_pc.c:893 Mailbox_DoGiveMailPokeMenu
+  begin_fade(1, function()
+    Mailbox.state = "party"
+    status(nil)
+    local PartyMenu = require("src.ui.game3.party_menu")
+    -- pokeemerald/src/party_menu.c:5540 ChooseMonToGiveMailFromMailbox
+    PartyMenu.show(party, nil, {
+      session = Mailbox._session,
+      mode = "choose",
+      promptMode = "give",
+      eggFails = true,
+      fadeIn = not rs,
+      onChoose = function(_, mon) give_to(PartyMenu, mon) end,
+      -- pokeemerald/src/player_pc.c:910 Mailbox_UpdateMailListAfterDeposit
+      -- pokeruby/src/player_pc.c:1298
+      onClose = function()
+        compact()
+        back_to_list()
+        begin_fade(-1)
+      end,
+    })
+  end)
 end
 
 local OPTIONS = { read_mail, function() status("gText_MessageWillBeLost") Mailbox.state = "confirm_msg" end, give,
   function() back_to_list() end }
 
 function Mailbox.handleInput(input)
-  if not Mailbox.open or not input then return end
+  if not Mailbox.open or not input or (Mailbox._fadeDir or 0) ~= 0 then return end
   local st = Mailbox.state
   if st == "list" then
     if input:wasPressed("up") then
@@ -293,10 +337,8 @@ local function draw_status()
   end
 end
 
-function Mailbox.draw()
-  if not Mailbox.open then return end
+local function draw_menu()
   local st = Mailbox.state
-  if st == "reading" or st == "party" then return end
   if st == "list" then
     local t = WIN.title
     frame(t)
@@ -343,6 +385,19 @@ function Mailbox.draw()
     Window.cursorPx(yn.left * 8, yn.top * 8 + 1 + (Mailbox.yesCursor - 1) * pitch)
   end
   draw_status()
+end
+
+function Mailbox.draw()
+  if not Mailbox.open then return end
+  local st = Mailbox.state
+  if st == "reading" or st == "party" then return end
+  draw_menu()
+  local f = Mailbox._fade or 0
+  if f > 0 then
+    love.graphics.setColor(0, 0, 0, f / 16)
+    love.graphics.rectangle("fill", 0, 0, 240, 160)
+    love.graphics.setColor(1, 1, 1, 1)
+  end
 end
 
 return Mailbox

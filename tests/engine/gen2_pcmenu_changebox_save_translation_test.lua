@@ -1,11 +1,3 @@
--- The PC's CHANGE BOX save flow (src/ui/gen2/PcMenu.lua:savePrompt()) used to
--- draw its overwrite/saving/done prompts and its YES/NO choice as bare
--- literals, invisible to a translation mod's `strings` registry, even though
--- the overwrite/saving prompts are the exact same two cart messages Gold's
--- SAVE screen (src/ui/gen2/SaveMenu.lua) already routes through Strings().
--- Same technique as tests/engine/gen2_save_menu_translation_test.lua: drives
--- PcMenu:drawPanel() directly at each save phase with a mod-loaded Strings
--- catalog and checks the translated text reaches Font.draw.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.harness")
@@ -26,6 +18,7 @@ package.loaded["src.render.Font"] = {
 
 local PcMenu = require("src.ui.gen2.PcMenu")
 local Strings = require("src.core.Strings")
+local TEXT = require("tests.fixture_data.gen2_rom_text_s7_e")
 
 local function drawnAt(x, y)
   for _, d in ipairs(drawn) do
@@ -46,8 +39,8 @@ local NO_X, NO_Y = 16 * 8, 10 * 8
 -- One party mon so Boxes.canUsePc doesn't refuse to open the PC at all.
 local SAVE = { player = { name = "GOLD" }, party = { {} } }
 
-local function newMenu()
-  return PcMenu.new({}, {
+local function newMenu(text)
+  return PcMenu.new({ data = { text = text or TEXT } }, {
     save = SAVE,
     saveExists = false,
     writer = function() return true end,
@@ -84,12 +77,12 @@ do
   drawn = {}
   menu:drawPanel()
   T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "When you change a", "the confirm prompt draws in English with no mod loaded")
-  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "#MON BOX, data", "and its second line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "POKéMON BOX, data", "and its second line")
   T.eq(drawnAt(YES_X, YES_Y), nil, "no YES before the cont page")
   menu.savePage = 2
   drawn = {}
   menu:drawPanel()
-  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "#MON BOX, data", "the cont page scrolls the second line up")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "POKéMON BOX, data", "the cont page scrolls the second line up")
   T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "will be saved. OK?", "and prints the cont line")
   T.eq(drawnAt(YES_X, YES_Y), "YES", "and YES")
   T.eq(drawnAt(NO_X, NO_Y), "NO", "and NO")
@@ -124,7 +117,7 @@ end
 local ARROW_X, ARROW_Y = 18 * 8, 17 * 8
 do
   local input = newInput()
-  local menu = PcMenu.new({ input = input }, {
+  local menu = PcMenu.new({ input = input, data = { text = TEXT } }, {
     save = SAVE,
     saveExists = true,
     writer = function() return true end,
@@ -162,7 +155,7 @@ do
   drawn = {}
   menu:drawPanel()
   T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "When you change a", "page one, first line")
-  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "#MON BOX, data", "page one, second line")
+  T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "POKéMON BOX, data", "page one, second line")
   T.eq(drawnAt(YES_X, YES_Y), nil, "no YES on page one")
   T.eq(drawnAt(ARROW_X, ARROW_Y), "\xe2\x96\xbc", "the cont arrow blinks at (18,17)")
 
@@ -173,7 +166,7 @@ do
   T.check(menu.typer and not menu.typer:done(), "which types in turn")
   drawn = {}
   menu:drawPanel()
-  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "#MON BOX, data", "the scrolled line is already whole")
+  T.eq(drawnAt(PROMPT1_X, PROMPT1_Y), "POKéMON BOX, data", "the scrolled line is already whole")
   T.eq(drawnAt(PROMPT2_X, PROMPT2_Y), "", "the cont line starts empty")
   T.eq(drawnAt(YES_X, YES_Y), nil, "no YES while the cont line types")
   settle(menu)
@@ -219,7 +212,8 @@ end
 -- ../pokecrystal/engine/menus/save.asm:336 SavingDontTurnOffThePower
 do
   local function promptTicks(textSpeed)
-    local menu = PcMenu.new({ input = newInput(), save = { options = { textSpeed = textSpeed } } }, {
+    local menu = PcMenu.new({ input = newInput(), data = { text = TEXT },
+      save = { options = { textSpeed = textSpeed } } }, {
       save = SAVE,
       saveExists = false,
       writer = function() return true end,
@@ -262,26 +256,22 @@ do
 end
 
 -- ------------------------------------------------- a translation mod's turn
---
--- Same catalog values as gen2_save_menu_translation_test.lua's own
--- translated block: the overwrite/saving prompts, the saved/failed messages,
--- and YES/NO are the exact same keys both screens read, so one translation
--- covers both without a PcMenu-specific fork. Only the CHANGE BOX confirm
--- prompt's key is new here.
 do
   Strings.load({
     strings = {
-      ["YES"] = "OUI",
-      ["NO"] = "NON",
-      ["When you change a\n#MON BOX, data\vwill be saved. OK?"] = "Quand vous changez\nde BOITE, donnees\vseront sauv. OK?",
-      ["There is already a\nsave file. Is it\vOK to overwrite?"] = "Un fichier existe\ndeja. Est-ce\vOK pour ecraser?",
-      ["SAVING… DON'T TURN\nOFF THE POWER."] = "SAUVEGARDE...\nN'ETEIGNEZ PAS.",
-      ["%s saved\nthe game."] = "%s a sauvegarde\nla partie.",
       ["Could not save."] = "Echec de sauvegarde.",
     },
   })
+  local translated = setmetatable({
+    ["YesNoMenuHeader.MenuData#1"] = "OUI",
+    ["YesNoMenuHeader.MenuData#2"] = "NON",
+    _ChangeBoxSaveText = "Quand vous changez\nde BOITE, donnees\vseront sauv. OK?{DONE}",
+    _AlreadyASaveFileText = "Un fichier existe\ndeja. Est-ce\vOK pour ecraser?{DONE}",
+    _SavingDontTurnOffThePowerText = "SAUVEGARDE...\nN'ETEIGNEZ PAS.{DONE}",
+    _SavedTheGameText = "{PLAYER} a sauvegarde\nla partie.{DONE}",
+  }, { __index = TEXT })
 
-  local menu = newMenu()
+  local menu = newMenu(translated)
   menu.picking = true
   menu.pickIndex = 1
   menu.savePhase = "confirm"

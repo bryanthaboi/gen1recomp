@@ -178,12 +178,6 @@ local SPRITE = {
   DAY_CARE_MON_2 = 0xe1,
 }
 
-local ENGINE = {
-  DAY_CARE_MAN_HAS_EGG = 5,
-  DAY_CARE_MAN_HAS_MON = 6,
-  DAY_CARE_LADY_HAS_MON = 7,
-}
-
 local MAPSETUP = {
   WARP = 0xf1,
   CONTINUE = 0xf2,
@@ -313,40 +307,15 @@ local SPRITEMOVEDATA_STRENGTH_BOULDER = 0x19
 -- Script_UsedWaterfall's per-cell climb; both are frames at 60 Hz.
 local STRENGTH_PAUSE_FRAMES = 3
 
--- The four field-move / field-item strings this file prints, in the port's own
--- TextBox markers (\n = second line, \f = page break, {STRBUF} = the shared
--- wStringBuffer2 token, which TextBox fills from game.stringBuffer).
---
--- They are transcribed rather than looked up because nothing in the ROM's
--- script bytecode points at them: engine/events/overworld.asm names each label
--- directly, so the extractor -- which only walks reachable script pointers --
--- never sees them and data/generated/text.lua has no key for them.  Bodies
--- from data/text/common_2.asm; `#` is the four-tile POKé compression byte, so
--- "POKéMON" here is the same seven tiles the cart draws.
---
--- Strings.source marks them for the catalog generator without translating
--- them here: the table is built at require time and Strings.load has no
--- catalog yet, so the lookup happens at the showText call sites below --
--- the same arrangement src/world/gen2/FieldMoves.lua uses for the other
--- twenty-odd lines engine/events/overworld.asm names directly.
-local TEXT_ASK_HEADBUTT = Strings.source(
-  "A POKéMON could be\nin this tree.\fWant to HEADBUTT\nit?")
-local TEXT_USE_HEADBUTT = Strings.source("{STRBUF} did a\nHEADBUTT!")
-local TEXT_HEADBUTT_NOTHING = Strings.source("Nope. Nothing…")
-local TEXT_ROD_BITE = Strings.source("Oh!\nA bite!")
-local TEXT_ROD_NOTHING = Strings.source("Not even a nibble!")
--- _UseSweetScentText / _SweetScentNothingText (data/text/common_2.asm).
--- GetPartyNickname leaves the same name in wStringBuffer1-3, so {STRBUF}
--- (wStringBuffer2) reads back the text_ram wStringBuffer3 line just as well.
-local TEXT_USE_SWEET_SCENT = Strings.source("{STRBUF} used\nSWEET SCENT!")
-local TEXT_SWEET_SCENT_NOTHING =
-  Strings.source("Looks like there's\nnothing here…")
--- _UseSacredAshText (data/text/common_2.asm), hung off SacredAshScript's own
--- `text_far` and never reached through a script pointer the extractor walks,
--- same reason the itemfinder pair above needs Strings.source instead of a
--- text.lua key.
-local TEXT_USE_SACRED_ASH = Strings.source(
-  "{PLAYER}'s POKéMON\nwere all healed!")
+-- data/text/common_2.asm:127
+local TEXT_ASK_HEADBUTT = "_AskHeadbuttText"
+local TEXT_USE_HEADBUTT = "_UseHeadbuttText"
+local TEXT_HEADBUTT_NOTHING = "_HeadbuttNothingText"
+local TEXT_ROD_BITE = "_RodBiteText"
+local TEXT_ROD_NOTHING = "_RodNothingText"
+local TEXT_USE_SWEET_SCENT = "_UseSweetScentText"
+local TEXT_SWEET_SCENT_NOTHING = "_SweetScentNothingText"
+local TEXT_USE_SACRED_ASH = "_UseSacredAshText"
 
 -- CheckHeadbuttTreeTile (home/map_objects.asm) compares the facing tile's
 -- collision against COLL_HEADBUTT_TREE and its unused $1d alias
@@ -801,6 +770,46 @@ function World:dataTable(key, path)
   return value, err
 end
 
+function World:loadMenuGfx()
+  local menuGfx = assert(self:dataTable("gen2MenuGfx",
+    "data/generated/menu_gfx.lua"))
+  local function need(tbl, key, label)
+    local value = tbl[key]
+    if value == nil then error("menu_gfx.lua has no " .. label, 2) end
+    return value
+  end
+  local emotes = need(menuGfx, "emotes", "emotes")
+  self.emoteOrder = emotes.order
+  self.emoteImages = {}
+  for _, key in ipairs(emotes.order or {}) do
+    local path = emotes[key]
+    if path then
+      local okImg, img = pcall(Assets.image, path)
+      if okImg then self.emoteImages[key] = img end
+    end
+  end
+  -- data/sprites/emotes.asm:22
+  self.grassRustleImage =
+    Assets.image(need(emotes, "grassRustle", "emotes.grassRustle"))
+  -- data/sprites/emotes.asm:19
+  self.jumpShadowImage =
+    Assets.image(need(emotes, "jumpShadow", "emotes.jumpShadow"))
+  -- engine/events/field_moves.asm:390-407
+  self.cutGrassImage = Assets.image(need(emotes, "cutGrass", "emotes.cutGrass"))
+  self.cutGrassQuad = love.graphics.newQuad(0, 0, 8, 8, 32, 8)
+  -- ../pokecrystal/engine/events/fishing_gfx.asm:7-12
+  self.fishingSheet = need(emotes, "fishing", "emotes.fishing")
+  if self:isCrystal() then
+    self.fishingSheetFemale =
+      need(emotes, "fishingFemale", "emotes.fishingFemale")
+  end
+  -- ../pokecrystal/engine/events/heal_machine_anim.asm:87
+  local healMachine = need(menuGfx, "healMachine", "healMachine")
+  self.healMachineImage =
+    Assets.image(need(healMachine, "sheet", "healMachine.sheet"))
+  self.healMachinePalette = need(healMachine, "palette", "healMachine.palette")
+end
+
 function World:load()
   local maps, mapsErr = self:dataTable("gen2Maps", "data/generated/maps.lua")
   local tilesets, tilesErr =
@@ -842,63 +851,8 @@ function World:load()
   if self.game and self.game.data and self.trainers then
     self.game.data.trainers = self.trainers
   end
-  -- Mart shelves (data/items/marts.asm).  A cache from before the mart stage
-  -- has no marts.lua at all; MartMenu treats that as an empty shelf rather
-  -- than inventing stock, so a clerk still opens and still says his lines.
-  self.marts = self:dataTable("gen2Marts", "data/generated/marts.lua")
-  -- showemote's bubbles.  Loaded here rather than at draw time so a missing
-  -- sheet (a cache from before the emote stage) just means no bubble.
-  local menuGfx = self:dataTable("gen2MenuGfx", "data/generated/menu_gfx.lua")
-  local emotes = menuGfx and menuGfx.emotes
-  if emotes then
-    self.emoteOrder = emotes.order
-    self.emoteImages = {}
-    for _, key in ipairs(emotes.order or {}) do
-      local path = emotes[key]
-      if path then
-        local okImg, img = pcall(Assets.image, path)
-        if okImg then self.emoteImages[key] = img end
-      end
-    end
-    -- ShakeGrass' one tile (data/sprites/emotes.asm:22).  A cache from before
-    -- it was extracted simply has no rustle.
-    if emotes.grassRustle then
-      local okImg, img = pcall(Assets.image, emotes.grassRustle)
-      if okImg then self.grassRustleImage = img end
-    end
-    -- data/sprites/emotes.asm:19
-    if emotes.jumpShadow then
-      local okImg, img = pcall(Assets.image, emotes.jumpShadow)
-      if okImg then self.jumpShadowImage = img end
-    end
-    -- engine/events/field_moves.asm:390-407
-    if emotes.cutGrass then
-      local okImg, img = pcall(Assets.image, emotes.cutGrass)
-      if okImg then
-        self.cutGrassImage = img
-        self.cutGrassQuad = love.graphics.newQuad(0, 0, 8, 8, 32, 8)
-      end
-    end
-    -- LoadFishingGFX's two sheets
-    -- (../pokecrystal/engine/events/fishing_gfx.asm:7-12)
-    if emotes.fishing and pcall(Assets.image, emotes.fishing) then
-      self.fishingSheet = emotes.fishing
-    end
-    if emotes.fishingFemale and pcall(Assets.image, emotes.fishingFemale) then
-      self.fishingSheetFemale = emotes.fishingFemale
-    end
-  end
-  -- The heal machine's two OBJ tiles and their CGB palette, for the
-  -- Pokecenter light show (World:startHealMachineAnim).  A cache from before
-  -- the sheet existed just has no entry, and the anim degrades to its sounds.
-  local healMachine = menuGfx and menuGfx.healMachine
-  if healMachine and healMachine.sheet then
-    local okImg, img = pcall(Assets.image, healMachine.sheet)
-    if okImg then
-      self.healMachineImage = img
-      self.healMachinePalette = healMachine.palette
-    end
-  end
+  self.marts = assert(self:dataTable("gen2Marts", "data/generated/marts.lua"))
+  self:loadMenuGfx()
   -- POKEPORT_GOLD_HOUR pins the clock so a driver's screenshots are stable and
   -- a reviewer can look at any time of day on demand.
   local forcedHour = tonumber(os.getenv("POKEPORT_GOLD_HOUR") or "")
@@ -916,14 +870,8 @@ function World:load()
   FieldMoves.bindEngineFlags(self.constants.engineFlagOrder)
   FieldMoves.bindFlypoints(self.landmarks and self.landmarks.flypoints,
     self.landmarks and self.landmarks.spawns)
-  -- The side tables a script command NAMES rather than carries: the phone
-  -- book, the in-game trades, the elevator's floor labels and the decoration
-  -- descriptions.  A cache built before the extractor reached them has no
-  -- events.lua at all, so every reader treats it as optional.
   self.eventTables =
-    self:dataTable("gen2EventTables", "data/generated/events.lua") or {}
-  -- Take the phone book off the cache when it has one; src/core/gen2/Phone.lua
-  -- keeps its transcribed tables as the fallback for an older cache.
+    self:dataTable("gen2EventTables", "data/generated/events.lua")
   require("src.core.gen2.Phone").useExtracted(self.eventTables)
   -- data.pokemon and data.items keep the SHARED Gen 1 keys: both registries
   -- route to their Gen 1 target under Gen 2, so Game2 already has them
@@ -940,26 +888,23 @@ function World:load()
   end
   -- Retail Gold hides story NPCs (lab cop, rivals, etc.) via
   -- InitializeEventsScript's setevent list -- apply before spawning people.
-  local initial =
-    self:dataTable("gen2InitialEvents", "data/generated/initial_events.lua")
-  self.initialEvents = (initial and initial.flags) or {}
-  self.initialEngineFlags = (initial and initial.engineFlags) or {}
+  local initial = assert(
+    self:dataTable("gen2InitialEvents", "data/generated/initial_events.lua"),
+    "data/generated/initial_events.lua is missing")
+  local function need(key)
+    local value = initial[key]
+    if type(value) ~= "table" then
+      error("initial_events.lua has no " .. key, 2)
+    end
+    return value
+  end
+  self.initialEvents = need("flags")
+  self.initialEngineFlags = need("engineFlags")
   -- InitializeEventsScript does not only `setevent`.  It ends with nine
   -- `variablesprite` assignments, and SPRITE_WEIRD_TREE ($f4) and friends are
   -- wVariableSprites SLOTS rather than sheets -- so until the slot is filled,
-  -- World:resolveSprite answers nil and World:pooledNpc spawns NOTHING.  The
-  -- seed used to carry the setevent list alone, which meant the Sudowoodo on
-  -- Route 36 was simply absent from a new game, and with it TM08 ROCK SMASH,
-  -- the Burned Tower, Morty, FOGBADGE and SURF; likewise the Olivine rival,
-  -- the Azalea Rocket, the four Fuchsia Gym Janines, the Copycat and the
-  -- Janine impersonator.
-  --
-  -- The extractor now writes them (`sprites`).  The fallback finds the same
-  -- script in scripts.lua for a cache written before it did -- the script is
-  -- the one whose setevent ids ARE this flag list -- so an existing cache does
-  -- not have to be rebuilt for the tree to come back.
-  self.initialSprites = (initial and initial.sprites)
-    or self:findInitialSprites()
+  -- World:resolveSprite answers nil and World:pooledNpc spawns NOTHING.
+  self.initialSprites = need("sprites")
   -- wEventFlags and the per-map scene ids off the save, with the seed above as
   -- the fallback for a file that has never had it.  Both are back before the
   -- VM is built and long before the first setMap below.
@@ -1874,11 +1819,11 @@ function World:engineFlag(flag)
   -- two day-care mon objects; a second copy in save.engineFlags is exactly how
   -- the yard stayed empty forever.
   if save then
-    if flag == ENGINE.DAY_CARE_MAN_HAS_EGG then
+    if flag == Breeding.ENGINE_DAY_CARE_MAN_HAS_EGG then
       return Breeding.dayCare(save).hasEgg == true
-    elseif flag == ENGINE.DAY_CARE_MAN_HAS_MON then
+    elseif flag == Breeding.ENGINE_DAY_CARE_MAN_HAS_MON then
       return (Breeding.side(save, "man") or {}).mon ~= nil
-    elseif flag == ENGINE.DAY_CARE_LADY_HAS_MON then
+    elseif flag == Breeding.ENGINE_DAY_CARE_LADY_HAS_MON then
       return (Breeding.side(save, "lady") or {}).mon ~= nil
     end
   end
@@ -1919,11 +1864,11 @@ function World:setEngineFlag(flag, value)
   -- two HAS_MON bits belong to the deposit/withdraw routines, so a script
   -- write to them would be a second store: swallow it.
   if save then
-    if flag == ENGINE.DAY_CARE_MAN_HAS_EGG then
+    if flag == Breeding.ENGINE_DAY_CARE_MAN_HAS_EGG then
       Breeding.dayCare(save).hasEgg = value and true or false
       return
-    elseif flag == ENGINE.DAY_CARE_MAN_HAS_MON
-        or flag == ENGINE.DAY_CARE_LADY_HAS_MON then
+    elseif flag == Breeding.ENGINE_DAY_CARE_MAN_HAS_MON
+        or flag == Breeding.ENGINE_DAY_CARE_LADY_HAS_MON then
       return
     end
   end
@@ -2127,49 +2072,6 @@ function World:setVariableSprite(slot, spriteIndex)
   self.variableSprites[slot] = spriteIndex
   self:repaintVariableSpritePool(slot)
   self:rebuildPeople({ seamless = true })
-end
-
--- The other half of the above: an object whose `sprite` is a SPRITE.VARS byte
--- resolves through the slot table and constants.spriteOrder (1-based, because
--- sprite_constants.asm's block is `const_def 1`).  An unfilled slot answers nil
--- and the object simply does not spawn, which is the cart's behaviour too.
--- InitializeEventsScript's `variablesprite` list, recovered from scripts.lua.
---
--- Only needed for a cache written before the extractor learned to record them;
--- `initial_events.sprites` is the direct answer once one is rebuilt.  The
--- script is identified by its content rather than by a symbol, which the
--- runtime does not have: it is the one whose `setevent` ids are exactly the
--- seed list this same file already trusts.
-function World:findInitialSprites()
-  local wanted = {}
-  local count = 0
-  for _, id in ipairs(self.initialEvents or {}) do
-    wanted[id] = true
-    count = count + 1
-  end
-  if count == 0 or type(self.scripts) ~= "table" then return {} end
-  for key, list in pairs(self.scripts) do
-    if type(key) == "string" and type(list) == "table" then
-      local hits, sprites = 0, {}
-      for _, cmd in ipairs(list) do
-        if type(cmd) == "table" then
-          if cmd.op == "setevent" then
-            local id = cmd.event or (cmd.args and cmd.args[1])
-            if id and wanted[id] then hits = hits + 1 end
-          elseif cmd.op == "variablesprite" then
-            local args = cmd.args or {}
-            local slot = cmd.slot or args[1]
-            local sprite = cmd.sprite or args[2]
-            if slot and sprite then
-              sprites[#sprites + 1] = { slot = slot, sprite = sprite }
-            end
-          end
-        end
-      end
-      if hits == count and #sprites > 0 then return sprites end
-    end
-  end
-  return {}
 end
 
 -- GetMonSprite's .BreedMon1 / .BreedMon2 tail (engine/overworld/overworld.asm:
@@ -2726,8 +2628,8 @@ function World:mapMusicSong(mapId)
   local def = self.maps and self.maps[mapId]
   -- ENGINE_ROCKETS_IN_MAHOGANY / _RADIO_TOWER (data/events/engine_flags.asm:40,:36)
   return World.mapMusicLabel(audio, def and def.music,
-    self:engineFlag(self:engineFlagId("ENGINE_ROCKETS_IN_MAHOGANY", 22)),
-    self:engineFlag(self:engineFlagId("ENGINE_ROCKETS_IN_RADIO_TOWER", 18)))
+    self:engineFlag(self:engineFlagId("ENGINE_ROCKETS_IN_MAHOGANY")),
+    self:engineFlag(self:engineFlagId("ENGINE_ROCKETS_IN_RADIO_TOWER")))
 end
 
 function World:playMapMusic()
@@ -3052,8 +2954,8 @@ end
 function World:pushScreen(id, opts)
   local game = self.game
   if not (game and game.stack) then return false end
-  local ok = pcall(Screens.push, game, id, opts)
-  return ok
+  Screens.push(game, id, opts)
+  return true
 end
 
 -- SelectMonFromParty (engine/pokemon/party_menu.asm), the one blocking piece a
@@ -4768,7 +4670,7 @@ end
 function World:wildTables()
   local save = self.game and self.game.save
   if not (save and self.map and self.encounters) then return self.encounters end
-  return Roamers.Swarm.tables(save, self.encounters, self.map.id, self:engineFlagResolver())
+  return Roamers.Swarm.tables(save, self.encounters, self.map.id)
 end
 
 -- ---------------------------------------------------------------------------
@@ -4836,8 +4738,7 @@ function World:checkTimeEvents()
   local save = self.game and self.game.save
   if not save then return false end
   if not BugContest.isActive(save) then
-    Apricorns.checkDailyResetTimer(save, nil,
-      self.engineFlagResolver and self:engineFlagResolver() or nil)
+    Apricorns.checkDailyResetTimer(save, nil)
     -- CheckSwarmFlag, second on `.do_daily` and the ONLY thing that ever ends
     -- a swarm: the reset above takes DAILYFLAGS1_SWARM down, and this is what
     -- notices and clears wSwarmMapGroup/Number and wFishingSwarmFlag with it.
@@ -4859,12 +4760,9 @@ end
 
 -- BugCatchingContestOverScript and BugCatchingContestOutOfBallsScript: the same
 -- two commands over a different line, and both fall into
--- BugCatchingContestReturnToGateScript.  Neither is a std script (they sit in
--- engine/events/bug_contest/contest.asm, which nothing points at), so the text
--- is authored here the way World:repelWoreOff's is.
-local BUG_CONTEST_TIME_UP = Strings.source("ANNOUNCER: BEEEP!\fTime's up!")
-local BUG_CONTEST_IS_OVER =
-  Strings.source("ANNOUNCER: The\nContest is over!")
+-- BugCatchingContestReturnToGateScript.
+local BUG_CONTEST_TIME_UP = "_BugCatchingContestTimeUpText"
+local BUG_CONTEST_IS_OVER = "_BugCatchingContestIsOverText"
 local SFX_ELEVATOR_END = 39
 
 function World:bugContestOver(reason)
@@ -4872,7 +4770,7 @@ function World:bugContestOver(reason)
   self.bugContestEnding = true
   self:playSfxNamed("Sfx_ElevatorEnd", SFX_ELEVATOR_END)
   local line = (reason == "balls") and BUG_CONTEST_IS_OVER or BUG_CONTEST_TIME_UP
-  self:showText(Strings(line), function()
+  self:showText(self:romLine(line), function()
     self.bugContestEnding = nil
     self:bugContestResults()
   end)
@@ -4958,7 +4856,7 @@ function World:rollFishing(rod)
   -- swarms reach the rods at all: the phone call's ActivateFishingSwarm writes
   -- the flag and nothing about the map changes.  Roamers.Swarm.fishing is the
   -- same store CheckSwarmFlag clears when the swarm expires.
-  local swarm = Roamers.Swarm.fishing(game.save, self:engineFlagResolver())
+  local swarm = Roamers.Swarm.fishing(game.save)
   -- engine/events/fish.asm:24-30
   local groupRow = self.encounters.fishGroups
     and self.encounters.fishGroups[
@@ -5157,8 +5055,7 @@ end
 -- yesorno's `iffalse` + `closetext` pair -- so the PACK use and the talk path
 -- run the very same decoded rows, battle and TWIN swap included.
 local SPRITEMOVEDATA_SUDOWOODO = 0x17
-local TEXT_SQUIRTBOTTLE_NOTHING = Strings.source(
-  "{PLAYER} sprinkled\nwater.\fBut nothing\nhappened…")
+local TEXT_SQUIRTBOTTLE_NOTHING = "_SquirtbottleNothingText"
 
 function World:squirtbottleTreeScript()
   local p, map = self.player, self.map
@@ -5199,7 +5096,7 @@ function World:useSquirtbottle()
   else
     self.queuedScript = {
       { op = "opentext" },
-      { op = "rawtext", text = TEXT_SQUIRTBOTTLE_NOTHING },
+      { op = "rawtext", text = self:romLine(TEXT_SQUIRTBOTTLE_NOTHING) },
       { op = "waitbutton" },
       { op = "closetext" },
       { op = "end" },
@@ -5263,7 +5160,18 @@ function World:useSelectItem()
   -- BICYCLE is the one item whose effect reads it (.CheckIfRegistered), and it
   -- is what makes a SELECT press get on the bike without a line of text.
   self.usingItemWithSelect = true
-  local outcome = self:useFieldItem(id)
+  local outcome
+  if Runtime.wantsHook("item.use") then
+    local ran = false
+    Runtime.call("item.use", function(_, _, itemId)
+      ran = true
+      id = itemId
+      outcome = self:useFieldItem(itemId)
+    end, self.game, nil, id, nil, nil)
+    if not ran then outcome = "claimed" end
+  else
+    outcome = self:useFieldItem(id)
+  end
   self.usingItemWithSelect = nil
   if outcome == nil then return "cant_use" end
   return outcome, id
@@ -5337,7 +5245,7 @@ function World:useItemfinder()
     self.map and self.map.def, p.cellX, p.cellY, self.events) or nil
   self.queuedScript = HiddenItems.itemfinderScript(found, function(want, id)
     return self:sfxIdNamed(want, id)
-  end)
+  end, self.game and self.game.data)
   return "itemfinder"
 end
 
@@ -5346,57 +5254,32 @@ end
 -- src/world/gen2/Bike.lua owns every decision; this is the world state those
 -- decisions read and the presentation they end in.
 
--- ../pokecrystal/constants/engine_flags.asm:25 ENGINE_MOBILE_SYSTEM shifts every
--- later id up one: :36 ALWAYS_ON_BIKE against ../pokegold's :35.
-function World:engineFlagId(name, goldId)
-  local order = self.constants and self.constants.engineFlagOrder
-  if type(order) ~= "table" then return goldId end
-  local ids = self.engineFlagIds
-  if not ids then
-    ids = {}
-    for index, entry in pairs(order) do
-      if type(index) == "number" and type(entry) == "string" then
-        ids[entry] = index - 1
-      end
-    end
-    self.engineFlagIds = ids
-  end
-  return ids[name] or goldId
+function World.engineFlagId(_, name)
+  return require("src.core.gen2.EngineFlags").id(name)
 end
 
 function World:engineFlagResolver()
   local fn = self.engineFlagResolverFn
   if not fn then
-    fn = function(name, goldId) return self:engineFlagId(name, goldId) end
+    fn = function(name) return self:engineFlagId(name) end
     self.engineFlagResolverFn = fn
   end
   return fn
 end
 
--- Unown.UNLOCK_SETS keys the flags by pokegold's ids; Crystal's are one
--- higher (../pokecrystal/constants/engine_flags.asm:57-60 vs ../pokegold:56-59).
 function World:unownUnlockFlags()
-  local engine = self:engineFlags()
-  local out = {}
-  for _, set in ipairs(Unown.UNLOCK_SETS) do
-    if engine[self:engineFlagId(set.name, set.flag)] then
-      out[set.flag] = true
-    end
-  end
-  return out
+  return self:engineFlags()
 end
 
 -- wBikeFlags' three bits are ENGINE_* ids like any other flag, so the map
 -- callbacks that set them (Route16AlwaysOnBikeCallback,
 -- Route17AlwaysOnBikeCallback) already land on save.engineFlags.
 function World:alwaysOnBike()
-  return self:engineFlag(World.engineFlagId(
-    self, "ENGINE_ALWAYS_ON_BIKE", Bike.ENGINE_ALWAYS_ON_BIKE))
+  return self:engineFlag(self:engineFlagId("ENGINE_ALWAYS_ON_BIKE"))
 end
 
 function World:downhill()
-  return self:engineFlag(World.engineFlagId(
-    self, "ENGINE_DOWNHILL", Bike.ENGINE_DOWNHILL))
+  return self:engineFlag(self:engineFlagId("ENGINE_DOWNHILL"))
 end
 
 -- GetPlayerTilePermission's operand: the collision under the player's feet.
@@ -5434,14 +5317,14 @@ function World:useBike(itemId)
   -- pair of scripts.
   local silent = self.usingItemWithSelect and true or false
   if action == "mount" then
-    self.queuedScript = Bike.mountScript(item, specialId, silent)
+    self.queuedScript = Bike.mountScript(item, specialId, silent, self.game and self.game.data)
     self:playBikeMusic()
     return "bike_on"
   elseif action == "dismount" then
-    self.queuedScript = Bike.dismountScript(item, specialId, silent)
+    self.queuedScript = Bike.dismountScript(item, specialId, silent, self.game and self.game.data)
     return "bike_off"
   elseif action == "cant_get_off" then
-    self.queuedScript = Bike.cantGetOffScript()
+    self.queuedScript = Bike.cantGetOffScript(self.game and self.game.data)
     return "bike_stuck"
   end
   return "nowhere"
@@ -5513,7 +5396,7 @@ function World:useSacredAsh()
   end
   script[#script + 1] = { op = "waitsfx" }
   script[#script + 1] = { op = "opentext" }
-  script[#script + 1] = { op = "rawtext", text = TEXT_USE_SACRED_ASH }
+  script[#script + 1] = { op = "rawtext", text = self:romLine(TEXT_USE_SACRED_ASH) }
   script[#script + 1] = { op = "playsound", id = self:sfxIdNamed("Sfx_CaughtMon", 2) }
   script[#script + 1] = { op = "waitsfx" }
   script[#script + 1] = { op = "waitbutton" }
@@ -5561,11 +5444,12 @@ function World:beginFishing(outcome, wild)
   if self.player then
     self.player.fishing = true
     self.player.fishingState = self.fishing
-    -- LoadFishingGFX reads wPlayerGender
-    -- (../pokecrystal/engine/events/fishing_gfx.asm:8-12)
-    self.player.fishSheet =
-      (FieldMoves.isFemale(self:playerGender()) and self.fishingSheetFemale)
-      or self.fishingSheet
+    -- ../pokecrystal/engine/events/fishing_gfx.asm:8-12
+    if self:isCrystal() and FieldMoves.isFemale(self:playerGender()) then
+      self.player.fishSheet = self.fishingSheetFemale
+    else
+      self.player.fishSheet = self.fishingSheet
+    end
   end
 end
 
@@ -5597,7 +5481,7 @@ function World:updateFishing()
       return
     end
     st.phase = "done"
-    self:showText(Strings(TEXT_ROD_NOTHING), function()
+    self:showText(self:romLine(TEXT_ROD_NOTHING), function()
       self.fishing = nil
       if self.player then
         self.player.fishing = nil
@@ -5608,7 +5492,7 @@ function World:updateFishing()
   end
   if st.phase == "bite" then
     st.phase = "done"
-    self:showText(Strings(TEXT_ROD_BITE), function()
+    self:showText(self:romLine(TEXT_ROD_BITE), function()
       local wild = st.wild
       self.fishing = nil
       if self.player then
@@ -5673,7 +5557,7 @@ function World:tryHeadbuttOW(cx, cy)
   -- iftrue HeadbuttScript.  The port's yesorno re-shows the page it is
   -- answering underneath the prompt, which is what World:askYesNo does with
   -- the body World:showText just kept.
-  self:showText(Strings(TEXT_ASK_HEADBUTT), function()
+  self:showText(self:romLine(TEXT_ASK_HEADBUTT), function()
     self:askYesNo(function(yes)
       if yes then self:runHeadbutt(cx, cy, mon) end
     end)
@@ -5692,7 +5576,7 @@ function World:runHeadbutt(cx, cy, mon)
     self.game.stringBuffer =
       (mon and (mon.nickname or mon.name or mon.species)) or ""
   end
-  self:showText(Strings(TEXT_USE_HEADBUTT), function()
+  self:showText(self:romLine(TEXT_USE_HEADBUTT), function()
     self.headbutt = { x = cx, y = cy, timer = HEADBUTT_SHAKE_FRAMES }
     -- ShakeHeadbuttTree (engine/events/field_moves.asm:23) hides the BG tree
     -- and wobbles an OBJ copy of it -- Frameset_HeadbuttTree alternates two
@@ -5717,7 +5601,7 @@ function World:updateHeadbutt()
   -- reason the fishing state is: startBattle must not see a busy world.
   self.headbutt = nil
   if self:tryHeadbutt(st.x, st.y) == "battle" then return end
-  self:showText(Strings(TEXT_HEADBUTT_NOTHING))
+  self:showText(self:romLine(TEXT_HEADBUTT_NOTHING))
 end
 
 -- ../pokecrystal/engine/events/treemons.asm:126 GetTreeMon's two RandomRange
@@ -5790,12 +5674,21 @@ function World:rockMonEncounter()
   -- routine, so a second smash never inherits the first one's mon.
   self.tempWildMon = nil
   local game, map = self.game, self.map
-  if not (game and map and self.encounters) then return 0 end
-  local setName = self.encounters.rocks and self.encounters.rocks[map.id]
+  if not (game and map) then return 0 end
+  local encounters = self.encounters
+  if type(encounters) ~= "table" then error("encounters.lua is missing") end
+  if type(encounters.rocks) ~= "table" then error("encounters.lua has no rocks") end
+  if type(encounters.treeSets) ~= "table" then
+    error("encounters.lua has no treeSets")
+  end
+  local setName = encounters.rocks[map.id]
   if not setName then return 0 end
-  local set = self.encounters.treeSets and self.encounters.treeSets[setName]
-  local list = set and set.common
-  if not (list and #list > 0) then return 0 end
+  local set = encounters.treeSets[setName]
+  if type(set) ~= "table" then
+    error("encounters.lua has no tree set " .. tostring(setName))
+  end
+  local list = set.common or {}
+  if #list == 0 then return 0 end
   if self:rockRandom(10) >= 4 then return 0 end
   -- SelectTreeMon's `.loop: sub [hl] / jr c, .ok`: the chance column is walked
   -- as a running total until the roll borrows.
@@ -5855,9 +5748,9 @@ function World:runSweetScent(result)
     self.game.stringBuffer =
       (mon and (mon.nickname or mon.name or mon.species)) or ""
   end
-  self:showText(Strings(TEXT_USE_SWEET_SCENT), function()
+  self:showText(self:romLine(TEXT_USE_SWEET_SCENT), function()
     if self:sweetScentEncounter() then return end
-    self:showText(Strings(TEXT_SWEET_SCENT_NOTHING))
+    self:showText(self:romLine(TEXT_SWEET_SCENT_NOTHING))
   end)
 end
 
@@ -6224,7 +6117,7 @@ end
 -- still standing behind the line that says it was cut.
 function World:runCut(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:replaceBlock(result.blockIndex, result.replacement)
     self:playSfx(SFX.PLACE_PUZZLE_PIECE_DOWN)
   end)
@@ -6234,7 +6127,7 @@ end
 -- PlayWhirlpoolSound in place of the snip.
 function World:runWhirlpool(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:playWhirlpoolSound(result.blockIndex, result.replacement)
   end)
 end
@@ -6267,7 +6160,7 @@ end
 -- a NITE one, which is the cart's own .UsedFlash arm.
 function World:runFlash(result)
   self:playSfx(SFX.FLASH)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self.flashUsed = true
     if self:applyPalettes() then self:refreshMapImages() end
   end)
@@ -6279,7 +6172,7 @@ end
 -- step, which is why it never rolls an encounter.
 function World:runSurf(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:applyPlayerState(result.state)
     local audio = self.game and self.game.data and self.game.data.audio
     if audio and audio.runtime and self.map then
@@ -6302,7 +6195,7 @@ function World:runStrength(result)
   self.strengthActive = true
   self.strengthMon = result.mon
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:playMonCry(result.mon)
     self.fieldMove = {
       phase = "strength", timer = STRENGTH_PAUSE_FRAMES, text = result.after,
@@ -6319,7 +6212,7 @@ end
 -- first step.
 function World:runWaterfall(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:playSfx(SFX.BUBBLEBEAM)
     self.fieldMove = { phase = "waterfall" }
     self:waterfallStep()
@@ -6331,6 +6224,10 @@ function World:waterfallStep()
   if not p then return end
   p.facing = "up"
   if p.scriptStep then p:scriptStep("up") end
+end
+
+function World:romLine(label, ...)
+  return FieldMoves.line(self.game and self.game.data, label, ...)
 end
 
 -- callasm GetPartyNickname: {STRBUF} is the nickname of the mon CheckPartyMove
@@ -6441,7 +6338,7 @@ end
 -- invalidated falls back to re-resolving, and to nothing at worst.
 function World:runDigEscape(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     local destMapId, destWarp = result.destMap, result.destWarp
     if not (destMapId and destWarp) then
       destMapId, destWarp = self:escapeRopeTarget()
@@ -6458,7 +6355,7 @@ end
 -- engine/events/overworld.asm:940-955
 function World:runTeleport(result)
   self:setNickname(result.mon)
-  self:showText(Strings(result.text), function()
+  self:showText(self:romLine(result.text), function()
     self:playSfxNamed("Sfx_WarpTo", SFX.WARP_TO)
     self:applyPlayerState(FieldMoves.PLAYER_NORMAL)
     self:runMapSetup(MAPSETUP.TELEPORT, function()
@@ -6507,7 +6404,7 @@ function World:useFieldMove(moveId, mon)
   if result.ok then
     self.queuedFieldMove = result
   elseif result.text then
-    self:showText(Strings(result.text))
+    self:showText(self:romLine(result.text))
   end
   return result
 end
@@ -6526,11 +6423,11 @@ end
 function World:runOverworldFieldMove(result)
   if not result or not result.took then return false end
   if not result.ok then
-    if result.text then self:showText(Strings(result.text)) end
+    if result.text then self:showText(self:romLine(result.text)) end
     return true
   end
   if result.ask then
-    self:showText(Strings(result.ask), function()
+    self:showText(self:romLine(result.ask), function()
       self:askYesNo(function(yes)
         -- AskCutScript's `iffalse .declined` and friends: NO is a plain
         -- closetext, and CUT's own map check only happens after the YES.
@@ -6791,7 +6688,7 @@ end
 function World:drawFlyLeaves(s, billboard)
   local fa = self.flyAnim
   local sheet = self.cutGrassImage
-  if not (fa and fa.leaves and sheet and self.cutGrassQuad) then return end
+  if not (fa and fa.leaves) then return end
   local G = love.graphics
   local colors = Palettes.spritePalette(self.palettes,
     self.daytime or Palettes.daytimeFor(self.map and self.map.def,
@@ -6951,7 +6848,7 @@ function World:askFlyPoint(points, index, mon)
   local row = points[index]
   if not row then return end
   local name = (row.name or row.landmark):gsub("\n", " ")
-  self:showText(Strings(FieldMoves.TEXT.ASK_FLY_TO, name), function()
+  self:showText(Strings(FieldMoves.ASK_FLY_TO, name), function()
     self:askYesNo(function(yes)
       if yes then
         self:flyTo(row.spawn, mon)
@@ -7000,7 +6897,7 @@ function World:updateFieldMove()
   end
   if st.phase == "strength" then
     self.fieldMove = nil
-    if st.text then self:showText(Strings(st.text)) end
+    if st.text then self:showText(self:romLine(st.text)) end
     return
   end
   if self.player and self.player.moving then return end
@@ -7642,10 +7539,7 @@ function World:momTriesToBuy()
   })
   if not purchase then return nil end
   local script = {}
-  for _, page in ipairs(MomShopping.pages(purchase)) do
-    -- `rawtext`, not `writetext`: these six strings sit in data/text/
-    -- common_1.asm behind a phone script the extractor never walks, so there
-    -- is no text.lua key to name them by.
+  for _, page in ipairs(MomShopping.pages(purchase, self.game and self.game.data)) do
     script[#script + 1] = { op = "rawtext", text = page }
   end
   script[#script + 1] = { op = "end" }
@@ -7739,15 +7633,11 @@ do
   HEAL_MACHINE_LAYOUT[1] = elm
 end
 
--- The special is BLOCKING: `onDone` is what resumes the script, so the
--- nurse's next line never comes up over the machine still running.  The
--- cart's first guard is `ld a, [wPartyCount] / and a / ret z`, and a cache
--- with no sheet (from before the extractor carried it) resumes the same way
--- rather than hanging the script.
+-- ../pokecrystal/engine/events/heal_machine_anim.asm:12-14
 function World:startHealMachineAnim(animType, onDone)
   local party = self.game and self.game.save and self.game.save.party
   local layout = HEAL_MACHINE_LAYOUT[animType or 0] or HEAL_MACHINE_LAYOUT[0]
-  if not (party and #party > 0 and self.healMachineImage) then
+  if not (party and #party > 0) then
     if onDone then onDone() end
     return
   end
@@ -7824,7 +7714,7 @@ end
 function World:drawHealAnim(s, billboard)
   local ha = self.healAnim
   local img = self.healMachineImage
-  if not (ha and img) then return end
+  if not ha then return end
   local G = love.graphics
   if not self.healMachineQuads then
     local w, h = img:getWidth(), img:getHeight()
@@ -7841,7 +7731,7 @@ function World:drawHealAnim(s, billboard)
   local function body()
     local shaded = false
     local pal = self.healMachinePalette
-    if pal and GbcPalette.available() then
+    if GbcPalette.available() then
       local byte = 0
       for i = 0, 3 do byte = byte + ((i + ha.rotation) % 4) * (4 ^ i) end
       shaded = GbcPalette.useRaw(
@@ -9043,50 +8933,77 @@ function World:interactBody()
   if npc then
     local talkTo = Gen1Facade.talkToWrapper()
     if talkTo and talkTo(self, npc) then return true end
+    local handled, result
+    if npc.moving or not Runtime.wantsHook("world.talk") then
+      handled, result = self:talkObject(npc, fx, fy)
+    else
+      local ran = false
+      Runtime.call("world.talk", function(world, target)
+        ran = true
+        handled, result = world:talkObject(target, fx, fy)
+      end, self, npc)
+      if not ran then
+        interacted(self, fx, fy, "npc", npc)
+        return true
+      end
+    end
+    if handled then return result end
   end
-  if npc and npc.def and npc.def.trainer
+  return self:interactTile(fx, fy)
+end
+
+-- ../pokecrystal/engine/overworld/events.asm:532-572
+function World:talkObject(npc, fx, fy)
+  if not npc then return false end
+  if npc.def and npc.def.trainer
     and not self:trainerRefused(npc.def.trainer) then
     interacted(self, fx, fy, "trainer", npc)
-    return self:startTrainerScript(npc, TALK_TO_TRAINER_SCRIPT, nil)
+    return true, self:startTrainerScript(npc, TALK_TO_TRAINER_SCRIPT, nil)
   end
   -- Any other object an A press lands on holds still too (see freezeNpc).
-  if npc then self:freezeNpc(npc) end
+  self:freezeNpc(npc)
   -- Every strength boulder in the game carries the same script -- `jumpstd
   -- StrengthBoulderScript`, which is a bare `farsjump AskStrengthScript` into
   -- ASM.  There is no bytecode behind that label for the extractor to have
   -- found, so the boulder arm is handled here rather than through the VM,
   -- which would otherwise walk into a script key with nothing on the far side.
-  if npc and World.isStrengthBoulder(npc) then
+  if World.isStrengthBoulder(npc) then
     self.talkNpc = npc
     interacted(self, fx, fy, "boulder", npc)
-    return self:tryStrengthOW()
+    return true, self:tryStrengthOW()
   end
   -- OBJECTTYPE_ITEMBALL: no scriptKey to start -- the object's pointer is the
   -- raw (item, quantity) pair, read by the extractor into `itemball`.  Every
   -- plain Poke Ball on the floor comes through here; without this arm the
   -- press found the object, matched no branch, and fell through to the tile
   -- events -- no ball in the game could be picked up.
-  if npc and npc.def and npc.def.itemball then
+  if npc.def and npc.def.itemball then
     self.talkNpc = npc
     interacted(self, fx, fy, "itemball", npc)
-    return self.vm:start(HiddenItems.ballPickupScript(
+    return true, self.vm:start(HiddenItems.ballPickupScript(
       npc.def.itemball.item, npc.def.itemball.quantity,
       (npc.def.index or 0) + 1,
       -- The same resolver the itemfinder gets: the script names its sfx by
       -- pokegold LABEL and this looks it up in THIS cache's sfx table, rather
       -- than trusting a numeric id that only holds for the shipped Gold cache.
-      function(want, id) return self:sfxIdNamed(want, id) end))
+      function(want, id) return self:sfxIdNamed(want, id) end,
+      self.game and self.game.data))
   end
-  if npc and npc.def and npc.def.scriptKey then
+  if npc.def and npc.def.scriptKey then
     self.talkNpc = npc
     interacted(self, fx, fy, "npc", npc)
-    return self.vm:start(npc.def.scriptKey)
+    return true, self.vm:start(npc.def.scriptKey)
   end
-  if npc and npc.def and npc.def.runtime then
+  if npc.def and npc.def.runtime then
     self.talkNpc = npc
     interacted(self, fx, fy, "npc", npc)
-    return true
+    return true, true
   end
+  return false
+end
+
+-- ../pokecrystal/engine/overworld/events.asm:512-524
+function World:interactTile(fx, fy)
   local sign = self:bgEventAt(fx, fy)
   if sign and sign.onTalk then
     self.talkNpc = nil
@@ -9110,7 +9027,8 @@ function World:interactBody()
     -- PlayTalkObject, the SFX every read of a bg event opens on.
     self:playSfxNamed("Sfx_ReadText2", SFX.READ_TEXT_2)
     interacted(self, fx, fy, "hidden", hidden)
-    return self.vm:start(HiddenItems.pickupScript(hidden.item, hidden.event))
+    return self.vm:start(HiddenItems.pickupScript(hidden.item, hidden.event,
+      self.game and self.game.data))
   end
   -- CheckAPressOW's third and last try (engine/overworld/events.asm):
   -- TryObjectEvent, then TryBGEvent, then TryTileCollisionEvent -- the facing
@@ -9428,10 +9346,11 @@ function World:animLayers(tileset)
   if not (anim and anim.frames) then return nil end
   local defs = self.tilesets
   local wanted = nil
-  local function add(tile, layer)
-    -- A cache built before the strips were extracted has no sheet to draw
-    -- from, so that tile is left to the bake.
-    if not tile or (layer.kind ~= "scroll" and not layer.sheet) then return end
+  local function add(tile, layer, key)
+    if not tile then return end
+    if layer.kind ~= "scroll" and not layer.sheet then
+      error("tilesets.lua has no " .. key, 2)
+    end
     wanted = wanted or {}
     wanted[tile] = layer
   end
@@ -9439,15 +9358,16 @@ function World:animLayers(tileset)
     local func = frame.func
     if func == "AnimateWaterTile" then
       add(frame.tile,
-        { kind = "water", sheet = defs and defs.waterFrames, frames = 4 })
+        { kind = "water", sheet = defs.waterFrames, frames = 4 }, "waterFrames")
     elseif func == "AnimateFlowerTile" then
       -- AnimateFlowerTile takes no argument: it hardcodes vTiles2 tile $03
       -- (engine/tilesets/tileset_anims.asm:222).
       add(0x03,
-        { kind = "flower", sheet = defs and defs.flowerFrames, frames = 4 })
+        { kind = "flower", sheet = defs.flowerFrames, frames = 4 },
+        "flowerFrames")
     elseif ANIM_KINDS[func] then
       add(frame.tile, { kind = ANIM_KINDS[func], sheet = frame.sheet,
-        frames = frame.frames })
+        frames = frame.frames }, "sheet for " .. func)
     elseif func == "WriteTileFromAnimBuffer" and frame.scroll then
       add(frame.tile, { kind = "scroll", scroll = frame.scroll, frames = 8 })
     end
@@ -10017,9 +9937,7 @@ end
 
 function World:drawGrassShake(entity, ox, oy, s)
   local sheet = self.grassRustleImage
-  if not (sheet and entity and entity.grassShake and entity.moving) then
-    return
-  end
+  if not (entity and entity.grassShake and entity.moving) then return end
   local frames = entity.stepFrames or Player.STEP_FRAMES
   local progress = entity.progress or 0
   -- MovementFunction_ShakingGrass takes the tracked object's STEP_DURATION
@@ -10040,7 +9958,7 @@ end
 -- engine/overworld/map_objects.asm:1995, :879-893, facings.asm:161-164
 function World:drawJumpShadow(entity, ox, oy, s)
   local sheet = self.jumpShadowImage
-  if not (sheet and entity and entity.jumping) then return end
+  if not (entity and entity.jumping) then return end
   local facing = entity.facing
   local dy = (facing == "left" or facing == "right") and 8 or 10
   local colors = Palettes.spritePalette(self.palettes,
@@ -10099,9 +10017,7 @@ function World:borderWaterFrame(def, tileset, row)
   end
   local frame = memo.frame
   if not frame then return nil end
-  local sheets = self:animSheets()
-  if not (sheets and sheets.water) then return nil end
-  frame.image = sheets.water
+  frame.image = self:animSheets().water
   frame.row = row or World.waterFrameFor(self.animTimer)
   return frame
 end
@@ -10202,10 +10118,9 @@ end
 -- AnimateFlowerTile's `and %10` plus hCGB (tileset_anims.asm:204-212): on CGB
 -- only cgb_1 and cgb_2 are ever written, alternating every two timer ticks.
 function World:flowerFrameFor(timer)
-  local rows = self.tilesets and self.tilesets.flowerCgbFrames
-  local first, second = 2, 4
-  if rows and rows[1] and rows[2] then first, second = rows[1], rows[2] end
-  return ((timer or 0) % 4 < 2) and first or second
+  local rows = self.tilesets.flowerCgbFrames
+  if not rows then error("tilesets.lua has no flowerCgbFrames", 2) end
+  return rows[((timer or 0) % 4 < 2) and 1 or 2]
 end
 
 -- _AnimateTileset (engine/tilesets/tileset_anims.asm:11) runs ONE row of the
@@ -10244,35 +10159,28 @@ function World:animRow(layer)
   return timer + 1
 end
 
--- One frame strip, loaded once.  `false` after a miss so a cache from before
--- it was extracted costs one pcall rather than one a frame.
 function World:animSheet(path)
-  if not path then return nil end
   self.animSheetPaths = self.animSheetPaths or {}
-  local cached = self.animSheetPaths[path]
-  if cached ~= nil then return cached or nil end
-  local ok, img = pcall(Assets.image, path)
-  if ok and img then img:setFilter("nearest", "nearest") end
-  self.animSheetPaths[path] = (ok and img) or false
-  return (ok and img) or nil
+  local img = self.animSheetPaths[path]
+  if not img then
+    img = Assets.image(path)
+    img:setFilter("nearest", "nearest")
+    self.animSheetPaths[path] = img
+  end
+  return img
 end
 
--- The two strips the border-block bake reaches for by name
--- (assets/generated/tilesets/*_frames.png), memoized as a pair.
 function World:animSheets()
-  if self.animSheetCache ~= nil then return self.animSheetCache or nil end
-  local defs = self.tilesets
-  local sheets = nil
-  for kind, path in pairs({ water = defs and defs.waterFrames,
-      flower = defs and defs.flowerFrames }) do
-    local img = self:animSheet(path)
-    if img then
-      sheets = sheets or {}
-      sheets[kind] = img
+  if not self.animSheetCache then
+    local defs = self.tilesets
+    local sheets = {}
+    for kind, key in pairs({ water = "waterFrames", flower = "flowerFrames" }) do
+      if not defs[key] then error("tilesets.lua has no " .. key, 2) end
+      sheets[kind] = self:animSheet(defs[key])
     end
+    self.animSheetCache = sheets
   end
-  self.animSheetCache = sheets or false
-  return sheets
+  return self.animSheetCache
 end
 
 -- ScrollTileRightLeft (tileset_anims.asm:65) scrolls right for four ticks then
@@ -11032,10 +10940,8 @@ function World:setMap(mapId, cx, cy, facing, opts)
   -- MAPCALLBACK_NEWMAP runs, because the Cycling Road's callback is what sets
   -- them straight back again: leaving them set is how one visit to Route 17
   -- would keep the player glued to the bike for the rest of the game.
-  self:setEngineFlag(World.engineFlagId(
-    self, "ENGINE_ALWAYS_ON_BIKE", Bike.ENGINE_ALWAYS_ON_BIKE), false)
-  self:setEngineFlag(World.engineFlagId(
-    self, "ENGINE_DOWNHILL", Bike.ENGINE_DOWNHILL), false)
+  self:setEngineFlag(self:engineFlagId("ENGINE_ALWAYS_ON_BIKE"), false)
+  self:setEngineFlag(self:engineFlagId("ENGINE_DOWNHILL"), false)
   -- home/map.asm:695
   self:updateWhiteoutSpawn(def, mapId)
 
@@ -11721,13 +11627,6 @@ end
 -- MAPCALLBACK_CMDQUEUE, and the `writecmdqueue` command that is its whole body
 -- on both maps that have one.
 --
--- The extracted callback is preferred: maps.lua now carries the map's callback
--- list and the extractor follows `writecmdqueue`'s operand through the cmdqueue
--- struct into the stonetable, so the rows and their per-boulder scripts come
--- out of the cart.  CmdQueue.STONE_TABLES stays as the fallback for a cache
--- built before that, and is what the pins in tests/gen2_world_test.lua compare
--- the extracted rows against.
---
 -- This READS the callback script rather than running it, which is enough
 -- because `writecmdqueue` / `endcallback` is the whole body on both maps -- and
 -- it has to, because CmdQueue.write wants the entry back as a value while the
@@ -11748,7 +11647,7 @@ end
 
 function World:writeCmdQueue()
   if not self.map then return false end
-  local entry = self:extractedCmdQueue() or CmdQueue.mapEntry(self.map.id)
+  local entry = self:extractedCmdQueue()
   if not entry then return false end
   return CmdQueue.write(self.cmdQueue, entry) ~= nil
 end
@@ -11873,7 +11772,7 @@ end
 
 -- RepelWoreOffScript (engine/events/repel.asm): opentext, one line, waitbutton.
 function World:repelWoreOff()
-  self:showText(Strings("REPEL's effect\nwore off."))
+  self:showText(self:romLine("_RepelWoreOffText"))
 end
 
 -- .Script_MonFaintedToPoison, via .CheckWhitedOut.  One line per mon that
@@ -11891,7 +11790,7 @@ function World:poisonFaintScript(event)
     local mon = party[index]
     if mon then
       Happiness.change(mon, "HAPPINESS_POISONFAINT")
-      lines[#lines + 1] = Strings("%s\nfainted!", monName(mon))
+      lines[#lines + 1] = self:romLine("_PoisonFaintText", monName(mon))
     end
   end
   CallAsm.run(self, "PlayPoisonSFX")
@@ -11920,7 +11819,7 @@ end
 -- it matches -- but running the pair keeps the script order honest.
 function World:whiteOut()
   self:showText(
-    Strings("You have no more\nPOKéMON that can\011fight!"), function()
+    self:romLine("_WhitedOutText"), function()
     self:healParty()
     -- engine/events/whiteout.asm:15-16
     if BugContest.isActive(self.game and self.game.save) then
@@ -11954,15 +11853,21 @@ end
 --   "<NAME> came<LINE>out of its EGG!" with sound_caught_mon
 --   "Give a nickname to<LINE><NAME>?" -> the naming screen, or not
 --
--- These four strings are hand-written from data/text/common_2.asm rather than
--- read out of text.lua, for the same reason the Pokegear's radio lines are:
--- the extractor only follows text a SCRIPT points at, and nothing points at
--- this block.  The animation itself is src/ui/gen2/EggHatchAnim.lua.
 function World:hatchEggs()
   local save = self.game and self.game.save
   local data = self.game and self.game.data
   if not (save and data) then return end
   local Breeding = require("src.core.gen2.Breeding")
+  local CommonText = require("src.core.gen2.CommonText")
+  -- engine/pokemon/breeding.asm:355
+  local huh = CommonText.get(self.text, "Text_BreedHuh")
+  -- engine/pokemon/breeding.asm:381
+  local cameOut = CommonText.get(self.text, "_BreedEggHatchText")
+  -- engine/pokemon/breeding.asm:385
+  local askNickname = CommonText.get(self.text, "_BreedAskNicknameText")
+  local function named(body, name)
+    return (body:gsub("{STRBUF}", function() return name end))
+  end
   local queue = Breeding.readyToHatch(save)
   local at = 0
   local function nextEgg()
@@ -11973,7 +11878,7 @@ function World:hatchEggs()
       self:restoreMapMusic()
       return
     end
-    self:showText("Huh?", function()
+    self:showText(huh, function()
       local hatched, effects =
         Breeding.hatch(data, save, index, nil, self:caughtDataOpts())
       if not hatched then return nextEgg() end
@@ -11990,11 +11895,11 @@ function World:hatchEggs()
         -- `sound_caught_mon` sits inside _BreedEggHatchText, before its
         -- text_promptbutton: the jingle plays as the line lands, not after it.
         self:playSfxNamed("Sfx_CaughtMon", 2)
-        self:showText(Strings("%s came\nout of its EGG!", name), function()
+        self:showText(named(cameOut, name), function()
           -- _BreedAskNicknameText ends `done`, not `prompt`, so YesNoBox opens
           -- over the question with no button press in between.  That is exactly
           -- what askYesNo's instant re-show of lastText does.
-          self.lastText = Strings("Give a nickname to\n%s?", name)
+          self.lastText = named(askNickname, name)
           self:askYesNo(function(yes)
             if not yes then return nextEgg() end
             self:nameHatchling(hatched, nextEgg)

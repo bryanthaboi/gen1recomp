@@ -22,6 +22,7 @@ local Clock = require("src.core.gen2.Clock")
 local InitClock = require("src.ui.gen2.InitClock")
 local Logger = require("src.core.Logger")
 local Music = require("src.core.Music")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local Save = require("src.core.gen2.Save")
 local SaveMenu = require("src.ui.gen2.SaveMenu")
@@ -34,13 +35,6 @@ local PANEL_Y = 8
 local MainMenu = {}
 MainMenu.__index = MainMenu
 MainMenu.isOpaque = true
-
--- MainMenu_PrintCurrentTimeAndDay's PrintDayOfWeek strings.  Clock.DAY_NAMES
--- / Clock.weekdayName is the single translated home for this table (see
--- InitClock.lua's DAYS), so this screen's clock box cannot drift from the
--- Pokegear's own.
-local DAYS = Clock.DAY_NAMES
-local DAY_LABEL = Strings.source("DAY")
 
 -- MUSIC_MAIN_MENU; resolved by name so a cache without it just stays quiet.
 local MENU_MUSIC = "Music_MainMenu"
@@ -63,7 +57,7 @@ function MainMenu.new(game, opts)
 
   self.save = opts.save
   if self.save == nil and opts.hasSave ~= false then
-    local loaded = Save.load()
+    local loaded = Save.load(nil, game and game.data)
     self.save = loaded
   end
   self.hasSave = opts.hasSave
@@ -77,13 +71,18 @@ end
 -- ui.title_menu.items identity: an unhooked build hands its own list back.
 local function sameItems(_, items) return items end
 
+function MainMenu:romText(label, ...)
+  return RomText(self.game and self.game.data, label, nil, ...)
+end
+
+-- engine/menus/main_menu.asm:67 MainMenu.Strings
 function MainMenu:buildList()
   local items = {}
   if self.hasSave then
-    items[#items + 1] = { label = Strings("CONTINUE"), value = "continue" }
+    items[#items + 1] = { label = self:romText("MainMenu.Strings#1"), value = "continue" }
   end
-  items[#items + 1] = { label = Strings("NEW GAME"), value = "new" }
-  items[#items + 1] = { label = Strings("OPTION"), value = "option" }
+  items[#items + 1] = { label = self:romText("MainMenu.Strings#2"), value = "new" }
+  items[#items + 1] = { label = self:romText("MainMenu.Strings#3"), value = "option" }
   -- Not on the cart: a cartridge is left by switching the console off, and
   -- there is no console here.  Mirrors the Gen 1 port's title menu
   -- (src/ui/TitleState.lua), which adds the same row for the same reason.
@@ -156,7 +155,7 @@ function MainMenu:update(_dt)
 end
 
 -- .PlaceTime's three reads: GetWeekday, hHours and hMinutes, all of them after
--- UpdateTime.  `weekday` is returned 1-based for the DAYS table above, which is
+-- UpdateTime.  `weekday` is returned 1-based for Clock.weekdayName, which is
 -- os.date's wday numbering and NOT wCurDay's (Clock.weekday counts SUNDAY 0).
 -- opts.clock still pins the box outright for a driver's screenshots.
 function MainMenu:clockParts()
@@ -169,16 +168,17 @@ function MainMenu:clockParts()
 end
 
 -- ../pokecrystal/engine/rtc/timeset.asm:675
-function MainMenu.timeString(hour, minute)
-  return InitClock.timeString(hour, minute)
+function MainMenu.timeString(hour, minute, data)
+  return InitClock.timeString(hour, minute, data)
 end
 
 function MainMenu:drawClockBox()
   -- ../pokecrystal/engine/menus/main_menu.asm:286
   Chrome.textbox(0, 14, 18, 2)
   local hour, minute, weekday = self:clockParts()
-  Chrome.print(Clock.weekdayName(weekday) or Strings(DAY_LABEL), 1, 15)
-  Chrome.print(MainMenu.timeString(hour, minute), 4, 16)
+  local data = self.game and self.game.data
+  Chrome.print(Clock.weekdayName(weekday, data) or RomText(data, "PrintDayOfWeek.Day"), 1, 15)
+  Chrome.print(MainMenu.timeString(hour, minute, data), 4, 16)
 end
 
 function MainMenu:drawSavePanel()
@@ -189,10 +189,9 @@ function MainMenu:drawSavePanel()
     return
   end
   local labelY = PANEL_Y + PANEL.labelDy
-  Chrome.print(Strings("PLAYER %s", summary.name), PANEL.labelX, labelY)
-  Chrome.print(Strings("BADGES"), PANEL.labelX, labelY + 2)
-  Chrome.print(Strings("POKéDEX"), PANEL.labelX, labelY + 4)
-  Chrome.print(Strings("TIME"), PANEL.labelX, labelY + 6)
+  for i, line in ipairs(SaveMenu.panelLabels(self.game and self.game.data, summary.name)) do
+    Chrome.print(line, PANEL.labelX, labelY + (i - 1) * 2)
+  end
   -- ../pokecrystal/engine/menus/intro_menu.asm:555
   Chrome.print(Chrome.number(summary.badges, 2), PANEL.badgesX,
     PANEL_Y + PANEL.badgesDy)
@@ -233,7 +232,6 @@ function MainMenu:drawWidescreen(winW, winH)
   G.pop()
 end
 
-MainMenu.DAYS = DAYS
 MainMenu.PANEL = PANEL
 MainMenu.PANEL_Y = PANEL_Y
 

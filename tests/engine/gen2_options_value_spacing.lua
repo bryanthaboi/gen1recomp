@@ -125,7 +125,8 @@ for _, p in ipairs(platforms) do
     for _, version in ipairs({ "gold", "silver", "crystal" }) do
       GameVersion.set(version)
       local tag = version .. " " .. p[1] .. " touch=" .. tostring(p[2])
-      local game = { data = { audio = { sfx = {} } }, options = {},
+      local game = { data = { audio = { sfx = {} }, text = require("tests.fixture_data.gen2_rom_text_s7_c").text() },
+                     options = {},
                      stack = newStack(),
                      input = { wasPressed = function() return false end } }
       local menu = OptionsMenu.new(game, { options = game.options })

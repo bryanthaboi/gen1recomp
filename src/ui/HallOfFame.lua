@@ -15,6 +15,7 @@ local Music = require("src.core.Music")
 local Sound = require("src.core.Sound")
 local TypeChart = require("src.battle.TypeChart")
 local Strings = require("src.core.Strings")
+local romText = require("src.core.RomText")
 
 local HallOfFame = {}
 HallOfFame.__index = HallOfFame
@@ -274,15 +275,10 @@ end
 -- painted the third row over the box's bottom border (#314).
 function HallOfFame:showDexTexts()
   local game = self.game
-  local text = game.data.text or {}
   local seen, owned = self:dexSeenOwned()
-  local seenOwned = (text._DexSeenOwnedText
-      or Strings("POKéDEX   Seen:{NUM:wDexRatingNumMonsSeen, 1, 3}\n         Owned:{NUM:wDexRatingNumMonsOwned, 1, 3}"))
-    :gsub("{NUM:wDexRatingNumMonsSeen[^}]*}", tostring(seen))
-    :gsub("{NUM:wDexRatingNumMonsOwned[^}]*}", tostring(owned))
-  local header = (text._DexRatingText or Strings("POKéDEX Rating{COLON}"))
-    :gsub("{COLON}", ":")
-  local rating = text[dexRatingKey(owned)] or Strings("Keep it up!")
+  local seenOwned = romText(game.data, "_DexSeenOwnedText", nil, seen, owned)
+  local header = romText(game.data, "_DexRatingText", nil):gsub("{COLON}", ":")
+  local rating = romText(game.data, dexRatingKey(owned), nil)
   local function finish()
     -- HoFFadeOutScreenAndMusic -> Credits lead-in (no A wait here)
     game.stack:pop()

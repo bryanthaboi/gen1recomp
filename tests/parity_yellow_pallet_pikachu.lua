@@ -24,6 +24,12 @@ if not _G.love then _G.love = require("tests.love_stub") end
 
 local Data = require("src.core.Data")
 if not (Data.maps and Data.maps.PALLET_TOWN) then Data:load() end
+local YELLOW_PALLET = {
+  _PalletTownOakComeWithMe = "OAK: A POKéMON can\nappear anytime in\vtall grass.\fYou need your own\nPOKéMON for your\vprotection.\vI know!\fHere, come with\nme!{DONE}",
+  _PalletTownOakThatWasCloseText = "OAK: That was\nclose!\fWild POKéMON live\nin tall grass!{DONE}",
+  _PalletTownOakWhewText = "OAK: Whew...{DONE}",
+}
+for k, v in pairs(YELLOW_PALLET) do Data.text[k] = Data.text[k] or v end
 
 local S = require("tests.harness").suite("parity Yellow Pallet Town Pikachu")
 local check, eq = S.check, S.eq

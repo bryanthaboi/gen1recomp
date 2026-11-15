@@ -42,7 +42,10 @@
 
 local Runtime = require("src.mods.Runtime")
 
-local BugContest = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local BugContest = EngineFlags.expose({}, {
+  "ENGINE_BUG_CONTEST_TIMER", "ENGINE_DAILY_BUG_CONTEST",
+})
 
 -- ---------------------------------------------------------------- constants
 --
@@ -61,14 +64,6 @@ BugContest.CONTESTANTS_PICKED = 5
 BugContest.CAUGHT_MON = 0
 BugContest.BOXED_MON = 1
 BugContest.NO_CATCH = 2
-
--- constants/engine_flags.asm, by index: the two ENGINE_* ids the gate scripts
--- set and clear around a contest.  ENGINE_BUG_CONTEST_TIMER is what makes
--- CheckTimeEvents poll the clock instead of the daily reset;
--- ENGINE_DAILY_BUG_CONTEST is a wDailyFlags1 bit, so it clears itself overnight
--- and that is what makes the contest a once-a-day thing.
-BugContest.ENGINE_BUG_CONTEST_TIMER = 16
-BugContest.ENGINE_DAILY_BUG_CONTEST = 80
 
 -- Route35OfficerScriptContest turns you away on SUNDAY, MONDAY, WEDNESDAY and
 -- FRIDAY, so the contest runs Tuesday, Thursday and Saturday.  Weekday numbers
@@ -277,43 +272,43 @@ end
 -- ID 1 reserved for the player (BUG_CONTEST_PLAYER).  A 1-based Lua list lines
 -- up with the slot numbers exactly, which is why this one is NOT zero based.
 BugContest.CONTESTANTS = {
-  { class = "BUG_CATCHER",  trainer = 1, name = "DON",
+  { class = "BUG_CATCHER",  trainer = 1,
     mons = { { species = "KAKUNA",     score = 300 },
              { species = "METAPOD",    score = 285 },
              { species = "CATERPIE",   score = 226 } } },
-  { class = "BUG_CATCHER",  trainer = 3, name = "ED",
+  { class = "BUG_CATCHER",  trainer = 3,
     mons = { { species = "BUTTERFREE", score = 286 },
              { species = "BUTTERFREE", score = 251 },
              { species = "CATERPIE",   score = 237 } } },
-  { class = "COOLTRAINERM", trainer = 1, name = "NICK",
+  { class = "COOLTRAINERM", trainer = 1,
     mons = { { species = "SCYTHER",    score = 357 },
              { species = "BUTTERFREE", score = 349 },
              { species = "PINSIR",     score = 368 } } },
-  { class = "POKEFANM",     trainer = 1, name = "WILLIAM",
+  { class = "POKEFANM",     trainer = 1,
     mons = { { species = "PINSIR",     score = 332 },
              { species = "BUTTERFREE", score = 324 },
              { species = "VENONAT",    score = 321 } } },
-  { class = "BUG_CATCHER",  trainer = 5, name = "BENNY",
+  { class = "BUG_CATCHER",  trainer = 5,
     mons = { { species = "BUTTERFREE", score = 318 },
              { species = "WEEDLE",     score = 295 },
              { species = "CATERPIE",   score = 285 } } },
-  { class = "CAMPER",       trainer = 5, name = "BARRY",
+  { class = "CAMPER",       trainer = 5,
     mons = { { species = "PINSIR",     score = 366 },
              { species = "VENONAT",    score = 329 },
              { species = "KAKUNA",     score = 314 } } },
-  { class = "PICNICKER",    trainer = 5, name = "CINDY",
+  { class = "PICNICKER",    trainer = 5,
     mons = { { species = "BUTTERFREE", score = 341 },
              { species = "METAPOD",    score = 301 },
              { species = "CATERPIE",   score = 264 } } },
-  { class = "BUG_CATCHER",  trainer = 7, name = "JOSH",
+  { class = "BUG_CATCHER",  trainer = 7,
     mons = { { species = "SCYTHER",    score = 326 },
              { species = "BUTTERFREE", score = 292 },
              { species = "METAPOD",    score = 282 } } },
-  { class = "YOUNGSTER",    trainer = 5, name = "SAMUEL",
+  { class = "YOUNGSTER",    trainer = 5,
     mons = { { species = "WEEDLE",     score = 270 },
              { species = "PINSIR",     score = 282 },
              { species = "CATERPIE",   score = 251 } } },
-  { class = "SCHOOLBOY",    trainer = 2, name = "KIPP",
+  { class = "SCHOOLBOY",    trainer = 2,
     mons = { { species = "VENONAT",    score = 267 },
              { species = "PARAS",      score = 254 },
              { species = "KAKUNA",     score = 259 } } },
@@ -327,20 +322,17 @@ function BugContest.contestantSlot(id) return id - 1 end
 -- by a space, then the trainer's own name appended -- "BUG CATCHER DON".  ID 1
 -- is the player, whose name is copied straight out of wPlayerName.
 --
--- The class and trainer names come from the cache (trainers.lua keys classes
--- by their constant and lists each class's members in order), and fall back to
--- the transcribed row when a class is missing, so a headless test needs no
--- cache at all.
 function BugContest.contestantName(data, id, playerName)
   if id == BugContest.PLAYER then return playerName or "<PLAYER>" end
   local row = BugContest.CONTESTANTS[BugContest.contestantSlot(id)]
   if not row then return "" end
   local classes = data and data.trainers and data.trainers.classes
   local class = classes and classes[row.class]
-  local className = (class and class.name) or row.class
   local member = class and class.trainers and class.trainers[row.trainer]
-  local trainerName = (member and member.name) or row.name
-  return className .. " " .. trainerName
+  if not (class and class.name and member and member.name) then
+    error("trainers.lua has no " .. row.class .. " " .. row.trainer, 2)
+  end
+  return class.name .. " " .. member.name
 end
 
 -- ---------------------------------------------------------------- the score
@@ -513,30 +505,13 @@ end
 
 -- ---------------------------------------------------- SelectRandomBugContestContestants
 --
--- data/events/bug_contest_flags.asm, transcribed: EVENT_BUG_CATCHING_CONTESTANT_1A
--- through _10A, by NUMBER, because wEventFlags is keyed by number.  These are
--- the ten NationalParkBugContest object_event flags, in slot order, and they
--- are the *A set -- the *B set is the same ten people standing in
--- Route36NationalParkGate before the contest starts and nothing here touches
--- it.
---
--- The extractor now writes the same ten as events.bugContestFlags, so this is
--- the pinned fallback for a cache that predates it rather than a second source
--- of truth; tests/gen2_contest_test.lua compares the two row by row.
-BugContest.FLAGS = {
-  1814, 1815, 1816, 1817, 1818, 1819, 1820, 1821, 1822, 1823,
-}
-
--- data/generated/events.lua's copy when it is there, the transcription above
--- when it is not.  `tables` is the eventTables the VM carries, not the whole
--- cache: the flag table is a side table a command NAMES, the same as the
--- trades and the floor labels.
+-- data/events/bug_contest_flags.asm:1
 function BugContest.contestantFlags(tables)
   local extracted = tables and tables.bugContestFlags
-  if type(extracted) == "table" and #extracted == BugContest.NUM_CONTESTANTS then
-    return extracted
+  if type(extracted) ~= "table" or #extracted ~= BugContest.NUM_CONTESTANTS then
+    error("events.lua has no bugContestFlags", 2)
   end
-  return BugContest.FLAGS
+  return extracted
 end
 
 -- Five flags chosen at uniform random out of ten, rejecting a duplicate rather

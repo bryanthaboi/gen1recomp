@@ -35,6 +35,7 @@ local data = {
     songs = { Music_Evolution = true },
     sfx = { Sfx_Evolved = true, Sfx_CaughtMon = true },
   },
+  text = require("tests.fixture_data.gen2_rom_text_s7_b").text(),
 }
 
 local function at(entry)

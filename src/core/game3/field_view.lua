@@ -1216,7 +1216,6 @@ local function drawNativeTiles(mapDef, camX, camY, canvasW, canvasH, prepareOnly
         mid, srcPair = fill, pair
       end
     end
-    if not NativeTileset.ready(srcPair) then srcPair = pair end
     local info = { pair = srcPair, draw = not skip }
     if not skip then
       local key = (isVoid and voidMode == "map") and voidKeys[srcPair] or srcPair

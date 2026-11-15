@@ -22,7 +22,9 @@
 local Boxes = require("src.core.gen2.Boxes")
 local Chrome = require("src.ui.gen2.Chrome")
 local Logger = require("src.core.Logger")
+local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local Save = require("src.core.gen2.Save")
 local SaveMenu = require("src.ui.gen2.SaveMenu")
@@ -31,18 +33,18 @@ local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
--- _PCMonHoldingMailText (data/text/common_2.asm), the refusal
--- BillsPC_MovePKMNMenu prints instead of opening the list.  Two pages, because
--- the ASM has a `para` in the middle of it.  Declared up here and looked up at
--- the call site, so Strings.source is what puts both in the catalog.
-local MON_HOLDING_MAIL = {
-  Strings.source("There is a POKéMON\nholding MAIL."),
-  Strings.source("Please remove the\nMAIL."),
-}
+-- data/text/common_2.asm:566
+local MON_HOLDING_MAIL = "_PCMonHoldingMailText"
 
 -- ../pokecrystal/data/text/common_3.asm:219 _ChangeBoxSaveText
 -- ../pokegold/data/text/common_2.asm:1306 _ChangeBoxSaveText
-local CHANGE_BOX_SAVE_SOURCE = Strings.source("When you change a\n#MON BOX, data\vwill be saved. OK?")
+local CHANGE_BOX_SAVE = "_ChangeBoxSaveText"
+-- engine/pokemon/bills_pc.asm:2455
+local CHOOSE_A_BOX = "BillsPC_PlaceChooseABoxString.ChooseABox"
+-- engine/pokemon/bills_pc_top.asm:37
+local PC_WHAT = "_PCWhatText"
+-- home/menu.asm:438-439
+local YES_LABEL, NO_LABEL = "YesNoMenuHeader.MenuData#1", "YesNoMenuHeader.MenuData#2"
 
 -- YesNoBox's own `lb bc, SCREEN_WIDTH - 6, 7` (home/menu.asm:382-383).
 local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
@@ -51,21 +53,18 @@ local PcMenu = {}
 PcMenu.__index = PcMenu
 PcMenu.isOpaque = true
 
--- .strings, verbatim.  <PK> and <MN> are real font glyphs (codes $e1/$e2) and
--- Font.split matches charmap sequences, so writing them the way the ASM does
--- draws two tiles rather than seven -- which is the only reason "MOVE <PK><MN>
--- W/O MAIL" fits inside a 20-tile screen.
+-- engine/pokemon/bills_pc_top.asm:82-87
 local ENTRIES = {
-  { id = "withdraw", label = Strings.source("WITHDRAW <PK><MN>"), builtin = true },
-  { id = "deposit", label = Strings.source("DEPOSIT <PK><MN>"), builtin = true },
-  { id = "changebox", label = Strings.source("CHANGE BOX"), builtin = true },
-  { id = "move", label = Strings.source("MOVE <PK><MN> W/O MAIL"), builtin = true },
+  { id = "withdraw", romLabel = "_BillsPC.strings#1", builtin = true },
+  { id = "deposit", romLabel = "_BillsPC.strings#2", builtin = true },
+  { id = "changebox", romLabel = "_BillsPC.strings#3", builtin = true },
+  { id = "move", romLabel = "_BillsPC.strings#4", builtin = true },
   -- PLAYERSPCITEM_MAIL_BOX (engine/events/pokecenter_pc.asm), which BOTH
   -- .WhichPC lists carry: the MAILBOX is on the item PC in a Pokecenter and in
   -- the bedroom alike, unlike DECORATION below.  It sits here because this
   -- port folds the item PC's menu into the storage one.
-  { id = "mailbox", label = Strings.source("MAIL BOX"), builtin = true },
-  { id = "seeya", label = Strings.source("SEE YA!"), builtin = true },
+  { id = "mailbox", romLabel = "PlayersPCMenuData.MailBox", builtin = true },
+  { id = "seeya", romLabel = "_BillsPC.strings#5", builtin = true },
 }
 
 -- PLAYERSPCITEM_DECORATION, the one row the bedroom's PC has that a
@@ -74,7 +73,7 @@ local ENTRIES = {
 -- the cart, which this port folds into the storage menu the same way both PCs
 -- are folded -- so it hangs off the same list, gated on `house`.
 local DECORATION = {
-  id = "decoration", label = Strings.source("DECORATION"), builtin = true,
+  id = "decoration", romLabel = "PlayersPCMenuData.Decoration", builtin = true,
 }
 
 -- The exit row.  It is a member of ENTRIES (it is one of _BillsPC's five), but
@@ -89,6 +88,10 @@ local function sameItems(_, items) return items end
 
 function PcMenu:wantsFillScale() return true end
 function PcMenu:drawsWidescreen() return true end
+
+function PcMenu:rom(label, ...)
+  return CommonText.plain(RomText(self.game and self.game.data, label, nil, ...))
+end
 
 -- opts: save, house (the bedroom's PC, which also does decorations), events
 --       (the wEventFlags bitfield the decoration menu reads ownership from),
@@ -110,6 +113,7 @@ function PcMenu.new(game, opts)
       and function() return game:writeSave() end)
     or Save.save
   self.saveExists = opts.saveExists
+  self.textData = opts.text
   -- The folded MAIL BOX row belongs to the item PC, and the whose-PC menu
   -- reaches that through <PLAYER>'s PC (src/ui/gen2/ItemPcMenu.lua), so
   -- BILL's PC shows the cart's own five rows.  The bedroom's PC keeps it: the
@@ -152,18 +156,12 @@ function PcMenu.new(game, opts)
   -- `.quit` returns with the carry clear, which drops back into the _BillsPC
   -- loop and redraws this menu.
   self.messageCloses = true
-  -- .CheckCanUsePC: an empty party gets the "You'll need a POKéMON" line and
-  -- the PC never opens.  Kept here rather than at the call site so every route
-  -- into the PC (the overworld script, a driver, a mod) gets the same gate.
-  -- Boxes.lua's own \f is the same catalog key BoxMenu.lua's
-  -- BOX_FAILURE_SOURCES already declares for this string; split the
-  -- translated result on it into notice()'s page-per-string shape rather
-  -- than calling notice() itself, which would also reset messageCloses to
-  -- false -- this refusal closes the PC, the mail-holding one does not.
+  -- engine/pokemon/bills_pc_top.asm:8
   local ok, reason = Boxes.canUsePc(self.save)
   if not ok then
     local pages = {}
-    for page in (Strings(reason) .. "\f"):gmatch("(.-)\f") do
+    local body = Boxes.reasonText(reason, game and game.data)
+    for page in (body .. "\f"):gmatch("(.-)\f") do
       pages[#pages + 1] = page
     end
     self.message = pages[1]
@@ -250,20 +248,21 @@ function PcMenu:writeChangeBox()
 end
 
 function PcMenu:savePromptText()
+  local data = self.game and self.game.data
   if self.savePhase == "overwrite" then
-    return Strings(SaveMenu.OVERWRITE_PROMPT_SOURCE)
+    return SaveMenu.romPrompt(data, SaveMenu.OVERWRITE_PROMPT_LABEL)
   end
   if self.savePhase == "saving" then
-    return Strings(SaveMenu.SAVING_PROMPT_SOURCE)
+    return SaveMenu.romPrompt(data, SaveMenu.SAVING_PROMPT_LABEL)
   end
   if self.savePhase == "done" then
     if self.saved then
       local name = (self.save.player and self.save.player.name) or "GOLD"
-      return Strings("%s saved\nthe game.", name)
+      return SaveMenu.romPrompt(data, SaveMenu.SAVED_PROMPT_LABEL, { PLAYER = name })
     end
     return Strings("Could not save.")
   end
-  return Strings(CHANGE_BOX_SAVE_SOURCE)
+  return SaveMenu.romPrompt(data, CHANGE_BOX_SAVE)
 end
 
 function PcMenu:savePages()
@@ -382,7 +381,11 @@ function PcMenu:choose()
   -- refuses outright: MOVE POKéMON W/O MAIL is a whole-party operation, so one
   -- letter anywhere in the party stops it.
   if entry.id == "move" and Mail.anyMonHoldingMail(self.save) then
-    self:notice({ Strings(MON_HOLDING_MAIL[1]), Strings(MON_HOLDING_MAIL[2]) })
+    local text = self.textData or (game and game.world and game.world.text)
+    local body = CommonText.plain(CommonText.get(text, MON_HOLDING_MAIL))
+    local pages = {}
+    for page in (body .. "\f"):gmatch("(.-)\f") do pages[#pages + 1] = page end
+    self:notice(pages)
     return
   end
   if not (game and game.stack) then return end
@@ -478,7 +481,7 @@ function PcMenu:drawPanel()
       local i = row + scroll
       local ty = row * 2 - 1
       if i == self.pickIndex then Chrome.cursor(1, ty) end
-      Chrome.print(Boxes.name(self.save, i), 2, ty)
+      Chrome.print(Boxes.name(self.save, i, self.game and self.game.data), 2, ty)
       Chrome.printRight(
         ("%d/%d"):format(Boxes.count(self.save, i), Boxes.MONS_PER_BOX),
         18, ty)
@@ -496,8 +499,8 @@ function PcMenu:drawPanel()
       end
       if self:saveYesNoVisible(pages) then
         Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-        Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-        Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+        Chrome.print(self:rom(YES_LABEL), YESNO_X + 2, YESNO_Y + 1)
+        Chrome.print(self:rom(NO_LABEL), YESNO_X + 2, YESNO_Y + 3)
         Chrome.cursor(YESNO_X + 1,
           YESNO_Y + (self.saveChoice == 1 and 1 or 3))
       end
@@ -505,7 +508,7 @@ function PcMenu:drawPanel()
       return
     end
     Chrome.box(0, 14, 20, 4)
-    Chrome.print(Strings("Which BOX?"), 1, 16)
+    Chrome.print(self:rom(CHOOSE_A_BOX), 1, 16)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
@@ -516,7 +519,7 @@ function PcMenu:drawPanel()
   -- the way the cart's windows stack (src/ui/gen2/ItemPcMenu.lua does the
   -- same with the house's six-row item list).
   Chrome.box(0, 12, 20, 6)
-  Chrome.print(Strings("What?"), 1, 14)
+  Chrome.print(self:rom(PC_WHAT), 1, 14)
 
   -- ClearPCItemScreen: Textbox at (0,0) with a 10x18 interior, and a second
   -- at (0,12) with a 4x18 one.  GetMenuTextStartCoord then puts the first
@@ -530,7 +533,13 @@ function PcMenu:drawPanel()
   for i, entry in ipairs(self.entries) do
     local ty = i * 2
     if i == self.index then Chrome.cursor(1, ty) end
-    Chrome.print(entry.builtin and Strings(entry.label) or entry.label, 2, ty)
+    local label = entry.label
+    if entry.romLabel then
+      label = self:rom(entry.romLabel)
+    elseif entry.builtin then
+      label = Strings(label)
+    end
+    Chrome.print(label, 2, ty)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end

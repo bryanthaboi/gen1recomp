@@ -44,7 +44,7 @@ love.graphics.newQuad = function(x, y, w, h)
 end
 local menu = setmetatable({
   menuGfx = { stats = { sheet = "stats", tiles = 17, firstTile = 0x31 } },
-  picImage = function()
+  art = function()
     return { getDimensions = function() return 136, 8 end }
   end,
 }, { __index = SummaryMenu })
@@ -58,9 +58,9 @@ if T.check(sheet ~= nil, "menu_gfx.stats builds the tile sheet") then
   T.check(sheet.quads[0x42] == nil, "and exactly 17 tiles, no more")
 end
 
--- a cache built before menu_gfx.stats existed keeps the hand-drawn fallback
 local old = setmetatable({ menuGfx = {} }, { __index = SummaryMenu })
-T.check(old:statsTiles() == nil, "no menu_gfx.stats falls back, not crashes")
+T.check(not pcall(old.statsTiles, old), "no menu_gfx.stats errors")
+T.check(not pcall(old.pageTile, old, 0x31, 0, 0), "and pageTile draws no stand-in")
 love.graphics.newQuad = realNewQuad
 
 T.finish("gen2 stats tiles and page palettes (#1558, #1693)")

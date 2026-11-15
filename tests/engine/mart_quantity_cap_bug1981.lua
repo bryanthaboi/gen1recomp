@@ -129,7 +129,7 @@ do
   local game = {
     data = {
       items = { POKE_BALL = { name = "POKe BALL", price = 200 } },
-      text = {},
+      text = dofile("tests/fixture_data/text.lua"),
     },
     save = { money = 100, inventory = {}, bagOrder = {} },
     stack = { push = function(_, s) pushed[#pushed + 1] = s end,

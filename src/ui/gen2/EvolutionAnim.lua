@@ -28,12 +28,14 @@
 
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local Evolution = require("src.core.gen2.Evolution")
 local GbcPalette = require("src.render.GbcPalette")
 local Mon = require("src.battle.gen2.Mon")
 local MonAnimView = require("src.render.MonAnimView")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
 local SpriteAnims = require("src.ui.gen2.SpriteAnims")
 local Sprites = require("src.pokemon.Sprites")
@@ -70,27 +72,29 @@ local BLACKOUT = Palettes.BLACKOUT
 -- .GenerateBallOfLight would like to make.
 local BALL_LIMIT = 10
 
-local EVOLVING_TEXT = Strings.source("What? %s\nis evolving!")
-local STOPPED_TEXT = Strings.source("Huh? %s\nstopped evolving!")
-local CONGRATS_TEXT = Strings.source("Congratulations!\nYour %s")
-local EVOLVED_TEXT = Strings.source("evolved into\n%s!")
-local LEARNED_TEXT = Strings.source("%s learned\n%s!")
+-- data/text/common_2.asm:1392
+local EVOLVING_TEXT = "_EvolvingText"
+-- data/text/common_2.asm:1385
+local STOPPED_TEXT = "_StoppedEvolvingText"
+-- data/text/common_2.asm:1368
+local CONGRATS_TEXT = "_CongratulationsYourPokemonText"
+-- data/text/common_2.asm:1376
+local EVOLVED_TEXT = "_EvolvedIntoText"
+-- data/text/common_3.asm:113
+local LEARNED_TEXT = "_LearnedMoveText"
 local WANTS_TO_LEARN_TEXT = Strings.source("%s wants to\nlearn %s!")
 
--- Deliberately \n-only, unlike CommonText.pages/pagesOf elsewhere in Gen2
--- UI: every template above is a fixed two-line cart message, and the box
--- below (BOX_H = 6, TEXT_LINE = 2) only has room for two printed lines
--- before a third would land past its bottom edge. self.lines is drawn as a
--- flat list with no page break at all, so a translation that needs a third
--- line here would silently overflow instead of paginating -- route through
--- CommonText.pages instead if that is ever needed.
-local function messageLines(source, ...)
-  local translated = Strings(source, ...)
+local function splitLines(text)
   local out = {}
-  for line in (translated .. "\n"):gmatch("(.-)\n") do
+  for line in (text .. "\n"):gmatch("(.-)\n") do
     out[#out + 1] = line
   end
   return out
+end
+
+local function messageLines(data, label, ...)
+  local text = CommonText.plain(RomText(data, label, nil, ...))
+  return splitLines((text:gsub("^\f", "")))
 end
 
 --------------------------------------------------------------------------
@@ -221,7 +225,7 @@ function EvolutionAnim:setPhase(phase)
     -- PrintText EvolvingText, then `ld c, 50 / call DelayFrames`.  The pics are
     -- not placed yet: on the cart the battle screen is still up behind this
     -- line and ClearBox only wipes rows 0..11 once the delay is over.
-    self.lines = messageLines(EVOLVING_TEXT, self.nick)
+    self.lines = messageLines(self.data, EVOLVING_TEXT, self.nick)
     self.timer = Evolution.EVOLVING_FRAMES
     return
   end
@@ -290,13 +294,13 @@ function EvolutionAnim:setPhase(phase)
 
   if phase == "stopped" then
     -- CancelEvolution: StoppedEvolvingText over the pic, then ClearTilemap.
-    self.lines = messageLines(STOPPED_TEXT, self.nick)
+    self.lines = messageLines(self.data, STOPPED_TEXT, self.nick)
     self.timer = PROMPT_FRAMES
     return
   end
 
   if phase == "congrats" then
-    self.lines = messageLines(CONGRATS_TEXT, self.nick)
+    self.lines = messageLines(self.data, CONGRATS_TEXT, self.nick)
     self.timer = PROMPT_FRAMES
     return
   end
@@ -311,7 +315,7 @@ function EvolutionAnim:setPhase(phase)
   if phase == "evolved" then
     -- EvolvedIntoText, then MUSIC_NONE / SFX_CAUGHT_MON / WaitSFX and
     -- `ld c, 40 / call DelayFrames`.
-    self.lines = messageLines(EVOLVED_TEXT, self.newName)
+    self.lines = messageLines(self.data, EVOLVED_TEXT, self.newName)
     Music.stop()
     self:playSfx("Sfx_CaughtMon")
     self.timer = Evolution.CONGRATS_FRAMES
@@ -368,7 +372,7 @@ function EvolutionAnim:nextLearn()
   local ok, reason = Mon.learnMove(self.evolved, moveId, self.data)
   if ok then
     self.learned[#self.learned + 1] = moveId
-    self.lines = messageLines(LEARNED_TEXT, self.nick, moveName)
+    self.lines = messageLines(self.data, LEARNED_TEXT, self.nick, moveName)
   elseif reason == "full" then
     if self.game and self.game.learnMoveOn then
       self.phase = "waitingLearn"
@@ -382,7 +386,7 @@ function EvolutionAnim:nextLearn()
       end)
     end
     self.full[#self.full + 1] = moveId
-    self.lines = messageLines(WANTS_TO_LEARN_TEXT, self.nick, moveName)
+    self.lines = splitLines(Strings(WANTS_TO_LEARN_TEXT, self.nick, moveName))
   else
     return self:nextLearn()
   end

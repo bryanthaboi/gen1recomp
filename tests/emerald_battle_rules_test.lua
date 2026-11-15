@@ -8,6 +8,7 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 local function loadRel(rel)
@@ -96,8 +97,12 @@ local PartyMenu = require("src.ui.game3.party_menu")
 local function pressed(key)
   return { wasPressed = function(_, button) return button == key end }
 end
+local function twoMons()
+  return { { species = C.species.byName.SPECIES_MEOWTH, level = 10, moves = {} },
+    { species = C.species.byName.SPECIES_MEOWTH, level = 10, moves = {} } }
+end
 registeredSession.map = Pike.WILD_ROOM
-PartyMenu.show({ { species = C.species.byName.SPECIES_MEOWTH, level = 10, moves = {} } }, {
+PartyMenu.show(twoMons(), {
   session = registeredSession,
 })
 PartyMenu.handleInput(pressed("a"))
@@ -106,7 +111,7 @@ eq(pikeActions:find("SWITCH", 1, true), nil, "Battle Pike party menu omits SWITC
 eq(pikeActions:find("ITEM", 1, true), nil, "Battle Pike party menu omits ITEM and MAIL")
 PartyMenu.close()
 registeredSession.map = "EM_ROUTE101"
-PartyMenu.show({ { species = C.species.byName.SPECIES_MEOWTH, level = 10, moves = {} } }, {
+PartyMenu.show(twoMons(), {
   session = registeredSession,
 })
 PartyMenu.handleInput(pressed("a"))

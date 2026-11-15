@@ -14,9 +14,12 @@
 --   * DEPOSIT refuses a mon holding MAIL, because sPartyMail has six slots and
 --     a boxed mon has none of them (src/core/gen2/Mail.lua)
 
+local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
 local Mon = require("src.battle.gen2.Mon")
+local RomText = require("src.core.RomText")
 local Save = require("src.core.gen2.Save")
+local Strings = require("src.core.Strings")
 
 local Boxes = {}
 
@@ -24,16 +27,43 @@ Boxes.NUM_BOXES = Save.NUM_BOXES
 Boxes.MONS_PER_BOX = Save.MONS_PER_BOX
 Boxes.PARTY_SIZE = Save.PARTY_SIZE
 
--- SetDefaultBoxNames (engine/menus/intro_menu.asm): "BOX" then 1..14.
-function Boxes.defaultName(index)
-  return "BOX" .. tostring(index)
+local NO_SAVE = Strings.source("No save.")
+local NO_MON_THERE = Strings.source("There is no POKéMON there.")
+local ALREADY_THERE = Strings.source("It's already there.")
+
+-- engine/pokemon/bills_pc.asm:2198
+local BOX_FULL = "PCString_BoxFull"
+-- engine/pokemon/bills_pc.asm:2199
+local PARTY_FULL = "PCString_PartyFull"
+-- engine/pokemon/bills_pc.asm:2191
+local NO_MORE_USABLE = "PCString_NoMoreUsablePKMN"
+-- engine/pokemon/bills_pc.asm:2192
+local REMOVE_MAIL = "PCString_RemoveMail"
+-- engine/pokemon/bills_pc_top.asm:17
+local GOTTA_HAVE_MON = "_PCGottaHavePokemonText"
+
+Boxes.ROM_REASONS = {
+  [BOX_FULL] = true, [PARTY_FULL] = true, [NO_MORE_USABLE] = true,
+  [REMOVE_MAIL] = true, [GOTTA_HAVE_MON] = true,
+}
+
+function Boxes.reasonText(reason, data)
+  if Boxes.ROM_REASONS[reason] then
+    return CommonText.plain(RomText(data, reason))
+  end
+  return Strings(reason)
 end
 
-function Boxes.name(save, index)
+-- engine/menus/intro_menu.asm:148
+function Boxes.defaultName(index, data)
+  return RomText(data, "SetDefaultBoxNames.Box") .. tostring(index)
+end
+
+function Boxes.name(save, index, data)
   local names = save and save.boxNames
   local given = names and names[index]
   if type(given) == "string" and given ~= "" then return given end
-  return Boxes.defaultName(index)
+  return Boxes.defaultName(index, data)
 end
 
 function Boxes.rename(save, index, name)
@@ -82,14 +112,14 @@ end
 
 -- Returns true, or false plus a reason string the caller shows in a text box.
 function Boxes.canDeposit(save, partyIndex, boxIndex)
-  if not save then return false, "No save." end
+  if not save then return false, NO_SAVE end
   local mon = save.party and save.party[partyIndex]
-  if not mon then return false, "There is no POKéMON there." end
+  if not mon then return false, NO_MON_THERE end
   if Boxes.isFull(save, boxIndex) then
-    return false, "The BOX is full."
+    return false, BOX_FULL
   end
   if (mon.hp or 0) > 0 and Boxes.healthyCount(save.party) <= 1 then
-    return false, "You can't deposit\nthe last POKéMON!"
+    return false, NO_MORE_USABLE
   end
   -- BillsPC_CheckMon's .HasMail arm (engine/pokemon/bills_pc.asm), which reads
   -- the wBillsPC_MonHasMail byte PCMonInfo set while drawing the row.  It is
@@ -97,7 +127,7 @@ function Boxes.canDeposit(save, partyIndex, boxIndex)
   -- is one short line rather than a two-line refusal: a boxed mon's letter has
   -- nowhere to live, because sPartyMail is six structs keyed by party slot.
   if Mail.monHoldsMail(mon) then
-    return false, "Remove MAIL."
+    return false, REMOVE_MAIL
   end
   return true
 end
@@ -137,11 +167,11 @@ function Boxes.deposit(save, partyIndex, boxIndex, data)
 end
 
 function Boxes.canWithdraw(save, boxIndex, slot)
-  if not save then return false, "No save." end
+  if not save then return false, NO_SAVE end
   local box = Boxes.box(save, boxIndex)
-  if not box[slot] then return false, "There is no POKéMON there." end
+  if not box[slot] then return false, NO_MON_THERE end
   if #(save.party or {}) >= Boxes.PARTY_SIZE then
-    return false, "You can't take\nany more POKéMON."
+    return false, PARTY_FULL
   end
   return true
 end
@@ -168,7 +198,7 @@ end
 -- party's last-healthy rule does not apply because a boxed mon is never in it.
 function Boxes.release(save, boxIndex, slot)
   local box = Boxes.box(save, boxIndex)
-  if not box[slot] then return false, "There is no POKéMON there." end
+  if not box[slot] then return false, NO_MON_THERE end
   return true, table.remove(box, slot)
 end
 
@@ -176,7 +206,7 @@ end
 -- RemoveMonFromPartyOrBox's REMOVE_PARTY arm (bills_pc.asm:204-207).
 function Boxes.releaseFromParty(save, slot)
   local party = (save and save.party) or {}
-  if not party[slot] then return false, "There is no POKéMON there." end
+  if not party[slot] then return false, NO_MON_THERE end
   local mon = table.remove(party, slot)
   Mail.removeSlot(save, slot)
   return true, mon
@@ -184,24 +214,20 @@ end
 
 -- Move a boxed mon to another box (MOVE PKMN W/O MAIL's box-to-box case).
 function Boxes.move(save, fromBox, slot, toBox)
-  if fromBox == toBox then return false, "It's already there." end
+  if fromBox == toBox then return false, ALREADY_THERE end
   local source = Boxes.box(save, fromBox)
-  if not source[slot] then return false, "There is no POKéMON there." end
-  if Boxes.isFull(save, toBox) then return false, "The BOX is full." end
+  if not source[slot] then return false, NO_MON_THERE end
+  if Boxes.isFull(save, toBox) then return false, BOX_FULL end
   local mon = table.remove(source, slot)
   local target = Boxes.box(save, toBox)
   target[#target + 1] = mon
   return true, mon
 end
 
--- .CheckCanUsePC: "You'll need a POKéMON to call with." Three lines, and the
--- box only has room for two before a `\n` here would just glue the third
--- onto the second with no separator -- `\f` (BoxMenu.lua's own
--- BOX_FAILURE_SOURCES entry for this exact string, already in the catalog
--- under that key) breaks it into its own page instead.
+-- engine/pokemon/bills_pc_top.asm:8
 function Boxes.canUsePc(save)
   if not (save and save.party and #save.party > 0) then
-    return false, "You'll need a\nPOKéMON to call\fwith."
+    return false, GOTTA_HAVE_MON
   end
   return true
 end

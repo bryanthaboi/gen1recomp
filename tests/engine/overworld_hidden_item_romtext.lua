@@ -53,33 +53,36 @@ local fakeSelf = setmetatable({ map = { id = MAP_ID } }, { __index = OW })
 do
   local game = mkGame()
   setUpvalue(OW.tryHiddenObject, "Game", game)
+  local saved = Data.text._FoundHiddenItemText
   Data.text._FoundHiddenItemText = "FAKE {PLAYER} found FAKE {RAM:wNameBuffer} FAKE!"
   local found = fakeSelf:tryHiddenObject(3, 3)
   T.check(found == true, "the hidden item at (3,3) is found")
   T.eq(pushed[1] and pushed[1].text,
     "FAKE FAKEPLAYER found FAKE FIX BALL FAKE!",
     "a translated _FoundHiddenItemText fills both {PLAYER} and the item name")
-  Data.text._FoundHiddenItemText = nil
+  Data.text._FoundHiddenItemText = saved
 end
 
--- vanilla: no catalog entry, so romText falls back to plain
--- Strings(fallback, ...) -- the fallback literal is "%s found\n%s!" (both
--- slots plain %s, matching the pre-fix literal's own shape), not the
--- {PLAYER} token the real label uses, since Strings() never does
--- {TOKEN} substitution on its own. (A {PLAYER}-token fallback would
--- still render correctly too, since the real TextBox.new always runs
--- TextBox.substitute over whatever text it's given -- but this test
--- stubs TextBox without that call, and the fallback shouldn't lean on a
--- substitution pass happening downstream regardless.)
 do
   local game = mkGame()
   setUpvalue(OW.tryHiddenObject, "Game", game)
-  game.save.hiddenTaken = {} -- fresh spot
+  game.save.hiddenTaken = {}
   local found = fakeSelf:tryHiddenObject(3, 3)
   T.check(found == true, "the hidden item is found again in a fresh game")
-  T.eq(pushed[1] and pushed[1].text, "FAKEPLAYER found\nFIX BALL!",
-    "with no catalog entry, the fallback still fills both the player "
-    .. "and item name via plain %s substitution")
+  T.eq(pushed[1] and pushed[1].text, "FAKEPLAYER found\nFIX BALL!{DONE}",
+    "the cached _FoundHiddenItemText fills the player and item name")
+end
+
+do
+  local game = mkGame()
+  setUpvalue(OW.tryHiddenObject, "Game", game)
+  game.save.hiddenTaken = {}
+  local saved = Data.text._FoundHiddenItemText
+  Data.text._FoundHiddenItemText = nil
+  local ok, err = pcall(fakeSelf.tryHiddenObject, fakeSelf, 3, 3)
+  Data.text._FoundHiddenItemText = saved
+  T.check(not ok and tostring(err):find("_FoundHiddenItemText is not in the cache", 1, true),
+    "a cache without _FoundHiddenItemText is an error")
 end
 
 T.finish("overworld_hidden_item_romtext")

@@ -19,82 +19,98 @@
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local Strings = require("src.core.Strings")
+local TileSheet = require("src.ui.gen2.TileSheet")
 
 local NamingScreen = {}
 NamingScreen.__index = NamingScreen
 NamingScreen.isOpaque = true
 
--- data/text/name_input_chars.asm.  Each row is a 17-character string with the
--- letters on the even columns, so cell N is the character at index N*2 - 1.
--- Rows whose cells are not single characters (the box screen's dakuten pairs
--- and multi-byte glyphs) are written out as arrays instead.
-local function rowCells(row)
-  local out = {}
-  for i = 1, 9 do
-    local ch = row:sub(i * 2 - 1, i * 2 - 1)
-    out[i] = ch
+-- data/text/name_input_chars.asm:3-31
+local BOARDS = {
+  upper = { label = "NameInputUpper#", rows = 4 },
+  lower = { label = "NameInputLower#", rows = 4 },
+  boxUpper = { label = "BoxNameInputUpper#", rows = 5 },
+  boxLower = { label = "BoxNameInputLower#", rows = 5 },
+}
+
+local function tiles(row)
+  local out, i = {}, 1
+  while i <= #row do
+    local c = row:sub(i, i)
+    local unit
+    if c == "<" then
+      unit = row:match("^<[^>]*>", i)
+    elseif c == "'" then
+      unit = row:match("^'[dlmrstv]", i)
+    end
+    if not unit then
+      local b = c:byte()
+      unit = row:sub(i, i + (b >= 0xf0 and 3 or b >= 0xe0 and 2 or b >= 0xc0 and 1 or 0))
+    end
+    out[#out + 1] = unit
+    i = i + #unit
   end
   return out
 end
 
-local NAME_INPUT_UPPER = {
-  rowCells("A B C D E F G H I"),
-  rowCells("J K L M N O P Q R"),
-  rowCells("S T U V W X Y Z  "),
-  rowCells("- ? ! / . ,      "),
-}
-local NAME_INPUT_LOWER = {
-  rowCells("a b c d e f g h i"),
-  rowCells("j k l m n o p q r"),
-  rowCells("s t u v w x y z  "),
-  { "\xc3\x97", "(", ")", ":", ";", "[", "]", "<PK>", "<MN>" },
-}
--- BOX_NAME gets one extra symbol row in each case (BoxNameInput*).
-local BOX_INPUT_UPPER = {
-  NAME_INPUT_UPPER[1], NAME_INPUT_UPPER[2], NAME_INPUT_UPPER[3],
-  { "\xc3\x97", "(", ")", ":", ";", "[", "]", "<PK>", "<MN>" },
-  { "-", "?", "!", "\xe2\x99\x82", "\xe2\x99\x80", "/", ".", ",", "&" },
-}
-local BOX_INPUT_LOWER = {
-  NAME_INPUT_LOWER[1], NAME_INPUT_LOWER[2], NAME_INPUT_LOWER[3],
-  { "\xc3\xa9", "'d", "'l", "'m", "'r", "'s", "'t", "'v", "0" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9" },
-}
+local function rowCells(row)
+  local out, at = {}, tiles(row)
+  for i = 1, 9 do out[i] = at[i * 2 - 1] or " " end
+  return out
+end
 
--- The bottom row's three targets and the columns their labels start at.  The
--- case target names the board it SWITCHES TO, not the one it is on: the last
--- row of NameInputUpper is "lower  DEL   END" and the last row of
--- NameInputLower is "UPPER  DEL   END" (data/text/name_input_chars.asm).
--- Wrapped in Strings.source, not Strings: both tables are built once at
--- require time, before any mod's Strings.load has a catalog to answer from
--- (src/core/Strings.lua's own note on this); drawPanel resolves them live.
-local BOTTOM_UPPER_LABELS = {
-  Strings.source("lower"), Strings.source("DEL"), Strings.source("END"),
-}
-local BOTTOM_LOWER_LABELS = {
-  Strings.source("UPPER"), Strings.source("DEL"), Strings.source("END"),
-}
+local function bottomLabels(row)
+  local out, at, i = {}, tiles(row), 1
+  while i <= #at do
+    if at[i] ~= " " then
+      local first, text = i, {}
+      while i <= #at and at[i] ~= " " do
+        text[#text + 1] = at[i]
+        i = i + 1
+      end
+      out[#out + 1] = { text = table.concat(text), tx = 2 + first - 1 }
+    else
+      i = i + 1
+    end
+  end
+  return out
+end
+
+local function loadBoards(data)
+  local out = {}
+  for key, board in pairs(BOARDS) do
+    local rows = {}
+    for i = 1, board.rows do rows[i] = rowCells(RomText(data, board.label .. i)) end
+    rows.bottom = bottomLabels(RomText(data, board.label .. (board.rows + 1)))
+    out[key] = rows
+  end
+  return out
+end
+
 -- Cursor tile for each target: NamingScreen_AnimateCursor's .CaseDelEnd adds
 -- pixel $00 / $30 / $60 to the cursor's own XCOORD of 24 (`depixel 10, 3`),
 -- which is OAM x 24 / 72 / 120 and so screen tile 2 / 8 / 14.  The bracket is
 -- five tiles wide there, so it wraps the whole label rather than sitting left
 -- of it.
 local BOTTOM_CURSOR_TX = { 2, 8, 14 }
-local BOTTOM_LABEL_TX = { 2, 9, 15 }
 local BOTTOM_CURSOR_TILES = 5
 
 -- NAME_* types (constants/menu_constants.asm order) as prompts + field sizes.
 -- Lengths are the ASM's *_NAME_LENGTH - 1, i.e. usable characters.
+-- engine/menus/naming_screen.asm:119-181
 NamingScreen.TYPES = {
-  player = { prompt = Strings.source("YOUR NAME?"), maxLength = 7,
+  player = { prompt = "NamingScreenJumptable.PlayerNameString", maxLength = 7,
     sprite = "SPRITE_CHRIS", spriteFemale = "SPRITE_KRIS" },
-  rival = { prompt = Strings.source("RIVAL'S NAME?"), maxLength = 7, sprite = "SPRITE_RIVAL" },
-  mom = { prompt = Strings.source("MOTHER'S NAME?"), maxLength = 7, sprite = "SPRITE_MOM" },
-  box = { prompt = Strings.source("BOX NAME?"), maxLength = 8, isBox = true },
-  nickname = { prompt = nil, maxLength = 10 },
+  rival = { prompt = "NamingScreenJumptable.RivalNameString", maxLength = 7,
+    sprite = "SPRITE_RIVAL" },
+  mom = { prompt = "NamingScreenJumptable.MomNameString", maxLength = 7, sprite = "SPRITE_MOM" },
+  box = { prompt = "NamingScreenJumptable.BoxNameString", maxLength = 8, isBox = true },
+  nickname = { prompt = "NamingScreenJumptable.NicknameStrings#2", maxLength = 10 },
 }
+local POSSESSIVE = "NamingScreenJumptable.NicknameStrings#1"
 
 -- GetPlayerIcon's two sheets (../pokecrystal/engine/gfx/player_gfx.asm:85-93),
 -- which is also the pair the header icon here is cut from.
@@ -121,7 +137,9 @@ function NamingScreen.new(game, opts)
     or (game and game.save and game.save.player and game.save.player.gender)
   self.isBox = opts.isBox or kind.isBox or false
   self.maxLength = opts.maxLength or kind.maxLength or 7
-  self.prompt = opts.prompt or kind.prompt or Strings.source("NICKNAME?")
+  local data = game and game.data or {}
+  self.prompt = opts.prompt and Strings(opts.prompt) or RomText(data, kind.prompt)
+  self.boards = loadBoards(data)
   self.monName = opts.monName
   self.onDone = opts.onDone
   self.onCancel = opts.onCancel
@@ -137,26 +155,25 @@ function NamingScreen.new(game, opts)
   -- The header icon is an OBJ on the cart, so it wears a real palette; without
   -- one it would draw in raw DMG shades next to a colored world.
   self.iconColors = opts.iconColors
-  local data = game and game.data or {}
   self.clock = 0
   self.mon = opts.mon
   if self.mon then
     self:loadMonHeader(data, self.mon)
   end
   self.gfx = opts.menuGfx or data.gen2MenuGfx
-  if self.gfx and self.gfx.naming then self.gfx = self.gfx.naming end
+  if type(self.gfx) ~= "table" then error("menu_gfx.lua is missing", 2) end
   -- engine/menus/naming_screen.asm:47
   -- engine/gfx/cgb_layouts.asm:495
   local diploma = data.gen2Diploma
   self.palette = diploma and diploma.bgPalette
+  if type(self.palette) ~= "table" then
+    error("diploma.lua has no bgPalette", 2)
+  end
   self.tiles = {}
-  if self.gfx then
-    for _, key in ipairs({ "border", "middleLine", "underLine", "cursor" }) do
-      if self.gfx[key] then
-        local ok, img = pcall(Assets.image, self.gfx[key])
-        if ok then self.tiles[key] = img end
-      end
-    end
+  for _, key in ipairs({ "border", "middleLine", "underLine", "cursor" }) do
+    local path = self.gfx[key]
+    if path == nil then error("menu_gfx.lua has no " .. key, 2) end
+    self.tiles[key] = TileSheet.loadImage(path)
   end
   return self
 end
@@ -222,13 +239,14 @@ local function sameGrid(grid) return grid end
 -- (NamingScreen_AnimateCursor's .CaseDelEnd), so unlike Gen 1 there is no meta
 -- cell a hooked grid could drop -- but bottomRow() counts the rows it answers
 -- with, so a page carrying an extra row still keeps those targets under it.
+function NamingScreen:board()
+  local boards = self.boards
+  if self.isBox then return self.lower and boards.boxLower or boards.boxUpper end
+  return self.lower and boards.lower or boards.upper
+end
+
 function NamingScreen:rows()
-  local base
-  if self.isBox then
-    base = self.lower and BOX_INPUT_LOWER or BOX_INPUT_UPPER
-  else
-    base = self.lower and NAME_INPUT_LOWER or NAME_INPUT_UPPER
-  end
+  local base = self:board()
   if not Runtime.wantsHook("ui.naming.grid") then return base end
   local hooked = Runtime.call("ui.naming.grid", sameGrid, base, {
     lower = self.lower and true or false,
@@ -397,19 +415,10 @@ function NamingScreen:paperColor()
   return GbcPalette.color(self.palette, 1)
 end
 
--- The backdrop: one patterned tile repeated over the whole screen.  Without
--- menu_gfx.lua (older cache) fall back to a flat mid gray, which keeps the
--- cleared panels readable.
+-- The backdrop: one patterned tile repeated over the whole screen.
 function NamingScreen:drawBackdrop()
   local G = love.graphics
   local tile = self.tiles.border
-  if not tile then
-    local paper = self:paperColor()
-    G.setColor(paper[1] / 255, paper[2] / 255, paper[3] / 255, 1)
-    G.rectangle("fill", 0, 0, 160, 144)
-    G.setColor(1, 1, 1, 1)
-    return
-  end
   local function blit()
     G.setColor(1, 1, 1, 1)
     for ty = 0, Chrome.SCREEN_H - 1 do
@@ -583,15 +592,12 @@ function NamingScreen:drawPanel()
   end
   local pal = self.palette
   if self.monName then
-    -- Nickname header is two lines: "<MON>'S" then "NICKNAME?".  Kept as two
-    -- Strings() calls, one per line (Chrome.printThrough draws a single row),
-    -- with the mon name folded into the first line's own format string so a
-    -- language whose possessive is not a bare suffix can restructure that
-    -- line rather than being stuck splicing one on.
-    Chrome.printThrough(Strings("%s'S", self.monName), 5, 2, pal)
-    Chrome.printThrough(Strings("NICKNAME?"), 5, 4, pal)
+    -- engine/menus/naming_screen.asm:97-106
+    local data = self.game and self.game.data
+    Chrome.printThrough(self.monName .. RomText(data, POSSESSIVE), 5, 2, pal)
+    Chrome.printThrough(RomText(data, NamingScreen.TYPES.nickname.prompt), 5, 4, pal)
   else
-    Chrome.printThrough(Strings(self.prompt), 5, 2, pal)
+    Chrome.printThrough(self.prompt, 5, 2, pal)
   end
   self:drawEntry(5, self.isBox and 4 or 6)
 
@@ -603,18 +609,13 @@ function NamingScreen:drawPanel()
     for col = 0, 8 do
       local ch = line[col + 1]
       if ch and ch ~= " " and ch ~= "" then
-        -- Same seam the Gen 1 board's cells go through (src/ui/NamingScreen
-        -- .lua's own Strings(cell)): a script whose alphabet does not fit
-        -- A-Z can swap a cell's glyph without needing the heavier
-        -- ui.naming.grid hook this screen also offers.
-        Chrome.printThrough(Strings(ch), 2 + col * 2, keyboardTop + row * 2, pal)
+        Chrome.printThrough(ch, 2 + col * 2, keyboardTop + row * 2, pal)
       end
     end
   end
-  local labels = self.lower and BOTTOM_LOWER_LABELS or BOTTOM_UPPER_LABELS
   local bottomY = keyboardTop + bottom * 2
-  for i, label in ipairs(labels) do
-    Chrome.printThrough(Strings(label), BOTTOM_LABEL_TX[i], bottomY, pal)
+  for _, label in ipairs(self:board().bottom) do
+    Chrome.printThrough(label.text, label.tx, bottomY, pal)
   end
 
   local function cursor() self:drawCursorBox(self:cursorTile()) end
@@ -676,9 +677,8 @@ function NamingScreen:cursorCharacter()
   return self:characterAt(self.col, self.row)
 end
 
-NamingScreen.NAME_INPUT_UPPER = NAME_INPUT_UPPER
-NamingScreen.NAME_INPUT_LOWER = NAME_INPUT_LOWER
-NamingScreen.BOX_INPUT_UPPER = BOX_INPUT_UPPER
-NamingScreen.BOX_INPUT_LOWER = BOX_INPUT_LOWER
+NamingScreen.BOARDS = BOARDS
+NamingScreen.rowCells = rowCells
+NamingScreen.bottomLabels = bottomLabels
 
 return NamingScreen

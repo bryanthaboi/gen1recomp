@@ -552,31 +552,8 @@ function MonOps.getBasePp(data, mon, slot)
   local mdef = data and data.moves and (data.moves[moveId] or (num and data.moves[num]))
   if mdef and mdef.pp then return tonumber(mdef.pp) end
 
-  local okP, PokemonG3 = pcall(require, "src.core.game3.pokemon")
-  if okP and PokemonG3 then
-    if num and PokemonG3.battleMove then
-      local row = PokemonG3.battleMove(num)
-      if row and row.pp then return tonumber(row.pp) end
-    end
-    if num and PokemonG3.movePp then
-      local pp = PokemonG3.movePp(num)
-      if pp and pp > 0 then return pp end
-    end
-  end
-
-  local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
-  if okB and BuiltinMoves then
-    if num and BuiltinMoves[num] and BuiltinMoves[num].pp then
-      return tonumber(BuiltinMoves[num].pp)
-    end
-    if type(moveId) == "string" then
-      local norm = moveId:upper():gsub("[^A-Z0-9]", " ")
-      for _, row in pairs(BuiltinMoves) do
-        if row.name and row.name:upper() == norm and row.pp then
-          return tonumber(row.pp)
-        end
-      end
-    end
+  if num and ((mon.speciesId ~= nil) or (mon.personality ~= nil)) then
+    return require("src.core.game3.pokemon").movePp(num)
   end
 
   return 10

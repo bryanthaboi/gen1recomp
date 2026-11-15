@@ -47,13 +47,8 @@ local baseMartEnter = require("data.scripts.story").VIRIDIAN_MART.onEnter
 -- markers (line -> \n, cont -> \v, para -> \f)
 local function text(game)
   return {
-    apology = game.data.text._ViridianCityOldManHadMyCoffeeNowText
-      or "Ahh, I've had my\ncoffee now and I\vfeel great!\fSure, you can go\n"
-      .. "through!\fI'm sorry I was\nso rude to you!\fI see you're using\n"
-      .. "a POKéDEX.\fI'll show you how\nto catch POKéMON\vas my apology.",
-    losingMyTouch = game.data.text._ViridianCityOldManLosingMyTouchText
-      or "That didn't work!\nI must be losing\vmy touch.\fI've run out of\n"
-      .. "POKé BALLs too.\fI have to get some\nat POKéMON MART.",
+    apology = game.data.text._ViridianCityOldManHadMyCoffeeNowText,
+    losingMyTouch = game.data.text._ViridianCityOldManLosingMyTouchText,
   }
 end
 

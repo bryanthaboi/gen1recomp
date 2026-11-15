@@ -115,6 +115,13 @@ local ROSTER = {
     FISHER = "SPRITE_FISHER", POKEMANIAC = "SPRITE_SUPER_NERD",
     GUITARIST = "SPRITE_ROCKER", SCIENTIST = "SPRITE_SCIENTIST",
   },
+  text = {
+    genderByName = false, classGenders = {},
+    male = { mask = 0, count = 1, intro = { "HELLO" },
+             playerLost = { "I WON" }, playerWon = { "I LOST" } },
+    female = { mask = 0, count = 1, intro = { "HELLO" },
+               playerLost = { "I WON" }, playerWon = { "I LOST" } },
+  },
 }
 
 local DATA = {
@@ -282,6 +289,10 @@ do
   manifest.constants.moveOrder[94] = "PSYCHIC_M"
 
   local ex = RomExtractorGen2.new(table.concat(rom), manifest, nil)
+  ex.edition = "crystal"
+  check(not pcall(ex.readBattleTowerRoster, ex, manifest.constants, charmap),
+    "a manifest without BattleTowerText is an error, not a roster with no text")
+  ex.readBattleTowerText = function() return {} end
   local read = ex:readBattleTowerRoster(manifest.constants, charmap)
   check(read ~= nil, "the roster reads out of the cartridge")
   eq(read.uniqueTrainers, 3, "the trainer count is the gap to BattleTowerMons")
@@ -600,8 +611,9 @@ do
   eq(vm.btBattleEnded, 1, "and ends the tower loop")
 
   local goldVm = fakeVm(crystalSave(), { data = function() return {} end })
-  Specials.ALL.BattleTowerBattle(goldVm)
-  eq(goldVm.scriptVar, 1, "so does a cache with no roster")
+  local ok, err = pcall(Specials.ALL.BattleTowerBattle, goldVm)
+  check(not ok and tostring(err):find("battleTower roster", 1, true),
+    "a cache with no roster is an error, not a lost battle")
 end
 
 do

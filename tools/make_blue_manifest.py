@@ -19,8 +19,8 @@ fields that genuinely differ for Blue:
   * field.credits  -- the "BLUE VERSION STAFF" title line (and any staff
                       reordering) parsed with _BLUE defined.
 
-Every other field -- maps, trainers, text, audio addresses, trainer party
-overrides, tilesets, etc. -- is inherited unchanged, so Blue behaves exactly
+Every other field -- maps, trainers, text, audio addresses, tilesets,
+etc. -- is inherited unchanged, so Blue behaves exactly
 like Red wherever the two games are identical.  The version-specific *content*
 that is not in the manifest (wild Pokemon, palette colours, the ribbon
 graphic, credits strings) is decoded from the Blue ROM at import time, which

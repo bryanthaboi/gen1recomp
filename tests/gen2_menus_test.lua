@@ -7,6 +7,7 @@
 -- exists for.
 
 package.path = "./?.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 
 -- The UI modules require love-side helpers at load time.  Stub the pieces they
 -- touch during construction and logic; nothing here draws.
@@ -85,13 +86,21 @@ local function newInput()
   return input
 end
 
+local COMMON_TEXT = require("tests.fixtures.gen2_common_text").text()
+
 local function newGame(save)
   local input = newInput()
   return {
     input = input,
     save = save,
     options = save and save.options or Save.defaultOptions(),
-    data = { audio = {}, pokemon = {}, items = {} },
+    data = require("tests.fixtures.gen2_naming").fill(
+      { audio = {}, pokemon = {}, items = {}, gen2Text = COMMON_TEXT,
+        gen2EventTables = require("tests.fixtures.gen2_phone_events").events,
+        text = require("tests.fixture_data.gen2_rom_text_s7_c").text(
+          require("tests.fixtures.gen2_rom_text").text(
+            require("tests.fixture_data.gen2_rom_text_s7_e"))) }),
+    world = { text = COMMON_TEXT },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -206,14 +215,16 @@ do
   local function pinnedTime(hour, minute)
     local m = MainMenu.new(newGame(nil), { hasSave = false, save = false,
       clock = { hour = hour, minute = minute, weekday = 1 } })
-    return MainMenu.timeString(m:clockParts())
+    local h, mi = m:clockParts()
+    return MainMenu.timeString(h, mi, m.game.data)
   end
   check("midnight is NITE 12", pinnedTime(0, 0), "NITE 12:00")
   check("morning keeps its word", pinnedTime(5, 9), "MORN 5:09")
   check("noon is DAY 12", pinnedTime(12, 30), "DAY 12:30")
   check("evening wraps back to NITE", pinnedTime(20, 5), "NITE 8:05")
 end
-check("weekday names", MainMenu.DAYS[6], "FRIDAY")
+check("weekday names", require("src.core.gen2.Clock").weekdayName(6, newGame(nil).data),
+  "FRIDAY")
 
 -- ../pokecrystal/engine/menus/intro_menu.asm:479
 check("CONTINUE reuses SAVE's panel constants",
@@ -650,7 +661,7 @@ do
   game.data.moves = { CUT = { name = "CUT" }, HEADBUTT = { name = "HEADBUTT" } }
   -- A world with a useFieldItem is what makes this a field PACK rather than a
   -- chooser: the mart's SELL and the item PC's DEPOSIT pass `world = {}`.
-  game.world = { useFieldItem = function() return nil end }
+  game.world = { useFieldItem = function() return nil end, text = COMMON_TEXT }
   local menu = PackMenu.new(game, { pocket = "ITEM" })
 
   local function rows(id) return table.concat(menu:submenuRows(id), ",") end
@@ -738,7 +749,7 @@ do
   input:press("a")
   menu:update(0)
   check("GIVE opens the party list", game.stack:top().prompt,
-    "To which <PK><MN>?")
+    "ToWhichPKMNString")
   input:press("a")
   game.stack:top():update(0)
   input:press("a")
@@ -801,45 +812,56 @@ local dex = PokedexMenu.new(dexGame, {})
 check("dex lists every entry", #dex.rows, 2)
 check("dex starts in NEW mode", dex:mode(), "NEW")
 
--- The dex's ROM `db` labels are catalog strings, resolved at draw time.  Stub
--- its tile primitives and inspect the exact text writes without a GPU.
-require("src.core.Strings").load({ strings = {
-  SEEN = "VUS", OWN = "PRIS", HT = "TAILLE", WT = "POIDS",
-  NEW = "JOHTO", ["NEW POKéDEX MODE"] = "MODE JOHTO",
-  ["<PK><MN> are listed by"] = "Les POKéMON suivent",
-  ["evolution type."] = "leur évolution.", TYPE1 = "TYPE A",
-  TYPE2 = "TYPE B", ["BEGIN SEARCH!!"] = "CHERCHER !!",
-  CANCEL = "ANNULER",
-} })
+local dexText = dexGame.data.text
+local dexUntranslated = {}
+for label, text in pairs({
+  String_SEEN = "VUS", String_OWN = "PRIS",
+  ["Pokedex_DrawDexEntryScreenBG.Height"] = "TAILLE<ROCKET>",
+  ["Pokedex_DrawDexEntryScreenBG.Weight"] = "POIDS",
+  ["Pokedex_DrawOptionScreenBG.Modes"] = "MODE JOHTO\nMODE NATIONAL\nMODE A-Z",
+  ["Pokedex_DisplayModeDescription.NewMode"] =
+    "Les POKéMON suivent\nleur évolution.",
+  ["Pokedex_DrawSearchScreenBG.Types"] = "TYPE A\nTYPE B",
+  ["Pokedex_DrawSearchScreenBG.Menu"] = "CHERCHER !!\nANNULER",
+}) do
+  dexUntranslated[label] = dexText[label]
+  dexText[label] = text
+end
 drawn = {}
 dex.text = function(_, text, x, y) drawn[x .. ":" .. y] = text end
 dex.fill, dex.border, dex.tile = function() end, function() end, function() end
 dex.blank, dex.drawPic, dex.drawFootprint = function() end, function() end,
   function() end
 dex:drawMainBackground()
-check("SEEN is localizable", drawn["1:11"], "VUS")
-check("OWN is localizable", drawn["1:14"], "PRIS")
+check("SEEN is String_SEEN", drawn["1:11"], "VUS")
+check("OWN is String_OWN", drawn["1:14"], "PRIS")
 drawn = {}
 dex.optionIndex = 1
 dex:drawOption()
-check("a mode label is localizable", drawn["3:4"], "MODE JOHTO")
-check("a mode description is localizable",
+check("a mode label is the cache's .Modes row", drawn["3:4"], "MODE JOHTO")
+check("and the next row is its second line", drawn["3:6"], "MODE NATIONAL")
+check("a mode description is the cache's own",
   drawn["1:14"], "Les POKéMON suivent")
+check("on two lines", drawn["1:15"], "leur évolution.")
 drawn = {}
 dex:drawSearch()
-check("TYPE1 is localizable", drawn["3:4"], "TYPE A")
-check("TYPE2 is localizable", drawn["3:6"], "TYPE B")
-check("BEGIN SEARCH is localizable", drawn["3:13"], "CHERCHER !!")
-check("the dex CANCEL row is localizable", drawn["3:15"], "ANNULER")
+check("TYPE1 is .Types line 1", drawn["3:4"], "TYPE A")
+check("TYPE2 is .Types line 2", drawn["3:6"], "TYPE B")
+check("BEGIN SEARCH is .Menu line 1", drawn["3:13"], "CHERCHER !!")
+check("the dex CANCEL row is .Menu line 2", drawn["3:15"], "ANNULER")
 drawn = {}
 dex.newEntry = true
 dex:drawEntryBody(dex.rows[1], dex.data.gen2Pokedex.entries.BULBASAUR)
-check("HT is localizable", drawn["9:7"], "TAILLE")
-check("WT is localizable", drawn["9:9"], "POIDS")
+check("HT is .Height", drawn["9:7"], "TAILLE")
+check("WT is .Weight", drawn["9:9"], "POIDS")
+local dexTiles = {}
+dex.tile = function(_, id, x, y) dexTiles[x .. ":" .. y] = id end
+dex:drawEntryBody(dex.rows[1], dex.data.gen2Pokedex.entries.BULBASAUR)
+check(".Height's <ROCKET> byte is the dex sheet's foot mark", dexTiles["15:7"], 0x5e)
+for label, text in pairs(dexUntranslated) do dexText[label] = text end
 dex.text, dex.fill, dex.border, dex.tile = nil, nil, nil, nil
 dex.blank, dex.drawPic, dex.drawFootprint = nil, nil, nil
 dex.newEntry = nil
-require("src.core.Strings").load(nil)
 -- Pokedex_UpdateMainScreen: SELECT opens the OPTION screen and START the
 -- SEARCH screen.  Neither cycles anything in place -- the mode changes when
 -- the OPTION screen's own cursor picks one and A confirms it.
@@ -863,20 +885,21 @@ check("START opens the SEARCH screen", (function()
   return dex.view
 end)(), "search")
 -- Pokedex_InitSearchScreen: TYPE1 starts on NORMAL and TYPE2 on "-----".
-check("TYPE1 starts on NORMAL", dex:searchTypeName(1), "NORMAL")
-check("TYPE2 starts blank", dex:searchTypeName(2), "-----")
--- Display names come from the type registry, while matching stays on the
--- stable type id.  Translating GRASS must still find a GRASS species.
-dex.data.type_chart = { types = { GRASS = { name = "HERBE" } } }
-dex.searchType[1] = 12 -- GRASS in SEARCH_TYPES
-check("the search wheel draws the translated type name",
-  dex:searchTypeName(1), "HERBE")
+check("TYPE1 starts on NORMAL", dex:searchTypeName(1),
+  dexText["PokedexTypeSearchStrings#2"])
+check("TYPE2 starts blank", dex:searchTypeName(2),
+  dexText["PokedexTypeSearchStrings#1"])
+local grassString = dexText["PokedexTypeSearchStrings#5"]
+dexText["PokedexTypeSearchStrings#5"] = " HERBE  "
+dex.searchType[1] = 4 -- GRASS in SEARCH_TYPES
+check("the search wheel draws PokedexTypeSearchStrings",
+  dex:searchTypeName(1), " HERBE  ")
 dexSave.pokedex.seen.BULBASAUR = true
 dex:rebuild()
 dex:beginSearch()
 check("translated type display does not change search identity",
   #dex.searchResults, 1)
-dex.data.type_chart = nil
+dexText["PokedexTypeSearchStrings#5"] = grassString
 dexSave.pokedex.seen.BULBASAUR = nil
 dex.searchType[1] = 1
 dex.searchResults = nil
@@ -1155,7 +1178,7 @@ local NamePick = require("src.ui.gen2.NamePick")
 local pickInput = newInput()
 local pickGame = {
   input = pickInput,
-  data = {},
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() },
   stack = { push = function() end, pop = function() end, top = function() end },
 }
 local picked
@@ -1249,6 +1272,7 @@ local radioData = {
   hidden = { [2] = true },
   weekday = 1,
   luckyNumber = 42,
+  text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
 }
 
 -- A copy with one field changed, so a test can vary the world without the
@@ -1552,6 +1576,7 @@ local function newGear(opts)
     landmarks = gearLandmarks,
     currentLandmark = opts.landmark or "LANDMARK_NEW_BARK_TOWN",
     clock = opts.clock,
+    text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
   })
 end
 
@@ -1608,9 +1633,11 @@ check("but not without the signal", johtoDial[8].station, nil)
 -- LoadStation_EvolutionRadio hands it UnownStationName: two stations really do
 -- broadcast under another one's name.
 check("Rocket Radio wears Let's All Sing's name",
-  Pokegear.STATION_NAMES.ROCKET_RADIO, "Let's All Sing!")
+  Pokegear.STATION_LABELS.ROCKET_RADIO, "LetsAllSingName")
 check("the evolution station wears the Unown one",
-  Pokegear.STATION_NAMES.EVOLUTION_RADIO, "?????")
+  Pokegear.STATION_LABELS.EVOLUTION_RADIO, "UnownStationName")
+check("and the tuner prints the cache's LetsAllSingName",
+  kantoDial[6].name, "Let's All Sing!")
 
 -- .InJohto counts the S.S. Aqua as Johto even though LANDMARK_FAST_SHIP sits
 -- past every Kanto landmark.
@@ -1772,12 +1799,12 @@ local martItems = {
   BICYCLE = { id = "BICYCLE", name = "BICYCLE", pocket = "KEY_ITEM", index = 7,
     price = 0, canToss = false },
 }
--- The shape data/generated/marts.lua will have: `lists` is a 1-based array in
--- MART_* order and `bargain` is BargainShopData's own item/price rows.
 local martData = {
   lists = { { "POTION", "ANTIDOTE" } }, -- MART_CHERRYGROVE
+  default = { "POKE_BALL", "POTION" },
   bargain = { { item = "NUGGET", price = 4500 } },
 }
+for index = 2, 34 do martData.lists[index] = { "POTION" } end
 
 local function newMart(save, opts)
   local game, input = newGame(save)
@@ -1806,12 +1833,24 @@ end
 -- gets DefaultMart's two items.
 check("a listed mart is its own shelf", #MartMenu.inventory(martData, 0), 2)
 check("in the ROM's order", MartMenu.inventory(martData, 0)[1], "POTION")
-check("an id past NUM_MARTS falls back to DefaultMart",
+check("an id past NUM_MARTS sells DefaultMart",
   MartMenu.inventory(martData, 200)[1], "POKE_BALL")
-check("as does a mart id the table has no row for",
-  MartMenu.inventory(martData, 5)[1], "POKE_BALL")
-check("and no marts.lua at all is an empty shelf, not invented stock",
-  #MartMenu.inventory(nil, 0), 0)
+check("DefaultMart comes off marts.lua, not a transcription",
+  MartMenu.inventory({ lists = {}, default = { "MOD_ITEM" } }, 34)[1],
+  "MOD_ITEM")
+local function martErr(fn, ...)
+  local ok, err = pcall(fn, ...)
+  return not ok and tostring(err):match("marts%.lua has no [%w ]+") or nil
+end
+check("a mart id marts.lua has no row for is an error",
+  martErr(MartMenu.inventory, { lists = { {} } }, 5),
+  "marts.lua has no list for mart 5")
+check("as is a marts.lua with no lists",
+  martErr(MartMenu.inventory, { bargain = {} }, 0), "marts.lua has no lists")
+check("and one with no bargain rows",
+  martErr(MartMenu.bargainRows, { lists = {} }), "marts.lua has no bargain")
+check("and an id past NUM_MARTS with no DefaultMart",
+  martErr(MartMenu.inventory, { lists = {} }, 34), "marts.lua has no default")
 
 -- BuySell_MultiplyPrice, then Sell_HalvePrice on the PRODUCT: three of a
 -- 15-unit item sells for 22, not for three times seven.
@@ -1963,7 +2002,7 @@ local longData = {
 local longGame, longInput = newGame(Save.newGame())
 longGame.data.items = martItems
 local long = MartMenu.new(longGame, { save = longGame.save, items = martItems,
-  marts = longData })
+  marts = longData, text = COMMON_TEXT })
 longInput:press("a") long:update(0)
 check("a six-item shelf plus CANCEL", long:total(), 7)
 check("starts unscrolled", long.scroll, 0)
@@ -2149,10 +2188,9 @@ local drugSave = Save.newGame()
 local drug = newMart(drugSave, { martType = 3, martId = 4 })
 check("the pharmacy has its own intro", drug.message.pages[1][1],
   "What's up? Need")
-check("and its own goodbye", MartMenu.TEXTS.PHARMACY.comeAgain[1][1],
-  "All right.")
+check("and its own goodbye", drug.text.comeAgain[1][1], "All right.")
 check("and its own price wording",
-  MartMenu.TEXTS.PHARMACY.finalPrice(1, "POTION", 300)[1][2],
+  drug.text.finalPrice(1, "POTION", 300)[1][2],
   "will cost \xc2\xa5300.")
 
 -- PRINTNUM_MONEY floats the ¥ in front of the first significant digit inside
@@ -2491,7 +2529,7 @@ local function trainerCardChecks()
   -- match, so nothing ever drew.  Confirm that shape still draws nothing --
   -- it is the wrong table for either page now.
   draws = 0
-  TrainerCard.drawBadgeSprites(fake, { BOULDER = true }, TrainerCard.KANTO_BADGES)
+  TrainerCard.drawBadgeSprites(fake, { BOULDER = true }, { "BOULDER" })
   check("a Kanto-keyed table never matches the Johto OAM order", draws, 0)
 
   love.graphics.draw = realDraw
@@ -2510,8 +2548,8 @@ local function trainerCardChecks()
         1, true) ~= nil, true)
     check("page 3 does not gate on player.kantoBadges",
       source:find("drawBadges(%w+, player%.kantoBadges") ~= nil, false)
-    check("the plain fallback also reads player.badges unconditionally",
-      source:find("local held = player.badges or {}", 1, true) ~= nil, true)
+    check("and there is no plain no-gfx fallback left",
+      source:find("drawPlain", 1, true) == nil, true)
   end
 end
 
@@ -2899,7 +2937,7 @@ end)()
     save.party = party
     local game, input = newGame(save)
     game.data.items = ITEMS
-    game.world = { useFieldItem = function() return nil end }
+    game.world = { useFieldItem = function() return nil end, text = COMMON_TEXT }
     local pack = PackMenu.new(game, { pocket = "ITEM" })
     game.stack:push(pack)
     return save, game, input, pack
@@ -2921,7 +2959,7 @@ end)()
       { mon("ONE"), mon("TWO") })
     pack:giveItem(rowOf(pack, "BERRY"))
     local party = game.stack:top()
-    check("2378 GIVE opens the party list", party.prompt, "To which <PK><MN>?")
+    check("2378 GIVE opens the party list", party.prompt, "ToWhichPKMNString")
     input:press("a")
     party:update(0)
     drain(game, input, game.stack:top())

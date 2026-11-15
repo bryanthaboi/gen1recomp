@@ -70,7 +70,6 @@ Runtime.currentMod = nil
 local LayoutNative = require("src.core.game3.layout_native")
 local cells = {}
 for i = 1, 4 * 3 do cells[i] = { mid = 100 + i, coll = i % 2, elev = i % 5 } end
-cells[6] = nil
 local layout = LayoutNative.fromDecoded({
   width = 4, height = 3, cells = cells,
   borderMids = { 7, 8, 9, 10 }, borderWidth = 2, borderHeight = 2,

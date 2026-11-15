@@ -149,7 +149,7 @@ sites("hooks", "123", [[
   core.logic_speed core.quit_to_launcher core.update encounter.fishing
   encounter.roll encounter.species encounter.table evolution.check
   exp.gain fieldmove.eligibility input.gamepad input.key input.pointer
-  input.step input.wheel link.fingerprint movement.collision
+  input.step input.wheel item.use link.fingerprint movement.collision
   movement.speed music.select music.volume pokemon.icon
   pokemon.level_visible pokemon.sprite render.compose render.hud
   render.letterbox render.output render.output_enabled render.viewport
@@ -157,14 +157,11 @@ sites("hooks", "123", [[
   screen.render_visible script.command trainer.before_battle
   trainer.party ui.list_menu ui.naming.grid ui.options.rows
   ui.party.grid_navigation ui.party.submenu ui.start_menu.items
-  warp.destination world.follower.spawn zoom.range
+  warp.destination world.follower.spawn world.talk zoom.range
 ]])
 sites("hooks", "12", [[
   intro.oak_speech.build map.palette player.sprite transition.style
   ui.pc.items ui.title_menu.items world.tod
-]])
-sites("hooks", "13", [[
-  item.use world.talk
 ]])
 sites("hooks", "23", [[
   battle.enemy_switch_or_item breeding.compatibility gender.roll
@@ -579,7 +576,7 @@ local function boundary(loader, name, fishing)
     if name == "encounter.species" then return { "encounter", "context" } end
     if name == "pokemon.level_visible" or name == "catch.nickname" then return { "mon", "context" } end
     if name == "evolution.check" then return { false, "mon", "context", "context" } end
-    if name == "item.use" then return { false, "mon", "itemId", false } end
+    if name == "item.use" then return { false, false, "itemId", "mon" } end
     if name == "ui.party.submenu" then return { false, false, "mon", "context" } end
     if name == "battle.enemy_action" or name == "battle.enemy_switch_or_item"
         or name == "battle.overlay" or name == "battle.status_hud_visible"

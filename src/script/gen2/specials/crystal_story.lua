@@ -34,17 +34,20 @@ M.BeastsCheck = function(vm)
   S.answer(vm, S.TRUE)
 end
 
--- ../pokecrystal/engine/events/dratini.asm:72 .Moveset0, :79 .Moveset1.
 local DRATINI = "DRATINI"
-local DRATINI_MOVESETS = {
-  [0] = { "WRAP", "THUNDER_WAVE", "TWISTER", "EXTREMESPEED" },
-  [1] = { "WRAP", "LEER", "THUNDER_WAVE", "TWISTER" },
-}
+
+local function eventTable(vm, key)
+  local data = S.data(vm)
+  local tables = data and data.gen2EventTables
+  local value = tables and tables[key]
+  if value == nil then error("events.lua has no " .. key, 2) end
+  return value
+end
 
 -- ../pokecrystal/engine/events/dratini.asm:1: `cp $2 / ret nc`, then :16
 -- .CheckForDratini walks the party BACKWARDS from the last slot.
 M.GiveDratini = function(vm)
-  local set = DRATINI_MOVESETS[vm.scriptVar or 0]
+  local set = eventTable(vm, "dratiniMovesets")[(vm.scriptVar or 0) + 1]
   if not set then return end
   local list = S.party(vm)
   local target
@@ -67,134 +70,21 @@ M.GiveDratini = function(vm)
   end
 end
 
--- ../pokecrystal/data/events/odd_eggs.asm:14-33, the `odd_egg_prob` arguments in
--- order; the macro (:5) accumulates them and stores total * $ffff / 100.
-local ODD_EGG_PERCENTS = { 8, 1, 16, 3, 16, 3, 14, 2, 10, 2, 12, 2, 10, 1 }
-
-local ODD_EGG_PROBABILITIES = {}
-do
-  local total = 0
-  for index, percent in ipairs(ODD_EGG_PERCENTS) do
-    total = total + percent
-    ODD_EGG_PROBABILITIES[index] = math.floor(total * 0xffff / 100)
-  end
-end
-
--- ../pokecrystal/data/events/odd_eggs.asm:37 OddEggs, one row per
--- NICKNAMED_MON_STRUCT.
-local ODD_EGGS = {
-  { species = "PICHU", otId = 2048, experience = 125, level = 5, eggSteps = 20,
-    moves = { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
-    pp = { 30, 20, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 17, attack = 9, defense = 6, speed = 11,
-      specialAttack = 8, specialDefense = 8 } },
-  { species = "PICHU", otId = 256, experience = 125, level = 5, eggSteps = 20,
-    moves = { "THUNDERSHOCK", "CHARM", "DIZZY_PUNCH" },
-    pp = { 30, 20, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 17, attack = 9, defense = 7, speed = 12,
-      specialAttack = 9, specialDefense = 9 } },
-  { species = "CLEFFA", otId = 4096, experience = 125, level = 5, eggSteps = 20,
-    moves = { "POUND", "CHARM", "DIZZY_PUNCH" },
-    pp = { 35, 20, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 20, attack = 7, defense = 7, speed = 6,
-      specialAttack = 9, specialDefense = 10 } },
-  { species = "CLEFFA", otId = 768, experience = 125, level = 5, eggSteps = 20,
-    moves = { "POUND", "CHARM", "DIZZY_PUNCH" },
-    pp = { 35, 20, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 20, attack = 7, defense = 8, speed = 7,
-      specialAttack = 10, specialDefense = 11 } },
-  { species = "IGGLYBUFF", otId = 4096, experience = 125, level = 5,
-    eggSteps = 20,
-    moves = { "SING", "CHARM", "DIZZY_PUNCH" },
-    pp = { 15, 20, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 24, attack = 8, defense = 6, speed = 6,
-      specialAttack = 9, specialDefense = 7 } },
-  { species = "IGGLYBUFF", otId = 768, experience = 125, level = 5,
-    eggSteps = 20,
-    moves = { "SING", "CHARM", "DIZZY_PUNCH" },
-    pp = { 15, 20, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 24, attack = 8, defense = 7, speed = 7,
-      specialAttack = 10, specialDefense = 8 } },
-  { species = "SMOOCHUM", otId = 3584, experience = 125, level = 5,
-    eggSteps = 20,
-    moves = { "POUND", "LICK", "DIZZY_PUNCH" },
-    pp = { 35, 30, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 19, attack = 8, defense = 6, speed = 11,
-      specialAttack = 13, specialDefense = 11 } },
-  { species = "SMOOCHUM", otId = 512, experience = 125, level = 5,
-    eggSteps = 20,
-    moves = { "POUND", "LICK", "DIZZY_PUNCH" },
-    pp = { 35, 30, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 19, attack = 8, defense = 7, speed = 12,
-      specialAttack = 14, specialDefense = 12 } },
-  { species = "MAGBY", otId = 2560, experience = 125, level = 5, eggSteps = 20,
-    moves = { "EMBER", "DIZZY_PUNCH" },
-    pp = { 25, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 19, attack = 12, defense = 8, speed = 13,
-      specialAttack = 12, specialDefense = 10 } },
-  { species = "MAGBY", otId = 512, experience = 125, level = 5, eggSteps = 20,
-    moves = { "EMBER", "DIZZY_PUNCH" },
-    pp = { 25, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 19, attack = 12, defense = 9, speed = 14,
-      specialAttack = 13, specialDefense = 11 } },
-  { species = "ELEKID", otId = 3072, experience = 125, level = 5, eggSteps = 20,
-    moves = { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
-    pp = { 30, 30, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 19, attack = 11, defense = 8, speed = 14,
-      specialAttack = 11, specialDefense = 10 } },
-  { species = "ELEKID", otId = 512, experience = 125, level = 5, eggSteps = 20,
-    moves = { "QUICK_ATTACK", "LEER", "DIZZY_PUNCH" },
-    pp = { 30, 30, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 19, attack = 11, defense = 9, speed = 15,
-      specialAttack = 12, specialDefense = 11 } },
-  { species = "TYROGUE", otId = 2560, experience = 125, level = 5,
-    eggSteps = 20,
-    moves = { "TACKLE", "DIZZY_PUNCH" },
-    pp = { 35, 10 },
-    dvs = { attack = 0, defense = 0, speed = 0, special = 0 },
-    stats = { hp = 18, attack = 8, defense = 8, speed = 8,
-      specialAttack = 8, specialDefense = 8 } },
-  { species = "TYROGUE", otId = 256, experience = 125, level = 5, eggSteps = 20,
-    moves = { "TACKLE", "DIZZY_PUNCH" },
-    pp = { 35, 10 },
-    dvs = { attack = 2, defense = 10, speed = 10, special = 10 },
-    stats = { hp = 18, attack = 8, defense = 9, speed = 9,
-      specialAttack = 9, specialDefense = 9 } },
-}
-
--- ../pokecrystal/engine/events/odd_egg.asm:93 `.Odd` is the OT NAME
--- (../pokecrystal/mobile/mobile_46.asm:7561); wOddEggName ("EGG") is the nickname.
-local ODD_EGG_OT = "ODD"
-local ODD_EGG_NICKNAME = "EGG"
 local EGG_TICKET = "EGG_TICKET"
 
 -- ../pokecrystal/engine/events/odd_egg.asm:5-38, one Random word against the
 -- cumulative table; the $ffff break is :17.
-local function oddEggIndex(roll)
-  for index = 1, #ODD_EGG_PROBABILITIES do
-    local probability = ODD_EGG_PROBABILITIES[index]
-    if probability >= 0xffff then return index end
-    if roll <= probability then return index end
+local function oddEggIndex(rows, roll)
+  for index, row in ipairs(rows) do
+    if row.probability >= 0xffff then return index end
+    if roll <= row.probability then return index end
   end
-  return #ODD_EGG_PROBABILITIES
+  return #rows
 end
 
--- ../pokecrystal/engine/events/odd_egg.asm:40-48, NICKNAMED_MON_STRUCT_LENGTH
--- bytes copied verbatim.
-local function buildOddEgg(data, row, save)
-  if not (data and row) then return nil end
+-- ../pokecrystal/engine/events/odd_egg.asm:40-48, :82-90,
+-- ../pokecrystal/mobile/mobile_46.asm:7561
+local function buildOddEgg(data, row, ot, save)
   local moves = {}
   for index, id in ipairs(row.moves) do
     local pp = row.pp[index] or 0
@@ -207,9 +97,9 @@ local function buildOddEgg(data, row, save)
   local egg = Mon.new(data, row.species, row.level, {
     dvs = dvs,
     moves = moves,
-    -- ../pokecrystal/data/events/odd_eggs.asm:57 `bigdw 0 ; HP`
-    hp = 0,
-    nickname = ODD_EGG_NICKNAME,
+    hp = row.hp,
+    item = row.item,
+    nickname = row.nickname,
   })
   if not egg then return nil end
   egg.experience = row.experience
@@ -220,15 +110,15 @@ local function buildOddEgg(data, row, save)
     specialDefense = row.stats.specialDefense,
   }
   egg.maxHp = row.stats.hp
-  egg.hp = 0
+  egg.hp = row.hp
   -- ../pokecrystal/mobile/mobile_46.asm:7528 writes EGG into wPartySpecies while the struct
   -- keeps the hatchling's own species.
   egg.isEgg = true
   -- ../pokecrystal/data/events/odd_eggs.asm:53 `db 20 ; Step cycles to hatch`,
   -- the byte MON_HAPPINESS holds while the thing is an egg.
   egg.eggSteps = row.eggSteps
-  egg.ot = ODD_EGG_OT
-  egg.otName = ODD_EGG_OT
+  egg.ot = ot
+  egg.otName = ot
   egg.otId = row.otId
   if save then Mon.stampOT(save, egg) end
   return egg
@@ -237,14 +127,15 @@ end
 -- ../pokecrystal/engine/events/odd_egg.asm:1.  The party-full refusal is the
 -- caller's (../pokecrystal/maps/DayCare.asm:31-32), not the routine's.
 M.GiveOddEgg = function(vm)
+  local oddEggs = eventTable(vm, "oddEggs")
   local record = S.save(vm)
   local data = S.data(vm)
-  if not (record and data) then return end
+  if not record then return end
   local party = record.party or {}
   record.party = party
   if #party >= Mon.PARTY_SIZE then return end
-  local row = ODD_EGGS[oddEggIndex(Specials.random(0x10000) - 1)]
-  local egg = buildOddEgg(data, row, record)
+  local row = oddEggs.rows[oddEggIndex(oddEggs.rows, Specials.random(0x10000) - 1)]
+  local egg = buildOddEgg(data, row, oddEggs.ot, record)
   if not egg then return end
   local h = S.hooks(vm)
   local world = h.world

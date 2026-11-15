@@ -98,7 +98,13 @@ native Gen 3 call site.
   calls `continueBattle`, optionally with `{ cancel = true }`.
 - *Menus (`src/ui/game3`):* `ui.start_menu.items`, `ui.options.rows`,
   `ui.party.submenu`, `ui.party.grid_navigation`, `ui.naming.grid`,
-  `ui.list_menu`.
+  `ui.list_menu`. On the field list `ui.party.submenu` keeps vanilla rows,
+  `{ label, onSelect }` rows and field-move rows (`{ label, move = "CUT" }`
+  or `action` set to one of the game's field-move labels) that this version's
+  party menu has a slot for; the move runs for the selected Pokémon even when
+  it does not know it. Battle and choose lists take only vanilla and
+  `onSelect` rows. Any other row makes the engine log an error and keep the
+  vanilla list (`src/ui/game3/party_menu.lua` `submenu_actions`).
 - *Sprites:* `pokemon.sprite`, `pokemon.icon`.
 - *The frame (`src/core/Game3.lua`):* `core.logic_speed` (the resolved
   logic-clock multiplier, clamped by `GameSpeed.clamp`; a locked or overridden

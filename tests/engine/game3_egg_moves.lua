@@ -158,6 +158,7 @@ do
     ["data/generated/gba/pokemon/tmhm.lua"] =
       ("local M = { machines = {}, learnsets = {} }\nM.machines[5] = %d\n"):format(TM_MOVE)
       .. "M.learnsets[4] = { lo = 32, hi = 0 }\nreturn M\n",
+    ["data/generated/gba/pokemon/battle_moves.lua"] = require("tests.fixture_data.game3_battle_moves").source(),
   }
   Pokemon.install({ read = function(_, rel) return files[rel] end })
 

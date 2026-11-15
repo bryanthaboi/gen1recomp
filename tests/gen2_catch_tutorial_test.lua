@@ -9,6 +9,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 catch tutorial")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -196,6 +197,8 @@ local function tutorialScreen()
     pokemon = { RATTATA = { catchRate = 255 } },
     items = { POKE_BALL = { pocket = "BALL", name = "POKe BALL", index = 5 },
               POTION = { pocket = "ITEM", name = "POTION", index = 17 } },
+    text = require("tests.fixture_data.gen2_rom_text_s7_b").text(
+      { Text_BallCaught = "Gotcha! {STRBUF}\nwas caught!" }),
   }
   local game = {
     data = data,
@@ -234,7 +237,7 @@ do
   -- "Wild RATTATA appeared!" goes up on the step that drains the queue, and
   -- the DUDE is handed the prompt on the first step that waits on it.
   screen:update(1 / 60)
-  eq(screen.message, "Wild RATTATA appeared!", "the intro line is the cart's")
+  eq(screen.message, "Wild RATTATA\nappeared!", "the intro line is the cart's")
   for _ = 1, 400 do
     if not screen:syncTyper() then break end
     screen:update(1 / 60)
@@ -278,7 +281,7 @@ do
   check(sawBallPocket, "crosses to the BALL pocket")
   eq(chosen, "POKE_BALL", "and lands on the POKE BALL")
   eq(outcomeOf(), "caught", "and the ball catches")
-  eq(screen.message, "Gotcha! RATTATA was caught!", "with the cart's line")
+  eq(screen.message, "Gotcha! RATTATA\nwas caught!", "with the cart's line")
   eq(#save.party, 1, "nothing is added to the party")
   eq(save.pokedex.caught.RATTATA, nil, "nothing is written to the Pokedex")
   eq(save.inventory.POKE_BALL, 3, "and no ball leaves the player's bag")
@@ -323,7 +326,7 @@ do
   -- GetTrainerBackpic's "Special exception for Dude".
   local extractor = sourceOf("src/import/RomExtractorGen2.lua")
   check(extractor ~= nil, "the extractor's source is readable")
-  check(extractor:find('self.symbols["DudeBackpic"]', 1, true) ~= nil,
+  check(extractor:find('self:writeCompressedPic("DudeBackpic"', 1, true) ~= nil,
     "the extractor rips DudeBackpic")
   check(extractor:find('hud.dudeBack = "assets/generated/battle/dude_back.png"',
     1, true) ~= nil, "and the battle screen has a path to look it up by")

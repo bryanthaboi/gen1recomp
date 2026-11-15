@@ -17,7 +17,7 @@ local Data = {
   },
   moves = { TACKLE = { name = "TACKLE", pp = 35 }, GROWL = { name = "GROWL", pp = 40 } },
   pokemon = { CHARMANDER = { name = "CHARMANDER" } },
-  text = {},
+  text = dofile("tests/fixture_data/text.lua"),
 }
 
 local save = SaveData.newGame()

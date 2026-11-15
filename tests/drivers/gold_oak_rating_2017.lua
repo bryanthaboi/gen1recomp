@@ -21,6 +21,11 @@ return function(game)
     U.wait(2)
     game.input.state[button] = false
     U.wait(frames or 4)
+    local top = game.stack:top()
+    for _ = 1, 600 do
+      if not (top and top.typer and not top.typer:done()) then break end
+      U.wait(1)
+    end
   end
 
   U.wait(45)
@@ -87,9 +92,9 @@ return function(game)
     tap("a", 6)
   end
 
-  ok(seen[4] == "Wow! You've hit / 200! Your #DEX",
+  ok(seen[4] == "Wow! You've hit / 200! Your POKéDEX",
     "205 caught reaches _OakRating15 (" .. tostring(seen[4]) .. ")")
-  ok(seen[5] == "200! Your #DEX / is looking great!",
+  ok(seen[5] == "200! Your POKéDEX / is looking great!",
     "and its cont scrolls rather than adding a third line ("
       .. tostring(seen[5]) .. ")")
 

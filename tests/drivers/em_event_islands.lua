@@ -72,7 +72,7 @@ return function(game)
   check(EI.enabled(session), "the EVENT TICKETS option row turns the distribution on")
   check(EI.pendingGift(session) == nil, "no ticket is handed out until the relay publishes one")
   local feedCards = {}
-  for _, b in ipairs(require("src.core.game3.mystery_gift").builtins("rse")) do
+  for _, b in ipairs(require("tests.fixtures.game3_gift_cards").cards("rse")) do
     feedCards[#feedCards + 1] = { key = b.key, card = b.card }
   end
   EI.applyFeed(session, { cards = feedCards })

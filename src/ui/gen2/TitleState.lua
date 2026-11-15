@@ -2,7 +2,7 @@
 -- wing-flap (Frameset_GSIntroHoOhLugia), spark trails, A/Start to continue.
 -- drawWidescreen fills the window with sky/clouds so widescreen has no
 -- pillarbox voids; the 160x144 art stays aspect-centered on top.
--- Every Gold/Silver difference arrives as a title.lua key, defaulted to Gold.
+-- Every Gold/Silver difference arrives as a title.lua key.
 
 -- src/render/Assets.lua is the mod-override choke point: a raw
 -- love.graphics.newImage skips overrides/ and AssetTransform output.
@@ -18,9 +18,7 @@ local TitleState = {}
 TitleState.__index = TitleState
 TitleState.isOpaque = true
 
--- title_bg_gold.pal mid-sky shade, for a cache built before title.sky existed.
-local SKY = { 123 / 255, 165 / 255, 255 / 255, 1 }
--- ...and its grey stand-in, for when COLOR is not GBC.  The title art is the
+-- The sky's grey stand-in, for when COLOR is not GBC.  The title art is the
 -- one thing in the port baked with its colours in (see the extractor), so the
 -- window fill that matches it has to be picked the same way the sheet is.
 -- The sky is BG colour 2, and LoadTitleScreenPals' rBGP (%11011000) sends
@@ -39,134 +37,118 @@ end
 function TitleState:wantsFillScale() return true end
 function TitleState:drawsWidescreen() return true end
 
+local function need(t, key, what)
+  local value = t[key]
+  if value == nil then error((what or "title.lua") .. " has no " .. key, 3) end
+  return value
+end
+
+local function rgba(c)
+  return { c[1], c[2], c[3], 1 }
+end
+
+local function images(paths)
+  local out = {}
+  for i, path in ipairs(paths) do out[i] = tryImage(path) end
+  return out
+end
+
+local CRYSTAL_SURROUND_Y = 88
+
 function TitleState.new(game, opts)
   opts = opts or {}
   local self = setmetatable({}, TitleState)
   self.game = game
   self.onContinue = opts.onContinue
+  self.onTimeout = opts.onTimeout
   local title = opts.title or {}
   self.title = title
-  self.screenColor = tryImage(title.screen
-    or "assets/generated/title/title_screen.png")
-  self.cloudsColor = tryImage(title.clouds
-    or "assets/generated/title/clouds.png")
-  self.trailColor = tryImage(title.trail or "assets/generated/title/trail.png")
-  -- The uncoloured set, absent from a cache built before COLOR existed -- in
-  -- which case pickArt falls back to the colour one and DMG simply looks the
-  -- way it did before rather than failing to draw.
-  self.screenGray = tryImage(title.screenGray)
-  self.cloudsGray = tryImage(title.cloudsGray)
-  self.trailGray = tryImage(title.trailGray)
+  self.crystal = need(title, "layout") == "crystal_title"
+  self.screenColor = tryImage(need(title, "screen"))
+  self.screenGray = tryImage(need(title, "screenGray"))
+  self.sky = rgba(need(title, "sky"))
+  self.below = rgba(need(title, "below"))
+  -- engine/menus/intro_menu.asm:951-966
+  self.timeoutFrames = tonumber(need(title, "timeoutFrames"))
+  self.frameCounter = 0
+  self.musicStarted = false
+  self.trails = {}
+  self.hoohColor, self.hoohGray = {}, {}
+  self.suicuneColor, self.suicuneGray = {}, {}
+  self.entranceScx = 0
+  if self.crystal then
+    -- engine/movie/title.asm:104-127,217-273,304-338
+    self.suicuneColor = images(need(title, "suicuneFrames"))
+    self.suicuneGray = images(need(title, "suicuneFramesGray"))
+    self.suicuneX = tonumber(need(title, "suicuneX"))
+    self.suicuneY = tonumber(need(title, "suicuneY"))
+    -- SuicuneFrameIterator's `and %111` clock (engine/movie/title.asm:217-243).
+    self.suicuneEvery = tonumber(need(title, "suicuneEvery"))
+    self.suicuneTick = 0
+    self.suicuneFrame = 1
+    self.gemColor = tryImage(need(title, "gem"))
+    self.gemGray = tryImage(need(title, "gemGray"))
+    self.gemX = tonumber(need(title, "gemX"))
+    self.gemRestY = tonumber(need(title, "gemY"))
+    self.gemStep = tonumber(need(title, "gemStep"))
+    -- TitleScreenEntrance (engine/menus/intro_menu.asm:1078-1123): hSCX walks
+    -- to 0 while alternating logo lines converge and the gem descends.
+    local entrance = need(title, "entrance")
+    self.entrance = entrance
+    self.entranceScx = tonumber(need(entrance, "scx", "title.entrance"))
+    self.entranceStep = tonumber(need(entrance, "step", "title.entrance"))
+    self.entranceLines = tonumber(need(entrance, "lines", "title.entrance"))
+    self.entranceHideBelow = tonumber(entrance.hideBelow)
+    self.gemY = tonumber(need(title, "gemFromY"))
+    self.entranceSfx = need(title, "entranceSfx")
+    -- The copyright window line is pal 7 (engine/movie/title.asm:40-43); its
+    -- colour 0 backs the whole band.
+    local band = need(need(title, "palettes").bg, 8, "title.palettes.bg")[1]
+    self.bandColor = { band[1] / 255, band[2] / 255, band[3] / 255, 1 }
+    self.cloudY = CRYSTAL_SURROUND_Y
+    return self
+  end
+  self.cloudsColor = tryImage(need(title, "clouds"))
+  self.cloudsGray = tryImage(need(title, "cloudsGray"))
+  self.trailColor = tryImage(need(title, "trail"))
+  self.trailGray = tryImage(need(title, "trailGray"))
   -- `depixel 12, 11` less the OAM bias and the pose's own origin; see the
   -- extractor, which writes the same pair into title.lua.
-  self.hoohX = tonumber(title.hoohX) or 48
-  self.hoohY = tonumber(title.hoohY) or 56
-  self.cloudY = tonumber(title.cloudY) or 88
-  self.cloudScrollEvery = tonumber(title.cloudScrollEvery) or 8
+  self.hoohX = tonumber(need(title, "hoohX"))
+  self.hoohY = tonumber(need(title, "hoohY"))
+  self.cloudY = tonumber(need(title, "cloudY"))
+  self.cloudScrollEvery = tonumber(need(title, "cloudScrollEvery"))
   -- AnimSeq_GSIntroHoOhLugia (engine/sprite_anims/functions.asm:820-838).
-  self.hoohBobAmplitude = tonumber(title.hoohBobAmplitude) or 2
-  self.hoohBobStep = tonumber(title.hoohBobStep) or 1
-  local sky = title.sky
-  self.sky = (type(sky) == "table" and #sky >= 3)
-    and { sky[1], sky[2], sky[3], 1 } or SKY
-  local below = title.below
-  self.below = (type(below) == "table" and #below >= 3)
-    and { below[1], below[2], below[3], 1 } or { 1, 1, 1, 1 }
-
-  self.hoohColor, self.hoohGray = {}, {}
-  local paths = title.hoohFrames
-  if type(paths) == "table" then
-    for i, path in ipairs(paths) do
-      self.hoohColor[i] = tryImage(path)
-    end
-  end
-  if #self.hoohColor == 0 then
-    self.hoohColor[1] = tryImage(title.hooh or "assets/generated/title/hooh.png")
-  end
-  if type(title.hoohFramesGray) == "table" then
-    for i, path in ipairs(title.hoohFramesGray) do
-      self.hoohGray[i] = tryImage(path)
-    end
-  end
-  self.sequence = title.hoohSequence or {
-    { 1, 10 }, { 2, 9 }, { 3, 10 }, { 4, 10 }, { 3, 9 }, { 5, 10 },
-  }
+  self.hoohBobAmplitude = tonumber(need(title, "hoohBobAmplitude"))
+  self.hoohBobStep = tonumber(need(title, "hoohBobStep"))
+  self.hoohColor = images(need(title, "hoohFrames"))
+  self.hoohGray = images(need(title, "hoohFramesGray"))
+  self.sequence = need(title, "hoohSequence")
   -- A frame shows duration + 1 ticks: GetSpriteAnimFrame stores the byte on
   -- the advancing tick and only decrements on the ones after
   -- (engine/sprite_anims/core.asm:400-434).  Both editions' framesets total
   -- 64 ticks with it, locking the wing beat to the 64-tick sine bob.
   self.seqIndex = 1
-  self.seqLeft = (self.sequence[1] and self.sequence[1][2] or 10) + 1
+  self.seqLeft = self.sequence[1][2] + 1
   self.frame = 1
 
   -- AnimSeq_GSIntroHoOhLugia's SPRITEANIMSTRUCT_VAR1.
   self.hoohPhase = 0
-  self.frameCounter = 0
   self.cloudScroll = 0
-  self.trails = {}
   -- UpdateTitleTrailSprite / TitleTrailCoords (intro_menu.asm:1069-1124), in
   -- pixels.
-  self.trailSpawns = title.trailSpawns or {
-    { 80, 88 }, { 104, 88 }, { 104, 88 }, { 120, 88 },
-    { 120, 88 }, { 88, 88 },
-  }
+  self.trailSpawns = need(title, "trailSpawns")
   self.trailSpawnIndex = 1
   -- AnimSeq_GSTitleTrail (engine/sprite_anims/functions.asm:720-818).
-  self.trailMode = title.trailMode or "gold"
-  self.trailSpawnEvery = tonumber(title.trailSpawnEvery) or 4
-  self.trailStepX = tonumber(title.trailStepX) or 4
-  self.trailStepY = tonumber(title.trailStepY) or 1
-  self.trailBobAmplitude = tonumber(title.trailBobAmplitude) or 2
-  self.trailPhaseStep = tonumber(title.trailPhaseStep) or 3
+  self.trailMode = need(title, "trailMode")
+  self.trailSpawnEvery = tonumber(need(title, "trailSpawnEvery"))
+  self.trailStepX = tonumber(need(title, "trailStepX"))
+  self.trailStepY = tonumber(need(title, "trailStepY"))
+  self.trailBobAmplitude = tonumber(need(title, "trailBobAmplitude"))
+  self.trailPhaseStep = tonumber(need(title, "trailPhaseStep"))
   self.trailPhase = tonumber(title.trailPhase)
   -- How far past the 160px frame trails may fly (GB pixels); set each draw.
   self.trailMaxX = 200
-  self.musicStarted = false
-
-  -- engine/movie/title.asm:104-127,217-273,304-338
-  self.suicuneColor, self.suicuneGray = {}, {}
-  if type(title.suicuneFrames) == "table" then
-    for i, path in ipairs(title.suicuneFrames) do
-      self.suicuneColor[i] = tryImage(path)
-    end
-  end
-  if type(title.suicuneFramesGray) == "table" then
-    for i, path in ipairs(title.suicuneFramesGray) do
-      self.suicuneGray[i] = tryImage(path)
-    end
-  end
-  self.suicuneX = tonumber(title.suicuneX) or 48
-  self.suicuneY = tonumber(title.suicuneY) or 96
-  -- SuicuneFrameIterator's `and %111` clock (engine/movie/title.asm:217-243).
-  self.suicuneEvery = tonumber(title.suicuneEvery) or 8
-  self.suicuneTick = 0
-  self.suicuneFrame = 1
-  self.gemColor = tryImage(title.gem)
-  self.gemGray = tryImage(title.gemGray)
-  self.gemX = tonumber(title.gemX) or 56
-  self.gemRestY = tonumber(title.gemY) or 6
-  self.gemStep = tonumber(title.gemStep) or 2
-  -- TitleScreenEntrance (engine/menus/intro_menu.asm:1078-1123): hSCX walks
-  -- to 0 while alternating logo lines converge and the gem descends.
-  local entrance = type(title.entrance) == "table" and title.entrance or nil
-  self.entrance = entrance
-  self.entranceScx = entrance and (tonumber(entrance.scx) or 112) or 0
-  self.entranceStep = entrance and (tonumber(entrance.step) or 4) or 4
-  self.entranceLines = entrance and (tonumber(entrance.lines) or 80) or 0
-  self.entranceHideBelow = entrance and tonumber(entrance.hideBelow) or nil
-  self.gemY = entrance and (tonumber(title.gemFromY) or -50) or self.gemRestY
-  self.entranceSfx = title.entranceSfx
-  -- engine/menus/intro_menu.asm:951-966
-  self.timeoutFrames = tonumber(title.timeoutFrames)
-    or ((self.trailMode == "silver") and (73 * 60 + 36) or (84 * 60 + 16))
-  self.onTimeout = opts.onTimeout
-  -- The copyright window line is pal 7 (engine/movie/title.asm:40-43); its
-  -- colour 0 backs the whole band.
-  local pals = type(title.palettes) == "table" and title.palettes.bg or nil
-  local band = type(pals) == "table" and type(pals[8]) == "table"
-    and pals[8][1] or nil
-  self.bandColor = (type(band) == "table" and #band >= 3)
-    and { band[1] / 255, band[2] / 255, band[3] / 255, 1 } or { 0, 0, 0, 1 }
   return self
 end
 
@@ -273,13 +255,16 @@ end
 
 function TitleState:update(_dt)
   self.frameCounter = self.frameCounter + 1
-  self:advanceHooh()
-  self:advanceSuicune()
-  if self.frameCounter % self.cloudScrollEvery == 0 then
-    self.cloudScroll = (self.cloudScroll - 1) % 160
+  if self.crystal then
+    self:advanceSuicune()
+  else
+    self:advanceHooh()
+    if self.frameCounter % self.cloudScrollEvery == 0 then
+      self.cloudScroll = (self.cloudScroll - 1) % 160
+    end
+    self:spawnTrail()
+    self:stepTrails()
   end
-  self:spawnTrail()
-  self:stepTrails()
 
   if self.entranceScx > 0 then
     -- TitleScreenEntrance polls no buttons and moves the gem by 2 a frame

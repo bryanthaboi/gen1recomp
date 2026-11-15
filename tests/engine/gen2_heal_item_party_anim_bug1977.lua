@@ -25,8 +25,10 @@ T.eq(HpBar.stepToward(28, 30, 200), 30, "and it never overshoots the target")
 
 local mon = { species = "SUICUNE", nickname = "SUICUNE", hp = 197,
   maxHp = 199, stats = { hp = 199 } }
-local result = ItemEffects.useOnMon("POTION", mon, {})
-T.eq(result.text, "SUICUNE\nrecovered 2HP!",
+local HEAL_TEXT = require("tests.fixture_data.gen2_rom_text_s7_g").text()
+local result = ItemEffects.useOnMon("POTION", mon, { text = HEAL_TEXT })
+T.eq(result.text, (HEAL_TEXT._RecoveredSomeHPText:gsub("{STRBUF}", "SUICUNE")
+  :gsub("{NUM}", "2"):gsub("{DONE}", "")),
   "TextCommand_DECIMAL is left-aligned, so no padding and no space before HP!")
 
 

@@ -49,6 +49,16 @@ local function found(kind, pred)
 end
 
 local pressed, done
+local PRIZE_TEXT = {
+  _ExchangeCoinsForPrizesText = "We exchange your\ncoins for prizes.{PROMPT}",
+  _WhichPrizeText = "Which prize do\nyou want?{DONE}",
+  _SoYouWantPrizeText = "So, you want\n{RAM:wNameBuffer}?{DONE}",
+  _OhFineThenText = "Oh, fine then.{DONE}",
+  _SorryNeedMoreCoinsText = "Sorry, you need\nmore coins.{DONE}",
+  _OopsYouDontHaveEnoughRoomText = "Oops! You don't\nhave enough room.{DONE}",
+  _RequireCoinCaseText = "A COIN CASE is\nrequired!{DONE}",
+}
+
 local function mkGame(coins)
   done = false
   local mons = {}
@@ -58,7 +68,7 @@ local function mkGame(coins)
   end
   return {
     data = {
-      text = {},
+      text = PRIZE_TEXT,
       pokemon = mons,
       items = {
         TM_DRAGON_RAGE = { name = "TM23" },

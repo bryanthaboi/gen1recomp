@@ -130,7 +130,7 @@ do
   T.eq(battleB.enemy.mon.hp, battleA.player.mon.hp,
     "items: after the turn both machines hold the same HP for the host's lead")
   T.check(has(seenB, "RED used"), "items: the guest prints the host's used line")
-  T.check(has(seenB, "restored"), "items: ...and the restore line")
+  T.check(has(seenB, "recovered by"), "items: ...and the restore line")
   local mismatch
   for turn, hash in pairs(battleA.localHashes) do
     local other = battleB.localHashes[turn]

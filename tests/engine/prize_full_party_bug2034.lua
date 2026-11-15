@@ -37,6 +37,16 @@ local M = assert(loadfile("data/scripts/story3.lua"))()
 local counters = M.GAME_CORNER_PRIZE_ROOM.talk
 
 local pressed, done, ran
+local PRIZE_TEXT = {
+  _ExchangeCoinsForPrizesText = "We exchange your\ncoins for prizes.{PROMPT}",
+  _WhichPrizeText = "Which prize do\nyou want?{DONE}",
+  _SoYouWantPrizeText = "So, you want\n{RAM:wNameBuffer}?{DONE}",
+  _OhFineThenText = "Oh, fine then.{DONE}",
+  _SorryNeedMoreCoinsText = "Sorry, you need\nmore coins.{DONE}",
+  _OopsYouDontHaveEnoughRoomText = "Oops! You don't\nhave enough room.{DONE}",
+  _RequireCoinCaseText = "A COIN CASE is\nrequired!{DONE}",
+}
+
 local function mkGame(coins)
   done, ran = false, nil
   local mons = {}
@@ -45,7 +55,7 @@ local function mkGame(coins)
   end
   return {
     data = {
-      text = {},
+      text = PRIZE_TEXT,
       pokemon = mons,
       items = {
         TM_DRAGON_RAGE = { name = "TM23" },

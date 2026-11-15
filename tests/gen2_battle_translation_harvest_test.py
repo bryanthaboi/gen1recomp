@@ -46,7 +46,6 @@ class Gen2BattleTranslationHarvestTest(TestCase):
             '"PARKBALL\\xc3\\x97%02d"',
             '"YES"',
             '"NO"',
-            '"Gotcha! %s was caught!"',
             '"Wild %s appeared!"',
             '"%s sent out %s!"',
         }

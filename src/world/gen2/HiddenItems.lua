@@ -14,7 +14,8 @@
 -- love-free: the caller supplies the map def, the player cell, the flag store
 -- and a name-to-id sfx resolver, and gets back a command list for the VM.
 
-local Strings = require("src.core.Strings")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 
 local HiddenItems = {}
 
@@ -35,31 +36,19 @@ local SFX_SECOND_PART_OF_ITEMFINDER = { "Sfx_SecondPartOfItemfinder", 18 }
 local SFX_TRANSACTION = { "Sfx_Transaction", 34 }
 local SFX_ITEM = { "Sfx_Item", 1 }
 
--- data/text/common_1.asm and common_2.asm.  None of these four is reachable
--- from a script pointer -- the itemfinder's two hang off `text_far` inside
--- engine/items/itemfinder.asm and the pickup's two off HiddenItemScript's own
--- ASM -- so the extractor never saw them and there is no text.lua key to name
--- them by.  Strings.source declares them here and Strings() resolves them at
--- the call, which is the split a module-level table has to use.
-local TEXT_PLAYER_FOUND = Strings.source("{PLAYER} found\n{STRBUF}.")
-local TEXT_BUT_NO_SPACE = Strings.source("But {PLAYER} has\nno space left…")
-local TEXT_ITEMFINDER_NEARBY = Strings.source(
-  "Yes! ITEMFINDER\nindicates there's\nan item nearby.")
-local TEXT_ITEMFINDER_NOPE = Strings.source(
-  "Nope! ITEMFINDER\nisn't responding.")
+-- data/text/common_1.asm:998, data/text/common_2.asm:220
+local TEXT_PLAYER_FOUND = "_PlayerFoundItemText"
+local TEXT_BUT_NO_SPACE = "_ButNoSpaceText"
+local TEXT_ITEMFINDER_NEARBY = "_ItemfinderItemNearbyText"
+local TEXT_ITEMFINDER_NOPE = "_ItemfinderNopeText"
 
--- The ITEMBALL pair is NOT the hidden item's pair, and the two read almost the
--- same, which is exactly why they get confused.  FindItemInBallScript writes
--- _FoundItemText and _CantCarryItemText (data/text/common_2.asm:199 and :206);
--- the found line ends on "!" where the hidden item's _PlayerFoundItemText ends
--- on "." (common_1.asm:998), and the full-pocket line is three lines of "But
--- {PLAYER} can't / carry any more / items!" where _ButNoSpaceText is two.  The
--- `\v` is the `cont` in that third line, the same scroll the extracted text
--- uses.  Declared here for the same reason as the four above: no script pointer
--- reaches them, so the extractor never saw them and there is no text.lua key.
-local TEXT_FOUND_ITEM = Strings.source("{PLAYER} found\n{STRBUF}!")
-local TEXT_CANT_CARRY = Strings.source(
-  "But {PLAYER} can't\ncarry any more\vitems!")
+-- engine/events/misc_scripts.asm:9
+local TEXT_FOUND_ITEM = "_FoundItemText"
+local TEXT_CANT_CARRY = "_CantCarryItemText"
+
+local function romLine(data, label)
+  return CommonText.plain(RomText(data, label, nil))
+end
 
 -- The `hiddenitem` pair on a bg event row, or nil when the row is not one.
 function HiddenItems.dataOf(bgEvent)
@@ -148,12 +137,10 @@ end
 -- SetMemEvent` is the flag write, and it lands only on the arm where the item
 -- was really taken -- a full pack leaves the item where it is, findable again.
 --
--- `rawtext` is the port's own command: `writetext` names a key into text.lua
--- and these two lines were never extracted (see the note on the strings above).
-function HiddenItems.pickupScript(item, event)
+function HiddenItems.pickupScript(item, event, data)
   local bagFull = {
     { op = "promptbutton" },
-    { op = "rawtext", text = TEXT_BUT_NO_SPACE },
+    { op = "rawtext", text = romLine(data, TEXT_BUT_NO_SPACE) },
     { op = "waitbutton" },
     { op = "closetext" },
     { op = "end" },
@@ -161,7 +148,7 @@ function HiddenItems.pickupScript(item, event)
   return {
     { op = "opentext" },
     { op = "getitemname", item = item },
-    { op = "rawtext", text = TEXT_PLAYER_FOUND },
+    { op = "rawtext", text = romLine(data, TEXT_PLAYER_FOUND) },
     { op = "giveitem", item = item, quantity = 1 },
     { op = "iffalse", script = bagFull },
     { op = "setevent", event = event },
@@ -211,12 +198,12 @@ end
 -- in World).  Script_pause loops `ld c, 2 / call DelayFrames` per unit, so the
 -- hardware holds twice the operand; that factor lives on Vm:pauseFrames, where
 -- it fixes every pause at once, rather than being pre-multiplied here.
-function HiddenItems.ballPickupScript(item, quantity, objectId, sfxId)
+function HiddenItems.ballPickupScript(item, quantity, objectId, sfxId, data)
   local noRoom = {
     { op = "opentext" },
-    { op = "rawtext", text = TEXT_FOUND_ITEM },
+    { op = "rawtext", text = romLine(data, TEXT_FOUND_ITEM) },
     { op = "waitbutton" },
-    { op = "rawtext", text = TEXT_CANT_CARRY },
+    { op = "rawtext", text = romLine(data, TEXT_CANT_CARRY) },
     { op = "waitbutton" },
     { op = "closetext" },
     { op = "end" },
@@ -241,7 +228,7 @@ function HiddenItems.ballPickupScript(item, quantity, objectId, sfxId)
     -- over to the itemnotify page in the frame the hold drains.
     { op = "playsound",
       id = sfxId and sfxId(SFX_ITEM[1], SFX_ITEM[2]) or SFX_ITEM[2] },
-    { op = "rawtext", text = TEXT_FOUND_ITEM, stay = true, hold = 60 },
+    { op = "rawtext", text = romLine(data, TEXT_FOUND_ITEM), stay = true, hold = 60 },
     { op = "itemnotify" },
     { op = "closetext" },
     { op = "end" },
@@ -262,7 +249,7 @@ end
 -- as a state over an untouched world.  Running the port's `refreshmap` here
 -- would be a real map reload, which is a much bigger thing than the cart is
 -- doing.
-function HiddenItems.itemfinderScript(found, sfxId)
+function HiddenItems.itemfinderScript(found, sfxId, data)
   local script = {}
   if found then
     for _ = 1, 4 do
@@ -278,7 +265,7 @@ function HiddenItems.itemfinderScript(found, sfxId)
   script[#script + 1] = { op = "opentext" }
   script[#script + 1] = {
     op = "rawtext",
-    text = found and TEXT_ITEMFINDER_NEARBY or TEXT_ITEMFINDER_NOPE,
+    text = romLine(data, found and TEXT_ITEMFINDER_NEARBY or TEXT_ITEMFINDER_NOPE),
   }
   script[#script + 1] = { op = "waitbutton" }
   script[#script + 1] = { op = "closetext" }

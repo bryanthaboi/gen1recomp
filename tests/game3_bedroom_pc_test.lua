@@ -249,20 +249,6 @@ package.loaded["src.core.game3.player"] = realPlayer
 PcAnim.setter(nil)
 
 do
-  local realMap = package.loaded["src.core.game3.map"]
-  local realTs = package.loaded["src.core.game3.tileset_native"]
-  package.loaded["src.core.game3.map"] = { currentDef = function() return { pair = "players_house" } end }
-  package.loaded["src.core.game3.tileset_native"] = {
-    ready = function() return true end,
-    get = function() return { midToSlot = { [0x28F] = 7 } } end,
-  }
-  check(PcAnim.drawable(0x28F) == true, "drawable: mid in the pair atlas")
-  check(PcAnim.drawable(0x28A) == false, "drawable: mid missing from atlas would draw the black void slot")
-  package.loaded["src.core.game3.map"] = realMap
-  package.loaded["src.core.game3.tileset_native"] = realTs
-end
-
-do
   local NativePack = require("src.import.gba.native_pack")
   local grids = {
     FR_PLAYERS_HOUSE_2F = { pair = "player_house", cells = { { mid = 0x280 }, { mid = 0x28F } } },
@@ -279,6 +265,12 @@ do
   check(has(net, 0x062) and has(net, 0x063), "atlas mids: center PC off 0x062 brings Building_PCOn 0x063")
   local pal = NativePack.collectMidsForPair(grids, {}, "pallet_outdoor")
   check(not has(pal, 0x063) and not has(pal, 0x28A), "atlas mids: no PC on mids without a PC off mid")
+  local labels = require("src.core.game3.constants").of("firered").metatile_labels.byName
+  local savedOn = labels.METATILE_GenericBuilding1_PlayersPCOn
+  labels.METATILE_GenericBuilding1_PlayersPCOn = 0x3F0
+  local shifted = NativePack.collectMidsForPair(grids, {}, "player_house")
+  labels.METATILE_GenericBuilding1_PlayersPCOn = savedOn
+  check(has(shifted, 0x3F0) and not has(shifted, 0x28A), "atlas mids: PC on mid comes from the metatile label table")
 end
 
 print("[test] 8. one PC table: session.storage, legacy pc migration, sidecar")

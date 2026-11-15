@@ -1,5 +1,6 @@
 local M = {}
 local Syms = require("src.save_convert.Gen2Syms")
+local Gen2EngineFlags = require("src.save_convert.Gen2EngineFlags")
 
 local NAME = 11
 local BOX = 32
@@ -17,8 +18,13 @@ local HATCH_HAPPINESS = 0x78
 -- pokecrystal constants/battle_constants.asm:162
 local SLP_MASK = 7
 local STATUS_BITS = { { 3, "psn" }, { 4, "brn" }, { 5, "frz" }, { 6, "par" } }
--- pokecrystal data/events/engine_flags.asm:126
-M.SWARM_FLAG_IDS = { [0] = 96, [1] = 97, [2] = 160, [3] = 161 }
+-- pokecrystal data/events/engine_flags.asm:126-127, :199-200
+local SWARM_FLAGS = {
+  [0] = "ENGINE_BUENAS_PASSWORD_2", [1] = "ENGINE_GOLDENROD_DEPT_STORE_SALE_IS_ON",
+  [2] = "ENGINE_DUNSPARCE_SWARM", [3] = "ENGINE_YANMA_SWARM",
+}
+M.SWARM_FLAG_IDS = {}
+for bitN, name in pairs(SWARM_FLAGS) do M.SWARM_FLAG_IDS[bitN] = Gen2EngineFlags.id("crystal", name) end
 -- pokecrystal engine/menus/intro_menu.asm:268
 local KARP_FEET, KARP_INCHES, KARP_NAME = 3, 6, "RALPH"
 local PRISTINE_ROAMER = { 0, 0, 0xFF, 0xFF, 0, 0, 0 }
@@ -42,7 +48,10 @@ M.coverage = {
   { both = { "wBugContestStartTime", len = 4 }, mode = "modeled", keys = { "bugContest.startTime" },
     asm = "pokecrystal ram/wram.asm:3334" },
   { crystal = { "wSwarmFlags", len = 1 }, mode = "modeled",
-    keys = { "engineFlags[96]", "engineFlags[97]", "engineFlags[160]", "engineFlags[161]" },
+    keys = {
+      "engineFlags[" .. M.SWARM_FLAG_IDS[0] .. "]", "engineFlags[" .. M.SWARM_FLAG_IDS[1] .. "]",
+      "engineFlags[" .. M.SWARM_FLAG_IDS[2] .. "]", "engineFlags[" .. M.SWARM_FLAG_IDS[3] .. "]",
+    },
     asm = "pokecrystal ram/wram.asm:3320" },
 }
 

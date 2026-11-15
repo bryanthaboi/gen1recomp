@@ -165,7 +165,11 @@ check("defaults are copied", Save.defaultOptions().textSpeed, "MID")
 
 -- A sparse or hand-edited save must come back indexable rather than crashing
 -- the first screen that reads it.
-local sparse = Save.normalize({ player = {} })
+local NameText = require("tests.fixture_data.gen2_rom_text_s7_c")
+local GOLD_NAMES = { text = NameText.text() }
+local SILVER_NAMES = { text = NameText.text({ ["PlayerNameArray#1"] = "SILVER" }) }
+local CRYSTAL_NAMES = { text = NameText.text(nil, "crystal") }
+local sparse = Save.normalize({ player = {} }, GOLD_NAMES)
 check("normalized version", sparse.version, GameVersion.get())
 check("a Gen 2 version already on the table is kept",
   Save.normalize({ version = "silver", player = {} }).version, "silver")
@@ -190,14 +194,16 @@ check("and a recorded gender is kept",
   Save.normalize({ player = { gender = "female" } }).player.gender, "female")
 check("normalize rejects a non-table", Save.normalize("nope"), nil)
 
--- The blank-name fallback is table driven so Crystal can be a row rather than
--- a third arm of a two-way test (data/player_names.asm).
-check("Gold's PlayerNameArray row", Save.defaultPlayerName("gold"), "GOLD")
-check("Silver's", Save.defaultPlayerName("silver"), "SILVER")
+check("Gold's PlayerNameArray row", Save.defaultPlayerName(GOLD_NAMES), "GOLD")
+check("Silver's", Save.defaultPlayerName(SILVER_NAMES), "SILVER")
 check("Crystal's MalePlayerNameArray row",
-  Save.defaultPlayerName("crystal"), "CHRIS")
-check("and an unknown edition falls back to Gold's",
-  Save.defaultPlayerName("nonesuch"), "GOLD")
+  Save.defaultPlayerName(CRYSTAL_NAMES), "CHRIS")
+check("a localized cache's first row is the default",
+  Save.defaultPlayerName({ text = NameText.text({ ["PlayerNameArray#1"] = "ORO" }) }), "ORO")
+check("a cache without PlayerNameArray is an error",
+  pcall(Save.defaultPlayerName, { text = NameText.without("PlayerNameArray#1") }), false)
+check("normalize with no dataset leaves a missing name missing",
+  Save.normalize({ player = {} }).player.name, nil)
 
 -- Money and coins are clamped to their caps, and a negative is floored at 0.
 local rich = Save.normalize({ player = { money = 9999999, coins = 99999 } })
@@ -581,14 +587,10 @@ do
   GameVersion.set("silver")
   files = {}
 
-  local born = Save.newGame({})
+  local born = Save.newGame({ data = SILVER_NAMES })
   check("a silver boot stamps silver", born.version, "silver")
   check("still generation 2", born.generation, 2)
   check("with the edition's own preset name", born.player.name, "SILVER")
-  check("gold's preset is unchanged", Save.defaultPlayerName("gold"), "GOLD")
-  check("and silver's is its own", Save.defaultPlayerName("silver"), "SILVER")
-  check("the running edition answers with no argument",
-    Save.defaultPlayerName(), "SILVER")
 
   check("a version-less save takes the running edition",
     Save.normalize({ player = {} }).version, "silver")

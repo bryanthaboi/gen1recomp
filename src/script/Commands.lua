@@ -25,6 +25,33 @@ local function modFieldOwner(ctx)
   return owner
 end
 
+local MOD_TEXT = {}
+
+function Commands.modText(value)
+  return setmetatable({ value = value }, MOD_TEXT)
+end
+
+function Commands.isTextLabel(id)
+  if type(id) ~= "string" or not id:find("^[%a_][%w_%.]*$") then return false end
+  return id:find("^_") ~= nil or id:find("^TEXT_") ~= nil
+    or id:find("Text%d*$") ~= nil or id:find("String$") ~= nil
+    or id:find("%.") ~= nil or id:find("^%u%l+%u") ~= nil
+end
+
+local function scriptText(ctx, textId)
+  local marked = getmetatable(textId) == MOD_TEXT
+  if marked then textId = textId.value end
+  local text = ctx.game.data.text[textId]
+  if not text and ctx.overworld then
+    text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
+  end
+  if not text and type(textId) == "string"
+     and (marked or not Commands.isTextLabel(textId)) then
+    text = textId
+  end
+  return text, textId
+end
+
 local function flagValue(ctx, name)
   local rest = type(name) == "string" and name:match("^mod:(.+)$")
   if rest then
@@ -83,13 +110,8 @@ function Commands.show_text(ctx, textId, subs, extraOpts)
   if ctx.overworld and ctx.overworld.applyPendingFace then
     ctx.overworld:applyPendingFace()
   end
-  local text = ctx.game.data.text[textId]
-  if not text and ctx.overworld then
-    text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
-  end
-  if not text then
-    text = textId -- literal string fallback for hand-ported scripts
-  end
+  local text, id = scriptText(ctx, textId)
+  if not text then error("text " .. tostring(id) .. " is not in the cache", 2) end
   if subs then
     for token, value in pairs(subs) do
       -- A mod may transform a gift after the script row was authored.  Keep
@@ -246,7 +268,8 @@ end
 -- sound_get_item_1/sound_get_key_item.  gotText picks that per-script
 -- text (label or literal; {RAM:wStringBuffer} becomes the item name);
 -- pass false when the script shows its own received-text row.  fullText
--- picks the refusal text (scripts/BillsHouse.asm:184-186).
+-- picks the refusal text (scripts/BillsHouse.asm:184-186), false for
+-- scripts/OaksLab.asm:1025-1029, nil for engine/events/pick_up_item.asm:42.
 function Commands.give_item(ctx, itemId, count, gotText, fullText, sound,
                              fullNoFace)
   -- the bag can refuse at its configured capacity (20 in vanilla): halt
@@ -254,9 +277,8 @@ function Commands.give_item(ctx, itemId, count, gotText, fullText, sound,
   -- room and talk again, like the original (pokered's `jr nc, .bag_full`
   -- skips the received text entirely when AddItemToInventory refuses)
   if not require("src.inventory.Bag").add(
-      ctx.save, itemId, count or 1, ctx.game.data) then
-    Commands.show_text(ctx, fullText or (ctx.game.data.text
-      and ctx.game.data.text._BagFullText) or Strings("You can't carry\nany more items!"))
+      ctx.save, itemId, count or 1, ctx.game.data) and fullText ~= false then
+    Commands.show_text(ctx, fullText or "_NoMoreRoomForItemText")
     if fullNoFace then
       -- scripts/SSAnneCaptainsRoom.asm:36-37
       Commands.no_npc_face_player(ctx, true)
@@ -308,13 +330,11 @@ end
 -- start_battle got it a box too late -- after the payout -- and untagged
 -- (#866).  Arms exactly one battle; start_battle consumes it.
 function Commands.save_end_battle_text(ctx, textId)
-  local text = ctx.game.data.text[textId]
-  if not text and ctx.overworld then
-    text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
-  end
+  local text, id = scriptText(ctx, textId)
+  if not text then error("text " .. tostring(id) .. " is not in the cache", 2) end
   -- BattleState takes finished text, so expand {PLAYER}/{RIVAL} here the
   -- way OverworldState:engageTrainer does for the sight/talk path
-  ctx.endBattleText = TextBox.substitute(ctx.game, text or textId)
+  ctx.endBattleText = TextBox.substitute(ctx.game, text)
 end
 
 -- Route scripted battles through the standard entry transition. In the
@@ -767,13 +787,7 @@ local function askNickname(ctx, mon)
     or (ctx.game.data.pokemon[mon.species]
         and ctx.game.data.pokemon[mon.species].name)
     or mon.species
-  -- Prefer the real text label; fall back to the BattleState wording.
-  local textId, subs
-  if ctx.game.data.text and ctx.game.data.text._DoYouWantToNicknameText then
-    textId, subs = "_DoYouWantToNicknameText", { RAM = name }
-  else
-    textId = Strings("Do you want to\ngive a nickname\nto %s?", name)
-  end
+  local textId, subs = "_DoYouWantToNicknameText", { RAM = name }
   -- opts.choice (TextBox.lua): the YES/NO box rides over the still-visible
   -- question instead of a bare ChoiceBox popping up after an A press
   -- already cleared it (same fix as Commands.ask).
@@ -784,7 +798,7 @@ local function askNickname(ctx, mon)
       return
     end
     Screens.push(ctx.game, "NamingScreen", {
-      title = Strings("NICKNAME?"), maxLen = 10, mon = mon,
+      title = require("src.core.RomText")(ctx.game.data, "NicknameTextString", nil), maxLen = 10, mon = mon,
       onDone = function(nick)
         if nick and #nick > 0 then mon.nickname = nick end
         ctx.lastCheck = success
@@ -797,7 +811,7 @@ end
 -- give_pokemon <species> <level>: _GivePokemon (engine/events/
 -- give_pokemon.asm) -- party first, then the box.  ctx.lastCheck gets
 -- the asm's carry: true when the mon was given, false when both the
--- party and every box are full (that .boxFull path leaves the giver's
+-- party and the current box are full (that .boxFull path leaves the giver's
 -- script able to offer again later, e.g. the Celadon Eevee ball).
 -- AskName runs for party (AddPartyMon) and box (SendNewMonToBox) when a
 -- script runner is present; mods that pre-set gift.nickname skip it.
@@ -829,11 +843,14 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
   local addedToParty = Party.add(ctx.save.party, mon)
   local boxNum = nil
   if not addedToParty then
-    boxNum = Boxes.deposit(ctx.save, mon)
-    if not boxNum then
+    -- engine/events/give_pokemon.asm:10-12
+    local box = Boxes.active(ctx.save)
+    if #box >= Boxes.CAPACITY then
       ctx.lastCheck = false
       return
     end
+    table.insert(box, mon)
+    boxNum = ctx.save.currentBox
   end
   local dex = ctx.save.pokedex
   if dex then
@@ -867,11 +884,7 @@ function Commands.give_pokemon(ctx, species, level, skipNickname, gotText)
       Commands.show_text(ctx, "_SentToBoxText")
     else
       local TextBox = require("src.render.TextBox")
-      local raw = ctx.game.data.text and ctx.game.data.text._SentToBoxText
-      ctx.game.stack:push(TextBox.new(ctx.game, raw or (
-        Strings(
-          "There's no more\nroom for POKéMON!\v%s was\vsent to POKéMON\vBOX %s on PC!",
-          name, boxNum)),
+      ctx.game.stack:push(TextBox.new(ctx.game, ctx.game.data.text._SentToBoxText,
         function() end))
     end
   end

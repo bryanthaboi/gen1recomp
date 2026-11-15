@@ -21,6 +21,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 box intake")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -126,7 +127,8 @@ do
   local function openMove(save)
     local input = newInput()
     local game = {
-      input = input, save = save, data = { audio = {}, pokemon = {} },
+      input = input, save = save, data = { audio = {}, pokemon = {},
+        text = require("tests.fixture_data.gen2_rom_text_s7_e") },
       stack = { _items = {},
         push = function(self, s) self._items[#self._items + 1] = s end,
         pop = function(self) return table.remove(self._items) end,

@@ -119,7 +119,6 @@ function Game3:_enterField(session, reason, opts)
     end
   end
   session._questNewScene=true
-  if reason == "continue" then session._questMap=session.map end
   local Map = lazyReq("src.core.game3.map")
   Map._announced = nil
   Map._nextEnterVia = (reason == "continue") and "continue" or "new_game"
@@ -1458,6 +1457,8 @@ local SOFT_RESET = {
   { "src.ui.game3.rse.item_storage", "reset" },
   { "src.ui.game3.rse.mail", "reset" },
   { "src.ui.game3.rse.mailbox", "reset" },
+  { "src.ui.game3.mail", "reset" },
+  { "src.ui.game3.mailbox", "reset" },
   { "src.ui.game3.rse.pokenav.init", "reset" },
   { "src.ui.game3.rse.pokenav.call_window", "reset" },
   { "src.ui.game3.rse.cable_car", "reset" },

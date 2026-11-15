@@ -18,6 +18,7 @@ local Mon = require("src.battle.gen2.Mon")
 local NamingScreen = require("src.ui.gen2.NamingScreen")
 local Roamers = require("src.core.gen2.Roamers")
 local Save = require("src.core.gen2.Save")
+local Sound = require("src.core.Sound")
 
 return function(game)
   local out = os.getenv("POKEPORT_SHOT_DIR") or "/tmp/crystal-story"
@@ -26,7 +27,7 @@ return function(game)
   local function say(line) print("[driver] " .. line) end
   local function ok(cond, line)
     if not cond then fails = fails + 1 end
-    say((cond and "OK   " or "FAIL ") .. line)
+    say((cond and "PASS " or "FAIL ") .. line)
   end
 
   local function tap(button, frames)
@@ -74,9 +75,16 @@ return function(game)
   end
 
   local function settle(frames)
-    for _ = 1, frames or 3000 do
+    local budget = frames or 3000
+    local deadline = love.timer.getTime() + 8
+    while budget > 0 and love.timer.getTime() < deadline do
       if not world:busy() and top() == nil then return true end
-      mash()
+      if Sound.sfxBusy() then
+        U.wait(1)
+      else
+        mash()
+        budget = budget - 1
+      end
     end
     local meta, name = getmetatable(top()), "?"
     for id, mod in pairs(package.loaded) do

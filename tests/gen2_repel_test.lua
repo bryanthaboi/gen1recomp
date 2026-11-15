@@ -68,6 +68,9 @@ local ENCOUNTERS = {
     },
   },
 }
+for key, value in pairs(require("tests.fixtures.gen2_roamers").encounters("gold")) do
+  ENCOUNTERS[key] = value
+end
 
 local function repelWorld(party)
   local game = {
@@ -164,7 +167,7 @@ end
 -- 41 lead really does repel Raikou on the cart.
 do
   local world, game = repelWorld({ mon("QUAGSIRE", 41) })
-  Roamers.init(game.save, { force = true })
+  Roamers.init(game.save, { force = true, encounters = ENCOUNTERS })
   game.save.roamers[1].map = "ROUTE_42"
   world.roamerRandom = function() return 1 end -- slot 1 past both gates
   game.save.repelSteps = 250

@@ -22,6 +22,12 @@ GbcPalette.available = function() return true end
 GbcPalette.setCustomRamp({ { 255, 0, 255 }, { 200, 0, 200 }, { 100, 0, 100 },
                             { 0, 0, 0 } })
 
+local function screen()
+  return setmetatable({ game = { data = {
+    text = require("tests.fixture_data.gen2_rom_text_s7_b").text() } } },
+    { __index = BattleState })
+end
+
 local calls
 local function spy(name)
   local original = GbcPalette[name]
@@ -38,14 +44,14 @@ end
 do
   calls = {}
   spy("resolve"); spy("use"); spy("with")
-  BattleState.drawMoveInfoBox({}, { id = "TACKLE", pp = 10, maxPp = 35 })
+  BattleState.drawMoveInfoBox(screen(), { id = "TACKLE", pp = 10, maxPp = 35 })
   T.check(hits() > 0, "drawMoveInfoBox's TYPE/PP labels reach the GbcPalette seam")
 end
 
 do
   calls = {}
   spy("resolve"); spy("use"); spy("with")
-  BattleState.drawMoveInfoBox({}, nil)
+  BattleState.drawMoveInfoBox(screen(), nil)
   T.eq(hits(), 0, "drawMoveInfoBox with no move draws nothing")
 end
 
@@ -55,7 +61,7 @@ do
               speed = 12 } }
   calls = {}
   spy("resolve"); spy("use"); spy("with")
-  BattleState.drawStatsBox({}, mon)
+  BattleState.drawStatsBox(screen(), mon)
   T.check(hits() > 0, "drawStatsBox's stat names/numbers reach the GbcPalette seam")
 end
 

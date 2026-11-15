@@ -37,13 +37,12 @@ check(Multichoice.CACHE_REL == "data/generated/gba/" .. MultichoiceExtract.CACHE
   "Multichoice.CACHE_REL is the extractor's path (" .. tostring(Multichoice.CACHE_REL) .. ")")
 
 do
-  print("[test] 3. a missing cache degrades to synthetic labels")
+  print("[test] 3. a list the cache does not have raises")
   Multichoice.LISTS = {}
   check(Multichoice.tryLoadCache() == false, "no cache means no lists")
-  local synthetic = Multichoice.resolve(4242, 3)
-  check(#synthetic == 3, "an unknown list keeps the count hint (" .. #synthetic .. ")")
-  check(tostring(synthetic[1]):find("OPTION") ~= nil,
-    "an unknown list falls back to OPTION labels (" .. tostring(synthetic[1]) .. ")")
+  local okMiss, errMiss = pcall(Multichoice.resolve, 4242)
+  check(not okMiss and tostring(errMiss):find("multichoice list 4242 is not in the cache", 1, true) ~= nil,
+    "an unknown list raises instead of OPTION labels (" .. tostring(errMiss) .. ")")
 
   print("[test] 4. the cache table is what resolve() serves")
   local tmp = os.tmpname()

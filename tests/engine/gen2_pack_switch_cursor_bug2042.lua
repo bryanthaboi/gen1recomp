@@ -22,6 +22,7 @@ local function marksFor(overrides)
     scroll = 0,
     index = 2,
     gfx = PackGfx.new(nil),
+    game = { data = { gen2Text = require("tests.fixtures.gen2_common_text").text() } },
     total = function() return 3 end,
   }
   for k, v in pairs(overrides) do menu[k] = v end
@@ -82,6 +83,8 @@ do
     cantToss = function() return true end,
     listTotal = function() return 3 end,
     def = function() return nil end,
+    romLines = ItemPcMenu.romLines,
+    data = { text = require("tests.fixture_data.gen2_rom_text_s7_e") },
   }
   local marks = {}
   local Chrome = require("src.ui.gen2.Chrome")

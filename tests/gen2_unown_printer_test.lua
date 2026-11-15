@@ -63,8 +63,10 @@ end
 local extractorSource = assert(readFile("src/import/RomExtractorGen2.lua", "r"))
 check(extractorSource:find("results.font = self:extractFont()", 1, true) ~= nil,
   "RomExtractorGen2:run still calls extractFont")
-check(extractorSource:find('if self.symbols["UnownFont"] then', 1, true) ~= nil,
+check(extractorSource:find('local unown = self:symbol("UnownFont")', 1, true) ~= nil,
   "and extractFont reads UnownFont out of the manifest")
+check(extractorSource:find('self.symbols["UnownFont"]', 1, true) == nil,
+  "as a required symbol")
 check(extractorSource:find('"fonts/unown_font.png"', 1, true) ~= nil,
   "and writes it as fonts/unown_font.png")
 check(extractorSource:find("local UNOWN_FONT_TILES = 27", 1, true) ~= nil,
@@ -204,15 +206,10 @@ do
   end
   check(sawWord, "and the word at hlcoord 4, 15 is Unown-font tiles too")
 
-  -- A cache with no Unown font at all still prints the ring, in the ordinary
-  -- inverted font, exactly as this screen did before the sheet existed.
   dexGame.data.font = {}
-  local plain = PokedexMenu.new(dexGame, {})
-  check(plain.unownFont == nil, "no sheet in the cache, no sheet on the screen")
-  plain.sheet, plain.objs = quiet, quiet
-  plain.view = "unown"
-  check(pcall(function() plain:drawUnown() end),
-    "and UNOWN MODE still draws without it")
+  local ok, err = pcall(PokedexMenu.new, dexGame, {})
+  check(not ok and tostring(err):find("imageUnown", 1, true) ~= nil,
+    "a font.lua without the Unown sheet is an error, not the ordinary font")
 end
 
 -- ---- the viewer -----------------------------------------------------------
@@ -225,7 +222,8 @@ check(hasId, "the viewer is pushed through the Gen2UnownPrinter Screens id")
 local function newViewer()
   local pressed = {}
   local game = {
-    data = { pokemon = {}, gen2Palettes = {} },
+    data = { pokemon = {}, gen2Palettes = {},
+      text = require("tests.fixture_data.gen2_rom_text_s7_f2") },
     input = { wasPressed = function(_, button) return pressed[button] end },
   }
   local closed = 0

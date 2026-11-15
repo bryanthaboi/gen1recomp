@@ -17,6 +17,7 @@
 
 local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
@@ -27,6 +28,7 @@ local Logger = require("src.core.Logger")
 local Mail = require("src.core.gen2.Mail")
 local Mon = require("src.battle.gen2.Mon")
 local Runtime = require("src.mods.Runtime")
+local RomText = require("src.core.RomText")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
 local Status = require("src.battle.Status")
@@ -37,24 +39,30 @@ local PartyMenu = {}
 PartyMenu.__index = PartyMenu
 PartyMenu.isOpaque = true
 
--- PartyMenuStrings, verbatim.  <PK>/<MN> are single font glyphs ($e1/$e2) and
--- Font.split matches charmap sequences, so writing them the way the ASM does
--- is both faithful and two tiles narrower than spelling POKéMON out -- which
--- is what keeps "Use on which <PK><MN>?" inside its 18-column text box.
+-- engine/pokemon/party_menu.asm:671-696
 PartyMenu.PROMPTS = {
-  choose = Strings.source("Choose a POKéMON."),
-  useItem = Strings.source("Use on which <PK><MN>?"),
-  which = Strings.source("Which <PK><MN>?"),
-  teach = Strings.source("Teach which <PK><MN>?"),
-  moveTo = Strings.source("Move to where?"),
-  toWhich = Strings.source("To which <PK><MN>?"),
-  none = Strings.source("You have no <PK><MN>!"),
+  choose = "ChooseAMonString",
+  useItem = "UseOnWhichPKMNString",
+  which = "WhichPKMNString",
+  teach = "TeachWhichPKMNString",
+  moveTo = "MoveToWhereString",
+  toWhich = "ToWhichPKMNString",
+  none = "YouHaveNoPKMNString",
 }
 
-local FAINTED_LABEL = Strings.source("FNT")
-local EGG_LABEL = Strings.source("EGG")
-local ABLE_LABEL = Strings.source("ABLE")
-local NOT_ABLE_LABEL = Strings.source("NOT ABLE")
+-- engine/pokemon/mon_stats.asm:376
+local FAINTED_LABEL = "FntString"
+-- engine/pokemon/move_mon.asm:1219
+local EGG_LABEL = "String_Egg"
+-- engine/pokemon/party_menu.asm:111
+local CANCEL_LABEL = "PlacePartyNicknames.CancelString"
+-- engine/items/item_effects.asm:2040
+local CANT_USE_ON_MON = "_ItemCantUseOnMonText"
+-- engine/pokemon/party_menu.asm:721
+local RECOVERED_SOME_HP = "_RecoveredSomeHPText"
+-- engine/pokemon/party_menu.asm:342-346
+local ABLE_LABEL = "PlacePartyMonTMHMCompatibility.string_able"
+local NOT_ABLE_LABEL = "PlacePartyMonTMHMCompatibility.string_not_able"
 
 -- data/sprite_anims/framesets.asm:66
 PartyMenu.ICON_FRAME_DURATION = 8
@@ -72,26 +80,41 @@ PartyMenu.FIELD_MOVES = {
   "TELEPORT", "SOFTBOILED", "HEADBUTT", "ROCK_SMASH", "MILK_DRINK",
   "SWEET_SCENT",
 }
+local FIELD_MOVE_SET = {}
+for _, id in ipairs(PartyMenu.FIELD_MOVES) do FIELD_MOVE_SET[id] = true end
 
 -- MonMenuOptionStrings, in MONMENUVALUE_* order.  GetMonSubmenuItems adds
 -- STATS, SWITCH, MOVE and then ITEM (or MAIL, when the held item is mail),
 -- and only appends CANCEL while the list is still under NUM_MONMENU_ITEMS.
 local NUM_MONMENU_ITEMS = 8
 
--- MonMenuOptionStrings are engine-owned labels.  Translate them while the
--- built-in rows are assembled so hook-injected rows keep their authored text;
--- the stable id remains the value every action branch consumes.
+-- data/mon_menu.asm:15-20
 local ACTION_LABELS = {
-  STATS = Strings.source("STATS"),
-  SWITCH = Strings.source("SWITCH"),
-  MOVE = Strings.source("MOVE"),
-  ITEM = Strings.source("ITEM"),
-  MAIL = Strings.source("MAIL"),
-  CANCEL = Strings.source("CANCEL"),
+  STATS = "MonMenuOptionStrings#1",
+  SWITCH = "MonMenuOptionStrings#2",
+  ITEM = "MonMenuOptionStrings#3",
+  CANCEL = "MonMenuOptionStrings#4",
+  MOVE = "MonMenuOptionStrings#5",
+  MAIL = "MonMenuOptionStrings#6",
 }
 
-local function actionLabel(id)
-  return Strings(ACTION_LABELS[id] or id)
+local function actionLabel(self, id)
+  return self:rom(ACTION_LABELS[id])
+end
+
+-- engine/pokemon/mon_submenu.asm:288-290
+local BATTLE_SUBMENU = {
+  { id = "SWITCH", label = "BattleMonMenu.MenuData#1" },
+  { id = "STATS", label = "BattleMonMenu.MenuData#2" },
+  { id = "CANCEL", label = "BattleMonMenu.MenuData#3" },
+}
+
+local function romText(data, label, ...)
+  return CommonText.plain(RomText(data, label, nil, ...))
+end
+
+function PartyMenu:rom(label, ...)
+  return romText(self.game and self.game.data, label, ...)
 end
 
 -- MonSubmenu's .MenuHeader is `menu_coords 6, 0, SCREEN_WIDTH - 1,
@@ -232,9 +255,9 @@ local function buildSubmenuItems(self, mon)
   -- test is `cp EGG`).
   if mon and mon.isEgg then
     return {
-      { id = "STATS", label = actionLabel("STATS") },
-      { id = "SWITCH", label = actionLabel("SWITCH") },
-      { id = "CANCEL", label = actionLabel("CANCEL") },
+      { id = "STATS", label = actionLabel(self, "STATS") },
+      { id = "SWITCH", label = actionLabel(self, "SWITCH") },
+      { id = "CANCEL", label = actionLabel(self, "CANCEL") },
     }
   end
   local items = {}
@@ -250,30 +273,30 @@ local function buildSubmenuItems(self, mon)
       }
     end
   end
-  items[#items + 1] = { id = "STATS", label = actionLabel("STATS") }
-  items[#items + 1] = { id = "SWITCH", label = actionLabel("SWITCH") }
-  items[#items + 1] = { id = "MOVE", label = actionLabel("MOVE") }
+  items[#items + 1] = { id = "STATS", label = actionLabel(self, "STATS") }
+  items[#items + 1] = { id = "SWITCH", label = actionLabel(self, "SWITCH") }
+  items[#items + 1] = { id = "MOVE", label = actionLabel(self, "MOVE") }
   -- ItemIsMail, not a pocket test: mail lives in the ordinary ITEM pocket
   -- (ItemAttributes gives FLOWER_MAIL pocketId 1), so the only thing that
   -- says "this is mail" is data/items/mail_items.asm's own list.
   local isMail = Mail.monHoldsMail(mon)
   items[#items + 1] = isMail
-    and { id = "MAIL", label = actionLabel("MAIL") }
-    or { id = "ITEM", label = actionLabel("ITEM") }
+    and { id = "MAIL", label = actionLabel(self, "MAIL") }
+    or { id = "ITEM", label = actionLabel(self, "ITEM") }
   if #items < NUM_MONMENU_ITEMS then
-    items[#items + 1] = { id = "CANCEL", label = actionLabel("CANCEL") }
+    items[#items + 1] = { id = "CANCEL", label = actionLabel(self, "CANCEL") }
   end
   return items
 end
 
 -- BattleMonMenu's .MenuData: three rows, SWITCH first
 -- (engine/pokemon/mon_submenu.asm:286-292).
-local function buildBattleSubmenuItems()
-  return {
-    { id = "SWITCH", label = actionLabel("SWITCH") },
-    { id = "STATS", label = actionLabel("STATS") },
-    { id = "CANCEL", label = actionLabel("CANCEL") },
-  }
+local function buildBattleSubmenuItems(self)
+  local items = {}
+  for i, row in ipairs(BATTLE_SUBMENU) do
+    items[i] = { id = row.id, label = self:rom(row.label) }
+  end
+  return items
 end
 
 -- The assembled list runs through ui.party.submenu -- the same hook name and
@@ -288,12 +311,27 @@ end
 -- ctx.overworld is Gold's World, the Gen 1 key's counterpart.
 function PartyMenu:submenuItems(mon)
   local battle = self.wantsBattleSubmenu == true
-  local items = battle and buildBattleSubmenuItems()
+  local items = battle and buildBattleSubmenuItems(self)
     or buildSubmenuItems(self, mon)
   local ctx = { battle = battle, overworld = self.game and self.game.world }
   local hooked = Runtime.call("ui.party.submenu", sameItems,
                               self.game, items, mon, ctx)
-  if type(hooked) == "table" then return hooked end
+  if type(hooked) == "table" then
+    if not battle then
+      for i, row in ipairs(hooked) do
+        if type(row) == "table" and row.id == nil and row.move ~= nil
+            and row.onSelect == nil then
+          local id = (tostring(row.move):upper():gsub("^MOVE_", ""):gsub("%s+", "_"))
+          if FIELD_MOVE_SET[id] then
+            local def = self.moves and self.moves[id]
+            hooked[i] = { id = id, label = row.label or (def and def.name) or id,
+                          fieldMove = true }
+          end
+        end
+      end
+    end
+    return hooked
+  end
   Logger.error("ui.party.submenu returned %s; keeping the vanilla list",
                type(hooked))
   return items
@@ -398,14 +436,14 @@ function PartyMenu:finishSoftboiled()
   local before, after =
     FieldMoves.softboiledTransfer(user, target, self.softboiledCost or 0)
   if not before then
-    self:showItemResult(slot, { text = Strings(ItemEffects.TEXT_CANT_USE_ON_MON) })
+    self:showItemResult(slot, { text = self:rom(CANT_USE_ON_MON) })
     return
   end
   self.softboiledFrom, self.softboiledCost = nil, nil
   -- data/text/common_1.asm:40 _RecoveredSomeHPText
   local climb = {
     fromHp = before, toHp = after, sfx = "Sfx_Potion",
-    text = Strings("%s\nrecovered %dHP!",
+    text = self:rom(RECOVERED_SOME_HP,
       target.nickname or target.name or target.species or "?",
       after - before),
   }
@@ -845,12 +883,11 @@ end
 
 -- The HeldItemIcons sheet, which GetIconGFX uploads as the two tiles straight
 -- after an icon's eight (`ld de, 8 tiles / add hl, de`), so it rides the same
--- cache entry as the icons themselves.  A cache built before the extractor read
--- the symbol simply has no `heldItem` row: the marker goes undrawn and the list
--- looks exactly as it did, rather than erroring on a missing image.
+-- cache entry as the icons themselves.
 function PartyMenu:heldMarkerImage()
-  local entry = self.icons and self.icons.heldItem
-  if not (entry and entry.image) then return nil end
+  if not self.icons then return nil end
+  local entry = self.icons.heldItem
+  if not (entry and entry.image) then error("icons.lua has no heldItem", 2) end
   local cached = self.iconCache[entry.image]
   if cached == nil then
     local ok, img = pcall(Assets.image, entry.image)
@@ -964,9 +1001,9 @@ end
 
 -- PlaceStatusString (engine/pokemon/mon_stats.asm): three letters, and a mon
 -- with no HP reads FNT whatever its status byte says.
-local function statusString(mon, hp, statuses)
+local function statusString(mon, hp, statuses, data)
   if hp == nil then hp = mon.hp end
-  if (hp or 0) <= 0 then return Strings(FAINTED_LABEL) end
+  if (hp or 0) <= 0 then return romText(data, FAINTED_LABEL) end
   local status = mon.status
   if not status then return nil end
   local key = tostring(status):lower()
@@ -988,14 +1025,14 @@ end
 -- name and an icon alone: no HP digits, no bar, no level, no FNT.  The name
 -- itself is String_Egg -- GiveEgg writes "EGG" over the nickname slot -- so
 -- it never reads as the species hiding inside.
-function PartyMenu.rowFor(mon, hp, statuses)
-  if mon.isEgg then return { name = Strings(EGG_LABEL) } end
+function PartyMenu.rowFor(mon, hp, statuses, data)
+  if mon.isEgg then return { name = romText(data, EGG_LABEL) } end
   local maxHp = mon.maxHp or (mon.stats and mon.stats.hp) or 0
   if hp == nil then hp = mon.hp end
   return {
     name = mon.nickname or mon.name or mon.species or "?",
     hp = num3(hp) .. "/" .. num3(maxHp),
-    status = statusString(mon, hp, statuses),
+    status = statusString(mon, hp, statuses, data),
     -- <LV> is one font glyph ($6e), not the two characters ":L".
     level = "<LV>" .. tostring(mon.level or 1),
   }
@@ -1008,9 +1045,9 @@ function PartyMenu:tmhmAble(mon)
   if not move then return nil end
   local species = self.pokemon and self.pokemon[mon.species]
   for _, id in ipairs((species and species.tmhm) or {}) do
-    if id == move then return Strings(ABLE_LABEL) end
+    if id == move then return self:rom(ABLE_LABEL) end
   end
-  return Strings(NOT_ABLE_LABEL)
+  return self:rom(NOT_ABLE_LABEL)
 end
 
 -- WritePartyMenuTilemap, jumptable entry by jumptable entry.  Every coordinate
@@ -1050,8 +1087,8 @@ function PartyMenu:drawPanel()
     end
     self:drawIcon(mon, self:iconX(i), 4 + (i - 1) * 16 + self:iconBob(i, mon))
     local hp = self:shownHpFor(i, mon)
-    local row = PartyMenu.rowFor(mon, hp,
-      self.game and self.game.data and self.game.data.gen2Statuses)
+    local data = self.game and self.game.data
+    local row = PartyMenu.rowFor(mon, hp, data and data.gen2Statuses, data)
     Chrome.print(row.name, 3, nameY)
     if self.tmhm then
       local able = self:tmhmAble(mon)
@@ -1070,7 +1107,7 @@ function PartyMenu:drawPanel()
   -- starts two columns left of where the nicknames do.
   local cancelY = 1 + #self.party * 2
   if self:isCancel() then Chrome.cursor(0, cancelY) end
-  Chrome.print(actionLabel("CANCEL"), 1, cancelY)
+  Chrome.print(self:rom(CANCEL_LABEL), 1, cancelY)
 
   -- PlacePartyMenuText: Textbox at (0,14) with a 2x18 interior, string at (1,16).
   -- ReturnToMapWithSpeechTextbox restores the normal font afterwards, and so
@@ -1087,10 +1124,10 @@ function PartyMenu:drawPanel()
   else
     Chrome.box(0, 14, 20, 4)
     -- ../pokecrystal/engine/items/item_effects.asm:2016
-    local prompt = self.switchFrom and Strings(PartyMenu.PROMPTS.moveTo)
-      or (self.softboiledFrom and Strings(PartyMenu.PROMPTS.useItem))
-      or (self.promptIsBuiltin and Strings(self.prompt) or self.prompt)
-    Chrome.print(#self.party == 0 and Strings(PartyMenu.PROMPTS.none) or prompt,
+    local prompt = self.switchFrom and self:rom(PartyMenu.PROMPTS.moveTo)
+      or (self.softboiledFrom and self:rom(PartyMenu.PROMPTS.useItem))
+      or (self.promptIsBuiltin and self:rom(self.prompt) or self.prompt)
+    Chrome.print(#self.party == 0 and self:rom(PartyMenu.PROMPTS.none) or prompt,
       1, 16)
   end
   -- PokemonActionSubmenu clears (1,15) 2x18 before MonSubmenu draws, so the

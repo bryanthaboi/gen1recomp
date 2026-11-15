@@ -27,7 +27,7 @@ end
 local function newGame()
   local game = {
     save = { player = {}, options = { textSpeed = "FAST" } },
-    data = { text = {}, moves = { MEGA_PUNCH = { name = "MEGA PUNCH" } },
+    data = { text = dofile("tests/fixture_data/text.lua"), moves = { MEGA_PUNCH = { name = "MEGA PUNCH" } },
              pokemon = { NIDORINO = { name = "NIDORINO" } } },
   }
   game.stack = {

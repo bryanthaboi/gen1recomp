@@ -23,6 +23,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 time routing")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -37,6 +38,8 @@ local Pokegear = require("src.ui.gen2.Pokegear")
 local Save = require("src.core.gen2.Save")
 local Vm = require("src.script.gen2.Vm")
 local World = require("src.world.gen2.World")
+local PHONE = require("tests.fixtures.gen2_phone_events")
+PHONE.install()
 
 -- An hour whose daytime is NOT the host's, so "the palette followed the game
 -- clock" cannot pass by accident on a machine that happens to agree.
@@ -49,7 +52,7 @@ local function hourUnlikeHost()
 end
 
 local function worldWithSave(save)
-  local world = World.new({ data = {}, save = save })
+  local world = World.new({ data = { gen2EventTables = PHONE.events }, save = save })
   world.map = { id = "TEST_MAP",
     def = { id = "TEST_MAP", palette = "PALETTE_AUTO", environment = "TOWN",
       group = 1 } }
@@ -201,7 +204,7 @@ end
 -- ResetMapBufferEventFlags (home/map.asm:216-228).  Flags 0-7 live in SRAM, so
 -- continuing a file keeps whatever the save was holding.
 local function bufferWorld()
-  local world = World.new({ data = {}, save = { party = {}, inventory = {} } })
+  local world = World.new({ data = { gen2EventTables = PHONE.events }, save = { party = {}, inventory = {} } })
   world.maps = {
     TEST_MAP = { id = "TEST_MAP", group = 1, map = 2, width = 2, height = 2,
       blocks = { 1, 2, 3, 4 }, objects = {}, warps = {}, tileset = "TEST" },
@@ -253,9 +256,19 @@ return {
   love.filesystem.write("data/generated/landmarks.lua", [[
 return { spawns = { SPAWN_NEW_BARK = { map = "TEST_MAP", x = 1, y = 1 } } }
 ]])
+  love.filesystem.write("data/generated/marts.lua",
+    "return { lists = {}, bargain = {} }")
+  love.filesystem.write("data/generated/initial_events.lua",
+    "return { flags = {}, engineFlags = {}, sprites = {} }")
+  love.filesystem.write("data/generated/menu_gfx.lua", [[
+return { emotes = { grassRustle = "r.png", jumpShadow = "j.png",
+  cutGrass = "c.png", fishing = "f.png" },
+  healMachine = { sheet = "h.png", palette = { 0, 0, 0, 0 } } }
+]])
 
   local function entryMethod(save)
-    local world = World.new({ data = {}, save = save })
+    local world = World.new({ data = { gen2EventTables = PHONE.events,
+      gen2Constants = { engineFlagOrder = require("tests.fixture_data.gen2_engine_flags").order("gold") } }, save = save })
     local seen
     world.setMap = function(_self, mapId, _x, _y, _facing, opts)
       seen = opts or {}
@@ -291,11 +304,12 @@ do
   Clock.setTime(save, 3, 15)
   Clock.setWeekday(save, 3)
 
-  local menu = MainMenu.new({ data = {} }, { save = save, hasSave = true })
+  local menuData = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() }
+  local menu = MainMenu.new({ data = menuData }, { save = save, hasSave = true })
   local hour, minute, weekday = menu:clockParts()
   eq(hour, 3, "the intro menu's clock box reads the save's base")
   eq(minute, 15, "minutes and all")
-  eq(MainMenu.DAYS[weekday], "WEDNESDAY", "and the weekday it was set to")
+  eq(Clock.weekdayName(weekday, menuData), "WEDNESDAY", "and the weekday it was set to")
 
   local gear = Pokegear.new({ data = {}, save = save }, { save = save })
   local gearHour, gearMinute, gearDay = gear:clockParts()
@@ -324,13 +338,14 @@ end
 
 -- An explicit opts.clock still pins both faces outright (driver screenshots).
 do
-  local pinned = MainMenu.new({ data = {} },
+  local menuData = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() }
+  local pinned = MainMenu.new({ data = menuData },
     { hasSave = false, save = false, clock = { hour = 0, minute = 0,
       weekday = 1 } })
   local hour, minute, weekday = pinned:clockParts()
   eq(hour, 0, "a pinned clock box keeps its hour")
   eq(minute, 0, "its minutes")
-  eq(MainMenu.DAYS[weekday], "SUNDAY", "and its day")
+  eq(Clock.weekdayName(weekday, menuData), "SUNDAY", "and its day")
 end
 
 -- ---- New Game anchors the clock in every run mode --------------------------

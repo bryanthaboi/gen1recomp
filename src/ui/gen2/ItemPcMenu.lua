@@ -27,8 +27,10 @@
 
 local Bag = require("src.inventory.Bag")
 local Chrome = require("src.ui.gen2.Chrome")
+local CommonText = require("src.core.gen2.CommonText")
 local Logger = require("src.core.Logger")
 local PcItems = require("src.core.gen2.PcItems")
+local RomText = require("src.core.RomText")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
@@ -55,50 +57,53 @@ local function stacksFor(n) return math.ceil((n or 0) / MAX_STACK) end
 -- which rows a caller sees: PLAYERSPC_NORMAL ends on LOG OFF, PLAYERSPC_HOUSE
 -- carries DECORATION and ends on TURN OFF.
 local ENTRIES = {
-  { id = "withdraw", label = Strings.source("WITHDRAW ITEM"), builtin = true },
-  { id = "deposit", label = Strings.source("DEPOSIT ITEM"), builtin = true },
-  { id = "toss", label = Strings.source("TOSS ITEM"), builtin = true },
-  { id = "mailbox", label = Strings.source("MAIL BOX"), builtin = true },
+  { id = "withdraw", romLabel = "PlayersPCMenuData.WithdrawItem", builtin = true },
+  { id = "deposit", romLabel = "PlayersPCMenuData.DepositItem", builtin = true },
+  { id = "toss", romLabel = "PlayersPCMenuData.TossItem", builtin = true },
+  { id = "mailbox", romLabel = "PlayersPCMenuData.MailBox", builtin = true },
 }
 local LOG_OFF = {
-  id = "logoff", label = Strings.source("LOG OFF"), builtin = true,
+  id = "logoff", romLabel = "PlayersPCMenuData.LogOff", builtin = true,
 }
 local DECORATION = {
-  id = "decoration", label = Strings.source("DECORATION"), builtin = true,
+  id = "decoration", romLabel = "PlayersPCMenuData.Decoration", builtin = true,
 }
 local TURN_OFF = {
-  id = "turnoff", label = Strings.source("TURN OFF"), builtin = true,
+  id = "turnoff", romLabel = "PlayersPCMenuData.TurnOff", builtin = true,
 }
 
--- _PlayersPC's player-facing text. Dynamic item names are format arguments,
--- not catalog keys, so registry-provided names remain untouched while a
--- language may reorder the quantity/name around them.
 local TEXT = {
-  turnedOn = Strings.source("{PLAYER} turned on\nthe PC."),
-  noBagRoom = Strings.source("There's no room\nfor more items."),
-  withdrew = Strings.source("Withdrew %d\n%s(S)."),
-  withdrawHowMany = Strings.source("How many do you\nwant to withdraw?"),
-  noPcRoom = Strings.source("There's no room to\nstore items."),
-  deposited = Strings.source("Deposited %d\n%s(S)."),
-  noItems = Strings.source("No items here!"),
-  depositHowMany = Strings.source("How many do you\nwant to deposit?"),
-  tooImportant = Strings.source("That's too impor-\ntant to toss out!"),
-  tossHowMany = Strings.source("Toss out how many\n%s(S)?"),
-  throwAway = Strings.source("Throw away %d\n%s(S)?"),
-  discarded = Strings.source("Discarded\n%s(S)."),
-  whatDo = Strings.source("What do you want\nto do?"),
+  turnedOn = "_PlayersPCTurnOnText",
+  noBagRoom = "_PlayersPCNoRoomWithdrawText",
+  withdrew = "_PlayersPCWithdrewItemsText",
+  withdrawHowMany = "_PlayersPCHowManyWithdrawText",
+  noPcRoom = "_PlayersPCNoRoomDepositText",
+  deposited = "_PlayersPCDepositItemsText",
+  noItems = "_PlayersPCNoItemsText",
+  depositHowMany = "_PlayersPCHowManyDepositText",
+  tooImportant = "_ItemsTooImportantText",
+  tossHowMany = "_ItemsTossOutHowManyText",
+  throwAway = "_ItemsThrowAwayText",
+  discarded = "_ItemsDiscardedText",
+  whatDo = "_PlayersPCAskWhatDoText",
 }
 
-local function translatedLines(source, ...)
+-- engine/menus/scrolling_menu.asm:408
+local SCROLL_CANCEL = "ScrollingMenu_UpdateDisplay.CancelString"
+-- home/menu.asm:438-439
+local YES_LABEL, NO_LABEL = "YesNoMenuHeader.MenuData#1", "YesNoMenuHeader.MenuData#2"
+
+function ItemPcMenu:romLines(label, ...)
+  local body = CommonText.plain(RomText(self.data, label, nil, ...))
   local lines = {}
-  for line in (Strings(source, ...) .. "\n"):gmatch("(.-)\n") do
+  for line in (body .. "\n"):gmatch("(.-)\n") do
     lines[#lines + 1] = line
   end
   return lines
 end
 
-local function translatedPages(source, ...)
-  return { translatedLines(source, ...) }
+function ItemPcMenu:romPages(label, ...)
+  return { self:romLines(label, ...) }
 end
 
 -- ui.pc.items identity: an unhooked build hands its own list back.
@@ -168,7 +173,7 @@ function ItemPcMenu.new(game, opts)
   if self.house then
     -- _PlayersHousePC: PC_PlayBootSound, then PlayersPCTurnOnText.
     self:playPcSfx("Sfx_BootPc")
-    self:say(translatedPages(TEXT.turnedOn))
+    self:say(self:romPages(TEXT.turnedOn))
   end
   return self
 end
@@ -340,12 +345,12 @@ function ItemPcMenu:withdraw(row, qty)
   -- PlayerWithdrawItemMenu .withdraw: ReceiveItem into the bag first; only a
   -- carry tosses the stack out of the PC.
   if not Bag.add(self.save, row.id, qty, self.data) then
-    self:say(translatedPages(TEXT.noBagRoom))
+    self:say(self:romPages(TEXT.noBagRoom))
     return
   end
   self:pcRemove(row.id, qty)
   self:rebuild()
-  self:say(translatedPages(TEXT.withdrew, qty, row.name))
+  self:say(self:romPages(TEXT.withdrew, qty, row.name))
 end
 
 function ItemPcMenu:chooseWithdraw()
@@ -361,24 +366,24 @@ function ItemPcMenu:chooseWithdraw()
     return
   end
   self:askQuantity(row.count,
-    translatedLines(TEXT.withdrawHowMany),
+    self:romLines(TEXT.withdrawHowMany),
     function(qty) self:withdraw(row, qty) end)
 end
 
 function ItemPcMenu:deposit(id, name, qty)
   if not self:pcAdd(id, qty) then
-    self:say(translatedPages(TEXT.noPcRoom))
+    self:say(self:romPages(TEXT.noPcRoom))
     return
   end
   Bag.remove(self.save, id, qty)
   if self.pack then self.pack:rebuild() end
-  self:say(translatedPages(TEXT.deposited, qty, name))
+  self:say(self:romPages(TEXT.deposited, qty, name))
 end
 
 function ItemPcMenu:enterDeposit()
   -- .CheckItemsInBag: an empty bag never opens the PACK.
   if bagIsEmpty(self.save) then
-    self:say(translatedPages(TEXT.noItems))
+    self:say(self:romPages(TEXT.noItems))
     return
   end
   self:setPhase("deposit")
@@ -409,7 +414,7 @@ function ItemPcMenu:offerToDeposit(id, count)
     return
   end
   self:askQuantity(count,
-    translatedLines(TEXT.depositHowMany),
+    self:romLines(TEXT.depositHowMany),
     function(qty) self:deposit(id, name, qty) end)
 end
 
@@ -421,20 +426,20 @@ function ItemPcMenu:chooseToss()
   end
   -- TossItemFromPC .key_item -> .CantToss.
   if self:cantToss(row.id) then
-    self:say(translatedPages(TEXT.tooImportant))
+    self:say(self:romPages(TEXT.tooImportant))
     return
   end
   self:askQuantity(row.count,
-    translatedLines(TEXT.tossHowMany, row.name),
+    self:romLines(TEXT.tossHowMany, row.name),
     function(qty)
       -- .ItemsThrowAwayText's yes/no sits between the count and the toss.
       self.confirm = {
-        prompt = translatedLines(TEXT.throwAway, qty, row.name),
+        prompt = self:romLines(TEXT.throwAway, qty, row.name),
         choice = 1,
         onYes = function()
           self:pcRemove(row.id, qty)
           self:rebuild()
-          self:say(translatedPages(TEXT.discarded, row.name))
+          self:say(self:romPages(TEXT.discarded, row.name))
         end,
       }
     end)
@@ -678,7 +683,7 @@ function ItemPcMenu:drawList()
       end
     elseif i == self:listTotal() then
       if i == self.listIndex then Chrome.cursor(LIST_X - 1, ty, picked) end
-      Chrome.print(Strings("CANCEL"), LIST_X, ty)
+      Chrome.print(self:romLines(SCROLL_CANCEL)[1], LIST_X, ty)
     end
   end
   -- UpdateItemDescription under the list.
@@ -708,14 +713,20 @@ function ItemPcMenu:drawPanel()
     -- _PlayersPCAskWhatDoText, printed under the list the whole time.  The
     -- box goes down first: the menu window overlays it where the house's
     -- six-row list runs past row 12, the way the cart's windows stack.
-    self:drawBottomLines(translatedLines(TEXT.whatDo))
+    self:drawBottomLines(self:romLines(TEXT.whatDo))
     -- PlayersPCMenuData is menu_coords 0, 0, 15, 12; the house list is one
     -- row taller than that box, so size it to the entries.
     Chrome.box(0, 0, 16, math.max(12, #self.entries * 2 + 2))
     for i, entry in ipairs(self.entries) do
       local ty = i * 2
       if i == self.index then Chrome.cursor(1, ty) end
-      Chrome.print(entry.builtin and Strings(entry.label) or entry.label, 2, ty)
+      local label = entry.label
+      if entry.romLabel then
+        label = self:romLines(entry.romLabel)[1]
+      elseif entry.builtin then
+        label = Strings(label)
+      end
+      Chrome.print(label, 2, ty)
     end
   end
 
@@ -729,8 +740,8 @@ function ItemPcMenu:drawPanel()
   elseif self.confirm then
     self:drawBottomLines(self.confirm.prompt)
     Chrome.box(14, 7, 6, 5)
-    Chrome.print(Strings("YES"), 16, 8)
-    Chrome.print(Strings("NO"), 16, 10)
+    Chrome.print(self:romLines(YES_LABEL)[1], 16, 8)
+    Chrome.print(self:romLines(NO_LABEL)[1], 16, 10)
     Chrome.cursor(15, self.confirm.choice == 1 and 8 or 10)
   elseif self.message then
     self:drawBottomLines(

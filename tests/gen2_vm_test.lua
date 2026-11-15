@@ -10,6 +10,8 @@ love = require("tests.love_stub")
 local Movement = require("src.script.gen2.Movement")
 local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
+local ROM_TEXT = require("tests.fixtures.gen2_rom_text").text(
+  require("tests.fixture_data.gen2_rom_text_s7_f1").text())
 
 -- Movement byte decode
 eq(Movement.dir(0), "down", "facing 0 = down")
@@ -130,6 +132,7 @@ do
       return { species = "EEVEE" }
     end,
     showText = function(_, onDone) onDone() end,
+    specials = { data = function() return { text = ROM_TEXT } end },
     -- GiveANickname_YesNo (move_mon.asm:1753-1757): the prompt's yes/no
     yesorno = function(onChoose)
       asked = true
@@ -176,6 +179,7 @@ local phoneVm = Vm.new({
     itemLog[#itemLog + 1] = "sfx"
   end,
   setScene = function(s) scene = s end,
+  specials = { data = function() return { text = ROM_TEXT } end },
 })
 check(phoneVm:start("s:elm"), "phone/item script starts")
 for _ = 1, 20 do phoneVm:update() end
@@ -219,6 +223,7 @@ do
       specialSound = function() log[#log + 1] = "sfx" end,
       fruitTreeItem = function() return 18 end,
       fruitTreePicked = function() return false end,
+      specials = { data = function() return { text = ROM_TEXT } end },
     }
     return log, hooks
   end
@@ -304,7 +309,8 @@ do
   } }, {}, Events.new(), hooks)
   fullGiveVm:start("s:give")
   for _ = 1, 20 do fullGiveVm:update() end
-  eq(shape(log), "stay:received hold:prompt text:The ITEM POCKET\nis full…",
+  eq(shape(log), "stay:received hold:prompt text:"
+    .. (ROM_TEXT._PocketIsFullText:gsub("{STRBUF}", ROM_TEXT["ItemPocketNames.Item"])),
     "verbosegiveitem, full pack: the received line takes the arrowed promptbutton")
 end
 
@@ -341,6 +347,7 @@ do
       end,
       getItemName = function() return "BICYCLE" end,
       giveItem = function() return true end,
+      specials = { data = function() return { text = ROM_TEXT } end },
     }
     return log, hooks
   end
@@ -358,7 +365,7 @@ do
     return (row:gsub("{PLAYER} received\nZEPHYRBADGE.{DONE}", "badge")
       :gsub("{PLAYER} got ELM's\nphone number.{DONE}", "phone")
       :gsub("{PLAYER} borrowed a\nBICYCLE.{DONE}", "key")
-      :gsub("{PLAYER} put the\nBICYCLE in\nthe [^\n]*%.", "pocket")
+      :gsub("{PLAYER} put the\nBICYCLE in\vthe [^\n]*%.", "pocket")
       :gsub("Moo!{DONE}", "cry")
       :gsub("{DONE}", ""):gsub("{PROMPT}", ""))
   end
@@ -600,6 +607,7 @@ local function drive(scriptTable, hooks, texts, key)
       onChoose(true)
     end,
     waitSfx = function() return true end,
+    specials = { data = function() return { text = ROM_TEXT } end },
   }
   for k, v in pairs(hooks or {}) do base[k] = v end
   local vm = Vm.new(scriptTable, texts or {}, Events.new(), base)
@@ -1634,6 +1642,7 @@ for op, row in pairs(cacheRow) do
     getItemName = function() return "BERRY" end,
     fruitTreeItem = function() return 158 end,
     giveItem = function() return true end,
+    specials = { data = function() return { text = ROM_TEXT } end },
   })
   vm:start("s:one")
   for _ = 1, 600 do
@@ -1769,10 +1778,17 @@ eq(table.concat(unexplained, ","), "", "every stub records its reason")
 -- (stubbed), and the script is one `special` row.
 local function specialVm(id, opts)
   opts = opts or {}
+  local hooks = opts.hooks or {}
+  if hooks.data == nil then
+    hooks.data = function()
+      return { text = ROM_TEXT,
+        gen2EventTables = require("tests.fixture_data.gen2_rom_text_s7_f1").events() }
+    end
+  end
   local vm = Vm.new({ ["s:x"] = { { op = "special", id = id } } }, {},
     Events.new(), {
       specialOrder = opts.order,
-      specials = opts.hooks or {},
+      specials = hooks,
       showText = opts.showText,
       setStringBuffer = function(v) opts.buffer = v end,
       openPc = opts.openPc,
@@ -2092,7 +2108,8 @@ do
         baseStats = { hp = 20, attack = 10, defense = 230, speed = 5,
           specialAttack = 10, specialDefense = 230 },
         levelMoves = { { level = 1, move = "CONSTRICT" } } } },
-        moves = { CONSTRICT = { name = "CONSTRICT", pp = 35 } } }
+        moves = { CONSTRICT = { name = "CONSTRICT", pp = 35 } },
+        text = ROM_TEXT }
     end } })
   Specials.HANDLERS.GiveShuckle(vm)
   eq(vm.scriptVar, 1, "GiveShuckle hands one over")
@@ -2135,12 +2152,17 @@ end
 -- CalcMagikarpLength, bug and all.  The two ends of the routine are what pin
 -- it: bc < 10 is the +190 special case, and everything else lands through the
 -- underflowing table walk.
+local KARP_LENGTHS = {
+  { 110, 1 }, { 310, 2 }, { 710, 4 }, { 2710, 20 }, { 7710, 50 },
+  { 17710, 100 }, { 32710, 150 }, { 47710, 150 }, { 57710, 100 },
+  { 62710, 50 }, { 64710, 20 }, { 65210, 5 }, { 65410, 2 }, { 65510, 1 },
+}
 do
-  local feet, inches, mm = Specials.magikarpLength(0, 0)
+  local feet, inches, mm = Specials.magikarpLength(KARP_LENGTHS, 0, 0)
   eq(mm, 190, "an all-zero ID and DV word is the 190 mm floor")
   eq(feet, 0, "which is 0 feet")
   eq(inches, 7, "and 7 inches")
-  local _, _, mm2 = Specials.magikarpLength(0x1234, 0x5678)
+  local _, _, mm2 = Specials.magikarpLength(KARP_LENGTHS, 0x1234, 0x5678)
   check(mm2 > 0 and mm2 < 65536, "a real pair produces a length in range")
   eq(Specials.magikarpLengthText(4, 2), [[4'2"]], "and it prints as feet'inches")
   eq(Specials.dvWord({ attack = 15, defense = 15, speed = 15, special = 15 }),
@@ -2155,13 +2177,15 @@ do
   local short = { species = "MAGIKARP", otId = 1000, ot = "KURT", dvs = dvs }
   local chosen = short
   local vm = specialVm(0, { order = { "x" }, hooks = {
+    data = function() return { gen2EventTables = { magikarpLengths = KARP_LENGTHS,
+      magikarpRecordHolder = "RALPH" } } end,
     save = function() return record end,
     party = function() return { long } end,
     monName = function(sp) return sp end,
     selectPartyMon = function(_, done) done(1, chosen) end } })
   Specials.HANDLERS.MagikarpHouseSign(vm)
   eq(vm.stringBuffer, Specials.magikarpLengthText(3, 6), "no record set reads the cart's 3'6\" default")
-  eq(Specials.magikarpBest(record).name, "RALPH", "held by RALPH")
+  eq(Specials.magikarpBest(vm, record).name, "RALPH", "held by RALPH")
   Specials.HANDLERS.CheckMagikarpLength(vm)
   eq(vm.scriptVar, 2, "3'2\" does not beat the 3'6\" default")
   check(record.magikarpRecord == nil, "and writes nothing")
@@ -2429,11 +2453,9 @@ do
       sfxPlayed, sfxFallback = name, fallback
     end,
   } })
-  vm.data = function() return { moves = { GROWL = { name = "GROWL" } } } end
-  -- specialVm wires data() through nothing today, so H.MoveDeletion's own
-  -- `data(vm)` (hooks(vm).data) needs the same hook the party/save readers
-  -- use; specialVm has no `data` opt, so this reaches in directly.
-  vm.specials.data = function() return { moves = { GROWL = { name = "GROWL" } } } end
+  vm.specials.data = function()
+    return { moves = { GROWL = { name = "GROWL" } }, text = ROM_TEXT }
+  end
   vm.showTextFn = function() end
   vm.co = coroutine.create(function() Specials.HANDLERS.MoveDeletion(vm) end)
   local texts = driveMoveDeletion(vm, { true, true })
@@ -2803,10 +2825,8 @@ do
   eq(#texts, 3, "the completion-level page, the seen/owned page, and the rating")
   check(texts[1]:find("completion level", 1, true) ~= nil,
     "page 1 is _OakPCText2")
-  check(texts[2]:find("0 #MON seen", 1, true) ~= nil,
-    "page 2 leads with the seen count, formatted in place of wStringBuffer3")
-  check(texts[2]:find("0 #MON owned", 1, true) ~= nil,
-    "and the owned count in place of wStringBuffer4")
+  eq(texts[2], (ROM_TEXT._OakPCText3:gsub("{STRBUF}", "0")),
+    "page 2 is _OakPCText3, the seen and owned counts in its two {STRBUF}s")
   check(texts[3]:find("grassy areas", 1, true) ~= nil,
     "0 caught lands on OakRating01, the first row FindOakRating can match")
 end
@@ -2845,7 +2865,7 @@ do
   vm.showTextFn = function() end
   vm.co = coroutine.create(function() Specials.HANDLERS.ProfOaksPCBoot(vm) end)
   local texts = driveOaksPC(vm)
-  check(texts[3]:find("# BALLS", 1, true) ~= nil,
+  eq(texts[3], ROM_TEXT._OakRating02,
     "10 caught crosses the first cap into OakRating02")
 end
 
@@ -2867,9 +2887,8 @@ do
   vm.showTextFn = function() end
   vm.co = coroutine.create(function() Specials.HANDLERS.ProfOaksPCBoot(vm) end)
   local texts = driveOaksPC(vm)
-  check(texts[2]:find("251 #MON seen", 1, true) ~= nil,
-    "a full dex counts every `true` entry in save.pokedex.seen")
-  check(texts[2]:find("251 #MON owned", 1, true) ~= nil, "and .caught")
+  eq(texts[2], (ROM_TEXT._OakPCText3:gsub("{STRBUF}", "251")),
+    "a full dex counts every `true` entry in save.pokedex.seen and .caught")
   check(texts[3]:find("perfect", 1, true) ~= nil,
     "251 caught is OakRating19, the table's last row")
   eq(sfxPlayed, "Sfx_DexFanfare230Plus",
@@ -2917,20 +2936,26 @@ do
         return "?"
       end,
       getItemPocket = pocketFor,
+      specials = { data = function() return { text = ROM_TEXT } end },
     })
     check(vm:start("s:gift"), "the Mr. POKEMON gift script starts")
     for _ = 1, 20 do vm:update() end
     return log[1]
   end
 
+  local function putIn(pocket)
+    local n = 0
+    return (ROM_TEXT._PutItemInPocketText:gsub("{STRBUF}", function()
+      n = n + 1
+      return n == 1 and "MYSTERY EGG" or ROM_TEXT["ItemPocketNames." .. pocket]
+    end))
+  end
   eq(notifyBox(function(index) return index == 69 and "KEY_ITEM" or nil end),
-    "{PLAYER} put the\nMYSTERY EGG in\nthe KEY POCKET.",
+    putIn("Key"),
     "itemnotify names wCurItem and its pocket, not the stale getstring")
-  eq(notifyBox(function() return "TM_HM" end),
-    "{PLAYER} put the\nMYSTERY EGG in\nthe TM POCKET.",
+  eq(notifyBox(function() return "TM_HM" end), putIn("TM"),
     "a TM_HM item names the TM POCKET")
-  eq(notifyBox(function() return "BALL" end),
-    "{PLAYER} put the\nMYSTERY EGG in\nthe BALL POCKET.",
+  eq(notifyBox(function() return "BALL" end), putIn("Ball"),
     "and a BALL names the BALL POCKET")
 end
 

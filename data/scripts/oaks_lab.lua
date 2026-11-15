@@ -196,7 +196,7 @@ return {
       { "check_flag", "EVENT_GOT_POKEBALLS_FROM_OAK" },
       { "jump_if_true", "come_see" },
       { "set_flag", "EVENT_GOT_POKEBALLS_FROM_OAK" },
-      { "give_item", "POKE_BALL", 5, false },
+      { "give_item", "POKE_BALL", 5, false, false },
       { "text_sound", "Get_Key_Item" },  -- OaksLab.asm:1060
       { "show_text", "_OaksLabOak1ReceivedPokeballsText" },
       { "show_text", "_OaksLabGivePokeballsExplanationText" },

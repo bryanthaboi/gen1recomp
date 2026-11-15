@@ -1687,9 +1687,6 @@ local function buildOverworld()
       "[%s] OverworldState.replaceBlock on FireRed sets one 16px METATILE at "
       .. "(x, y) in metatile coordinates; FireRed has no 32px blocks", who(OW))
     Field.setMetatile(bx, by, block)
-    local M = package.loaded["src.core.game3.map"]
-    Runtime.emit("world.block_replaced",
-      { mapId = M and M.current, bx = bx, by = by, block = block })
     return true
   end
 

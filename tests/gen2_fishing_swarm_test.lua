@@ -186,9 +186,8 @@ do
   local world, game = fishWorld("ROUTE_32", "FISHGROUP_QWILFISH")
   world.encounters = { fishGroups = { FISHGROUP_QWILFISH = only("MAGIKARP") } }
   Roamers.Swarm.setFishing(game.save, Roamers.Swarm.FISH_QWILFISH)
-  local outcome, species = hooked(world)
-  eq(outcome, "battle", "an older cache still bites")
-  eq(species, "MAGIKARP", "off the map's own group rather than off nothing")
+  check(not pcall(hooked, world),
+    "a cache with no swarm group is an error, not the map's own group")
 end
 
 -- ---- the group names in the real cache ------------------------------------

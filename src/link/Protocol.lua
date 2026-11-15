@@ -14,10 +14,13 @@
 local Fingerprint = require("src.link.Fingerprint")
 local Handshake = require("src.link.Handshake")
 local Runtime = require("src.mods.Runtime")
+local TextClip = require("src.core.TextClip")
 
 local Protocol = {}
 
 local MAX_WIRE_NAME = 40
+-- ../pokered/constants/text_constants.asm:3
+local NAME_CHARS = 10
 
 local function num(v, default)
   local n = tonumber(v)
@@ -34,6 +37,24 @@ end
 local function text(v)
   if type(v) ~= "string" then return nil end
   return v:sub(1, MAX_WIRE_NAME)
+end
+
+local NO_FONT = {}
+local splitters = setmetatable({}, { __mode = "k" })
+
+local function splitterFor(font)
+  local charmap, pages = font.charmap, font.pages
+  local hit = splitters[font]
+  if hit and hit.charmap == charmap and hit.pages == pages then return hit.split end
+  local split = TextClip.charmapSplit(charmap, pages)
+  splitters[font] = { charmap = charmap, pages = pages, split = split }
+  return split
+end
+
+local function gbName(data, v)
+  if type(v) ~= "string" then return nil end
+  local font = type(data) == "table" and type(data.font) == "table" and data.font or NO_FONT
+  return TextClip.clip(TextClip.scrub(v), NAME_CHARS, splitterFor(font))
 end
 
 Protocol.hello = Handshake.hello
@@ -80,11 +101,11 @@ function Protocol.packMon(mon)
     hp = mon.hp,
     status = mon.status,
     sleepTurns = mon.status == "SLP" and mon.sleepTurns or nil,
-    nickname = mon.nickname,
+    nickname = TextClip.scrub(mon.nickname),
     dvs = mon.dvs,
     statExp = mon.statExp,
     moves = moves,
-    ot = mon.ot,
+    ot = TextClip.scrub(mon.ot),
     otId = mon.otId,
     extra = plainCopy(mon.extra),
   }
@@ -171,7 +192,7 @@ function Protocol.unpackMon(data, packed, opts)
   local packedOtId = num(packed.otId)
   local otId = packedOtId
     and math.max(0, math.min(65535, math.floor(packedOtId))) or nil
-  local ot = type(packed.ot) == "string" and packed.ot:sub(1, 10) or nil
+  local ot = gbName(data, packed.ot)
   return {
     species = packed.species,
     level = level,
@@ -183,7 +204,7 @@ function Protocol.unpackMon(data, packed, opts)
     hp = hp,
     status = status,
     sleepTurns = sleepTurns,
-    nickname = text(packed.nickname),
+    nickname = gbName(data, packed.nickname),
     ot = ot,
     otId = otId,
     moves = moves,
@@ -247,7 +268,7 @@ function Protocol.packMon2(mon)
     experience = mon.experience,
     hp = mon.hp,
     status = mon.status,
-    nickname = mon.nickname,
+    nickname = TextClip.scrub(mon.nickname),
     dvs = dvs,
     statExp = statExp,
     moves = moves,
@@ -264,7 +285,7 @@ function Protocol.packMon2(mon)
     caughtTime = mon.caughtTime,
     caughtLocation = mon.caughtLocation,
     caughtByGender = mon.caughtByGender,
-    ot = mon.ot or mon.otName,
+    ot = TextClip.scrub(mon.ot or mon.otName),
     otId = mon.otId,
     -- an egg is a party slot the cart marks by writing EGG into wPartySpecies;
     -- the port marks it with isEgg instead (src/core/gen2/Breeding.lua:64)
@@ -349,12 +370,12 @@ function Protocol.unpackMon2(data, packed, opts)
   local packedOtId = num(packed.otId)
   local otId = packedOtId
     and math.max(0, math.min(65535, math.floor(packedOtId))) or nil
-  local ot = type(packed.ot) == "string" and packed.ot:sub(1, 10) or nil
+  local ot = gbName(data, packed.ot)
   local growth = Mon.growthFor(data, def.growthRate)
   local mon = {
     species = packed.species,
     name = def.name or packed.species,
-    nickname = text(packed.nickname),
+    nickname = gbName(data, packed.nickname),
     level = level,
     experience = math.max(0, math.floor(num(packed.experience,
       Mon.experienceForLevel(growth, level)))),

@@ -172,7 +172,7 @@ do
   battle, mon = newBattle({ otId = ROCKY_OT, level = 30, tacklePp = 0,
     random = rolls({ 39, 5, 45, 0 }) })
   eq(battle:checkObedience("ROCK_THROW"), true, "still disobeys")
-  check(findText(battle.events, "ROCKY is loafing around."),
+  check(findText(battle.events, battle:romText("LoafingAroundText", nil, nil, "ROCKY")),
     "but can only loaf")
 
   -- Nap: the margin roll under level - cap.
@@ -181,14 +181,16 @@ do
   eq(battle:checkObedience("ROCK_THROW"), true, "napped instead")
   eq(mon.status, "sleep", "BeganToNap writes sleep straight in")
   eq(mon.statusTurns, 3, "1-7 turns, written straight into the status byte")
-  check(findText(battle.events, "ROCKY began to nap!"), "with its own line")
+  check(findText(battle.events, battle:romText("BeganToNapText", nil, nil, "ROCKY")),
+    "with its own line")
 
   -- Self-hit: the margin roll in the second band.
   battle, mon = newBattle({ otId = ROCKY_OT, level = 30,
     random = rolls({ 39, 39, 25 }) })
   local before = mon.hp
   eq(battle:checkObedience("ROCK_THROW"), true, "won't obey")
-  check(findText(battle.events, "ROCKY won't obey!"), "says so")
+  check(findText(battle.events, battle:romText("WontObeyText", nil, nil, "ROCKY")),
+    "says so")
   check(findText(battle.events, "It hurt itself in\nits confusion!"),
     "and hits itself (HitConfusion)")
   check(mon.hp < before, "for real damage")
@@ -197,7 +199,7 @@ do
   battle, mon = newBattle({ otId = ROCKY_OT, level = 30,
     random = rolls({ 39, 39, 45, 2 }) })
   eq(battle:checkObedience("ROCK_THROW"), true, "loafed")
-  check(findText(battle.events, "ROCKY turned away!"),
+  check(findText(battle.events, battle:romText("TurnedAwayText", nil, nil, "ROCKY")),
     "line 2 of the four-way pick")
 end
 
@@ -210,7 +212,8 @@ do
     random = rolls({ 0, 39, 39, 45, 2 }, 1) })
   local hpBefore = wild.hp
   local events = battle:takeTurn({ kind = "move", move = "ROCK_THROW" })
-  check(findText(events, "ROCKY turned away!"), "the turn opens on the loaf")
+  check(findText(events, battle:romText("TurnedAwayText", nil, nil, "ROCKY")),
+    "the turn opens on the loaf")
   eq(mon.moves[1].pp, 15, "no PP left the disobeyed move")
   eq(wild.hp, hpBefore, "and the enemy was never touched")
   check(findText(events, "Enemy PIDGEY\nused TACKLE!"),

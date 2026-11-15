@@ -435,9 +435,6 @@ function WorldAPI:replaceBlock(bx, by, block)
     "[%s] mod.world:replaceBlock on FireRed sets one 16px METATILE at (x, y); "
     .. "FireRed has no 32px blocks", tostring(self.modId))
   F.setMetatile(bx, by, block)
-  local M = loaded("map")
-  Runtime.emit("world.block_replaced",
-    { mapId = M and M.current, bx = bx, by = by, block = block })
   return true
 end
 

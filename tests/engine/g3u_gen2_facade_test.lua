@@ -6,7 +6,6 @@ local L = require("tests.support.g3u_loopback")
 local Table = require("src.battle.g3u.Table")
 local BattleSession = require("src.online.union.BattleSession")
 local Battle = require("src.battle.gen2.Battle")
-local Effects = require("src.battle.gen2.Effects")
 local Strings = require("src.core.Strings")
 
 local okLoad, Gen2Facade = pcall(require, "src.ui.g3u.Gen2Facade")
@@ -45,7 +44,7 @@ local function dataFixture()
     moves[("MOVE%03d"):format(id)] = { index = id, name = ("MOVE%03d"):format(id) }
   end
   pokemon.growthRates = {}
-  return { pokemon = pokemon, moves = moves }
+  return { pokemon = pokemon, moves = moves, text = require("tests.fixture_data.gen2_rom_text_s7_b").text() }
 end
 
 local game = { data = dataFixture(), save = { player = { name = "GOLD" } } }
@@ -259,7 +258,7 @@ do
     "status anim -> Gen 2 ANIM_PSN on the afflicted side")
   T.check(ev[7].kind == "status" and ev[7].status == false, "NONE clears the status")
   T.eq(facade.weather, "rain", "weather event sets the Gen 2 weather")
-  T.eq(ev[8].text, Strings(Effects.WEATHER_START_TEXT.rain), "weather line is the Gen 2 game's own")
+  T.eq(ev[8].text, "A downpour\nstarted!", "weather line is the Gen 2 game's own")
   T.check(ev[9].text:find("SPCL.ATK") and ev[9].text:find("sharply fell"), "stat text uses Gen 2 stat names")
   T.check(ev[10].kind == "message" and ev[10].text:find("?", 1, true), "unknown ids drop, broken fills print ?")
   T.check(ev[11].kind == "message" and ev[11].text:find("withdrew"), "enemy withdraw line")
@@ -269,6 +268,27 @@ do
   T.check(ev[15].kind == "trainer-return", "the trainer slides back in on a win")
   T.eq(#ev, 15, "no extra events")
   T.check(facade.over and facade.outcome == "win", "end sets over and outcome")
+  T.eq(ev[2].text, "Enemy MON001's\nattack missed!", "ATTACKMISSED is AttackMissedText")
+  T.eq(ev[11].text, "MAY\nwithdrew\vMON001!", "enemy withdraw is EnemyWithdrewText")
+  T.eq(ev[13].text, "Enemy MON001\nfainted!", "enemy faint is BattleText_EnemyMonFainted")
+  T.eq(ev[14].text, "MAY\nwas defeated!", "win line is BattleText_EnemyWasDefeated")
+
+  local full = { atk = { side = 1, index = 1 }, def = { side = 0, index = 1 }, eff = { side = 0, index = 1 },
+    scrActive = { side = 0, index = 1 }, buff1 = 33, buff2 = 4, currentMove = 33, stat = "atk", delta = 1 }
+  local PORT_ONLY = { STRINGID_PKMNALREADYHASBURN = true, STRINGID_PKMNFATIGUECONFUSION = true }
+  for id, fn in pairs(Gen2Facade.MSG) do
+    local fill = full
+    if id == "STRINGID_STATSWONTINCREASE" or id == "STRINGID_STATSWONTDECREASE" then
+      fill = setmetatable({ buff1 = "atk" }, { __index = full })
+    end
+    local ok, text = pcall(fn, facade, fill)
+    T.check(ok and type(text) == "string" and text ~= "", id .. " renders from the cache: " .. tostring(text))
+    T.check(not (ok and tostring(text):find("{%u+}")), id .. " fills every slot")
+    if not PORT_ONLY[id] and id ~= "STRINGID_PKMNSXWOREOFF" then
+      local dataless = setmetatable({ data = {} }, { __index = facade })
+      T.check(not pcall(fn, dataless, fill), id .. " reads the cache")
+    end
+  end
 
   facade = Gen2Facade.new(game, bs, {})
   facade:translate({ { kind = "ready", parties = { [0] = recs, [1] = { recs[2] } } } })

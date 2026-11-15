@@ -194,7 +194,8 @@ print("[test] 7. No drop-in or built-in source path is left")
 eq(MysteryGift.sources, nil, "MysteryGift.sources is gone")
 eq(MysteryGift.loadDropIn, nil, "the drop-in loader is gone")
 eq(MysteryGift.parse, nil, "the drop-in parser is gone")
-check(type(MysteryGift.builtins) == "function", "builtins stay as the server preset reference")
+eq(MysteryGift.builtins, nil, "card bodies come from the server, not a client preset list")
+check(type(MysteryGift.cardHaveFlags("frlg").aurora_ticket) == "table", "ticket have-flags stay for box Events status")
 
 if failed == 0 then
   print("PASS game3_gift_feed")

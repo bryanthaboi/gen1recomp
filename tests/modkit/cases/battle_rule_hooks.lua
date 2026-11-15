@@ -39,7 +39,7 @@ local FIXTURE = {
 }
 
 local function fixtureBattle(style)
-  local data = { pokemon = {}, text = {} }
+  local data = { pokemon = {}, text = T.fixtures.load().text }
   return setmetatable({
     game = { save = { options = { battleStyle = style } },
              stack = { push = function() end }, data = data },

@@ -141,7 +141,7 @@ M.POKEMON_TOWER_6F = {
     local TextBox = require("src.render.TextBox")
     local t = game.data.text
     game.stack:push(TextBox.new(game,
-      t._PokemonTower6FBeGoneText or "Be gone...\nIntruders...", function()
+      t._PokemonTower6FBeGoneText, function()
       local BattleState = require("src.battle.BattleState")
       local battle = BattleState.newWild(game, "MAROWAK", 30)
       -- ItemUseBall .notOldManBattle (item_effects.asm:166-175): a ball
@@ -174,11 +174,9 @@ M.POKEMON_TOWER_6F = {
           -- (#867).  text/PokemonTower6F.asm:1-5 (#1849)
           local rows = {
             { "play_cry", "MAROWAK" },
-            { "show_text", t._PokemonTower6FGhostWasCubonesMotherText
-              or "The GHOST was the\nrestless soul of\vCUBONE's mother!" },
+            { "show_text", t._PokemonTower6FGhostWasCubonesMotherText },
             { "wait", 30 },
-            { "show_text", t._PokemonTower6FSoulWasCalmedText
-              or "The mother's soul\nwas calmed.\012It departed to\nthe afterlife!" },
+            { "show_text", t._PokemonTower6FSoulWasCalmedText },
           }
           if ow.runner then
             ow.runner:run(rows)
@@ -312,7 +310,7 @@ local function elevator(elevatorMapId, panelText, keyGate, preFrames)
     if keyGate and not game.save.inventory[keyGate.item] then
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        game.data.text[keyGate.text] or "It appears to\nneed a key.", done))
+        game.data.text[keyGate.text], done))
       return
     end
     local items = {}
@@ -357,7 +355,7 @@ local function elevator(elevatorMapId, panelText, keyGate, preFrames)
     end
     local TextBox = require("src.render.TextBox")
     prompt = TextBox.new(game,
-      game.data.text._WhichFloorText or "Which floor do\nyou want? ", nil, {
+      game.data.text._WhichFloorText, nil, {
         -- pokeyellow/engine/events/elevator.asm:1-8 sets BIT_NO_TEXT_DELAY
         instant = require("src.core.GameVersion").isYellow(),
         stay = { onShown = openList },
@@ -427,8 +425,7 @@ M.ROCKET_HIDEOUT_B4F = {
       local TextBox = require("src.render.TextBox")
       local t = game.data.text
       game.stack:push(TextBox.new(game,
-        t._RocketHideoutB4FRocket3AfterBattleText
-        or "Oh no! I dropped\nthe LIFT KEY!",
+        t._RocketHideoutB4FRocket3AfterBattleText,
         function()
           -- CheckAndSetEvent EVENT_ROCKET_DROPPED_LIFT_KEY: first talk
           -- after the win reveals the ball; later talks only reprint.
@@ -464,8 +461,7 @@ M.ROCKET_HIDEOUT_B4F = {
       -- pokered/scripts/RocketHideoutB4F.asm:193 (#2277)
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        game.data.text._RocketHideoutB4FRocketAfterBattleText
-        or "Oh no! I dropped\nthe LIFT KEY!",
+        game.data.text._RocketHideoutB4FRocketAfterBattleText,
         function() dropLiftKey(game, ow); done() end))
     end,
 
@@ -476,19 +472,15 @@ M.ROCKET_HIDEOUT_B4F = {
          or game.save.flags.EVENT_BEAT_ROCKET_HIDEOUT_GIOVANNI then
         local TextBox = require("src.render.TextBox")
         game.stack:push(TextBox.new(game,
-          game.data.text._RocketHideoutB4FGiovanniHopeWeMeetAgainText
-          or "I hope we meet\nagain...", done))
+          game.data.text._RocketHideoutB4FGiovanniHopeWeMeetAgainText, done))
         return
       end
       local TextBox = require("src.render.TextBox")
       local BattleState = require("src.battle.BattleState")
       local t = game.data.text
       local impressed = t._RocketHideoutB4FGiovanniImpressedYouGotHereText
-                        or "So! I must say, I\nam impressed you\ngot here!"
       local cannotBe = t._RocketHideoutB4FGiovanniWhatCannotBeText
-                       or "WHAT!\nThis cannot be!"
       local hope = t._RocketHideoutB4FGiovanniHopeWeMeetAgainText
-                   or "I hope we meet\nagain..."
       game.stack:push(TextBox.new(game, impressed, function()
         -- home/text_script.asm:112-120
         if npc.origFacing then npc.facing = npc.origFacing end
@@ -567,7 +559,6 @@ M.GAME_CORNER = {
       local poster = game.data.field.gameCornerPoster
       local t = game.data.text
       local text = t._GameCornerPosterSwitchBehindPosterText
-                   or "Hey!\fA switch behind\nthe poster!?\nLet's push it!"
       if game.save.flags[poster.event] then
         game.stack:push(TextBox.new(game, text, done))
         return
@@ -615,8 +606,7 @@ M.GAME_CORNER = {
         end
         local TextBox = require("src.render.TextBox")
         game.stack:push(TextBox.new(game,
-          game.data.text._GameCornerRocketAfterBattleText
-          or "Our hideout might\nbe discovered! I\nbetter tell BOSS!",
+          game.data.text._GameCornerRocketAfterBattleText,
           function()
             -- #198/#862: GameCornerRocketBattleScript (scripts/GameCorner.asm)
             -- picks the exit walk from where the player is standing, because
@@ -655,7 +645,7 @@ M.GAME_CORNER = {
             end
             step(1)
           end))
-      end, game.data.text._GameCornerRocketBattleEndText or "Dang!")
+      end, game.data.text._GameCornerRocketBattleEndText)
     end,
     -- GameCornerClerk1Text (scripts/GameCorner.asm): the offer, a
     -- YesNoChoice, then ¥1000 for 50 coins.  Yellow drops the "1" from the
@@ -668,10 +658,9 @@ M.GAME_CORNER = {
       local Font = require("src.render.Font")
       local Strings = require("src.core.Strings")
       local t = game.data.text
-      local function line(suffix, fallback)
+      local function line(suffix)
         return t["_GameCornerClerk1" .. suffix]
                or t["_GameCornerClerk" .. suffix]
-               or fallback
       end
       -- GameCornerDrawCoinBox (scripts/GameCorner.asm; pokeyellow's copy is
       -- identical): TextBoxBorder at hlcoord 11,0 with b=5 c=7, a 9x7-tile
@@ -709,33 +698,28 @@ M.GAME_CORNER = {
       -- has to ride the open text box (opts.choice) instead of being pushed
       -- after it closes, which is what made the question vanish (#624).
       game.stack:push(TextBox.new(game,
-        line("DoYouNeedSomeGameCoinsText",
-             "Do you need some\ngame coins?\f¥1000 for 50."),
+        line("DoYouNeedSomeGameCoinsText"),
         nil, { choice = function(yes)
           if not yes then
             game.stack:push(TextBox.new(game,
-              line("PleaseComePlaySometimeText",
-                   "No? Please come\nplay sometime!"), finish))
+              line("PleaseComePlaySometimeText"), finish))
             return
           end
           -- scripts/GameCorner.asm GameCornerClerk1Text: coins need
           -- the COIN CASE and room for at least 9 coins (Has9990Coins)
           if not game.save.inventory.COIN_CASE then
             game.stack:push(TextBox.new(game,
-              line("DontHaveCoinCaseText",
-                   "You don't have a\nCOIN CASE!"), finish))
+              line("DontHaveCoinCaseText"), finish))
             return
           end
           if (game.save.coins or 0) >= 9990 then
             game.stack:push(TextBox.new(game,
-              line("CoinCaseIsFullText",
-                   "Oops! Your COIN\nCASE is full."), finish))
+              line("CoinCaseIsFullText"), finish))
             return
           end
           if game.save.money < 1000 then
             game.stack:push(TextBox.new(game,
-              line("CantAffordTheCoinsText",
-                   "You can't afford\nthe coins!"), finish))
+              line("CantAffordTheCoinsText"), finish))
             return
           end
           game.save.money = game.save.money - 1000
@@ -744,8 +728,7 @@ M.GAME_CORNER = {
           -- CoinsText; the new count belongs in the coin box the asm
           -- redraws here, not appended to the line (#624)
           game.stack:push(TextBox.new(game,
-            line("ThanksHereAre50CoinsText",
-                 "Thanks! Here are\nyour 50 coins!"), finish))
+            line("ThanksHereAre50CoinsText"), finish))
         end }))
     end,
   },
@@ -844,11 +827,11 @@ local function prizeCounter(window)
     -- (COIN_CASE is a numeric count in save.inventory, nil when absent).
     if not game.save.inventory.COIN_CASE then
       game.stack:push(TextBox.new(game,
-        t._RequireCoinCaseText or "A COIN CASE is\nrequired!", done))
+        t._RequireCoinCaseText, done))
       return
     end
     game.stack:push(TextBox.new(game,
-      t._ExchangeCoinsForPrizesText or "We exchange your\ncoins for prizes.",
+      t._ExchangeCoinsForPrizesText,
       function()
         local rows = {}
         for _, p in ipairs(prizeWindow(window)) do
@@ -875,7 +858,7 @@ local function prizeCounter(window)
         end
         local function buy(p)
           if (game.save.coins or 0) < p.cost then
-            finish(t._SorryNeedMoreCoinsText or "Sorry, you need\nmore coins.")
+            finish(t._SorryNeedMoreCoinsText)
             return
           end
           -- HasEnoughCoins passed, so hand the prize over first and only
@@ -898,8 +881,7 @@ local function prizeCounter(window)
           if not require("src.inventory.Bag").add(
               game.save, p.item, 1, game.data) then
             -- engine/events/prize_menu.asm:245-246
-            finish(t._OopsYouDontHaveEnoughRoomText
-                   or "Oops! You don't\nhave enough room.")
+            finish(t._OopsYouDontHaveEnoughRoomText)
             return
           end
           game.save.coins = game.save.coins - p.cost
@@ -908,7 +890,7 @@ local function prizeCounter(window)
           endTalk()
         end
         whichBox = TextBox.new(game,
-          t._WhichPrizeText or "Which prize do\nyou want?", nil, {
+          t._WhichPrizeText, nil, {
             instant = true,
             stay = { onShown = function()
               menu = PrizeCounter.new(game, rows, {
@@ -922,14 +904,13 @@ local function prizeCounter(window)
                     ow.prizeWindow = { prizes = rows, index = idx }
                   end
                   close()
-                  local ask = (t._SoYouWantPrizeText
-                               or "So, you want\n{RAM:wNameBuffer}?")
+                  local ask = t._SoYouWantPrizeText
                               :gsub("{RAM:wNameBuffer}", row.name)
                   game.stack:push(TextBox.new(game, ask, nil, {
                     instant = true,
                     choice = function(yes)
                       if not yes then
-                        finish(t._OhFineThenText or "Oh, fine then.")
+                        finish(t._OhFineThenText)
                         return
                       end
                       buy(p)
@@ -996,8 +977,7 @@ M.VERMILION_DOCK = {
       if not occupancyAllowed then
         local TextBox = require("src.render.TextBox")
         game.stack:push(TextBox.new(game,
-          game.data.text._VermilionCitySailor1ShipSetSailText
-          or "The ship set sail.", function()
+          game.data.text._VermilionCitySailor1ShipSetSailText, function()
           ow:startWarpTo("VERMILION_CITY", 18, 29, "up")
         end))
       end

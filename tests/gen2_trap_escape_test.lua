@@ -118,7 +118,7 @@ do
   battle:useMove(player, raikou, "MEAN_LOOK")
   eq(player.volatile.trapsTarget, true,
     "ArenaTrap: CANT_RUN lives on the USER's side")
-  check(findText(battle:takeEvents(), "Enemy RAIKOU can't escape now!"),
+  check(findText(battle:takeEvents(), battle:romText("CantEscapeNowText", player, raikou)),
     "CantEscapeNowText")
   eq(battle:tryEnemyFlee(), false,
     "TryEnemyFlee reads the player's substatus and stays")
@@ -198,7 +198,8 @@ do
   -- The wild PIDGEY is level 40 against a level 40 player: `cp` with the
   -- user's level at or above the target's succeeds outright.
   local save = {}
-  Roamers.init(save)
+  local roamEncounters = require("tests.fixtures.gen2_roamers").encounters("gold")
+  Roamers.init(save, { encounters = roamEncounters })
   local player = mon("MACHOP", 40)
   local wild = mon("PIDGEY", 40, { "ROAR" })
   local battle = Battle.new({ data = DATA, party = { player }, wild = wild,
@@ -206,11 +207,12 @@ do
   local events = battle:takeTurn({ kind = "move", move = "TACKLE" })
   eq(battle.over, true, "the wild Roar ends the battle")
   eq(battle.outcome, "fled", "as the DRAW that banks a roamer's HP")
-  check(findText(events, "MACHOP fled in fear!"),
+  check(findText(events, battle:romText("FledInFearText", wild, player)),
     "FledInFearText names the mon sent away")
 
   -- BattleEnd_HandleRoamMons' non-WIN arm: the outcome banks the HP.
-  Roamers.endBattle(save, 1, battle.outcome, 120, nil, rolls({}, 1))
+  Roamers.endBattle(save, 1, battle.outcome, 120, nil, rolls({}, 1),
+    roamEncounters)
   eq(Roamers.slot(save, 1).hp, 120, "the roamer slot banked the HP")
   check(Roamers.slot(save, 1).species ~= nil, "and the beast is NOT retired")
 end
@@ -224,7 +226,7 @@ do
   battle:useMove(player, wild, "ROAR")
   eq(battle.over, true, "a higher-level Roar sends the wild mon off")
   eq(battle.outcome, "fled", "as a draw, not a win")
-  check(findText(battle:takeEvents(), "Enemy PIDGEY fled in fear!"),
+  check(findText(battle:takeEvents(), battle:romText("FledInFearText", player, wild)),
     "FledInFearText")
 end
 
@@ -243,7 +245,7 @@ do
   battle:useMove(roarer, player, "ROAR")
   eq(battle.player, bench, "the bench PIDGEY was dragged out")
   eq(battle.participants[2], true, "and counts as a participant")
-  check(findText(battle:takeEvents(), "PIDGEY was dragged out!"),
+  check(findText(battle:takeEvents(), battle:romText("DraggedOutText", bench)),
     "DraggedOutText")
   eq(battle.over, false, "a trainer battle goes on")
 

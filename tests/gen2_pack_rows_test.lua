@@ -118,7 +118,11 @@ local function newGame(save)
     input = newInput(),
     save = save,
     options = save and save.options or Save.defaultOptions(),
-    data = { audio = {}, pokemon = {}, items = ITEMS, moves = MOVES },
+    data = { audio = {}, pokemon = {}, items = ITEMS, moves = MOVES,
+      text = require("tests.fixtures.gen2_rom_text").text(
+        require("tests.fixture_data.gen2_rom_text_s7_f1").text()),
+      gen2Text = require("tests.fixtures.gen2_common_text").text(),
+      gen2EventTables = require("tests.fixtures.gen2_phone_events").events },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -312,16 +316,14 @@ do
   check("in the cursor column", armed and armed.x, 7)
   check("and through the same red palette", armed and armed.palette, RED)
 
-  -- No pack tiles in the cache: the fallback must still draw a cursor rather
-  -- than nothing at all.
   pack.gfx = { available = function() return false end, draw = function() end }
   pack.switching = nil
   pack.index = 1
   install()
-  pack:drawPanel()
+  local drew, err = pcall(pack.drawPanel, pack)
   restore()
-  check("a cache with no pack tiles falls back to the plain arrow",
-    cursors[1] and cursors[1].palette, nil)
+  check("a cache with no pack tiles is an error, not a plain-box screen",
+    drew == false and tostring(err):find("PACK tiles", 1, true) ~= nil, true)
 end
 
 -- PackGfx flattens paletteZones to a per-cell lookup; the cursor zone is the

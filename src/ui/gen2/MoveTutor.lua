@@ -11,7 +11,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Happiness = require("src.core.gen2.Happiness")
 local Mon = require("src.battle.gen2.Mon")
 local PartyMenu = require("src.ui.gen2.PartyMenu")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local MoveTutor = {}
 MoveTutor.__index = MoveTutor
@@ -20,8 +20,8 @@ MoveTutor.isOpaque = true
 -- ../pokecrystal/data/text/common_2.asm:187 _TMHMNotCompatibleText and
 -- common_3.asm:1424 _KnowsMoveText.  CopyName1 leaves the MOVE in
 -- wStringBuffer2 and GetNickname the nickname in wStringBuffer1.
-local NOT_COMPATIBLE = Strings.source("%s is\nnot compatible\vwith %s.")
-local KNOWS_MOVE = Strings.source("%s knows\n%s.")
+local NOT_COMPATIBLE = "_TMHMNotCompatibleText"
+local KNOWS_MOVE = "_KnowsMoveText"
 
 -- CanLearnTMHMMove's bitfield: `add_mt` gives the three tutor moves TMHM
 -- flags 58-60 (../pokecrystal/constants/item_constants.asm:295-307), which
@@ -105,13 +105,15 @@ function MoveTutor:picked(mon)
   local name = Mon.displayName(mon)
   if not MoveTutor.canLearn(self.view[mon.species], self.move) then
     self:playSfx("Sfx_Wrong")
-    return self:say(Strings(NOT_COMPATIBLE, self.moveName, name))
+    return self:say(RomText(self.game and self.game.data, NOT_COMPATIBLE, nil,
+      self.moveName, name, self.moveName))
   end
   -- ../pokecrystal/engine/pokemon/knows_move.asm:16 sets carry and prints,
   -- which is the same .didnt_learn arm.
   for _, move in ipairs(mon.moves or {}) do
     if move.id == self.move then
-      return self:say(Strings(KNOWS_MOVE, name, self.moveName))
+      return self:say(RomText(self.game and self.game.data, KNOWS_MOVE, nil,
+        name, self.moveName))
     end
   end
   local game = self.game

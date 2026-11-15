@@ -193,7 +193,9 @@ eq(fs.healMap, "FR_PLAYERS_HOUSE_1F", "FireRed bedroom heal map still migrates t
 HealLocations.invalidate()
 
 local LayoutNative = require("src.core.game3.layout_native")
-local big = LayoutNative.fromDecoded({ width = 4, height = 4, cells = {} }, "EM_TEST", "p")
+local bigCells = {}
+for i = 1, 16 do bigCells[i] = { mid = 1, coll = 0, elev = 3 } end
+local big = LayoutNative.fromDecoded({ width = 4, height = 4, cells = bigCells }, "EM_TEST", "p")
 local small = LayoutNative.fromDecoded({ width = 2, height = 1,
   cells = { { mid = 7, coll = 0, elev = 3 }, { mid = 8, coll = 1, elev = 3 } } }, "EM_SUB", "p")
 eq(big:stamp(small, 1, 2), 2, "stamp copies every sub-layout cell")
@@ -201,6 +203,18 @@ eq(big:midAt(1, 2) .. "," .. big:midAt(2, 2), "7,8", "stamped mids land at the o
 eq(big:collAt(2, 2), 1, "stamped collision kept")
 eq(big:setMetatiles({ { x = 0, y = 0, mid = 9 } }), 1, "bulk setMetatiles")
 eq(big:midAt(0, 0), 9, "setMetatiles writes the mid")
+eq(pcall(LayoutNative.fromDecoded, { width = 1, height = 1, cells = { { mid = 1 } } }, "EM_NOPAIR"), false,
+  "a layout with no tileset pair raises")
+local holey = LayoutNative.fromDecoded({ width = 2, height = 1, cells = { { mid = 1, coll = 0, elev = 3 } } }, "EM_HOLE", "p")
+eq(pcall(holey.midAt, holey, 1, 0), false, "midAt raises on a missing in-bounds cell")
+eq(pcall(holey.cellAt, holey, 1, 0), false, "cellAt raises on a missing in-bounds cell")
+local borderless = LayoutNative.fromDecoded({ width = 1, height = 1, cells = { { mid = 1 } },
+  borderWidth = 2, borderHeight = 2, borderMids = { 3 } }, "EM_BORDER", "p")
+eq(pcall(borderless.midAt, borderless, -1, -1), false, "midAt raises on a missing border metatile")
+eq(pcall(big.applyOverride, big, 0, 0, "abc", 0, 0), false, "applyOverride raises on a non-number metatile")
+eq(pcall(big.setMetatiles, big, { { x = 1, y = 0, mid = "abc" } }), false, "setMetatiles raises on a non-number metatile")
+eq(pcall(big.stamp, big, { width = 1, height = 1, cells = { { coll = 0 } } }, 0, 0), false,
+  "stamp raises on a cell with no metatile")
 
 GameVersion.set(before)
 T.finish()

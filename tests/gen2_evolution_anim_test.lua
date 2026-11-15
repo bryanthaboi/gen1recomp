@@ -20,7 +20,6 @@ local S = require("tests.harness").suite("gen2 evolution anim")
 local check, eq = S.check, S.eq
 
 local EvolutionAnim = require("src.ui.gen2.EvolutionAnim")
-local Strings = require("src.core.Strings")
 
 -- No screen may use the stack's hook name for its own purposes.
 check(rawget(EvolutionAnim, "enter") == nil,
@@ -29,17 +28,22 @@ check(type(rawget(EvolutionAnim, "setPhase")) == "function",
       "its phase transition has a name of its own")
 
 do
-  Strings.load({ strings = {
-    ["What? %s\nis evolving!"] = "Quoi ? %s\nevolue !",
-  } })
+  local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
   local mon = { species = "OLD", nickname = "SURNOM", moves = {} }
-  local anim = EvolutionAnim.new({ data = { audio = {} } }, {
+  local anim = EvolutionAnim.new({ data = { audio = {}, text = S7B.text() } }, {
     mon = mon, entry = { into = "NEW" }, party = { mon },
   })
-  eq(anim.lines[1], "Quoi ? SURNOM",
-    "evolution messages use a complete translated template")
-  eq(anim.lines[2], "evolue !", "the translated template is split afterwards")
-  Strings.load({})
+  eq(anim.lines[1], "What? SURNOM", "_EvolvingText comes from the cache")
+  eq(anim.lines[2], "is evolving!", "split on the cart's own line break")
+  anim = EvolutionAnim.new({ data = { audio = {},
+    text = S7B.text({ _EvolvingText = "Quoi ? {STRBUF}\nevolue !{DONE}" }) } }, {
+    mon = mon, entry = { into = "NEW" }, party = { mon },
+  })
+  eq(anim.lines[1], "Quoi ? SURNOM", "a translated cache line replaces the English")
+  eq(anim.lines[2], "evolue !", "and is split the same way")
+  check(not pcall(EvolutionAnim.new, { data = { audio = {}, text = S7B.without("_EvolvingText") } },
+    { mon = mon, entry = { into = "NEW" }, party = { mon } }),
+    "a cache without _EvolvingText is an error")
 end
 
 local cache = os.getenv("GOLD_CACHE")
@@ -64,7 +68,7 @@ end
 
 local Evolution = require("src.core.gen2.Evolution")
 local data = { pokemon = pokemon, moves = loadGen("moves.lua"), audio = {},
-               gen2Palettes = loadGen("palettes.lua") }
+               gen2Palettes = loadGen("palettes.lua"), text = loadGen("rom_text.lua") }
 
 -- CYNDAQUIL -> QUILAVA at 14, the exact evolution the bot wedged on.
 local mon = { species = "CYNDAQUIL", level = 14, hp = 20, maxHp = 20,

@@ -209,8 +209,11 @@ do
   eq(rows[10][21], 9, "column 20 onward keeps the background strip")
   eq(rows[11][1], 10, "row 10 is background again")
 
-  check(MagnetTrain.new({}):tilemap() == nil,
-    "a cache with no tilemaps answers nil rather than inventing one")
+  check(not pcall(MagnetTrain.new({}).tilemap, MagnetTrain.new({})),
+    "a cache with no tilemaps is an error, not a blank ride")
+  check(not pcall(MagnetTrain.new({ bgTiles = bgTiles }).tilemap,
+      MagnetTrain.new({ bgTiles = bgTiles })),
+    "and so is one with the strip but no train")
 end
 
 -- ---- SetMagnetTrainPals ----------------------------------------------------
@@ -270,7 +273,14 @@ end
 do
   local MagnetTrainRide = require("src.ui.gen2.MagnetTrainRide")
   check(MagnetTrainRide.isOpaque, "MagnetTrainRide is opaque")
-  local ride = MagnetTrainRide.new(nil, { toGoldenrod = false })
+  check(not pcall(MagnetTrainRide.new, nil, { toGoldenrod = false }),
+    "a cache with no magnetTrain is an error")
+  local strip, train = {}, {}
+  for i = 1, 36 do strip[i] = 0 end
+  for i = 1, 80 do train[i] = 0 end
+  local ride = MagnetTrainRide.new({ data = { gen2Field = {
+    magnetTrain = { bgTiles = strip, tilemap = train } } } },
+    { toGoldenrod = false })
   check(ride:wantsFillScale(), "wantsFillScale returns true")
   check(ride:drawsWidescreen(), "drawsWidescreen returns true")
   check(type(ride.drawBands) == "function", "drawBands exists")

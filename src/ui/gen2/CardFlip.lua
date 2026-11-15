@@ -47,16 +47,12 @@
 --                           (10,16) and four leading-zero digits at (15,16)
 --   CardFlip_UpdateCoinBalanceDisplay
 --                           Textbox at (0,12) with an 18x4 interior
---
--- The cart's own art (gfx/card_flip/card_flip_1..3.2bpp.lz and
--- gfx/card_flip/card_flip.tilemap) is extracted into assets/generated/card_flip/
--- when the Gold/Silver manifest carries CardFlip*.  Until those files exist,
--- the board draws as labelled cells.
 
 local Chrome = require("src.ui.gen2.Chrome")
 local CoinCase = require("src.core.gen2.CoinCase")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 
 local CardFlip = {}
 CardFlip.__index = CardFlip
@@ -73,7 +69,6 @@ CardFlip.BET = 3
 -- .Poliwag/.Oddish's `and $3` comparisons agree on.
 CardFlip.MONS = { [0] = "PIKACHU", [1] = "JIGGLYPUFF", [2] = "POLIWAG",
   [3] = "ODDISH" }
-CardFlip.MON_LABELS = { [0] = "PI", [1] = "JI", [2] = "PO", [3] = "OD" }
 
 -- card = level * 4 + mon.  Everywhere the ASM masks the card byte:
 --   and $3   the Pokemon
@@ -280,7 +275,6 @@ end
 --
 -- Screen tile coordinates, derived from the OAM cursor anchors (minus one tile
 -- across and two down) and from the discard-blanking hlcoords.
-local LIGHT_X = 9                        -- twelve hand lights, rows 0-11
 local MON_COL = { [2] = 12, [3] = 14, [4] = 16, [5] = 18 }
 local LEVEL_PAIR_COL, LEVEL_COL = 10, 11
 local CARD_COL = { [2] = 13, [3] = 15, [4] = 17, [5] = 19 }
@@ -301,38 +295,26 @@ local TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W, TEXT_BOX_H = 0, 12, 20, 6
 local TEXT_X, TEXT_Y, TEXT_LINE = 1, 14, 2
 
 -- ------------------------------------------------------------------- text
--- data/text/common_3.asm; none of these are in the cache's text.lua, because no
--- script bytecode the extractor walks points at them.
-CardFlip.TEXTS = {
-  playWithThree = { "Play with", "3 coins?",
-    source = Strings.source("Play with\n3 coins?") },
-  notEnough = { "Not enough", "coins.",
-    source = Strings.source("Not enough\ncoins.") },
-  chooseACard = { "Choose a", "card.",
-    source = Strings.source("Choose a\ncard.") },
-  placeYourBet = { "Place", "your bet",
-    source = Strings.source("Place\nyour bet") },
-  playAgain = { "Play", "again?",
-    source = Strings.source("Play\nagain?") },
-  shuffled = { "The cards", "shuffled.",
-    source = Strings.source("The cards\nshuffled.") },
-  yeah = { "Yeah!", source = Strings.source("Yeah!") },
-  darn = { "Darn…", source = Strings.source("Darn…") },
+-- data/text/common_3.asm:1017
+CardFlip.LABELS = {
+  playWithThree = "_CardFlipPlayWithThreeCoinsText",
+  notEnough = "_CardFlipNotEnoughCoinsText",
+  chooseACard = "_CardFlipChooseACardText",
+  placeYourBet = "_CardFlipPlaceYourBetText",
+  playAgain = "_CardFlipPlayAgainText",
+  shuffled = "_CardFlipShuffledText",
+  yeah = "_CardFlipYeahText",
+  darn = "_CardFlipDarnText",
 }
+-- engine/games/card_flip.asm:486
+local COIN_LABEL = "CardFlip_PrintCoinBalance.CoinStr"
+-- engine/games/card_flip.asm:301
+CardFlip.WITHOUT_COIN_BOX = { shuffled = true }
 
--- Deliberately \n-only, unlike CommonText.pages/pagesOf elsewhere in Gen2
--- UI: every entry in CardFlip.TEXTS above is a fixed two-line cart message,
--- and the box it draws into (TEXT_BOX_H = 6, TEXT_LINE = 2) only has room
--- for two printed lines before a third would land past its bottom edge. The
--- draw loop has no page break at all, so a translation that needs a third
--- line here would silently overflow instead of paginating -- route through
--- CommonText.pages instead if that is ever needed.
-local function localizedLines(lines)
-  if not (lines and lines.source) then return lines or {} end
-  local translated = Strings(lines.source)
-  if translated == lines.source then return lines end
-  local out = {}
-  for line in (translated .. "\n"):gmatch("(.-)\n") do
+function CardFlip.lines(data, key)
+  local text = CommonText.plain(RomText(data, CardFlip.LABELS[key]))
+  local out = { withoutCoinBox = CardFlip.WITHOUT_COIN_BOX[key] or nil }
+  for line in (text .. "\n"):gmatch("(.-)\n") do
     out[#out + 1] = line
   end
   return out
@@ -390,6 +372,10 @@ function CardFlip:coins()
   return CoinCase.coins(self.save)
 end
 
+function CardFlip:text(key)
+  return CardFlip.lines(self.game and self.game.data, key)
+end
+
 -- ---------------------------------------------------------------- phases
 --
 -- .AskPlayWithThree / .DeductCoins / .ChooseACard / .PlaceYourBet /
@@ -397,7 +383,7 @@ end
 function CardFlip:enterAsk()
   self.phase = "ask"
   self.choice = 1
-  self.lines = CardFlip.TEXTS.playWithThree
+  self.lines = self:text("playWithThree")
 end
 
 function CardFlip:deduct()
@@ -405,7 +391,7 @@ function CardFlip:deduct()
   -- "at least three coins".
   if self:coins() < CardFlip.BET then
     self.phase = "message"
-    self.lines = CardFlip.TEXTS.notEnough
+    self.lines = self:text("notEnough")
     self.after = function() self:quit() end
     return
   end
@@ -418,12 +404,12 @@ function CardFlip:enterChoose()
   self.phase = "choose"
   self.which = 0 -- wCardFlipWhichCard
   self.faceUp = nil
-  self.lines = CardFlip.TEXTS.chooseACard
+  self.lines = self:text("chooseACard")
 end
 
 function CardFlip:enterBet()
   self.phase = "bet"
-  self.lines = CardFlip.TEXTS.placeYourBet
+  self.lines = self:text("placeYourBet")
 end
 
 -- .CheckTheCard: trigger hardware-accurate discrete tile flip sequence
@@ -446,11 +432,11 @@ function CardFlip:updateFlipping()
   elseif self.flipTimer >= 12 then
     if (self.payoutLeft or 0) > 0 then
       self.phase = "payout"
-      self.lines = CardFlip.TEXTS.yeah
+      self.lines = self:text("yeah")
       self:sfx(SFX_WIN)
     else
       self.phase = "result"
-      self.lines = CardFlip.TEXTS.darn
+      self.lines = self:text("darn")
       self:sfx(SFX_WRONG)
     end
   end
@@ -462,11 +448,11 @@ function CardFlip:tabulate()
   self.payoutTick = 0
   if won > 0 then
     self.phase = "payout"
-    self.lines = CardFlip.TEXTS.yeah
+    self.lines = self:text("yeah")
     self:sfx(SFX_WIN)
   else
     self.phase = "result"
-    self.lines = CardFlip.TEXTS.darn
+    self.lines = self:text("darn")
     self:sfx(SFX_WRONG)
   end
 end
@@ -492,7 +478,7 @@ end
 function CardFlip:enterAgain()
   self.phase = "again"
   self.choice = 1
-  self.lines = CardFlip.TEXTS.playAgain
+  self.lines = self:text("playAgain")
 end
 
 function CardFlip:continue()
@@ -502,7 +488,7 @@ function CardFlip:continue()
     self.deck = CardFlip.shuffle(self.random)
     self.discarded = {}
     self.phase = "message"
-    self.lines = CardFlip.TEXTS.shuffled
+    self.lines = self:text("shuffled")
     self.after = function() self:deduct() end
     return
   end
@@ -617,50 +603,50 @@ end
 
 -- ------------------------------------------------------------------- draw
 --
--- Authentic Color Game Boy palettes and tile graphics matching pret/pokegold
 local TileSheet = require("src.ui.gen2.TileSheet")
 local GbcPalette = require("src.render.GbcPalette")
 
-local CARDFLIP_PALS = {
-  bg = {
-    [0] = { { 255, 255, 255 }, { 140, 57, 255 },  { 49, 156, 66 },  { 0, 0, 0 } },   -- 0: Base / Table green
-    [1] = { { 255, 255, 255 }, { 239, 206, 0 },   { 49, 156, 66 },  { 0, 0, 0 } },   -- 1: Pikachu (Yellow)
-    [2] = { { 255, 255, 255 }, { 255, 107, 247 }, { 49, 156, 66 },  { 0, 0, 0 } },   -- 2: Jigglypuff (Pink)
-    [3] = { { 255, 255, 255 }, { 66, 140, 247 },  { 49, 156, 66 },  { 0, 0, 0 } },   -- 3: Poliwag (Blue)
-    [4] = { { 255, 255, 255 }, { 66, 255, 66 },   { 49, 156, 66 },  { 0, 0, 0 } },   -- 4: Oddish (Green)
-    [5] = { { 255, 255, 255 }, { 140, 57, 255 },  { 49, 156, 66 },  { 0, 0, 0 } },   -- 5: Level header
-    [6] = { { 255, 255, 255 }, { 140, 57, 255 },  { 49, 156, 66 },  { 0, 0, 0 } },   -- 6: Border
-    [7] = { { 255, 255, 255 }, { 140, 57, 255 },  { 49, 156, 66 },  { 0, 0, 0 } },   -- 7: Textbox
-  },
-  obj = {
-    [0] = { { 255, 255, 255 }, { 248, 56, 40 },  { 248, 56, 40 },  { 248, 56, 40 } }, -- Authentic GBC Red OAM
-  }
-}
+function CardFlip:gfx()
+  local data = self.game and self.game.data
+  local menu = data and data.gen2MenuGfx
+  local gfx = menu and menu.cardFlip
+  if not gfx then error("menu_gfx.lua has no cardFlip", 2) end
+  return gfx
+end
 
-local TILEMAP = nil
-local function getCardFlipTilemap()
-  if TILEMAP == nil then
-    local path = "assets/generated/card_flip/card_flip.tilemap"
-    local data = love and love.filesystem and love.filesystem.read(path)
-    if data and #data > 0 then
-      TILEMAP = {}
-      for i = 1, #data do
-        TILEMAP[i] = string.byte(data, i)
-      end
-    else
-      TILEMAP = false
+function CardFlip:need(key)
+  local value = self:gfx()[key]
+  if value == nil then error("menu_gfx.lua cardFlip has no " .. key, 2) end
+  return value
+end
+
+function CardFlip:pals()
+  return self:need("palettes")
+end
+
+local TILEMAPS = {}
+function CardFlip:tilemap()
+  local path = self:need("tilemap")
+  local tilemap = TILEMAPS[path]
+  if not tilemap then
+    local data = love.filesystem.read(path)
+    if not data or #data == 0 then error(path .. " is missing") end
+    tilemap = {}
+    for i = 1, #data do
+      tilemap[i] = string.byte(data, i)
     end
+    TILEMAPS[path] = tilemap
   end
-  return TILEMAP or nil
+  return tilemap
 end
 
 function CardFlip:sheets()
   if self.sheet1 == nil then
-    self.sheet1 = TileSheet.new({ path = "assets/generated/card_flip/card_flip_1.png", wide = 16, firstTile = 0 })
-    self.sheet2 = TileSheet.new({ path = "assets/generated/card_flip/card_flip_2.png", wide = 3, firstTile = 0 })
-    self.sheet3 = TileSheet.new({ path = "assets/generated/card_flip/card_flip_3.png", wide = 1, firstTile = 0 })
-    self.sheetOn = TileSheet.new({ path = "assets/generated/card_flip/on.png", wide = 1, firstTile = 0 })
-    self.sheetOff = TileSheet.new({ path = "assets/generated/card_flip/off.png", wide = 1, firstTile = 0 })
+    self.sheet1 = TileSheet.new({ path = self:need("sheet1"), wide = 16, firstTile = 0 })
+    self.sheet2 = TileSheet.new({ path = self:need("sheet2"), wide = 3, firstTile = 0 })
+    self.sheet3 = TileSheet.new({ path = self:need("sheet3"), wide = 1, firstTile = 0 })
+    self.sheetOn = TileSheet.new({ path = self:need("on"), wide = 1, firstTile = 0 })
+    self.sheetOff = TileSheet.new({ path = self:need("off"), wide = 1, firstTile = 0 })
   end
   return self.sheet1, self.sheet2, self.sheet3, self.sheetOn, self.sheetOff
 end
@@ -669,12 +655,11 @@ function CardFlip:cursorQuads()
   if self.s3Image == nil then
     local _, _, s3 = self:sheets()
     self.s3Image = s3:image()
-    if self.s3Image and love and love.graphics then
-      local G = love.graphics
+    if not self.s3Image then error(s3.path .. " is missing") end
+    local G = love.graphics
       self.quadCorner = G.newQuad(0, 0,  8, 8, 8, 56) -- Tile 0: 1px corner
       self.quadVEdge  = G.newQuad(0, 8,  8, 8, 8, 56) -- Tile 1: 1px vertical edge
       self.quadHEdge  = G.newQuad(0, 16, 8, 8, 8, 56) -- Tile 2: 1px horizontal edge
-    end
   end
   return self.s3Image, self.quadCorner, self.quadVEdge, self.quadHEdge
 end
@@ -699,17 +684,6 @@ local HEADER_TILE_MAP = {
 function CardFlip:drawOamBox(px, py, w, h)
   local img, qCorner, qVEdge, qHEdge = self:cursorQuads()
   local G = love.graphics
-
-  if not (img and qCorner and qVEdge and qHEdge) then
-    -- Fallback: plain 1px red outline
-    G.setColor(248 / 255, 56 / 255, 40 / 255, 1)
-    G.rectangle("fill", px, py, w, 1)
-    G.rectangle("fill", px, py + h - 1, w, 1)
-    G.rectangle("fill", px, py, 1, h)
-    G.rectangle("fill", px + w - 1, py, 1, h)
-    G.setColor(1, 1, 1, 1)
-    return
-  end
 
   local prevBlend, prevAlpha = G.getBlendMode()
   G.setBlendMode("multiply", "premultiplied")
@@ -744,35 +718,15 @@ end
 
 function CardFlip:drawBoard()
   local s1, s2, s3, sOn, sOff = self:sheets()
-  local tm = getCardFlipTilemap()
+  local tm = self:tilemap()
   local G = love.graphics
+  if not (s1:available() and s2:available()) then
+    error("Card Flip cache graphics are missing")
+  end
 
   -- Green background fill
   G.setColor(49 / 255, 156 / 255, 66 / 255, 1)
   G.rectangle("fill", 0, 0, 160, 144)
-
-  if not tm or not s2:available() then
-    -- Fallback simple board
-    for row = 0, CardFlip.HANDS_PER_DECK - 1 do
-      Chrome.print(row == self.played and "o" or ".", LIGHT_X, row)
-    end
-    for x = 2, 5 do
-      Chrome.print(CardFlip.MON_LABELS[x - 2], MON_COL[x], MON_ROW)
-      if x % 2 == 0 then Chrome.print("6", MON_COL[x] + 1, MON_PAIR_ROW) end
-    end
-    for y = 2, 7 do
-      local pair = math.floor((y - 2) / 2)
-      local isBottom = ((y - 2) % 2 == 1)
-      local row = 3 + pair * 3 + (isBottom and 1 or 0)
-      Chrome.print(tostring(y - 1), LEVEL_COL, row)
-      if y % 2 == 0 then Chrome.print("9", LEVEL_PAIR_COL, row) end
-      for x = 2, 5 do
-        local card = CardFlip.card(y - 2, x - 2)
-        Chrome.print(self.discarded[card] and " " or "?", MON_COL[x], row)
-      end
-    end
-    return
-  end
 
   -- Draw the 11x12 board tilemap at (9, 0)
   for ty = 0, 11 do
@@ -794,7 +748,7 @@ function CardFlip:drawBoard()
         pal = 1 -- Lights
       end
 
-      local colors = CARDFLIP_PALS.bg[pal]
+      local colors = self:pals().bg[pal]
       s1.palette = colors
       s2.palette = colors
       s3.palette = colors
@@ -881,9 +835,7 @@ end
 
 -- Draw face-down, flipping, or face-up card at (2, 0) or (2, 6)
 function CardFlip:drawCards()
-  local data = self.game and self.game.data
-  local gfx = assert(data and data.gen2MenuGfx and data.gen2MenuGfx.cardFlip,
-    "Card Flip cache data is missing")
+  local gfx = self:gfx()
   assert(type(gfx.faceDown) == "table" and #gfx.faceDown == 30
     and type(gfx.faceUp) == "table" and #gfx.faceUp == 30
     and type(gfx.deck) == "table" and #gfx.deck == 48, "Card Flip cache tables are incomplete")
@@ -901,7 +853,7 @@ function CardFlip:drawCards()
       local activeCard = self.faceUp or self.targetCard or 0
       local levelCode = gfx.deck[activeCard * 2 + 1]
       local mon = CardFlip.mon(activeCard)
-      local monPal = CARDFLIP_PALS.bg[mon + 1] or CARDFLIP_PALS.bg[1]
+      local monPal = self:pals().bg[mon + 1] or self:pals().bg[1]
 
       -- pokecrystal/engine/games/card_flip.asm:448
       s1.palette = monPal
@@ -932,7 +884,7 @@ function CardFlip:drawCards()
         end
       end
     else
-      s1.palette = CARDFLIP_PALS.bg[0]
+      s1.palette = self:pals().bg[0]
       for cy = 1, 6 do
         for cx = 1, 5 do
           local tid = gfx.faceDown[(cy - 1) * 5 + cx]
@@ -952,18 +904,21 @@ function CardFlip:drawPanel()
   self:drawBoard()
   self:drawCards()
 
-  -- Dialogue / Message box at (0, 12), 10 wide, 6 tall (interior 8x4)
   if self.lines then
-    Chrome.textbox(TEXT_BOX_X, TEXT_BOX_Y, 8, 4)
-    for i, line in ipairs(localizedLines(self.lines)) do
+    -- engine/games/card_flip.asm:477
+    Chrome.textbox(TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W - 2, TEXT_BOX_H - 2)
+    for i, line in ipairs(self.lines) do
       Chrome.print(line, TEXT_X, TEXT_Y + (i - 1) * TEXT_LINE)
     end
   end
 
-  -- Coin box at (9, 15), 11 wide, 3 tall (interior 9x1)
-  Chrome.textbox(COIN_BOX_X, COIN_BOX_Y, 9, 1)
-  Chrome.print(Strings("COIN"), COIN_LABEL_X, COIN_LABEL_Y)
-  Chrome.print(Chrome.number(self:coins(), 4, true), COIN_VALUE_X, COIN_VALUE_Y)
+  local data = self.game and self.game.data
+  if not (self.lines and self.lines.withoutCoinBox) then
+    -- engine/games/card_flip.asm:486
+    Chrome.textbox(COIN_BOX_X, COIN_BOX_Y, 9, 1)
+    Chrome.print(RomText(data, COIN_LABEL), COIN_LABEL_X, COIN_LABEL_Y)
+    Chrome.print(Chrome.number(self:coins(), 4, true), COIN_VALUE_X, COIN_VALUE_Y)
+  end
 
   if self.phase == "bet" then
     self.betBlink = (self.betBlink or 0) + 1
@@ -976,8 +931,9 @@ function CardFlip:drawPanel()
   if self.phase == "ask" or self.phase == "again" then
     -- YesNoBox: a 6x5 box at (14,7) with YES at (16,8) and NO at (16,10).
     Chrome.textbox(14, 7, 4, 3)
-    Chrome.print(Strings("YES"), 16, 8)
-    Chrome.print(Strings("NO"), 16, 10)
+    -- home/menu.asm:473
+    Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), 16, 8)
+    Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), 16, 10)
     Chrome.cursor(15, 8 + (self.choice - 1) * 2)
   end
 end

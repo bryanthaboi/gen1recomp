@@ -23,21 +23,18 @@ return {
         local TextBox = require("src.render.TextBox")
         if ownedCount(game) < 150 then
           game.stack:push(TextBox.new(game,
-            t._CeladonMansion3FGameDesignerText
-            or "Is that right?\nI'm the game\ndesigner!\fFilling up your\nPOKéDEX is tough,\nbut don't quit!",
+            t._CeladonMansion3FGameDesignerText,
             done))
           return
         end
         game.stack:push(TextBox.new(game,
-          t._CeladonMansion3FGameDesignerCompletedDexText
-          or "Wow! Excellent!\nYou completed\nyour POKéDEX!\nCongratulations!",
+          t._CeladonMansion3FGameDesignerCompletedDexText,
           function()
             local Diploma = require("src.ui.Diploma")
             game.stack:push(Diploma.new(game, function()
               -- Yellow tags on the unlocked-printing line (CompletedDexText2)
               local after = require("src.core.GameVersion").isYellow()
-                and (t._CeladonMansion3FGameDesignerCompletedDexText2
-                     or "You can print out\nyour diploma with\nthe GAME BOY\nPrinter!")
+                and t._CeladonMansion3FGameDesignerCompletedDexText2
                 or nil
               if after then
                 game.stack:push(TextBox.new(game, after, done))
@@ -54,21 +51,18 @@ return {
         local yellow = require("src.core.GameVersion").isYellow()
         if not (yellow and ownedCount(game) >= 150) then
           game.stack:push(TextBox.new(game,
-            t._CeladonMansion3FGraphicArtistText
-            or "I'm the graphic\nartist!\nI drew you!", done))
+            t._CeladonMansion3FGraphicArtistText, done))
           return
         end
         -- _CeladonMansion3FGraphicArtistText2: offer to print the diploma
         game.stack:push(TextBox.new(game,
-          t._CeladonMansion3FGraphicArtistText2
-          or "I'm the graphic\nartist!\fShould I print\nyour diploma?",
+          t._CeladonMansion3FGraphicArtistText2,
           function()
             local ChoiceBox = require("src.ui.ChoiceBox")
             game.stack:push(ChoiceBox.new(game, function(yes)
               if not yes then
                 game.stack:push(TextBox.new(game,
-                  t._CeladonMansion3FGraphicArtistText3
-                  or "Oh. But it's a\nspecial diploma!", done))
+                  t._CeladonMansion3FGraphicArtistText3, done))
                 return
               end
               local Printer = require("src.core.Printer")

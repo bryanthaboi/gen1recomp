@@ -41,7 +41,11 @@ local handler = scripts.ROCKET_HIDEOUT_B4F.talk.TEXT_ROCKETHIDEOUTB4F_GIOVANNI
 check(handler ~= nil, "the Giovanni talk handler is registered")
 
 local game = {
-  data = { text = {} },
+  data = { text = {
+    _RocketHideoutB4FGiovanniImpressedYouGotHereText = "So! I must say, I\nam impressed you\ngot here!{DONE}",
+    _RocketHideoutB4FGiovanniWhatCannotBeText = "WHAT!\nThis cannot be!{PROMPT}",
+    _RocketHideoutB4FGiovanniHopeWeMeetAgainText = "I shall step\naside this time!\fI hope we meet\nagain...{DONE}",
+  } },
   save = { defeatedTrainers = {}, flags = {}, player = { name = "RED" } },
   stack = { push = function() end },
 }

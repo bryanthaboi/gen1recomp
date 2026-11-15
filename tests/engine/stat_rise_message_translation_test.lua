@@ -1,13 +1,3 @@
--- The stat name substituted into X-item/vitamin "rose!" messages, and
--- Gold's whole Light Screen / Reflect "rose!" messages, must reach a
--- translation catalog, not just the surrounding sentence template (RBY:
--- src/inventory/ItemEffects.lua, src/battle/TrainerAI.lua; Gold:
--- src/battle/gen2/Battle.lua). With no catalog loaded the message stays
--- English (the existing baseline); with one loaded that translates the
--- relevant word(s), the substitution must change too -- that is the
--- actual bug this suite guards against, which passing/failing sentences
--- alone (as other suites already check) cannot tell apart from text that
--- never reached Strings() at all.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -16,12 +6,12 @@ local Pokemon = require("src.pokemon.Pokemon")
 local SaveData = require("src.core.SaveData")
 local ItemEffects = require("src.inventory.ItemEffects")
 local TrainerAI = require("src.battle.TrainerAI")
-local Strings = require("src.core.Strings")
 
-local function withCatalog(catalog, fn)
-  Strings.load({ strings = catalog })
+local function withText(overrides, fn)
+  local saved = {}
+  for k, v in pairs(overrides) do saved[k] = Data.text[k]; Data.text[k] = v end
   local ok, err = pcall(fn)
-  Strings.load(nil)
+  for k in pairs(overrides) do Data.text[k] = saved[k] end
   if not ok then error(err, 0) end
 end
 
@@ -37,12 +27,12 @@ local baselineRose = baselineExtra and baselineExtra.afterMessages
 T.check(baselineRose:find("ATTACK", 1, true) ~= nil,
   "X ATTACK's rose! message names the stat in English with no catalog")
 
-withCatalog({ ATTACK = "ATTAQUE" }, function()
+withText({ ["StatModTextStrings.1"] = "ATTAQUE" }, function()
   player.stages.attack = nil
   local _, msgs, extra = ItemEffects.use(Data, save, "X_ATTACK", nil, xBattle)
   local rose = extra and extra.afterMessages and extra.afterMessages[1] or msgs[1]
   T.check(rose:find("ATTAQUE", 1, true) ~= nil,
-    "a catalog translating ATTACK reaches the X ATTACK rose! message")
+    "a StatModTextStrings override reaches the X ATTACK rose! message")
   T.check(rose:find("ATTACK", 1, true) == nil,
     "...and the untranslated English stat name is gone")
 end)
@@ -50,17 +40,17 @@ end)
 -- --------------------------------------------------------- player vitamin
 
 local target = Pokemon.new(Data, "FIXMON_A", 10)
-withCatalog({ DEFENSE = "DEFENSE_FR" }, function()
+withText({ ["VitaminStats.3"] = "DEFENSE_FR" }, function()
   local _, msgs = ItemEffects.use(Data, save, "IRON", target)
   T.check(msgs[1]:find("DEFENSE_FR", 1, true) ~= nil,
-    "a catalog translating DEFENSE reaches the IRON (vitamin) rose! message")
+    "a VitaminStats override reaches the IRON (vitamin) rose! message")
 end)
 
 local hpTarget = Pokemon.new(Data, "FIXMON_A", 10)
-withCatalog({ HEALTH = "PV" }, function()
+withText({ ["VitaminStats.1"] = "PV" }, function()
   local _, msgs = ItemEffects.use(Data, save, "HP_UP", hpTarget)
   T.check(msgs[1]:find("PV", 1, true) ~= nil,
-    "a catalog translating HEALTH reaches the HP UP rose message")
+    "a VitaminStats override reaches the HP UP rose message")
 end)
 
 -- ------------------------------------------------------- AI trainer X-item
@@ -68,12 +58,12 @@ end)
 local enemy = { name = "FOE", stages = {} }
 local aiBattle = { enemy = enemy, trainer = { name = "TRAINER" }, data = Data }
 
-withCatalog({ SPEED = "VITESSE" }, function()
+withText({ ["StatModTextStrings.3"] = "VITESSE" }, function()
   local msgs = TrainerAI.useItem(aiBattle, "X_SPEED")
   T.check(type(msgs[2]) == "table" and msgs[2].anim == "XSTATITEM_DUPLICATE_ANIM",
     "the AI trainer's X item plays the stat-up animation before the rose! page")
   T.check(msgs[3]:find("VITESSE", 1, true) ~= nil,
-    "a catalog translating SPEED reaches the AI trainer's X SPEED rose! message")
+    "a StatModTextStrings override reaches the AI trainer's X SPEED rose! message")
 end)
 
 -- ------------------------------------------------------- Gold: Light Screen / Reflect
@@ -111,36 +101,24 @@ local function newGen2Battle()
   return Gen2Battle.new({ data = GEN2_DATA, party = { player }, wild = wild })
 end
 
-withCatalog({ ["%s's SPCL.DEF rose!"] = "%s voit sa DEF.SPÉ augmenter !" },
-  function()
-    local lsBattle = newGen2Battle()
-    Gen2Battle.MOVE_EFFECTS.EFFECT_LIGHT_SCREEN(lsBattle, lsBattle.player)
-    local events = lsBattle:takeEvents()
-    local found = false
-    for _, event in ipairs(events) do
-      if event.kind == "message"
-          and event.text:find("DEF.SPÉ augmenter", 1, true) then
-        found = true
-      end
-    end
-    T.check(found,
-      "a catalog translating Light Screen's rose! message reaches it")
-  end)
+local function screenLine(effect, label, translated)
+  local battle = newGen2Battle()
+  battle.data.text = require("tests.gen2_battle_text_fixture")()
+  battle.data.text[label] = translated
+  Gen2Battle.MOVE_EFFECTS[effect](battle, battle.player)
+  for _, event in ipairs(battle:takeEvents()) do
+    if event.kind == "message" then return event.text end
+  end
+end
 
-withCatalog({ ["%s's DEFENSE rose!"] = "%s voit sa DEFENSE augmenter !" },
-  function()
-    local refBattle = newGen2Battle()
-    Gen2Battle.MOVE_EFFECTS.EFFECT_REFLECT(refBattle, refBattle.player)
-    local events = refBattle:takeEvents()
-    local found = false
-    for _, event in ipairs(events) do
-      if event.kind == "message"
-          and event.text:find("DEFENSE augmenter", 1, true) then
-        found = true
-      end
-    end
-    T.check(found,
-      "a catalog translating Reflect's rose! message reaches it")
-  end)
+T.eq(screenLine("EFFECT_LIGHT_SCREEN", "LightScreenEffectText",
+    "{USER} voit sa DEF.SPÉ augmenter !{PROMPT}"),
+  "MACHOP voit sa DEF.SPÉ augmenter !",
+  "a translated LightScreenEffectText reaches Light Screen's rose! message")
+
+T.eq(screenLine("EFFECT_REFLECT", "ReflectEffectText",
+    "{USER} voit sa DEFENSE augmenter !{PROMPT}"),
+  "MACHOP voit sa DEFENSE augmenter !",
+  "a translated ReflectEffectText reaches Reflect's rose! message")
 
 T.finish("stat rise message translation")

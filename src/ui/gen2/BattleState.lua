@@ -12,6 +12,7 @@
 -- turn.
 
 local AnimRunner = require("src.battle.gen2.AnimRunner")
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local Assets = require("src.render.Assets")
 local Battle = require("src.battle.gen2.Battle")
 local BattleAnimView = require("src.ui.gen2.BattleAnimView")
@@ -26,6 +27,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Evolution = require("src.core.gen2.Evolution")
 local GbcPalette = require("src.render.GbcPalette")
 local Gen2Save = require("src.core.gen2.Save")
+local GameVersion = require("src.core.GameVersion")
 local Font = require("src.render.Font")
 local ForgetMoveList = require("src.ui.gen2.ForgetMoveList")
 local HpBar = require("src.battle.gen2.HpBar")
@@ -74,15 +76,8 @@ local MOVE_DELAY_FRAMES = 40
 -- ../pokecrystal/home/text.asm:895
 local TEXT_PAUSE_FRAMES = 30
 
--- home/hm_moves.asm:17-25 IsHMMove's .HMMoves.
-local HM_MOVES = {
-  CUT = true, FLY = true, SURF = true, STRENGTH = true, FLASH = true,
-  WATERFALL = true, WHIRLPOOL = true,
-}
-
--- CheckReceivedDex's ENGINE_POKEDEX (home/flag.asm:97-102), read the way
--- StartMenu:availability reads it out of save.engineFlags.
-local ENGINE_POKEDEX = 11
+-- constants/item_constants.asm:272, :293
+local NUM_TMS, NUM_HMS = 50, 7
 
 -- The message box's own two rows.  PrintTextboxText plants the cursor at
 -- (TEXTBOX_INNERX, TEXTBOX_INNERY) = tile (1,14) (home/text.asm:143), and
@@ -102,14 +97,17 @@ local ARROW_X, ARROW_Y = 18, 17
 
 -- ../pokecrystal/engine/battle/core.asm:9119-9137
 -- ../pokecrystal/data/text/battle.asm:10-35
-function BattleState.battleStartText(name, battleType)
+function BattleState.battleStartText(data, name, battleType)
   local kind = Battle.battleTypeId(battleType)
+  local label = "WildPokemonAppearedText"
   if kind == Battle.BATTLETYPE_FISH then
-    return Strings("The hooked %s attacked!", name)
+    label = "HookedPokemonAttackedText"
   elseif kind == Battle.BATTLETYPE_TREE then
-    return Strings("%s fell out of the tree!", name)
+    label = "PokemonFellFromTreeText"
+  elseif kind == Battle.BATTLETYPE_CELEBI then
+    label = "WildCelebiAppearedText"
   end
-  return Strings("Wild %s appeared!", name)
+  return TextBox.strip(RomText(data, label, nil, name))
 end
 
 -- ../pokecrystal/engine/battle/core.asm:6422, :6251-6256
@@ -159,37 +157,34 @@ local FAINT_SLIDE_FRAMES_PER_ROW = 2
 -- BattleText_TheresNoWillToBattle / BattleText_AnEGGCantBattle, the two lines
 -- CheckIfCurPartyMonIsFitToFight prints before it returns zero
 -- (engine/battle/core.asm:3439-3466, data/text/battle.asm:241-249).
-local TEXT_NO_WILL_TO_FIGHT = Strings.source("There's no will to battle!")
-local TEXT_EGG_CANT_BATTLE = Strings.source("An EGG can't battle!")
-local TEXT_ALREADY_OUT = Strings.source("%s is already out.")
-local TEXT_CANT_BE_RECALLED = Strings.source("%s can't be recalled!")
+local TEXT_NO_WILL_TO_FIGHT = "BattleText_TheresNoWillToBattle"
+local TEXT_EGG_CANT_BATTLE = "BattleText_AnEGGCantBattle"
+local TEXT_ALREADY_OUT = "BattleText_MonIsAlreadyOut"
+local TEXT_CANT_BE_RECALLED = "BattleText_MonCantBeRecalled"
 -- data/text/battle.asm:207
-local TEXT_USE_NEXT_MON = Strings.source("Use next POKéMON?")
+local TEXT_USE_NEXT_MON = "BattleText_UseNextMon"
 
 -- BattleText_TheMoveIsDisabled / BattleText_TheresNoPPLeftForThisMove
 -- (data/text/battle.asm:315-322).
-local TEXT_NO_PP_LEFT = Strings.source("There's no PP left for this move!")
-local TEXT_MOVE_DISABLED = Strings.source("The move is DISABLED!")
+local TEXT_NO_PP_LEFT = "BattleText_TheresNoPPLeftForThisMove"
+local TEXT_MOVE_DISABLED = "BattleText_TheMoveIsDisabled"
 -- data/text/battle.asm:305
-local TEXT_ITEMS_CANT_BE_USED = Strings.source("Items can't be\nused here.")
+local TEXT_ITEMS_CANT_BE_USED = "BattleText_ItemsCantBeUsedHere"
 
 -- _MoveAskForgetText, _MoveCantForgetHMText and _StopLearningMoveText
 -- (data/text/common_3.asm:124-134).
-local TEXT_ASK_FORGET_SLOT = Strings.source("Which move should\nbe forgotten?")
-local TEXT_CANT_FORGET_HM = Strings.source("HM moves can't be\nforgotten now.")
-local TEXT_STOP_LEARNING = Strings.source("Stop learning\n%s?")
+local TEXT_ASK_FORGET_SLOT = "_MoveAskForgetText"
+local TEXT_CANT_FORGET_HM = "_MoveCantForgetHMText"
+local TEXT_STOP_LEARNING = "_StopLearningMoveText"
 
 -- engine/pokemon/learn.asm:135-166
 BattleState.FORGET_LIST = ForgetMoveList
 
 -- BattleText_EnemyIsAboutToUseWillPlayerChangeMon (data/text/battle.asm:222-231).
-local TEXT_ENEMY_ABOUT_TO_USE = Strings.source(
-  "%s\nis about to use\v%s.\fWill %s\nchange POKéMON?")
+local TEXT_ENEMY_ABOUT_TO_USE = "BattleText_EnemyIsAboutToUseWillPlayerChangeMon"
 
 -- _AskForgetMoveText, all three paragraphs (data/text/common_3.asm:141-165).
-local TEXT_ASK_FORGET_MOVE = Strings.source(
-  "%s is\ntrying to learn\v%s.\fBut %s\ncan't learn more\vthan four moves."
-  .. "\fDelete an older\nmove to make room\vfor %s?")
+local TEXT_ASK_FORGET_MOVE = "_AskForgetMoveText"
 
 -- engine/battle/menu.asm BattleMenuHeader: a 2x2 grid at menu_coords 8, 12,
 -- 19, 17 with 6 tiles of column spacing, filled row-major, so the order on
@@ -197,11 +192,10 @@ local TEXT_ASK_FORGET_MOVE = Strings.source(
 -- Gen 1 uses.  The second label is the two-glyph <PK><MN> ligature (charmap
 -- $e1/$e2), which is what makes it fit a six-tile column.
 local MENU = {
-  Strings.source("FIGHT"), Strings.source("<PK><MN>"),
-  Strings.source("PACK"), Strings.source("RUN"),
+  "BattleMenuHeader.Text#1", "BattleMenuHeader.Text#2",
+  "BattleMenuHeader.Text#3", "BattleMenuHeader.Text#4",
 }
-local MENU_ACTION = { FIGHT = "fight", ["<PK><MN>"] = "party",
-  PACK = "item", RUN = "run" }
+local MENU_ACTION = { "fight", "party", "item", "run" }
 local MENU_BOX_X = 8
 local MENU_COL_SPACING = 6
 
@@ -211,8 +205,10 @@ local MENU_COL_SPACING = 6
 local CONTEST_MENU_BOX_X = 2
 local CONTEST_MENU_COL_SPACING = 12
 
--- charmap.asm's quantity glyph, spelled the way MartMenu spells it.
-local CONTEST_BALL_LABEL = Strings.source("PARKBALL\xc3\x97%02d")
+local CONTEST_MENU = {
+  "ContestBattleMenuHeader.Text#1", "ContestBattleMenuHeader.Text#2",
+  "ContestBattleMenuHeader.Text#3", "ContestBattleMenuHeader.Text#4",
+}
 
 -- data/items/heal_status.asm StatusHealingActions: the four rows whose status
 -- mask is %11111111.  HealStatus's `.not_full_heal` arm is what makes exactly
@@ -253,11 +249,29 @@ local function paginate(text)
   return pages, carried
 end
 
+-- ../pokecrystal/home/text.asm:520 _ContTextNoPause
+local NO_WAIT_SCROLL = "\r"
+
+local function wrapMessage(text)
+  text = tostring(text or "")
+  if not text:find(NO_WAIT_SCROLL, 1, true) then
+    return Chrome.wrap(text, TEXT_WIDTH), false
+  end
+  local lines = {}
+  for segment in (text .. NO_WAIT_SCROLL):gmatch("(.-)" .. NO_WAIT_SCROLL) do
+    for _, line in ipairs(Chrome.wrap(segment, TEXT_WIDTH)) do
+      lines[#lines + 1] = line
+    end
+  end
+  return lines, true
+end
+
 -- ../pokecrystal/home/text.asm:517-526
 local function foldPages(pages, carried)
   local out, outCarried = {}, {}
   for i, page in ipairs(pages) do
-    local lines = Chrome.wrap(page, TEXT_WIDTH)
+    local lines, scrolls = wrapMessage(page)
+    if scrolls then lines = {} end
     out[#out + 1] = #lines > TEXT_ROWS
       and table.concat(lines, LINE, 1, TEXT_ROWS) or page
     outCarried[#out] = carried[i]
@@ -376,8 +390,10 @@ function BattleState.trainerArt(data, classId)
   local classes = data and data.gen2Trainers and data.gen2Trainers.classes
   local classDef = classes and classes[classId]
   local hud = data and data.gen2MenuGfx and data.gen2MenuGfx.battleHud
-  local path = (classDef and classDef.pic)
-    or (hud and hud.trainerPics and hud.trainerPics[classId])
+  if hud and not hud.trainerPics then
+    error("menu_gfx.lua battleHud has no trainerPics")
+  end
+  local path = (classDef and classDef.pic) or (hud and hud.trainerPics[classId])
   return path, (classDef and classDef.trueColor) and true or false
 end
 
@@ -524,20 +540,21 @@ function BattleState.new(game, opts)
   --
   -- In the tutorial the send-out never comes, so the back-pic stands for the
   -- whole battle -- and GetTrainerBackpic's "Special exception for Dude" swaps
-  -- ChrisBackpic for DudeBackpic to draw it.  A cache built before DudeBackpic
-  -- was extracted has no `dudeBack`, and falls back to the player's own.
+  -- ChrisBackpic for DudeBackpic to draw it.
   self.showPlayerTrainer = true
   self.playerBackImage = nil
   self.playerBackTrueColor = false
   local hudGfx = data.gen2MenuGfx and data.gen2MenuGfx.battleHud
-  local backPath = hudGfx and hudGfx.playerBack
-  -- GetTrainerBackpic's gender arm, under the Dude exception
-  -- (../pokecrystal/engine/battle/core.asm:8984-9008).
-  if hudGfx and hudGfx.playerBackFemale and Gen2Save.isFemale(self.save) then
-    backPath = hudGfx.playerBackFemale
-  end
-  if self.tutorial and hudGfx and hudGfx.dudeBack then
-    backPath = hudGfx.dudeBack
+  local backPath
+  if hudGfx then
+    backPath = hudGfx.playerBack
+    -- GetTrainerBackpic's gender arm, under the Dude exception
+    -- (../pokecrystal/engine/battle/core.asm:8984-9008).
+    if GameVersion.engine() == "crystal" and Gen2Save.isFemale(self.save) then
+      backPath = hudGfx.playerBackFemale
+    end
+    if self.tutorial then backPath = hudGfx.dudeBack end
+    if not backPath then error("menu_gfx.lua battleHud has no player back pic") end
   end
   -- player.sprite, the same hook and payload Gen 1 raises for its own back pic
   -- (src/pokemon/Sprites.lua): the Dude's stand-in is the `demo` flag there.
@@ -627,14 +644,14 @@ function BattleState.new(game, opts)
       local asleep = BattleState.sleepingTreeMon(enemy, self.battle.battleType)
       self:push({ kind = "message", intro = true,
         cry = (not asleep) and enemy or nil,
-        text = BattleState.battleStartText(self:name(enemy),
+        text = BattleState.battleStartText(self:romData(), self:name(enemy),
           self.battle.battleType) })
     else
       local trainerName = (self.battle.trainer and self.battle.trainer.name)
         or "Foe"
       -- WantsToBattleText (core.asm:8701), read against the trainer's own pic.
       self:push({ kind = "message",
-        text = Strings("%s wants to battle!", trainerName) })
+        text = self:rom("WantsToBattleText", trainerName) })
       -- ResetEnemyBattleVars' SlideBattlePicOut at the head of EnemySwitch
       -- (core.asm:3027) pushes that pic off the right edge before the mon is
       -- announced.  Nothing to slide when the cache has no trainer pic.
@@ -648,7 +665,7 @@ function BattleState.new(game, opts)
       -- (core.asm:2978-2980, 3354): this is where the mon's frontpic first
       -- appears, where ANIM_SEND_OUT_MON plays and where the HUD comes up.
       self:push({ kind = "send", side = "enemy", mon = enemy, textDone = true,
-        text = Battle.sentOutText(trainerName, self:name(enemy)) })
+        text = self:rom("BattleText_EnemySentOut", trainerName, self:name(enemy)) })
     end
   end
   local player = self.battle and self.battle.player
@@ -661,7 +678,7 @@ function BattleState.new(game, opts)
     -- ../pokecrystal/engine/battle/core.asm:82-84
     self:push({ kind = "backpic-slide" })
     self:push({ kind = "sendout",
-      text = Strings("Go! %s!", self:name(player)) })
+      text = self:goMonText(self:name(player)) })
   end
   -- What the HUD shows chases the real HP one tick at a time
   -- (engine/battle/anim_hp_bar.asm), re-armed by each damage/heal event as
@@ -1510,7 +1527,9 @@ function BattleState:drawExpBurst()
   end
   local radius = (burst.frame - 1) * 2
   local set = self.palettes and self.palettes.battleObjects
-  local colors = set and set.PAL_BATTLE_OB_BLUE or nil
+  if not set then error("palettes.lua has no battleObjects") end
+  local colors = set.PAL_BATTLE_OB_BLUE
+    or error("battleObjects has no PAL_BATTLE_OB_BLUE")
   for c = EXP_BURST_SPRITES - 1, 0, -1 do
     local angle = c * 8
     local y = EXP_BURST_Y + signedByte(SpriteAnims.sine(angle, radius))
@@ -2220,7 +2239,7 @@ function BattleState:advanceQueue()
     self.messageTimer = MESSAGE_FRAMES
     return
   end
-  -- `predef NewPokedexEntry` (item_effects.asm:542).
+  -- ../pokecrystal/engine/items/item_effects.asm:536
   if event.kind == "dex-entry" then
     return self:openDexEntry(event.species)
   end
@@ -2250,13 +2269,13 @@ function BattleState:advanceQueue()
     if self.battle and self.battle.wild then
       self.nextMonIndex = 1
       self.phase = "ask-next-mon"
-      self.message = Strings(TEXT_USE_NEXT_MON)
+      self.message = self:rom(TEXT_USE_NEXT_MON)
       self.messageTimer = 0
       return
     end
     -- A fainted lead: force a switch before anything else runs.
     self.phase = "forced-switch"
-    self.message = Strings("Choose a POKéMON.")
+    self.message = self:rom("ChooseAMonString")
     return
   end
   -- LearnMove's full-moveset arm: the exp queue stops on ForgetMove's own text
@@ -2551,6 +2570,7 @@ function BattleState:givePokerus()
   local battle = self.battle
   if not (battle and Evolution.runsAfterBattle(battle.outcome)) then return nil end
   local party = battle.party or (self.save and self.save.party)
+  EngineFlags.ensure(self.game and self.game.data, battle.data)
   -- GivePokerusAndConvertBerries opens on `call ConvertBerriesToBerryJuice`,
   -- so the Shuckle's held BERRY converts before the Pokerus roll runs.
   BerryJuice.convertAfterBattle(self.save, party)
@@ -2745,7 +2765,7 @@ function BattleState:chooseMenu(choice)
       self:throwParkBall()
     elseif self.battle and self.battle.inBattleTowerBattle then
       -- engine/battle/core.asm:4965
-      self:refuseMenu(TEXT_ITEMS_CANT_BE_USED)
+      self:refuseMenu(self:rom(TEXT_ITEMS_CANT_BE_USED))
     else
       self:openPack()
     end
@@ -3059,7 +3079,7 @@ function BattleState:update(_dt)
       self.menuIndex = math.min(1, row + 1) * 2 + col + 1
     elseif input:wasPressed("a") then
       self:playSfx("Sfx_ReadText2")
-      self:chooseMenu(MENU_ACTION[MENU[self.menuIndex]])
+      self:chooseMenu(MENU_ACTION[self.menuIndex])
     end
     return
   end
@@ -3186,7 +3206,7 @@ function BattleState:update(_dt)
       end
       return
     end
-    self.message = Strings("Choose a POKéMON.")
+    self.message = self:rom("ChooseAMonString")
     self.phase = "forced-switch"
     return
   end
@@ -3294,7 +3314,7 @@ function BattleState:update(_dt)
       end
       return
     end
-    self.message = Strings(TEXT_ASK_FORGET_SLOT)
+    self.message = self:rom(TEXT_ASK_FORGET_SLOT)
     local learn = self.pendingLearn
     local mon = learn and self.battle.party[learn.index]
     local moves = (mon and mon.moves) or {}
@@ -3308,10 +3328,10 @@ function BattleState:update(_dt)
       return self:askStopLearning()
     elseif input:wasPressed("a") then
       local slot = moves[self.forgetIndex]
-      if slot and HM_MOVES[slot.id] then
+      if slot and self:isHMMove(slot.id) then
         -- MoveCantForgetHMText, then `jr .loop`, which re-seeds wMenuCursorY
         -- (engine/pokemon/learn.asm:155-157, 193-197).
-        self.message = Strings(TEXT_CANT_FORGET_HM)
+        self.message = self:rom(TEXT_CANT_FORGET_HM)
         self.messageTimer = MESSAGE_FRAMES
         self.forgetIndex = 1
         return
@@ -3371,7 +3391,7 @@ function BattleState:openParty(forced)
       -- Only the accepted switch tears the list down (core.asm:5186-5192)
       if refused then
         if list then
-          return list:refuse(Strings(key or TEXT_NO_WILL_TO_FIGHT, arg))
+          return list:refuse(self:rom(key or TEXT_NO_WILL_TO_FIGHT, arg))
         end
         stack:pop()
         return self:refuseSwitch(forced, key, arg)
@@ -3404,14 +3424,14 @@ end
 function BattleState:refuseSwitch(forced, source, ...)
   self.refuseForced = forced and true or false
   self.phase = "refuse-switch"
-  self.message = Strings(source or TEXT_NO_WILL_TO_FIGHT, ...)
+  self.message = self:rom(source or TEXT_NO_WILL_TO_FIGHT, ...)
   self.typedText = nil
   self.messageTimer = MESSAGE_FRAMES
 end
 
-function BattleState:refuseMove(text)
+function BattleState:refuseMove(label)
   self.phase = "refuse-move"
-  self.message = Strings(text)
+  self.message = self:rom(label)
   self.typedText = nil
   self.messageTimer = MESSAGE_FRAMES
 end
@@ -3525,10 +3545,8 @@ local WOBBLE_LIMIT = 3
 -- The four failure lines, indexed by wThrownBallWobbleCount exactly the way
 -- item_effects.asm:414-428 indexes them (data/text/common_3.asm:239-258).
 local BALL_FAILURE_TEXT = {
-  Strings.source("Oh no! The POKéMON broke free!"),
-  Strings.source("Aww! It appeared to be caught!"),
-  Strings.source("Aargh! Almost had it!"),
-  Strings.source("Shoot! It was so close too!"),
+  "BallBrokeFreeText", "BallAppearedCaughtText",
+  "BallAlmostHadItText", "BallSoCloseText",
 }
 
 -- Text_BallCaught's own sound_caught_mon (data/text/common_3.asm:265).
@@ -3592,7 +3610,7 @@ end
 -- engine/items/item_effects.asm:411-422
 function BattleState:ballFailureText()
   local wobble = (self.ballThrow and self.ballThrow.wobble) or 1
-  return Strings(BALL_FAILURE_TEXT[
+  return self:rom(BALL_FAILURE_TEXT[
     math.max(1, math.min(#BALL_FAILURE_TEXT, wobble))])
 end
 
@@ -3603,8 +3621,8 @@ end
 -- the turn goes with it.
 function BattleState:throwBallAtTrainer(itemId)
   self.queue = {}
-  self:push({ kind = "message", text = Strings("The trainer blocked the BALL!") })
-  self:push({ kind = "message", text = Strings("Don't be a thief!") })
+  self:push({ kind = "message", text = self:rom("BallBlockedText") })
+  self:push({ kind = "message", text = self:rom("BallDontBeAThiefText") })
   self:consumeItem(itemId)
   self:pushAll(self.battle:takeTurn({ kind = "item", item = itemId }))
   -- NO_ITEM is 0, the id BattleAnim_ThrowPokeBall's first row tests.
@@ -3641,7 +3659,9 @@ end
 
 function BattleState:hasPokedex()
   local save = self.save or {}
-  return (save.engineFlags or {})[ENGINE_POKEDEX] == true
+  EngineFlags.ensure(self.game and self.game.data, self.battle and self.battle.data)
+  -- home/flag.asm:97
+  return (save.engineFlags or {})[EngineFlags.id("ENGINE_POKEDEX")] == true
     or save.pokedexReceived == true
 end
 
@@ -3685,8 +3705,9 @@ function BattleState:pushCaught(enemy, itemId)
   -- Text_BallCaught ends in `sound_caught_mon` (data/text/common_3.asm:260-266),
   -- and TX_SOUND holds the text engine until the jingle is done
   -- (home/text.asm:834-835), so the line is not dismissable under it.
+  -- ../pokecrystal/data/text/common_3.asm:1217
   self:push({ kind = "message", sfx = SFX_CAUGHT_MON, waitSfx = true,
-    text = Strings("Gotcha! %s was caught!", self:name(enemy)) })
+    text = self:romLine("Text_BallCaught", self:name(enemy)) })
   -- ../pokecrystal/engine/items/item_effects.asm:511
   -- ../pokecrystal/engine/items/item_effects.asm:693
   self:push({ kind = "clear-sprites" })
@@ -3708,11 +3729,10 @@ function BattleState:pushCaught(enemy, itemId)
   -- so the contest branch is BELOW them (item_effects.asm:528-546), and
   -- CheckReceivedDex gates the pair (:532-533).
   if not knew and self:hasPokedex() then
-    -- data/text/common_3.asm:285
+    -- ../pokecrystal/data/text/common_3.asm:1239
     self:push({ kind = "message",
       sfx = "Sfx_SlotMachineStart", waitSfx = true,
-      text = Strings("%s's data was newly added to the #DEX.",
-        self:name(enemy)) })
+      text = self:romLine("_NewDexDataText", self:name(enemy)) })
     self:push({ kind = "dex-entry", species = enemy.species })
   end
   if self.contest then
@@ -3817,7 +3837,8 @@ function BattleState:pushPayDay()
   self.battle.payDay = nil
   if coins then
     self:push({ kind = "message",
-      text = Prize.payDayMessage(coins, save.player and save.player.name) })
+      text = Prize.payDayMessage(self:romData(), coins,
+        save.player and save.player.name) })
   end
 end
 
@@ -3860,14 +3881,14 @@ function BattleState:offerShiftSwitch(mon)
     or "GOLD"
   -- The `para` splits this in two (data/text/battle.asm:222-231): the incoming
   -- mon is NAMED on its own page, and only the second carries the yes/no box.
-  self:showPages(Strings(TEXT_ENEMY_ABOUT_TO_USE, trainer, self:name(mon), player))
+  self:showPages(self:rom(TEXT_ENEMY_ABOUT_TO_USE, trainer, self:name(mon), player))
   self.phase = self.messagePages and "shift-intro" or "ask-shift"
 end
 
 function BattleState:answerUseNextMon(yes)
   if yes then
     self.phase = "forced-switch"
-    self.message = Strings("Choose a POKéMON.")
+    self.message = self:rom("ChooseAMonString")
     return
   end
   local battle = self.battle
@@ -3884,7 +3905,7 @@ function BattleState:answerUseNextMon(yes)
     return self:advanceQueue()
   end
   battle:takeEvents()
-  self.message = Strings("Can't escape!")
+  self.message = self:rom("BattleText_CantEscape")
   self.messageTimer = MESSAGE_FRAMES
   self.phase = "cant-escape-then-switch"
 end
@@ -3920,7 +3941,7 @@ function BattleState:openShiftParty()
       end
       if refused then
         if list then
-          return list:refuse(Strings(key or TEXT_NO_WILL_TO_FIGHT, arg))
+          return list:refuse(self:rom(key or TEXT_NO_WILL_TO_FIGHT, arg))
         end
         stack:pop()
         return self:refuseShift(key, arg)
@@ -3937,7 +3958,7 @@ end
 -- (engine/battle/core.asm:2716-2728).
 function BattleState:refuseShift(source, ...)
   self.phase = "refuse-shift"
-  self.message = Strings(source or TEXT_NO_WILL_TO_FIGHT, ...)
+  self.message = self:rom(source or TEXT_NO_WILL_TO_FIGHT, ...)
   self.messageTimer = MESSAGE_FRAMES
 end
 
@@ -3982,7 +4003,8 @@ function BattleState:askNickname(mon)
   -- YesNoBox opens on YES; YesNoMenuHeader sets no STATICMENU_DISABLE_B.
   self.nicknameIndex = 1
   self.phase = "ask-nickname"
-  self.message = Strings("Give a nickname to %s?", self:name(mon))
+  -- ../pokecrystal/data/text/common_3.asm:1250
+  self.message = self:romLine("_AskGiveNicknameText", self:name(mon))
   self.messageTimer = MESSAGE_FRAMES
 end
 
@@ -4030,7 +4052,7 @@ function BattleState:askForget()
   local party = (self.battle and self.battle.party) or {}
   local name = self:name(party[self.pendingLearn.index])
   local moveName = self.pendingLearn.moveName or "?"
-  self:showPages(Strings(TEXT_ASK_FORGET_MOVE, name, moveName, name, moveName))
+  self:showPages(self:rom(TEXT_ASK_FORGET_MOVE, name, moveName, name, moveName))
   self.phase = self.messagePages and "learn-intro" or "ask-forget"
 end
 
@@ -4040,7 +4062,7 @@ function BattleState:askStopLearning()
   if not self.pendingLearn then return self:advanceQueue() end
   self.forgetChoice = 1
   self.phase = "stop-learning"
-  self:showPages(Strings(TEXT_STOP_LEARNING, self.pendingLearn.moveName or "?"))
+  self:showPages(self:rom(TEXT_STOP_LEARNING, self.pendingLearn.moveName or "?"))
 end
 
 -- DidNotLearnMoveText, then `ld b, 0` and back to the queue (learn.asm:110-113).
@@ -4059,7 +4081,7 @@ function BattleState:answerForgetPrompt(yes)
     -- MoveAskForgetText over the four-slot list (learn.asm:135-146).
     self.forgetIndex = 1
     self.phase = "choose-forget"
-    self.message = Strings(TEXT_ASK_FORGET_SLOT)
+    self.message = self:rom(TEXT_ASK_FORGET_SLOT)
     self.messageTimer = 0
     return
   end
@@ -4088,7 +4110,10 @@ function BattleState:answerNickname(yes)
       self.namingBackdrop = screen
     end
     local diploma = data.gen2Diploma
-    self.diplomaTextPalette = diploma and diploma.palettes and diploma.palettes[8]
+    if not (diploma and diploma.palettes and diploma.palettes[8]) then
+      error("diploma.lua has no palettes")
+    end
+    self.diplomaTextPalette = diploma.palettes[8]
     self.captureScreen = "naming"
     self.message = nil
     self.phase = "resolving"
@@ -4113,12 +4138,14 @@ function BattleState:contestCatch(mon)
   self:stampCaughtData(mon, true)
   local kind, stock, fresh = BugContest.catch(self.save, mon)
   if kind ~= BugContest.ASK_SWITCH then
+    -- ../pokecrystal/engine/events/bug_contest/caught_mon.asm:35-36
     self:push({ kind = "message",
-      text = Strings("Caught %s!", self:name(mon)) })
+      text = self:romLine("_ContestCaughtMonText", self:name(mon)) })
     return
   end
+  -- ../pokecrystal/engine/events/bug_contest/display_stats.asm:93-99
   self:push({ kind = "message",
-    text = Strings("You already caught a %s.", self:name(stock)) })
+    text = self:romLine("_ContestAlreadyCaughtText", self:name(stock)) })
   self:push({ kind = "contest-switch", stock = stock, caught = fresh })
 end
 
@@ -4144,13 +4171,18 @@ function BattleState:openDexEntry(species)
   local stack = self.game and self.game.stack
   local dex = ((self.game and self.game.data) or {}).gen2Pokedex
   local entry = dex and dex.entries and dex.entries[species]
-  if not (stack and entry) then return self:advanceQueue() end
+  if not stack then return self:advanceQueue() end
+  if not entry then error("pokedex.lua has no entry for " .. tostring(species)) end
   self.phase = "submenu"
   Screens.push(self.game, "Gen2PokedexMenu", {
     entrySpecies = species,
     newEntry = true,
     onClose = function()
       stack:pop()
+      -- ../pokecrystal/engine/pokedex/new_pokedex_entry.asm:36-50
+      local latch = self.enemyHudLatch
+      self.captureScreen = "dexpic"
+      self.dexPicMon = (latch and latch.mon) or (self.battle and self.battle.enemy)
       self.phase = "resolving"
       self:advanceQueue()
     end,
@@ -4195,7 +4227,20 @@ end
 -- everything with a ported party effect runs the same item_effects.asm routine
 -- the field pack runs.  Anything else reports that it cannot be used, which is
 -- what the cart does for a key item.
+-- ../pokecrystal/engine/items/pack.asm:860-884
 function BattleState:useItem(itemId)
+  if self.tutorial or not Runtime.wantsHook("item.use") then
+    return self:useItemBody(itemId)
+  end
+  local ran = false
+  Runtime.call("item.use", function(_, screen, id)
+    ran = true
+    return screen:useItemBody(id)
+  end, self.game, self, itemId, nil)
+  if not ran and self.phase == "submenu" then self.phase = "menu" end
+end
+
+function BattleState:useItemBody(itemId)
   local data = self.game and self.game.data or {}
   local def = data.items and data.items[itemId]
   local pocket = def and def.pocket
@@ -4213,8 +4258,9 @@ function BattleState:useItem(itemId)
     -- "item wasn't used" -- so neither the ball nor the turn goes.
     if #((save and save.party) or {}) >= Boxes.PARTY_SIZE
         and Boxes.isFull(save, self:currentBox()) then
-      -- BallBoxFullText (data/text/common_3.asm:427).
-      self.message = Strings("The POKéMON BOX is full. That can't be used now.")
+      -- ../pokecrystal/engine/items/item_effects.asm:2626-2628
+      -- ../pokecrystal/data/text/common_3.asm:1396-1400
+      self.message = TextBox.strip(RomText(data, "_BallBoxFullText"))
       self.messageTimer = MESSAGE_FRAMES
       self.phase = "resolving"
       return
@@ -4289,7 +4335,7 @@ function BattleState:useItem(itemId)
     if not ok then
       -- _ItemWontHaveEffectText's own `line` break, the same one
       -- ItemEffects.TEXT_NO_EFFECT carries (data/text/common_3.asm).
-      self.message = Strings(ItemEffects.TEXT_NO_EFFECT)
+      self.message = self:rom(ItemEffects.TEXT_NO_EFFECT)
       self.messageTimer = MESSAGE_FRAMES
       self.phase = "resolving"
       return
@@ -4331,7 +4377,9 @@ function BattleState:useItem(itemId)
     end
   end
 
-  self.message = Strings("That isn't going to help here.")
+  -- engine/items/pack.asm:855 BattlePack.Oak
+  self.message = self:rom("OakThisIsntTheTimeText",
+    { PLAYER = self.save and self.save.player and self.save.player.name })
   self.messageTimer = MESSAGE_FRAMES
   self.phase = "resolving"
 end
@@ -4394,7 +4442,7 @@ function BattleState:cureBattleConfusion(itemId)
   local mon = self.battle.player
   local state = mon and self.battle:volatile(mon)
   if not (state and state.confuseCount) then
-    self.message = oneLine(Strings(ItemEffects.TEXT_NO_EFFECT))
+    self.message = oneLine(self:rom(ItemEffects.TEXT_NO_EFFECT))
     self.messageTimer = MESSAGE_FRAMES
     self.phase = "resolving"
     return
@@ -4404,7 +4452,7 @@ function BattleState:cureBattleConfusion(itemId)
   self.queue = {}
   -- ConfusedNoMoreText (data/text/battle.asm).
   self:push({ kind = "message",
-    text = Strings("%s's confused no more!", self:name(mon)) })
+    text = self:rom("ConfusedNoMoreText", { USER = self:name(mon) }) })
   self:pushAll(self.battle:takeTurn({ kind = "item", item = itemId }))
   self.phase = "resolving"
   self:advanceQueue()
@@ -4447,7 +4495,7 @@ function BattleState:applyPartyItem(itemId, action, mon, slot, partySlot)
     if not result.used then
       -- PARTYMENUTEXT_HEAL_CONFUSION (_CameToItsSensesText).
       result = { used = true,
-        text = Strings("%s came to its senses.", self:name(mon)) }
+        text = self:romLine("_CameToItsSensesText", self:name(mon)) }
     end
   end
   if not result.used then
@@ -4561,16 +4609,69 @@ function BattleState:drawHud()
   Font.useBattleExtra(wasBattle)
 end
 
+-- ../pokecrystal/engine/pokedex/pokedex.asm:1386-1407
+-- ../pokecrystal/engine/gfx/load_pics.asm:411-455
+-- ../pokecrystal/engine/gfx/cgb_layouts.asm:930-939
+function BattleState:drawDexReturnPic()
+  local mon = self.dexPicMon
+  local image, trueColor = self:pic(mon, false)
+  if not image then return end
+  local tiles = math.floor(image:getWidth() / 8)
+  local px = 8 + (tiles < 7 and 8 or 0)
+  local py = 8 + math.max(0, 7 - tiles) * 8
+  local colors = self.palettes and self:cachedMonColors(mon.species, mon.shiny)
+  local G = love.graphics
+  G.setColor(1, 1, 1, 1)
+  local function body() G.draw(image, px, py) end
+  if colors and not (trueColor and GbcPalette.mode == "gbc")
+     and GbcPalette.available() then
+    GbcPalette.with(colors, body)
+  else
+    body()
+  end
+end
+
 function BattleState:drawPics()
+  if self.captureScreen == "dexpic" then return self:drawDexReturnPic() end
   if self.captureScreen then return end
   self:drawPic(self:activeMon("enemy"), false)
   self:drawPic(self:activeMon("player"), true)
 end
 
+function BattleState:romLine(label, name)
+  local data = self.game and self.game.data
+  return TextBox.strip(RomText(data, label, nil, { STRBUF = name }))
+end
+
+function BattleState:romData()
+  return (self.game and self.game.data) or (self.battle and self.battle.data)
+end
+
+-- home/hm_moves.asm:12 IsHMMove
+function BattleState:isHMMove(moveId)
+  local data = self:romData()
+  local moves = data and data.pokemon and data.pokemon.tmhmMoves
+  if not moves then error("pokemon.lua has no tmhmMoves", 2) end
+  for i = NUM_TMS + 1, NUM_TMS + NUM_HMS do
+    if moves[i] == moveId then return true end
+  end
+  return false
+end
+
+function BattleState:rom(label, ...)
+  return TextBox.strip(RomText(self:romData(), label, nil, ...))
+end
+
+-- ../pokecrystal/engine/battle/core.asm:7685 GoMonText
+function BattleState:goMonText(name)
+  local go = self:rom("_GoMonText")
+  if go:find("{STRBUF}", 1, true) then return self:rom("_GoMonText", name) end
+  return go .. self:rom("_BattleMonNicknameText", name)
+end
+
 -- ../pokecrystal/data/text/common_3.asm:1233-1237
 function BattleState:sentToPcText(name)
-  local data = self.game and self.game.data
-  return TextBox.strip(RomText(data, "_BallSentToPCText", nil, { STRBUF = name }))
+  return self:romLine("_BallSentToPCText", name)
 end
 
 -- ../pokecrystal/engine/gfx/cgb_layouts.asm:510-515
@@ -4768,9 +4869,9 @@ end
 -- (PSN, BRN, FRZ, PAR, SLP).  Toxic is the PSN bit worn harder, so it shares
 -- the tag; confusion is a substatus on the cart and never reaches the HUD.
 local STATUS_TAGS = {
-  poison = Strings.source("PSN"), toxic = Strings.source("PSN"),
-  burn = Strings.source("BRN"), freeze = Strings.source("FRZ"),
-  paralyze = Strings.source("PAR"), sleep = Strings.source("SLP"),
+  poison = "PsnString", toxic = "PsnString",
+  burn = "BrnString", freeze = "FrzString",
+  paralyze = "ParString", sleep = "SlpString",
 }
 
 function BattleState:statusTag(mon, side)
@@ -4784,25 +4885,13 @@ function BattleState:statusTag(mon, side)
   -- SUBSTATUS_CONFUSED and any modded equivalent are battle volatiles, not
   -- the major status byte PlaceNonFaintStatus draws in the HUD.
   if record and record.substatus then return nil end
-  -- Builtins.registerStatusesInto seeds gen2Statuses from Battle.STATUSES at
-  -- boot with no mod installed, so `authored` alone does not mean a real mod
-  -- wrote this record: Registry:register's "register" op (non-deep, what the
-  -- engine's own seeding uses) sets value = entry.value directly, so an
-  -- UNTOUCHED status's merged record is the exact same table Battle.STATUSES
-  -- holds -- its label is still the raw Strings.source() marker and needs
-  -- the same Strings() call the fallback below gets. A real mod's :patch()
-  -- or :register() of its own builds a NEW table (deepMerge, or a value that
-  -- was never Battle.STATUSES[status] to begin with), which this reference
-  -- check tells apart from the untouched case -- that one is already
-  -- complete authored content and must not be looked up a second time.
-  if authored then
-    if authored == Battle.STATUSES[status] then
-      return Strings(authored.hudLabel or authored.label)
-    end
+  local vanilla = Battle.STATUSES[status]
+  if authored and authored ~= vanilla
+      and (authored.hudLabel or not vanilla or authored.label ~= vanilla.label) then
     return authored.hudLabel or authored.label
   end
   local tag = STATUS_TAGS[status]
-  return tag and Strings(tag) or nil
+  return tag and self:rom(tag) or nil
 end
 
 -- ♂ / ♀ after the level, or nil for a genderless species (PrintPlayerHUD
@@ -4841,12 +4930,12 @@ function BattleState:menuLabels()
     labels = {}
     self.menuLabelList = labels
   end
-  labels[1], labels[2], labels[4] =
-    Strings(MENU[1]), Strings(MENU[2]), Strings(MENU[4])
-  if not self.contest then
-    labels[3] = Strings(MENU[3])
-  else
-    labels[3] = Strings(CONTEST_BALL_LABEL, BugContest.ballsLeft(self.save))
+  local menu = self.contest and CONTEST_MENU or MENU
+  for i = 1, 4 do labels[i] = self:rom(menu[i]) end
+  if self.contest then
+    -- engine/battle/menu.asm:89 .PrintParkBallsRemaining
+    labels[3] = labels[3]:sub(1, -3)
+      .. ("%02d"):format(BugContest.ballsLeft(self.save))
   end
   return labels
 end
@@ -4886,8 +4975,10 @@ function BattleState:syncTyper()
     if text == nil or text == "" then
       self.typer = nil
     else
-      local lines = Chrome.wrap(text, TEXT_WIDTH)
-      for i = #lines, TEXT_ROWS + 1, -1 do lines[i] = nil end
+      local lines, scrolls = wrapMessage(text)
+      if not scrolls then
+        for i = #lines, TEXT_ROWS + 1, -1 do lines[i] = nil end
+      end
       self.typer = Typer.new(self.game)
       self.typer:start(lines)
       -- ../pokecrystal/home/text.asm:521-523
@@ -4902,11 +4993,26 @@ function BattleState:syncTyper()
   return self.typer ~= nil and not self.typer:done()
 end
 
+-- ../pokecrystal/home/text.asm:520 _ContTextNoPause
+local function scrolledWindow(lines, typer)
+  if #lines <= TEXT_ROWS then return lines end
+  local current, left = #lines, typer and typer.shown or math.huge
+  for i = 1, #lines do
+    local n = typer and typer.spans and typer.spans[i] and #typer.spans[i] or 0
+    if left <= n then current = i break end
+    left = left - n
+  end
+  current = math.max(current, TEXT_ROWS)
+  local out = {}
+  for i = current - TEXT_ROWS + 1, current do out[#out + 1] = lines[i] end
+  return out
+end
+
 function BattleState:messageLines()
   if self.typer and self.typedText == self.message then
-    return self.typer:lines()
+    return scrolledWindow(self.typer:lines(), self.typer)
   end
-  return Chrome.wrap(self.message or "", TEXT_WIDTH)
+  return scrolledWindow((wrapMessage(self.message)))
 end
 
 -- MoveInfoBox (engine/battle/core.asm:5403-5478): "TYPE/" at (1,9), the type
@@ -4915,13 +5021,13 @@ function BattleState:drawMoveInfoBox(move)
   if not move then return end
   local fighter = self.battle and self.battle.player
   if fighter and self.battle:moveDisabled(fighter, move.id) then
-    Chrome.printThrough(Strings("Disabled!"), 1, 10,
+    Chrome.printThrough(self:rom("MoveInfoBox.Disabled"), 1, 10,
       Chrome.DEFAULT_BOX_PALETTE)
     return
   end
   local def = self.game and self.game.data and self.game.data.moves
     and self.game.data.moves[move.id]
-  Chrome.printThrough(Strings("TYPE/"), 1, 9, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(self:rom("MoveInfoBox.Type"), 1, 9, Chrome.DEFAULT_BOX_PALETTE)
   local moveType = def and def.type
   Chrome.printThrough(moveType and TypeChart.displayName(moveType,
       self.game and self.game.data) or "",
@@ -5039,9 +5145,9 @@ function BattleState:drawBottom(ox)
       local left = (self.phase == "ask-shift" or self.phase == "ask-next-mon")
         and 1 or (14 + ox)
       Chrome.box(left, 7, 6, 5)
-      Chrome.printThrough(Strings("YES"), left + 2, 8,
+      Chrome.printThrough(self:rom("YesNoMenuHeader.MenuData#1"), left + 2, 8,
         Chrome.DEFAULT_BOX_PALETTE)
-      Chrome.printThrough(Strings("NO"), left + 2, 10,
+      Chrome.printThrough(self:rom("YesNoMenuHeader.MenuData#2"), left + 2, 10,
         Chrome.DEFAULT_BOX_PALETTE)
       local index = self.phase == "ask-nickname" and self.nicknameIndex
         or self.phase == "ask-shift" and self.shiftIndex
@@ -5059,10 +5165,9 @@ function BattleState:drawBottom(ox)
 end
 
 -- pokegold engine/pokemon/mon_stats.asm:118-124 (PrintTempMonStats.StatNames).
+-- engine/pokemon/mon_stats.asm:118 PrintTempMonStats.StatNames
 local STATS_BOX_ROWS = {
-  { "ATTACK", "attack" }, { "DEFENSE", "defense" },
-  { "SPCL.ATK", "specialAttack" }, { "SPCL.DEF", "specialDefense" },
-  { "SPEED", "speed" },
+  "attack", "defense", "specialAttack", "specialDefense", "speed",
 }
 
 -- pokegold engine/battle/core.asm:7060-7066 (box at hlcoord 9,0, stats at 11,y).
@@ -5078,11 +5183,15 @@ function BattleState:drawStatsBox(mon, ox)
   end
   if not stats then return end
   Chrome.textbox(9 + ox, 0, 9, 10)
-  for i, row in ipairs(STATS_BOX_ROWS) do
+  local names = {}
+  for line in self:rom("PrintTempMonStats.StatNames"):gmatch("([^\n]*)\n?") do
+    if #names < #STATS_BOX_ROWS then names[#names + 1] = line end
+  end
+  for i, key in ipairs(STATS_BOX_ROWS) do
     local ty = 1 + (i - 1) * 2
-    Chrome.printThrough(Strings(row[1]), 11 + ox, ty,
+    Chrome.printThrough(names[i], 11 + ox, ty,
       Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printRightThrough(("%d"):format(stats[row[2]] or 0), 19 + ox, ty + 1,
+    Chrome.printRightThrough(("%d"):format(stats[key] or 0), 19 + ox, ty + 1,
       Chrome.DEFAULT_BOX_PALETTE)
   end
 end
@@ -5206,6 +5315,7 @@ function BattleState:drawWidescreen(winW, winH)
 end
 
 BattleState.MENU = MENU
+BattleState.MENU_ACTION = MENU_ACTION
 BattleState.STATUS_TAGS = STATUS_TAGS
 BattleState.Battle = Battle
 

@@ -43,6 +43,18 @@ end
 
 local romText = RomText
 
+local function romTexts(...)
+  local parts = { ... }
+  for i = 1, #parts do parts[i] = parts[i]:gsub("{DONE}$", "") end
+  return table.concat(parts)
+end
+
+local function romPages(text)
+  local pages = {}
+  for page in (text .. "\f"):gmatch("(.-)\f") do pages[#pages + 1] = page end
+  return pages
+end
+
 local BattleState = {}
 BattleState.__index = BattleState
 BattleState.isOpaque = true
@@ -54,9 +66,10 @@ BattleState.isBattleState = true
 -- Game.speedCategoryInStack needs no special-casing beyond this one flag.
 BattleState.isBattle = true
 
-function BattleState:romText(label, fallback, ...)
-  return romText(self.data, label, fallback, ...)
+function BattleState:romLine(label, ...)
+  return romText(self.data, label, nil, ...)
 end
+
 -- Letterbox voids around the 160x144 battle canvas fill white so the
 -- window reads as one continuous battle screen (no black bars).
 BattleState.letterboxWhite = true
@@ -556,38 +569,26 @@ end
 -- constants.trainerDvs overrides, this is the imported-cache fallback
 local TRAINER_DVS = { attack = 9, defense = 8, speed = 8, special = 8, hp = 8 }
 
--- charge-turn texts by move id; the move record's chargeText field wins
--- (ChargeEffect's per-move text pointers)
--- Strings.source, not Strings: this table is built at require time, before
--- Strings.load has a catalog, so translating here would freeze the English.
--- The marker is a no-op that puts these lines in the catalog anyway; the
--- lookup happens where chargeText is formatted below.
+-- engine/battle/effects.asm:1032-1054
 local CHARGE_TEXT = {
-  FLY = Strings.source("%s\nflew up high!"),
-  DIG = Strings.source("%s\ndug a hole!"),
-  RAZOR_WIND = Strings.source("%s\nmade a whirlwind!"),
-  SOLARBEAM = Strings.source("%s\ntook in sunlight!"),
-  SKULL_BASH = Strings.source("%s\nlowered its head!"),
-  SKY_ATTACK = Strings.source("%s\nis glowing!"),
+  FLY = "_FlewUpHighText",
+  DIG = "_DugAHoleText",
+  RAZOR_WIND = "_MadeWhirlwindText",
+  SOLARBEAM = "_TookInSunlightText",
+  SKULL_BASH = "_LoweredItsHeadText",
+  SKY_ATTACK = "_SkyAttackGlowingText",
 }
 
--- pokered's <USER>/<TARGET> text macros (home/text.asm
--- PlaceMoveUsersName): battle texts naming the enemy mon print
--- "Enemy " before the nickname; player-side mons never get it.
--- Translatable as one "Enemy %s" template (#779) so languages that
--- qualify after the name, or decline, can (e.g. "%s ennemi").
-local function displayName(b)
-  return b.isPlayer and b.name or Strings("Enemy %s", b.name)
+-- home/text.asm:185
+local function displayName(battle, b)
+  return b.isPlayer and b.name or battle:romLine("EnemyText") .. b.name
 end
 
--- Apply the enemy qualifier to a pre-built message from a module that
--- only knows the raw nickname (Status.beforeMove/residual): replace the
--- first name occurrence with the qualified form.
-local function prefixEnemy(msg, battler)
+local function prefixEnemy(battle, msg, battler)
   if battler.isPlayer then return msg end
   local s = msg:find(battler.name, 1, true)
   if not s then return msg end
-  return msg:sub(1, s - 1) .. Strings("Enemy %s", battler.name)
+  return msg:sub(1, s - 1) .. displayName(battle, battler)
       .. msg:sub(s + #battler.name)
 end
 
@@ -614,14 +615,13 @@ function StatBox:draw()
   Font.drawBox(9, 2, 11, 10)
   love.graphics.setColor(0, 0, 0, 1)
   local s = self.mon.stats
-  -- labels through Strings so a mod catalog translates them (#811)
-  local rows = { { Strings("ATTACK"), s.attack },
-                 { Strings("DEFENSE"), s.defense },
-                 { Strings("SPEED"), s.speed },
-                 { Strings("SPECIAL"), s.special } }
-  for i, r in ipairs(rows) do
-    Font.draw(Strings(r[1]), 88, 24 + (i - 1) * 16)
-    Font.draw(("%3d"):format(r[2]), 128, 32 + (i - 1) * 16)
+  local values = { s.attack, s.defense, s.speed, s.special }
+  -- engine/pokemon/status_screen.asm:283-287
+  local i = 0
+  for label in RomText(self.game.data, "PrintStatsBox.StatsText", nil):gmatch("[^\n]+") do
+    i = i + 1
+    Font.draw(label, 88, 24 + (i - 1) * 16)
+    Font.draw(("%3d"):format(values[i]), 128, 32 + (i - 1) * 16)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -879,9 +879,9 @@ function BattleState.newWild(game, species, level, opts)
   self.enemy = makeBattler(game.data, Pokemon.new(game.data, species, level), false)
   markSeen(game, species)
   if opts and opts.hooked then
-    self.introText = self:romText("_HookedMonAttackedText", "The hooked\n%s\nattacked!", self.enemy.name)
+    self.introText = self:romLine("_HookedMonAttackedText", self.enemy.name)
   else
-    self.introText = self:romText("_WildMonAppearedText", "Wild %s\nappeared!", self.enemy.name)
+    self.introText = self:romLine("_WildMonAppearedText", self.enemy.name)
   end
   prewarmCries(self)
   return self
@@ -1038,7 +1038,8 @@ function BattleState.newTrainer(game, oppClass, partyIndex, opts)
   -- (engine/battle/core.asm:6682, engine/gfx/palettes.asm SetPal_Battle)
   self.trainerPic = BattleState.trainerSprite(
     game.data, self.trainer, oppClass, partyIndex)
-  self.introText = Strings("%s wants\nto fight!", self.trainer.name)
+  -- engine/battle/common_text.asm:86
+  self.introText = self:romLine("_TrainerWantsToFightText", self.trainer.name)
   prewarmCries(self)
   return self
 end
@@ -1053,7 +1054,7 @@ local function disguiseAsGhost(self)
   self.enemy.sprite = getImage("assets/generated/battle/front/ghost.png",
                                monPalette(self.data, self.enemy.mon.species))
   -- _EnemyAppearedText (data/text/text_2.asm:1251-1255) has no article
-  self.introText = self:romText("_EnemyAppearedText", "%s\nappeared!", self.enemy.name)
+  self.introText = self:romLine("_EnemyAppearedText", self.enemy.name)
 end
 
 -- Pokémon Tower ghosts (engine/battle/core.asm): without the Silph Scope
@@ -1094,16 +1095,14 @@ BattleState.GHOST_REVEAL_FRAMES = 150
 -- .playSFX at the end is the same SFX_TRAINER_APPEARED the port does not
 -- play for trainer intros either, so it is left out here too.
 function BattleState:queueScopeReveal()
-  local unveiled = self.data.text and self.data.text._UnveiledGhostText
-  self:say(unveiled
-           or Strings("SILPH SCOPE\nunveiled the\vGHOST's identity!"))
+  self:say(self:romLine("_UnveiledGhostText"))
   self:act(function()
     self.ghostReveal = { t = 0 }
     local ghostObj = objPic("assets/generated/battle/front/ghost.png")
     if ghostObj then self.enemy.sprite = ghostObj end
   end)
   table.insert(self.queue, { wait = BattleState.GHOST_REVEAL_FRAMES })
-  self:say(self:romText("_WildMonAppearedText", "Wild %s\nappeared!",
+  self:say(self:romLine("_WildMonAppearedText",
                    self.ghostReal and self.ghostReal.name or self.enemy.name))
 end
 
@@ -1834,10 +1833,10 @@ function BattleState:sendOutText(name)
       pct = math.floor(e.hp * 25 / math.floor(e.stats.hp / 4))
     end
   end
-  if pct >= 70 then return Strings("Go! %s!", name) end
-  if pct >= 40 then return Strings("Do it! %s!", name) end
-  if pct >= 10 then return Strings("Get'm! %s!", name) end
-  return self:romText("_EnemysWeakText", "The enemy's weak!\nGet'm! %s!", name)
+  -- engine/battle/common_text.asm:127-165
+  local label = pct >= 70 and "_GoText" or pct >= 40 and "_DoItText"
+    or pct >= 10 and "_GetmText" or "_EnemysWeakText"
+  return romTexts(self:romLine(label), self:romLine("_PlayerMon1Text", name))
 end
 
 -- RetreatMon / PlayerMon2Text (engine/battle/common_text.asm:167-243): the
@@ -1851,14 +1850,14 @@ function BattleState:withdrawText(name)
   end
   local word = ""
   if drop <= 0 then
-    word = self:romText("_EnoughText", "enough!")
+    word = self:romLine("_EnoughText")
   elseif drop >= 70 then
-    word = self:romText("_GoodText", "good!")
+    word = self:romLine("_GoodText")
   elseif drop >= 30 then
-    word = self:romText("_OKExclamationText", "OK!")
+    word = self:romLine("_OKExclamationText")
   end
-  return self:romText("_PlayerMon2Text", "%s ", name) .. word
-         .. self:romText("_ComeBackText", "\nCome back!")
+  return romTexts(self:romLine("_PlayerMon2Text", name), word,
+                       self:romLine("_ComeBackText"))
 end
 
 -- The cry a mon makes as it takes the field.  Yellow does not run its
@@ -1978,8 +1977,7 @@ function BattleState:enter()
     -- playerMonFainted queues on the battle screen; there is no battle
     -- screen to queue them on here, so they print over the map.
     self.game.stack:push(require("src.render.TextBox").new(self.game,
-      self:romText("_PlayerBlackedOutText2",
-        "%s is out of\nuseable POKéMON!\f%s blacked\nout!", name, name),
+      self:romLine("_PlayerBlackedOutText2", name, name),
       blackedOut))
     return
   end
@@ -2092,7 +2090,7 @@ function BattleState:enter()
   self:say(self.introText)
   -- engine/battle/common_text.asm:46
   if self.ghost then
-    self:say(self:romText("_GhostCantBeIDdText", "Darn! The GHOST\ncan't be ID'd!"))
+    self:say(self:romLine("_GhostCantBeIDdText"))
   end
   -- the unveil rides on that same box, before _InitBattleCommon clears the
   -- intro chrome below (#492)
@@ -2128,7 +2126,7 @@ function BattleState:enter()
       self:slidePic("foe")
     end)
     -- _TrainerSentOutText ends `done`, not `prompt` (data/text/text_2.asm:923)
-    self:sayAuto(self:romText("_TrainerSentOutText", "%s sent\nout %s!",
+    self:sayAuto(self:romLine("_TrainerSentOutText",
       foeName, self.enemy.name))
     self:act(function()
       -- EnemySendOutFirstMon (core.asm:1421-1434): after the text the
@@ -2342,7 +2340,7 @@ function BattleState:chooseMenu(choice)
     elseif not self:playerHasPP() then
       -- No usable PP goes straight to Struggle.
       -- engine/battle/core.asm:2751-2754
-      self:sayAuto(self:romText("_NoMovesLeftText", "%s has no\nmoves left!",
+      self:sayAuto(self:romLine("_NoMovesLeftText",
         self.player.name), 60)
       self:resolveTurn({ id = "STRUGGLE", pp = 1, struggle = true })
     else
@@ -2368,12 +2366,12 @@ function BattleState:chooseMove(index)
   if not move then return nil, "invalid move slot" end
   self.moveIndex = index
   if self.player.disabledSlot == index then
-    self:say(self:romText("_MoveDisabledText", "The move is\ndisabled!"))
+    self:say(self:romLine("_MoveDisabledText"))
     self.phase = "messages"
     -- engine/battle/core.asm:2679
     self.afterQueue = "moveSelect"
   elseif move.pp <= 0 then
-    self:say(self:romText("_MoveNoPPText", "No PP left for\nthis move!"))
+    self:say(self:romLine("_MoveNoPPText"))
     self.phase = "messages"
     self.afterQueue = "moveSelect"
   else
@@ -2551,8 +2549,7 @@ function BattleState:update(dt)
   if self.phase == "menu" and self.safari then
     if self.safari.balls <= 0 then
       -- engine/battle/core.asm:174-179
-      self:say(romText(self.data, "_OutOfSafariBallsText",
-        "PA: Ding-dong!\fYou are out of\nSAFARI BALLs!"))
+      self:say(self:romLine("_OutOfSafariBallsText"))
       self.phase = "messages"
       self.result = "run"
       self.afterQueue = "finish"
@@ -2698,7 +2695,7 @@ function BattleState:resolveMimic(user, target, move, moveInst)
   table.insert(self.queue, self.nextInsert, { wait = 50 })
   if target.invulnerable
      or not self:accuracyRoll(move, user, target) then
-    self:sayNext(self:romText("_ButItFailedText", "But, it failed!"))
+    self:sayNext(self:romLine("_ButItFailedText"))
     return
   end
   local slots = {}
@@ -2708,7 +2705,7 @@ function BattleState:resolveMimic(user, target, move, moveInst)
   if #slots == 0 then
     -- .getRandomMove rerolls empty slots forever; a moveless target
     -- can't happen in practice, so just fail instead of hanging
-    self:sayNext(self:romText("_ButItFailedText", "But, it failed!"))
+    self:sayNext(self:romLine("_ButItFailedText"))
     return
   end
   if user.isPlayer and self.kind ~= "link" then
@@ -2769,7 +2766,7 @@ function BattleState:applyMimic(user, target, moveInst, slot)
   entry.mimic = true
   self:animNext("MIMIC", user.isPlayer)
   -- _MimicLearnedMoveText: "<USER> / learned / MOVE!"
-  self:sayNext(self:romText("_MimicLearnedMoveText", "%s\nlearned\n%s!", displayName(user),
+  self:sayNext(self:romLine("_MimicLearnedMoveText", displayName(self, user),
                                            self.data.moves[src.id].name))
 end
 
@@ -2820,9 +2817,9 @@ function BattleState:openOldManBag()
     -- the tutorial bag rides DisplayBagMenu's LIST_MENU_BOX over the battle
     -- screen (engine/battle/core.asm:2210)
     list = ListMenu.new(game, "ITEMS", {
-      { value = "POKE_BALL", label = Strings("POKé BALL"), count = qty },
+      { value = "POKE_BALL", label = self.data.items.POKE_BALL.name, count = qty },
       -- home/list_menu.asm:523-524
-      { cancel = true, label = Strings("CANCEL") },
+      { cancel = true, label = self:romLine("CancelTextString") },
     }, {
       itemBox = true,
       script = function(l)
@@ -2857,8 +2854,8 @@ function BattleState:oldManThrow()
   self.afterQueue = "finish"
   self.result = "run" -- nothing is kept; wBattleResult only ends the demo
   -- engine/items/item_effects.asm:148
-  self:sayAuto(self:romText("_ItemUseText001", "%s used\n%s!",
-    self.demoName, self.data.items.POKE_BALL.name))
+  self:sayAuto(require("src.inventory.ItemEffects").itemUseLine(self.data, self.game.save,
+    self.data.items.POKE_BALL.name, self.demoName))
   self:act(function()
     -- ItemUseBall's beat before the toss chain (like throwBall)
     self.nextInsert = (self.nextInsert or 0) + 1
@@ -3100,7 +3097,7 @@ function BattleState:residualFor(b, opp)
   b.residualDone = true
   local msgs = Status.residualStatus(b, opp, self)
   local rec = Status.recordFor(self.data and self.data.statuses, b.mon.status)
-  for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(m, b)) end
+  for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(self, m, b)) end
   -- engine/battle/core.asm:490-493
   if rec and rec.residual then
     self:animNext("BURN_PSN_ANIM", b.isPlayer)
@@ -3115,7 +3112,7 @@ function BattleState:residualSeedFor(b, opp)
   if #msgs > 0 then
     self:animNext("ABSORB", opp.isPlayer)
     self:drainNext()
-    for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(m, b)) end
+    for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(self, m, b)) end
   end
   if b.mon.hp <= 0 then self:waitNext(20) end
   self.sideToxic = self.sideToxic or {}
@@ -3274,7 +3271,7 @@ function BattleState:endOfTurn()
     if sweep and not b.residualDone and b.mon.hp > 0 and oppAlive then
       b.residualDone = true
       local msgs = Status.residual(b, opp, self)
-      for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(m, b)) end
+      for _, m in ipairs(msgs) do self:sayNext(prefixEnemy(self, m, b)) end
       if #msgs > 0 then self:drainNext() end -- poison/burn/seed HP moved
       if b.toxicCounter then
         self.sideToxic[side] = b.toxicCounter
@@ -4160,13 +4157,13 @@ function BattleState:executeAction(user, target, action)
     -- ghost battles: the ghost never attacks; its whole turn is the
     -- GetOutText (ExecuteEnemyMove -> PrintGhostText, core.asm:5462-5463)
     if self.ghost and not user.isPlayer then
-      self:sayNext(self.data.text._GetOutText or Strings("GHOST: Get out...\nGet out..."))
+      self:sayNext(self:romLine("_GetOutText"))
       return
     end
     -- engine/battle/core.asm:3089
     if self.ghost and user.isPlayer and action.special ~= "bound"
        and user.mon.status ~= "SLP" and user.mon.status ~= "FRZ" then
-      self:sayNext(self:romText("_ScaredText", "%s is too\nscared to move!", displayName(user)))
+      self:sayNext(self:romLine("_ScaredText", displayName(self, user)))
       return
     end
 
@@ -4224,12 +4221,12 @@ function BattleState:executeAction(user, target, action)
       })
       self.aiUses = self:aiUsesFor()
       markSeen(self.game, self.enemy.mon.species)
-      self:sayNext(self:romText("_AIBattleWithdrawText", "%s with-\ndrew %s!",
+      self:sayNext(self:romLine("_AIBattleWithdrawText",
         self.trainer.name, oldName))
       -- EnemySendOut falls into EnemySendOutFirstMon: TrainerSentOutText,
       -- then AnimateSendingOutMon and PlayCry (core.asm:1276-1434)
       self.enemySendingOut = true
-      self:sayNextAuto(self:romText("_TrainerSentOutText", "%s sent\nout %s!",
+      self:sayNextAuto(self:romLine("_TrainerSentOutText",
         self.trainer.name, self.enemy.name))
       self:actNext(function()
         self.enemySendingOut = false
@@ -4248,7 +4245,7 @@ function BattleState:executeAction(user, target, action)
       -- 3392): sleep/freeze/held/flinch keep the mon recharging next turn
       if self:preRechargeChecks(user, target) then return end
       user.mustRecharge = nil
-      self:sayNext(self:romText("_MustRechargeText", "%s\nmust recharge!", displayName(user)))
+      self:sayNext(self:romLine("_MustRechargeText", displayName(self, user)))
       return
     end
     if action.special == "bound" then
@@ -4299,8 +4296,8 @@ function BattleState:statusOnomatopoeia(user, kind)
     anim = isPlayer and "CONF_PLAYER_ANIM" or "CONF_ANIM"
   end
   local text = kind == "sleep"
-    and self:romText("_FastAsleepText", "%s\nis fast asleep!", displayName(user))
-    or self:romText("_IsConfusedText", "%s\nis confused!", displayName(user))
+    and self:romLine("_FastAsleepText", displayName(self, user))
+    or self:romLine("_IsConfusedText", displayName(self, user))
   if kind == "sleep" and isPlayer then
     self:animNext(anim, isPlayer)
     self:sayNext(text)
@@ -4318,7 +4315,7 @@ function BattleState:sayStatusMsg(user, msg, kind)
   if kind then
     self:statusOnomatopoeia(user, kind)
   else
-    self:sayNext(prefixEnemy(msg, user))
+    self:sayNext(prefixEnemy(self, msg, user))
   end
 end
 
@@ -4339,18 +4336,18 @@ function BattleState:preRechargeChecks(user, target)
     mon.sleepTurns = user.sleepTurns > 0 and user.sleepTurns or nil
     if user.sleepTurns <= 0 then
       mon.status = nil
-      self:sayNext(self:romText("_WokeUpText", "%s\nwoke up!", displayName(user)))
+      self:sayNext(self:romLine("_WokeUpText", displayName(self, user)))
     else
       self:statusOnomatopoeia(user, "sleep")
     end
     return true
   end
   if mon.status == "FRZ" then
-    self:sayNext(self:romText("_IsFrozenText", "%s\nis frozen solid!", displayName(user)))
+    self:sayNext(self:romLine("_IsFrozenText", displayName(self, user)))
     return true
   end
   if target.trappingTurns then
-    self:sayNext(self:romText("_CantMoveText", "%s\ncan't move!", displayName(user)))
+    self:sayNext(self:romLine("_CantMoveText", displayName(self, user)))
     return true
   end
   if user.flinched then
@@ -4358,7 +4355,7 @@ function BattleState:preRechargeChecks(user, target)
     -- player recharges, so the flinch eats the recharge turn and the
     -- flag survives (the Hyper Beam flinch glitch)
     user.flinched = false
-    self:sayNext(self:romText("_FlinchedText", "%s\nflinched!", displayName(user)))
+    self:sayNext(self:romLine("_FlinchedText", displayName(self, user)))
     return true
   end
   return false
@@ -4384,7 +4381,7 @@ function BattleState:statusInterrupt(user, target, selectedId)
                                    { id = "CONFUSED", power = 40, type = "NORMAL", accuracy = 100 },
                                    { rng = self.rng, forceCrit = false, typeless = true,
                                      screens = target })
-    self:sayNext(self:romText("_HurtItselfText", "It hurt itself in\nits confusion!"))
+    self:sayNext(self:romLine("_HurtItselfText"))
     -- HandleSelfConfusionDamage (core.asm:3706-3714, enemy side :5807-5811)
     self:animNext("POUND", not user.isPlayer)
     self:clearVolatiles(user, true)
@@ -4446,13 +4443,13 @@ end
 local function statusMissText(self, record, user, target)
   local kind = record and record.missText
   if kind == "didntAffect" then
-    return self:romText("_DidntAffectText", "It didn't affect\n%s!", displayName(target))
+    return self:romLine("_DidntAffectText", displayName(self, target))
   elseif kind == "butItFailed" then
-    return self:romText("_ButItFailedText", "But, it failed!")
+    return self:romLine("_ButItFailedText")
   elseif kind == "evadedAttack" then
-    return self:romText("_EvadedAttackText", "%s\nevaded attack!", displayName(target))
+    return self:romLine("_EvadedAttackText", displayName(self, target))
   end
-  return self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user))
+  return self:romLine("_AttackMissedText", displayName(self, user))
 end
 
 function BattleState:performMove(user, target, moveInst, isCalled)
@@ -4495,15 +4492,17 @@ function BattleState:performMove(user, target, moveInst, isCalled)
     and user.thrashAnnounced or false
   if thrashing then
     -- .ThrashingAboutCheck (core.asm:3531-3552)
-    self:sayNextAuto(self:romText("_ThrashingAboutText", "%s's\nthrashing about!",
-                                  displayName(user)))
+    self:sayNextAuto(self:romLine("_ThrashingAboutText",
+                                  displayName(self, user)))
     user.thrashTurns = user.thrashTurns - 1
     if user.thrashTurns <= 0 then
       user.thrashTurns, user.thrashMove, user.thrashAnnounced = nil, nil, nil
       if not user.confusedTurns then user.confusedTurns = self.rng(2, 5) end
     end
   else
-    self:sayNextAuto(self:romText("_ItemUseText001", "%s\nused %s!", displayName(user), move.name))
+    -- engine/battle/used_move_text.asm:5-6
+    self:sayNextAuto(romTexts(self:romLine("_ActorNameText", displayName(self, user)),
+      self:romLine("_UsedMove1Text"), self:romLine("_MoveNameText", move.name)))
     moveAnnouncement = self.queue[self.nextInsert]
   end
   -- PlayCurrentMoveAnimation follows the announcement; Mimic (announceAnim
@@ -4584,11 +4583,13 @@ function BattleState:performMove(user, target, moveInst, isCalled)
     if chargeAnim then
       self:animNext(chargeAnim, user.isPlayer)
     end
-    local chargeText = move.chargeText or CHARGE_TEXT[move.id]
-                       or Strings.source("%s\nis charging up!")
-    -- the template is a source string (a move record may supply its own),
-    -- so translate it here rather than where it was declared
-    self:sayNext(Strings(chargeText, displayName(user)))
+    if move.chargeText then
+      self:sayNext(Strings(move.chargeText, displayName(self, user)))
+    else
+      -- engine/battle/effects.asm:1032-1054
+      self:sayNext(romTexts(self:romLine("_ChargeMoveEffectText", displayName(self, user)),
+        self:romLine(CHARGE_TEXT[move.id] or "_DugAHoleText")))
+    end
     return
   end
 
@@ -4658,7 +4659,7 @@ function BattleState:performMove(user, target, moveInst, isCalled)
   if move.power == 0 and not (record and record.kind == "full") then
     MoveEffects.warnUnknown(move.effect)
     self:cancelMoveAnim()
-    self:sayNext(self:romText("_ButItFailedText", "But, it failed!"))
+    self:sayNext(self:romLine("_ButItFailedText"))
     return
   end
 
@@ -4668,7 +4669,7 @@ end
 
 function BattleState:continueTrapping(user, target)
   -- engine/battle/core.asm:3642
-  self:sayNextAuto(self:romText("_AttackContinuesText", "%s's\nattack continues!", displayName(user)))
+  self:sayNextAuto(self:romLine("_AttackContinuesText", displayName(self, user)))
   -- .MultiturnMoveCheck (core.asm:3554-3566) prints AttackContinuesText
   -- then jumps to GetPlayerAnimationType, so the trapping move's full
   -- animation replays each locked turn (same damage, animation shown).
@@ -4696,13 +4697,13 @@ function BattleState:continueBide(user, target)
   user.bideTurns = user.bideTurns - 1
   -- engine/battle/core.asm:3499
   if user.bideTurns > 0 then return end
-  self:sayNext(self:romText("_UnleashedEnergyText", "%s\nunleashed energy!", displayName(user)))
+  self:sayNext(self:romLine("_UnleashedEnergyText", displayName(self, user)))
   local dmg = (user.bideDamage or 0) * 2
   user.bideTurns, user.bideDamage = nil, nil
   -- engine/battle/core.asm:3521
   if dmg <= 0 then
     self:cancelMoveAnim()
-    self:sayNext(self:romText("_AttackMissedText", "%s's\nattack missed!", displayName(user)))
+    self:sayNext(self:romLine("_AttackMissedText", displayName(self, user)))
     return
   end
   -- .UnleashEnergy (core.asm:3501-3529) re-points wPlayerMoveNum at BIDE
@@ -4726,11 +4727,11 @@ function BattleState:applyDamage(target, dmg)
     target.substitutePending = nil
     target.substituteHP = target.substituteHP - dmg
     -- engine/battle/core.asm:4857
-    self:sayNext(self:romText("_SubstituteTookDamageText", "The SUBSTITUTE\ntook damage for\n%s!", displayName(target)))
+    self:sayNext(self:romLine("_SubstituteTookDamageText", displayName(self, target)))
     if target.substituteHP <= 0 then
       target.substituteHP = nil
       -- engine/battle/core.asm:4884
-      self:sayNext(self:romText("_SubstituteBrokeText", "%s's\nSUBSTITUTE broke!", displayName(target)))
+      self:sayNext(self:romLine("_SubstituteBrokeText", displayName(self, target)))
     end
     return dmg
   end
@@ -4749,14 +4750,14 @@ function BattleState:applyRecoil(user, recoil)
   local before = mon.hp
   mon.hp = math.max(0, mon.hp - recoil)
   if mon.hp ~= before then self:drainNext(user, mon.hp) end
-  self:sayNext(self:romText("_HitWithRecoilText", "%s's\nhit with recoil!", displayName(user)))
+  self:sayNext(self:romLine("_HitWithRecoilText", displayName(self, user)))
 end
 
 -- engine/battle/core.asm:4913
 function BattleState:handleBuildingRage(target)
   if not target.rageMove or target.mon.hp <= 0 then return end
   if (target.stages.attack or 0) >= 6 then return end
-  self:sayNext(self:romText("_BuildingRageText", "%s's\nRAGE is building!", displayName(target)))
+  self:sayNext(self:romLine("_BuildingRageText", displayName(self, target)))
   for _, m in ipairs(MoveEffects.changeStage(self, target, "attack", 1, false)) do
     self:sayNext(m)
   end
@@ -4829,12 +4830,9 @@ function BattleState:onFaint(battler)
     -- acknowledged core.asm:797-798 bug.)
     self:actNext(function() self:playVictoryMusic() end)
   end
-  -- _EnemyMonFaintedText already carries its own "Enemy" wording, so this
-  -- passes the raw name -- displayName's separate Strings("Enemy %s", ...)
-  -- would double it up
   self:sayNext(battler.isPlayer
-    and self:romText("_PlayerMonFaintedText", "%s\nfainted!", battler.name)
-    or self:romText("_EnemyMonFaintedText", "Enemy %s\nfainted!", battler.name))
+    and self:romLine("_PlayerMonFaintedText", battler.name)
+    or self:romLine("_EnemyMonFaintedText", battler.name))
   if battler.isPlayer then
     self:act(function() self:playerMonFainted() end)
   else
@@ -4897,13 +4895,15 @@ function BattleState:awardExp()
       -- _BoostedText / _WithExpAllText end in the CONT code (\v, "...\011"
       -- in data/generated/text.lua): the box waits for A/B + ▼ then scrolls
       -- the amount line in, so it stays on-screen instead of at y=144 (#216).
-      local text = Strings.source("%s gained\n%d EXP. Points!")
+      -- engine/battle/experience.asm:342-366
+      local middle = ""
       if announce == "expAll" then
-        text = Strings.source("%s gained\nwith EXP.ALL,\v%d EXP. Points!")
+        middle = self:romLine("_WithExpAllText")
       elseif traded then
-        text = Strings.source("%s gained\na boosted\v%d EXP. Points!")
+        middle = self:romLine("_BoostedText")
       end
-      self:sayNext(Strings(text, name, gained))
+      self:sayNext(romTexts(self:romLine("_GainedText", name), middle,
+        self:romLine("_ExpPointsText", gained)))
     end
     -- per level: GrewLevelText -> the stats window (PrintStatsBox) ->
     -- the move-learn checks (experience.asm:245-256)
@@ -4929,7 +4929,7 @@ function BattleState:awardExp()
       end)
       -- GrewLevelText: text_far, sound_level_up, text_end (experience.asm:
       -- WaitForSoundToFinish releases (experience.asm:243-249)
-      self:sayNextAutoWaitSfx(Strings("%s grew\nto level %d!", name, lv),
+      self:sayNextAutoWaitSfx(self:romLine("_GrewLevelText", name, lv),
         function() return require("src.core.Sound").play(game.data, "Level_Up") end)
       self:uiNext(function()
         return StatBox.new(game, mon)
@@ -5027,11 +5027,14 @@ function BattleState:enemyMonFainted()
         -- confirmed via tests/engine/trainer_shift_prompt_bug565.lua that
         -- the battle queue's own \f handling (not TextBox.lua's) does not
         -- page a sayChoice string the same way -- left as two calls.
-        self:say(Strings("%s is\nabout to use\v%s!", self.trainer.name, nextName))
+        -- engine/battle/core.asm:1378
+        local aboutToUse = romPages(self:romLine("_TrainerAboutToUseText",
+          self.trainer.name, nextName, self.game.save.player.name))
+        self:say(aboutToUse[1])
         -- EnemySendOutFirstMon .next9/.next8 (core.asm:1390-1409) and
         -- HasMonFainted's NoWillText (core.asm:1473-1488)
         self:sayChoice(
-          Strings("Will %s\nchange POKéMON?", self.game.save.player.name),
+          aboutToUse[2],
           function(yes)
             if not yes then return end
             local game = self.game
@@ -5050,10 +5053,9 @@ function BattleState:enemyMonFainted()
               onSwitch = function(mon, menu)
                 local refusal
                 if mon == self.player.mon then
-                  refusal = self:romText("_AlreadyOutText",
-                    "%s is\nalready out!", self.player.name)
+                  refusal = self:romLine("_AlreadyOutText", self.player.name)
                 elseif mon.hp <= 0 then
-                  refusal = self:romText("_NoWillText", "There's no will\nto fight!")
+                  refusal = self:romLine("_NoWillText")
                 end
                 if refusal then
                   if menu then menu:refuse(refusal) else reopenShift(refusal) end
@@ -5091,7 +5093,7 @@ function BattleState:enemyMonFainted()
         -- (AnimateSendingOutMon) with the cry; no POOF -- that animation
         -- belongs to the player-side SendOutMon (core.asm:1757-1762)
         self.enemySendingOut = true
-        self:sayNextAuto(self:romText("_TrainerSentOutText", "%s sent\nout %s!",
+        self:sayNextAuto(self:romLine("_TrainerSentOutText",
           self.trainer.name, self.enemy.name))
         self:actNext(function()
           self.enemySendingOut = false
@@ -5160,7 +5162,7 @@ function BattleState:enemyMonFainted()
     -- scripted battles that print their own follow-up leave it nil.
     self:actNext(function() self:playVictoryMusic() end)
     -- _TrainerDefeatedText: "<PLAYER> defeated\nTRAINER!"
-    self:sayNext(self:romText("_TrainerDefeatedText", "%s defeated\n%s!", self.game.save.player.name,
+    self:sayNext(self:romLine("_TrainerDefeatedText", self.game.save.player.name,
                                              self.trainer.name))
     self:actNext(function()
       self.showEnemyTrainer = self.trainerPic ~= nil
@@ -5202,7 +5204,7 @@ function BattleState:enemyMonFainted()
         end
       end
     end
-    self:sayNext(self:romText("_MoneyForWinningText", "%s got ¥%d\nfor winning!", self.game.save.player.name, prize))
+    self:sayNext(self:romLine("_MoneyForWinningText", self.game.save.player.name, prize))
   end
   self.result = "win"
   self.afterQueue = "finish"
@@ -5221,7 +5223,7 @@ function BattleState:learnMove(mon, moveId)
       .onMoveLearned(self.game.save, mon, moveId)
     Runtime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
     -- engine/pokemon/learn_move.asm:93
-    self:sayNextWaitSfx(self:romText("_LearnedMove1Text", "%s learned\n%s!", mon.nickname or self.data.pokemon[mon.species].name,
+    self:sayNextWaitSfx(self:romLine("_LearnedMove1Text", mon.nickname or self.data.pokemon[mon.species].name,
                                             mdef.name), function()
       return require("src.core.Sound").play(self.data, "Level_Up")
     end)
@@ -5234,8 +5236,8 @@ function BattleState:learnMove(mon, moveId)
     return self:buildScreen("MoveLearnMenu", mon, moveId, function(learned)
       local name = mon.nickname or self.data.pokemon[mon.species].name
       self:holdPage(learned
-        and self:romText("_LearnedMove1Text", "%s learned\n%s!", name, mdef.name)
-        or self:romText("_DidNotLearnText", "%s\ndid not learn\v%s!", name, mdef.name))
+        and self:romLine("_LearnedMove1Text", name, mdef.name)
+        or self:romLine("_DidNotLearnText", name, mdef.name))
     end, "Level_Up")
   end)
 end
@@ -5291,9 +5293,7 @@ function BattleState:playerMonFainted()
       self.nextInsert = (self.nextInsert or 0) + 1
       table.insert(self.queue, self.nextInsert, { wait = 64 })
       local TextBox = require("src.render.TextBox")
-      local raw = (self.data.text and self.data.text._Rival1WinText)
-        or Strings("{RIVAL}: Yeah! Am\nI great or what?")
-      self:sayNext(TextBox.substitute(self.game, raw))
+      self:sayNext(TextBox.substitute(self.game, self:romLine("_Rival1WinText")))
     end
     -- Oak's Lab starter rival: Rival1WinText only (no blackout lines).
     -- Any other wipe, including Route 22 RIVAL1, still blacks out.
@@ -5307,8 +5307,11 @@ function BattleState:playerMonFainted()
       -- command sits.  (The Route 22 RIVAL1 wipe darkens one box early, over
       -- Rival1WinText, which pokered prints just before the same command.)
       self.blackedOut = true
-      self:sayNext(Strings("%s is out of\nuseable POKéMON!", self.game.save.player.name))
-      self:sayNext(Strings("%s blacked\nout!", self.game.save.player.name))
+      -- engine/battle/core.asm:1153
+      local playerName = self.game.save.player.name
+      for _, page in ipairs(romPages(self:romLine("_PlayerBlackedOutText2", playerName, playerName))) do
+        self:sayNext(page)
+      end
     end
     self.result = "lose"
     self.afterQueue = "finish"
@@ -5322,18 +5325,18 @@ function BattleState:playerMonFainted()
   if self.kind ~= "wild" then return end
   local game = self.game
   -- engine/battle/core.asm:1052-1078
-  self:sayChoice(self.data.text._UseNextMonText or Strings("Use next POKéMON?"),
+  self:sayChoice(self:romLine("_UseNextMonText"),
     function(yes)
       if yes then return end -- the menu-phase guard opens the party menu
       local pSpd = (game.save.party[1].stats or { speed = 0 }).speed or 0
       if self:runRoll(pSpd, TurnOrder.effectiveSpeed(self.enemy)) then
         require("src.core.Sound").play(self.data, "Run")
-        self:say(self:romText("_GotAwayText", "Got away safely!"))
+        self:say(self:romLine("_GotAwayText"))
         self.result = "run"
         self.playerRan = true
         self.afterQueue = "finish"
       else
-        self:say(self:romText("_CantEscapeText", "Can't escape!"))
+        self:say(self:romLine("_CantEscapeText"))
       end
     end, { box = require("src.ui.Theme").useNextMonBox })
 end
@@ -5356,9 +5359,9 @@ function BattleState:openReplacementMenu()
         -- core.asm:1473-1488
         if mon.hp <= 0 then
           if menu then
-            menu:refuse(self:romText("_NoWillText", "There's no will\nto fight!"))
+            menu:refuse(self:romLine("_NoWillText"))
           else
-            self:say(self:romText("_NoWillText", "There's no will\nto fight!"))
+            self:say(self:romLine("_NoWillText"))
           end
           return -- the menu-phase guard reopens the menu
         end
@@ -5400,7 +5403,7 @@ function BattleState:safariAction(choice)
 
   if choice == "run" then
     require("src.core.Sound").play(self.data, "Run")
-    self:say(self:romText("_GotAwayText", "Got away safely!"))
+    self:say(self:romLine("_GotAwayText"))
     self.result = "run"
     self.playerRan = true
     self.afterQueue = "finish"
@@ -5408,8 +5411,15 @@ function BattleState:safariAction(choice)
   end
 
   if choice == "ball" then
+    if require("src.inventory.ItemEffects").ballBoxFull(self.game.save, self) then
+      -- engine/battle/core.asm:171-173
+      self:say(self.data.text._BoxFullCannotThrowBallText)
+      return
+    end
     st.balls = st.balls - 1
-    self:sayAuto(Strings("%s used\nSAFARI BALL!", playerName))
+    -- engine/items/item_effects.asm:146-147
+    self:sayAuto(require("src.inventory.ItemEffects").itemUseLine(self.data, self.game.save,
+                                                     self.data.items.SAFARI_BALL.name))
     self:act(function()
       self.lastBall = "SAFARI_BALL"
       local caught, shakes = self:catchAttempt("SAFARI_BALL", self.safariCatchRate)
@@ -5437,12 +5447,12 @@ function BattleState:safariAction(choice)
 
   if choice == "bait" then
     -- engine/items/item_effects.asm:1434
-    self:sayAuto(self:romText("_ThrewBaitText", "%s threw some\nBAIT.", playerName))
+    self:sayAuto(self:romLine("_ThrewBaitText", playerName))
     self.safariCatchRate = math.floor(self.safariCatchRate / 2)
     self.baitFactor = math.min(255, self.baitFactor + self.rng(1, 5))
     self.escapeFactor = 0
   else -- rock
-    self:sayAuto(self:romText("_ThrewRockText", "%s threw a\nROCK.", playerName))
+    self:sayAuto(self:romLine("_ThrewRockText", playerName))
     self.safariCatchRate = math.min(255, self.safariCatchRate * 2)
     self.escapeFactor = math.min(255, self.escapeFactor + self.rng(1, 5))
     self.baitFactor = 0
@@ -5462,13 +5472,13 @@ end
 function BattleState:safariEnemyTurn()
   if self.baitFactor > 0 then
     self.baitFactor = self.baitFactor - 1
-    self:sayNext(self:romText("_SafariZoneEatingText", "Wild %s\nis eating!", self.enemy.name))
+    self:sayNext(self:romLine("_SafariZoneEatingText", self.enemy.name))
   elseif self.escapeFactor > 0 then
     self.escapeFactor = self.escapeFactor - 1
     if self.escapeFactor == 0 then
       self.safariCatchRate = self.enemy.def.catchRate
     end
-    self:sayNext(self:romText("_SafariZoneAngryText", "Wild %s\nis angry!", self.enemy.name))
+    self:sayNext(self:romLine("_SafariZoneAngryText", self.enemy.name))
   end
   self:act(function()
     local speed = self.enemy.curStats.speed % 256
@@ -5484,7 +5494,7 @@ function BattleState:safariEnemyTurn()
       fled = self.rng(0, 255) < b
     end
     if fled then
-      self:sayNext(self:romText("_WildRanText", "Wild %s\nran!", self.enemy.name))
+      self:sayNext(self:romLine("_WildRanText", self.enemy.name))
       self:actNext(function()
         require("src.core.Sound").play(self.data, "Run")
         startPicKind(self:picFxFor(self.enemy), "slideOff")
@@ -5541,8 +5551,7 @@ function BattleState:tryRun()
     -- on a \v scroll (ContText: ▼ then a button press) rather than a \n.
     -- Spelling it with three \n dropped "trainer battle!" and handed the
     -- menu straight back (#239).
-    self:say(self.data.text._NoRunningText
-      or Strings("No! There's no\nrunning from a\vtrainer battle!"))
+    self:say(self:romLine("_NoRunningText"))
     return
   end
   -- modified in-battle speeds (stat stages + paralysis), like the
@@ -5551,12 +5560,12 @@ function BattleState:tryRun()
                                TurnOrder.effectiveSpeed(self.enemy))
   if escaped then
     require("src.core.Sound").play(self.data, "Run")
-    self:say(self:romText("_GotAwayText", "Got away safely!"))
+    self:say(self:romLine("_GotAwayText"))
     self.result = "run"
     self.playerRan = true
     self.afterQueue = "finish"
   else
-    self:say(self:romText("_CantEscapeText", "Can't escape!"))
+    self:say(self:romLine("_CantEscapeText"))
     self:act(function()
       self:executeAction(self.enemy, self.player, self:enemyAction())
     end)
@@ -5610,21 +5619,20 @@ end
 
 -- data/text/text_6.asm:29-35
 function BattleState:caughtText()
-  return self:romText("_ItemUseBallText05", "All right!\n%s was\vcaught!",
+  return self:romLine("_ItemUseBallText05",
     self.enemy.name)
 end
 
 -- Wobble messages by shake count (ItemUseBallText01..04)
 function BattleState:ballMissMessage(shakes)
-  local t = self.data.text
   if shakes == 0 then
-    return t._ItemUseBallText01 or Strings("You missed the\nPOKéMON!")
+    return self:romLine("_ItemUseBallText01")
   elseif shakes == 1 then
-    return t._ItemUseBallText02 or Strings("Darn! The POKéMON\nbroke free!")
+    return self:romLine("_ItemUseBallText02")
   elseif shakes == 2 then
-    return (t._ItemUseBallText03 or self:romText("_ItemUseBallText03", "Aww! It appeared\nto be caught!")):gsub("%s+$", "")
+    return (self:romLine("_ItemUseBallText03"):gsub("%s+$", ""))
   end
-  return t._ItemUseBallText04 or self:romText("_ItemUseBallText04", "Shoot! It was so\nclose too!")
+  return self:romLine("_ItemUseBallText04")
 end
 
 -- ------- battle rules a mode may own
@@ -5684,18 +5692,13 @@ function BattleState:askNicknameUI(mon, displayName)
   self.lockedBall = nil
   self.blankForAskName = true
   local TextBox = require("src.render.TextBox")
-  local text = self:romText("_DoYouWantToNicknameText", "Do you want to\ngive a nickname\nto %s?", displayName)
-  local label = game.data.text and game.data.text._DoYouWantToNicknameText
-  if label then
-    -- extractor CONT is \t; TextBox scrolls on \n/\v
-    text = label:gsub("\t", "\n"):gsub("{RAM:?[%w_]*}", displayName)
-  end
+  local text = self:romLine("_DoYouWantToNicknameText", displayName):gsub("\t", "\n")
   return TextBox.new(game, text, nil, {
     choice = function(yes)
       self.blankForAskName = false
       if not yes then return end
       pcall(Screens.push, game, "NamingScreen", {
-        title = Strings("NICKNAME?"), maxLen = 10, mon = mon,
+        title = self:romLine("NicknameTextString"), maxLen = 10, mon = mon,
         onDone = function(name)
           if name and #name > 0 then mon.nickname = name end
         end,
@@ -5748,8 +5751,7 @@ function BattleState:storeCaughtMon()
     -- text_promptbutton (item_effects.asm:624-629), so the fanfare follows
     -- the box rather than firing when the dex bit is set
     self:sayNextWaitSfx(
-      self:romText("_ItemUseBallText06",
-        "New POKéDEX data\nwill be added for\n%s!", self.enemy.name),
+      self:romLine("_ItemUseBallText06", self.enemy.name),
       function() return require("src.core.Sound").play(self.data, "Dex_Page_Added") end)
     self:uiNext(function()
       return self:buildScreen("DexEntryMenu", species)
@@ -5770,26 +5772,21 @@ function BattleState:storeCaughtMon()
   else
     destination = self:partyFullDestination(self.enemy.mon)
     if destination == "box" then
-      local boxNum = require("src.pokemon.Boxes").deposit(game.save, self.enemy.mon)
-      if boxNum then
-        askCaughtNickname()
-        -- engine/items/item_effects.asm:561-566
-        -- data/text/text_6.asm:37-38
-        local function transferText()
-          local metBill = game.save.flags and game.save.flags.EVENT_MET_BILL
-          return self:romText(
-            metBill and "_ItemUseBallText07" or "_ItemUseBallText08",
-            metBill and "%s was\ntransferred to\nBILL's PC!"
-                    or "%s was\ntransferred to\nsomeone's PC!",
-            self.enemy.mon.nickname or self.enemy.name)
-        end
-        local transferRow
-        self:actNext(function() transferRow.text = transferText() end)
-        self:sayNext(transferText())
-        transferRow = self.queue[self.nextInsert]
-      else
-        self:sayNext(Strings("But every BOX\nis full!"))
+      -- engine/items/item_effects.asm:2649
+      table.insert(require("src.pokemon.Boxes").active(game.save), self.enemy.mon)
+      askCaughtNickname()
+      -- engine/items/item_effects.asm:561-566
+      -- data/text/text_6.asm:37-38
+      local function transferText()
+        local metBill = game.save.flags and game.save.flags.EVENT_MET_BILL
+        return self:romLine(
+          metBill and "_ItemUseBallText07" or "_ItemUseBallText08",
+          self.enemy.mon.nickname or self.enemy.name)
       end
+      local transferRow
+      self:actNext(function() transferRow.text = transferText() end)
+      self:sayNext(transferText())
+      transferRow = self.queue[self.nextInsert]
     end
   end
   Runtime.emit("pokemon.caught", {
@@ -5843,14 +5840,21 @@ end
 
 -- called by BagMenu when a ball is thrown
 function BattleState:throwBall(ball)
+  if require("src.inventory.ItemEffects").ballBoxFull(self.game.save, self) then
+    -- engine/items/item_effects.asm:2309-2311
+    self.phase = "messages"
+    self.afterQueue = "menu"
+    self:say(self.data.text._BoxFullCannotThrowBallText)
+    return false
+  end
   -- ItemUseBall branches to ThrowBallAtTrainerMon on wIsInBattle != 1
   -- (item_effects.asm:109-113) BEFORE it reaches `ld hl, ItemUseText00 /
   -- call PrintText` (:146-147), so a trainer battle never shows the
   -- "<PLAYER> used <ITEM>!" line (#291).  Safari and the old man demo are
   -- still wIsInBattle == 1, and this port models both as kind == "wild".
   if self.kind == "wild" then
-    self:sayAuto(self:romText("_ItemUseText001", "%s used\n%s!", self.game.save.player.name,
-                                     self.data.items[ball].name))
+    self:sayAuto(require("src.inventory.ItemEffects").itemUseLine(self.data, self.game.save,
+                                                     self.data.items[ball].name))
   end
   self:act(function()
     if self.kind ~= "wild" then
@@ -5870,9 +5874,9 @@ function BattleState:throwBall(ball)
       end)
       self:animNext("BLOCKBALL_ANIM", true)
       self:sayNext(t._ThrowBallAtTrainerMonText1
-                   or self:romText("_ThrowBallAtTrainerMonText1", "The trainer\nblocked the BALL!"))
+                   or self:romLine("_ThrowBallAtTrainerMonText1"))
       self:sayNext(t._ThrowBallAtTrainerMonText2
-                   or self:romText("_ThrowBallAtTrainerMonText2", "Don't be a thief!"))
+                   or self:romLine("_ThrowBallAtTrainerMonText2"))
       self:act(function()
         self:executeAction(self.enemy, self.player, self:enemyAction())
       end)
@@ -5899,8 +5903,7 @@ function BattleState:throwBall(ball)
       -- instead of starting a fresh page.  Resolve the label once, then
       -- split it the same way TextBox.lua does and queue one sayNext per
       -- page, so the two ROM sentences still render as two pages.
-      local dodgeText = self:romText("_ItemUseBallText00",
-        "It dodged the\nthrown BALL!\fThis POKéMON\ncan't be caught!")
+      local dodgeText = self:romLine("_ItemUseBallText00")
       for page in (dodgeText .. "\f"):gmatch("(.-)\f") do
         self:sayNext(page)
       end
@@ -5954,10 +5957,9 @@ function BattleState:openParty()
         -- PartyMenuOrRockOrRun's SWITCH .partyMonDeselected (core.asm:2396-2408)
         local refusal
         if mon == self.player.mon then
-          refusal = self:romText("_AlreadyOutText",
-            "%s is\nalready out!", self.player.name)
+          refusal = self:romLine("_AlreadyOutText", self.player.name)
         elseif mon.hp <= 0 then
-          refusal = self:romText("_NoWillText", "There's no will\nto fight!")
+          refusal = self:romLine("_NoWillText")
         end
         if refusal then
           if menu then
@@ -5998,7 +6000,7 @@ end
 function BattleState:finish()
   if self.payDay and self.result == "win" then
     self.game.save.money = self.game.save.money + self.payDay
-    self:say(self:romText("_PickUpPayDayMoneyText", "%s picked up\n¥%d!", self.game.save.player.name, self.payDay))
+    self:say(self:romLine("_PickUpPayDayMoneyText", self.game.save.player.name, self.payDay))
     self.payDay = nil
     self.afterQueue = "finish"
     self.phase = "messages"
@@ -7229,10 +7231,14 @@ function BattleState:drawTextArea()
     drawGlyph, finishGlyph = dg, fg
   end
   local function text(str, x, y)
-    local pen = x
-    for _, code in ipairs(Font.encode(str)) do
-      drawGlyph(code, pen, y)
-      pen = pen + Font.advanceOf(code)
+    -- home/text.asm:62-72
+    for line in (str .. "\n"):gmatch("(.-)\n") do
+      local pen = x
+      for _, code in ipairs(Font.encode(line)) do
+        drawGlyph(code, pen, y)
+        pen = pen + Font.advanceOf(code)
+      end
+      y = y + 16
     end
   end
 
@@ -7268,9 +7274,8 @@ function BattleState:drawTextArea()
   elseif self.phase == "menu" and self.demo then
     -- engine/battle/core.asm:2038-2049
     box(8, 12, 12, 6)
-    text(Strings("FIGHT", "battle"), 80, 112)
-    drawGlyph(0xE1, 128, 112); drawGlyph(0xE2, 136, 112)
-    text(Strings("ITEM", "battle"), 80, 128); text(Strings("RUN", "battle"), 128, 128)
+    -- data/text_boxes.asm:68-70
+    text(self:romLine("BattleMenuText"), 80, 112)
     drawGlyph(0xED, 72, (self.demoTimer or 0) <= self:demoDelays() and 112 or 128)
   elseif self.phase == "menu" then
     local col = (self.menuIndex - 1) % 2
@@ -7279,9 +7284,8 @@ function BattleState:drawTextArea()
       -- SAFARI_BATTLE_MENU_TEMPLATE: full-width box, "BALLx  BAIT /
       -- THROW ROCK  RUN" from (2,14)
       box(0, 12, 20, 6)
-      -- data/text_boxes.asm:73
-      text(Strings("BALL") .. "\xc3\x97", 16, 112); text(Strings("BAIT"), 112, 112)
-      text(Strings("THROW ROCK"), 16, 128); text(Strings("RUN", "battle"), 112, 128)
+      -- data/text_boxes.asm:72-74
+      text(self:romLine("SafariZoneBattleMenuText"), 16, 112)
       -- DisplayBattleMenu .safariLeftColumn / .safariRightColumn print
       -- wNumSafariBalls at hlcoord 7,14 with `lb bc, 1, 2` -- one byte, two
       -- digits, space padded -- right after the "BALLx" label at columns
@@ -7292,9 +7296,8 @@ function BattleState:drawTextArea()
       -- BATTLE_MENU_TEMPLATE: box (8,12)-(19,17), "FIGHT <PK><MN> /
       -- ITEM  RUN" from (10,14); cursor columns 9 / 15
       box(8, 12, 12, 6)
-      text(Strings("FIGHT", "battle"), 80, 112)
-      drawGlyph(0xE1, 128, 112); drawGlyph(0xE2, 136, 112)
-      text(Strings("ITEM", "battle"), 80, 128); text(Strings("RUN", "battle"), 128, 128)
+      -- data/text_boxes.asm:68-70
+      text(self:romLine("BattleMenuText"), 80, 112)
       drawGlyph(0xED, (col == 0 and 72 or 120), 112 + row * 16)
     end
   elseif self.phase == "moveSelect" then
@@ -7345,9 +7348,12 @@ function BattleState:drawTextArea()
     if sel then
       local def = self.data.moves[sel.id]
       if self.player.disabledSlot == self.moveIndex then
-        Font.draw(Strings("disabled!"), 8, 80)
+        -- engine/battle/core.asm:2909-2910
+        Font.draw(self:romLine("DisabledText"), 8, 80)
       elseif def then
-        Font.draw(Strings("TYPE/"), 8, 72)
+        -- engine/battle/core.asm:2886-2892
+        Font.draw(self:romLine("TypeText"), 8, 72)
+        Font.draw("/", 40, 72)
         -- the type record's display name (a mod type shows its name, and
         -- PSYCHIC_TYPE prints PSYCHIC like the original). self.data is
         -- game.data by reference (set above TypeChart.load(game.data)), so
@@ -7372,7 +7378,8 @@ function BattleState:drawTextArea()
         16, (7 + i) * 8)
     end
     Font.drawCode(0xED, 8, (7 + self.mimicIndex) * 8)
-    Font.draw(Strings("WHICH TECHNIQUE?"), 8, 112)
+    -- engine/battle/core.asm:2689-2690
+    Font.draw(self:romLine("WhichTechniqueString"), 8, 112)
   end
   if finishGlyph then finishGlyph() end
 end

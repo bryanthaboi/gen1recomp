@@ -165,6 +165,12 @@ check(loadedSession.roamer.hp == 85, "Restored roamer has correct HP")
 check(loadedSession.roamer.ivs.hp == 31, "Restored roamer has correct IVs")
 -- 9. Turn Order Against Roaming Flee (Speed / Priority checks matching pokefirered)
 local Engine = require("src.core.game3.battle.engine")
+do
+  local RomText = require("src.core.game3.rom_text")
+  if not RomText.has("gText_PkmnCantSwitchOut") then
+    RomText.overrides.gText_PkmnCantSwitchOut = require("src.core.game3.scripting.text_ir").fromAscii("CANT SWITCH")
+  end
+end
 local Adapter = require("src.core.game3.battle.adapter")
 
 local pMon = { species = 150, level = 50, speed = 200, moves = { 33 }, pp = { 30 }, maxHp = 200, hp = 200 }

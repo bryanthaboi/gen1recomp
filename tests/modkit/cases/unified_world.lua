@@ -406,6 +406,25 @@ for generation = 1, 3 do
   T.eq(api:setFlag("mod:visited", false), true, "portable flags can be cleared")
   T.eq(changes, 2, "clearing emits exactly one change")
   stop()
+  if generation == 2 then
+    for _, version in ipairs({ "gold", "crystal" }) do
+      f.save.version = version
+      f.game.data.gen2Constants = { eventFlagOrder = {
+        [62] = "EVENT_HEALED_MOOMOO", [63] = false, [64] = "EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO" } }
+      local w = f:world("flag_names_" .. version)
+      local _, byName = w:getFlag("EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO")
+      local _, byId = w:getFlag(63)
+      T.check(byName ~= "invalid or unknown flag", version .. " resolves an EVENT_ name through the cache")
+      T.eq(byName, byId, version .. " and reads it as the native id it names")
+      value, reason = w:getFlag("EVENT_NOT_IN_THIS_CACHE")
+      rejected(value, reason, "invalid or unknown flag", version .. " name the cache does not list")
+    end
+    f.game.data.gen2Constants = {}
+    value, reason = f:world("flag_names_none"):getFlag("EVENT_HEALED_MOOMOO")
+    rejected(value, reason, "the cache has no event flag names", "a cache without eventFlagOrder")
+    f.save.version = "gold"
+    f.game.data.gen2Constants = nil
+  end
 
   T.eq(api:canFly(), true, "native pure validator accepts outdoor FLY")
   T.eq(api:canFly(), true, "querying FLY repeatedly remains available")

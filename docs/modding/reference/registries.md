@@ -1289,6 +1289,7 @@ accepted and merged as-is.
 | key | type |
 |---|---|
 | `battleObjects` | map of string -> list of list of integer 0..255 |
+| `battleText` | list of list of integer 0..255 |
 | `bg` | list of list of list of integer 0..255 |
 | `daytimes` | list of string |
 | `environments` | map of string -> map of one of "MORN" \| "DAY" \| "NITE" \| "DARK" -> list of integer >= 0 |
@@ -1302,6 +1303,7 @@ accepted and merged as-is.
 | `roofs` | map of integer >= 0 -> {mornDay, nite} |
 | `slotNames` | list of string |
 | `source` | string |
+| `specialTilesets` | map of string -> list of list of list of integer 0..255 |
 | `trainers` | map of string -> list of list of integer 0..255 |
 
 <!-- snippet: illustrative -->

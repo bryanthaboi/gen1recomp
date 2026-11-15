@@ -31,6 +31,7 @@ local function species(id, index)
   }
 end
 local DATA = {
+  gen2Diploma = require("tests.fixtures.gen2_naming").diploma(),
   pokemon = {
     growthRates = { GROWTH_MEDIUM_FAST = { numerator = 1, denominator = 1,
       squared = 0, linear = 0, constant = 0 } },

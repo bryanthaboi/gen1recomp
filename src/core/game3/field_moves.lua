@@ -277,28 +277,11 @@ local function textKey(key)
 end
 FieldMoves.textKey = textKey
 
-local TEXT_FALLBACKS = {
-  NO_SWEET_SCENT_MONS  = "Looks like there's nothing here…",
-  CANT_USE_HERE        = "Can't use that here.",
-  NOT_ENOUGH_HP        = "Not enough HP.",
-  TREE_CAN_BE_CUT      = "This tree looks like it can be CUT down!",
-  MON_MAY_SMASH_ROCK   = "This rock looks like it can be smashed with a POKéMON move!",
-  MON_MAY_PUSH_BOULDER = "It's a big boulder, but a POKéMON may be able to push it aside.",
-  CUT_NOTHING          = "There's nothing to CUT here.",
-  FLASH_IN_USE         = "FLASH is already in use.",
-  ALREADY_SURFING      = "You're already surfing.",
-  CANT_SURF_HERE       = "You can't surf here.",
-}
-
 FieldMoves.TEXT = setmetatable({}, {
   __index = function(_, key)
     local k = textKey(key)
-    local okRt, RomText = pcall(lazyReq, "src.core.game3.rom_text")
-    if okRt and RomText and k and RomText.has and RomText.has(k) then
-      local okAscii, res = pcall(RomText.ascii, k)
-      if okAscii and res then return res end
-    end
-    return TEXT_FALLBACKS[key] or nil
+    if not k then return nil end
+    return lazyReq("src.core.game3.rom_text").ascii(k)
   end,
 })
 
@@ -752,7 +735,6 @@ function FieldMoves.sweetScentFromMenu(ctx)
     mon = mon,
     se = FieldMoves.SE.SWEET_SCENT,
     hasEncounter = ctx.hasWildEncounters == true,
-    failText = FieldMoves.TEXT.NO_SWEET_SCENT_MONS or "Looks like there's nothing here…",
     failKey = FieldMoves.textKey("NO_SWEET_SCENT_MONS"),
   }
 end

@@ -25,20 +25,18 @@ end
 
 local Multichoice = require("src.core.game3.scripting.multichoice")
 
-print("=== 1. cart list counts survive a missing extract cache ===")
+print("=== 1. list 2 comes from the cache or nowhere ===")
+local realLists = Multichoice.LISTS
 Multichoice.LISTS = {}
 local realTryLoad = Multichoice.tryLoadCache
 Multichoice.tryLoadCache = function() return false end
-checkEq(#Multichoice.resolve(2), 4,
-  "MULTICHOICE_TRAINER_CARD_ICON_TINT (list 2) has 4 tints without the cache")
+local okMiss, errMiss = pcall(Multichoice.resolve, 2, 1)
+check(not okMiss and tostring(errMiss):find("multichoice list 2 is not in the cache", 1, true) ~= nil,
+  "a cache miss raises instead of synthetic OPTION labels (" .. tostring(errMiss) .. ")")
+Multichoice.LISTS = { [2] = { labels = { "a", "b", "c", "d" } } }
 checkEq(#Multichoice.resolve(2, 1), 4,
   "an ignoreBPress row[4]=1 never shrinks list 2 (the BUG2 mechanism)")
-checkEq(#Multichoice.resolve(0), 2, "list 0 (YES/NO) counts 2 from the cart table")
-checkEq(#Multichoice.resolve(4242, 3), 3,
-  "an unknown list id keeps the caller's count hint (legacy synthetic)")
-check(string.format("%s", Multichoice.resolve(2)[3]):find("OPTION") ~= nil,
-  "cache-miss labels stay synthetic in order (position 3 = PINK slot)")
-
+Multichoice.LISTS = realLists
 Multichoice.tryLoadCache = realTryLoad
 
 print("=== 2. adapters.multichoice never reads row[4] as an option count ===")

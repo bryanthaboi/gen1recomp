@@ -50,14 +50,15 @@ check(runs[2] and runs[2].palette == PALS[1], "not Chrome's white box palette")
 check(plain == 0, "and nothing goes through the white printer")
 
 local clock = newGear()
+clock.textData = require("tests.fixture_data.gen2_rom_text_s7_d").text()
 clock.clockParts = function() return 15, 47, 5 end
 clock.drawTilemap = function() end
 clock.drawStrip = function() end
 clock.textbox = function() end
 clock.phoneText = function() return "Press any button to exit." end
 spy(function() clock:drawClock() end)
-check(runs[1] and runs[1].text == " SWITCH" and runs[1].tx == 12,
-  "SWITCH is placed at column 12 with its leading space")
+check(runs[1] and runs[1].text == "SWITCH" and runs[1].tx == 13,
+  "Gold's InitPokegearTilemap.switch is placed at column 13")
 check(#cursors == 1 and cursors[1].tx == 19 and cursors[1].ty == 1,
   "its arrow sits at (19,1)")
 check(cursors[1] and cursors[1].palette == PALS[1],

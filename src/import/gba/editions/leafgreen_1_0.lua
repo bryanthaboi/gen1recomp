@@ -1724,6 +1724,9 @@ return {
   [0x3EE008] = 0x3EDE44, -- mon_markings.o:sMonMarkings_Pal + 0
   [0x3EE028] = 0x3EDE64, -- mon_markings.o:sMonMarkings_Gfx + 0
   [0x3EE828] = 0x3EE664, -- mon_markings.o:sJPText_Confirm + 0
+  [0x3EE9C0] = 0x3EE7FC, -- mail.o:sGenderPals + 0
+  [0x3EE9C8] = 0x3EE804, -- mail.o:sGfxHeaders + 0
+  [0x3EEB68] = 0x3EE9A4, -- mail.o:sMessageLayouts_5x2 + 0
   [0x3EEBF8] = 0x3EEA34, -- heal_location.o:sHealLocations + 0
   [0x3EEC98] = 0x3EEAD4, -- heal_location.o:sWhiteoutRespawnHealCenterMapIdxs + 0
   [0x3EECE8] = 0x3EEB24, -- heal_location.o:sWhiteoutRespawnHealerNpcIds + 0
@@ -3994,6 +3997,7 @@ return {
   [0x456AF0] = 0x456510, -- quest_log_events.o:sLocationNameTexts + 0
   [0x456BBC] = 0x4565DC, -- quest_log_events.o:sDepartedLocationTexts + 0
   [0x456C20] = 0x456640, -- quest_log_events.o:sUsedFieldMoveTexts + 0
+  [0x456C50] = 0x456670, -- quest_log_events.o:sWorldMapFlags + 0
   [0x456C74] = 0x456694, -- union_room.o:sLinkGroupActivityNameTexts + 0
   [0x456D0C] = 0x45672C, -- :sListMenuItems_PossibleGroupMembers + 0
   [0x456D5C] = 0x45677C, -- union_room.o:sListMenuItems_UnionRoomGroups + 0

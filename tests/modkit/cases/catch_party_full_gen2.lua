@@ -1,4 +1,5 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 love = love or require("tests.love_stub")
 
 local T = require("tests.modkit")
@@ -17,7 +18,7 @@ local DATA = {
       levelMoves = {}, evolutions = {} },
   },
   moves = {}, items = {}, type_chart = { types = {}, matchups = {} },
-  text = { _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}" },
+  text = require("tests.gen2_capture_text_fixture")(),
 }
 
 local function newState(n)

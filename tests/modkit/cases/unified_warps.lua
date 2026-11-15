@@ -76,6 +76,7 @@ end
 
 local function fixture(version, f)
   Version.set(version)
+  if Version.generation() == 2 then require("tests.fixture_data.gen2_engine_flags").bind(version) end
   local generation = Version.generation()
   f.generation, f.version = generation, version
   f.restore, f.music, f.offsets = {}, {}, {}

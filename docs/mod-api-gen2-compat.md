@@ -489,7 +489,8 @@ differences an author meets:
   sheet name carries: a species id names an assignment (a string, the sheet's
   name), an `ICON_*` id names a sheet.
 - **`palettes`, `battle_anims`, `constants`.** The id is a subtable of the
-  target: `pokemon` / `trainers` / `bg` / `objects` / `roofs` for palettes,
+  target: `pokemon` / `trainers` / `bg` / `objects` / `roofs` / `battleText` /
+  `specialTilesets` (full typed list in the registry reference) for palettes,
   `scripts` / `moves` / `objects` / `framesets` / `oamsets` / `gfx` for
   battle_anims, and one of Gold's 42 ordered ROM name lists (plus `mapGroups`,
   `trainerClassMembers`, `types`) for constants. Those lists are ordered and
@@ -581,7 +582,19 @@ gains a field instead of the name gaining a prefix.
   `movement.collision`, `movement.speed`, `encounter.roll`,
   `encounter.species`, `encounter.fishing`, `encounter.table`, `world.tod`,
   `map.palette`, `fieldmove.eligibility`, `world.follower.spawn`,
-  `trainer.before_battle`. `trainer.before_battle` (`src/world/gen2/World.lua`)
+  `world.talk`, `item.use`, `trainer.before_battle`. `world.talk` is raised
+  from `World:interactBody` for every standing object the A press lands on
+  (trainers, item balls, boulders, scripted and mod-spawned objects) with
+  `(world, npc)`; `next(world, npc)` runs `World:talkObject`, and a claim
+  consumes the press and still emits `world.interacted` with kind `npc`. A
+  spawned object with no `scriptKey` is answered only through this hook.
+  `item.use` is raised once per field PACK USE as
+  `(game, nil, itemId, nil, pack)` and once per SELECT use as
+  `(game, nil, itemId, nil, nil)`; the party pick runs inside `next`, so
+  `target` is always nil on Gold. The battle PACK raises it from
+  `BattleState:useItem` as `(game, battleScreen, itemId, nil)`. The mart SELL
+  and item PC packs and the catch tutorial raise nothing. A claim spends
+  nothing; in battle it hands the menu back. `trainer.before_battle` (`src/world/gen2/World.lua`)
   receives `(game, { trainerClass, partyIndex, mapId, npcId }, continueBattle)`
   and a truthy return defers the battle until a mod calls `continueBattle`,
   optionally with `{ cancel = true }`. `flag.changed` carries the numeric

@@ -218,6 +218,7 @@ check(type(Opcodes.MOD_COMMAND) == "string" and Opcodes.MOD_COMMAND ~= "",
 love = require("tests.love_stub")
 local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
+local S7F1_TEXT = require("tests.fixture_data.gen2_rom_text_s7_f1").text()
 
 do
   local seen, swarmArgs = {}, nil
@@ -248,6 +249,7 @@ do
     giveItem = function(item, qty) seen.give = { item, qty } return true end,
     getItemName = function() return "REPEL" end,
     showText = function(body, onDone) seen.text = body onDone() end,
+    specials = { data = function() return { text = S7F1_TEXT } end },
   })
 
   check(vm:start("s:crystal"), "a Crystal-shaped script starts")
@@ -306,6 +308,7 @@ do
     getItemName = function(item) names[#names + 1] = item return "HP UP" end,
     giveItem = function(item, qty) gives[#gives + 1] = { item, qty } return true end,
     showText = function(_body, onDone) onDone() end,
+    specials = { data = function() return { text = S7F1_TEXT } end },
   })
 
   check(vm:start("s:prize"), "the prize script starts")

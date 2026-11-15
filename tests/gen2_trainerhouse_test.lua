@@ -6,6 +6,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 trainer house")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -86,14 +87,10 @@ do
   eq(TrainerHouse.ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY, 86,
     "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY is engine flag 86")
   local found
-  for _, row in ipairs(Apricorns.DAILY_ENGINE_FLAGS) do
-    if row.id == TrainerHouse.ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY then
-      found = row
-    end
+  for _, name in ipairs(Apricorns.DAILY_ENGINE_FLAGS) do
+    if name == "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY" then found = name end
   end
   check(found ~= nil, "and it is one of the wDailyFlags bits")
-  eq(found and found.name, "ENGINE_FOUGHT_IN_TRAINER_HALL_TODAY",
-    "under that name")
 
   -- CheckDailyResetTimer wipes both daily bytes whole, which is the ONLY
   -- thing that lets you back into the hall.

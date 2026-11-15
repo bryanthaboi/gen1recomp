@@ -21,6 +21,7 @@ Features intentionally added to the games themselves, beyond what the original c
 * **Optional widescreen battle layout**
 * **Pokédex diploma and printer image exports**
 * **Fast-forward locks to 1X in link play**, every link or online battle, link session and the FireRed/LeafGreen Union Room on every game
+* **Forfeit confirm on link RUN** in every Gen 3 link and online battle, a YES/NO before the match ends
 * **40-player Union Room** on FireRed and LeafGreen online, a larger square room where every trainer keeps a fixed spot and anyone can be talked to
 * **Name badges over trainers** in Gen 3 link rooms (Union Room, Trade Center, Colosseum, Record Corner, Berry Blender), your own included
 * **Chat, trade and battle icons** on those badges, so a busy trainer is visible at a glance

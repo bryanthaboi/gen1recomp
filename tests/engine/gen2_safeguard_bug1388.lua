@@ -95,7 +95,7 @@ do
   battle.events = {}
   rolls = { 200 } -- force the enemy's AI roll not to fail on its own
   battle:useMove(wild, player, "THUNDER_WAVE")
-  T.check(findText(battle.events, "protected by SAFEGUARD"),
+  T.check(findText(battle.events, battle:romText("SafeguardProtectText", wild, player)),
     "an incoming status move from the OTHER side is blocked, loudly")
   T.eq(player.status, nil, "and the paralysis never lands")
   local ev = moveEvent(battle.events)
@@ -123,7 +123,7 @@ do
   battle.screens.enemy.safeguard = 5
   battle.events = {}
   battle:useMove(player, wild, "THUNDER_WAVE")
-  T.check(findText(battle.events, "protected by SAFEGUARD"),
+  T.check(findText(battle.events, battle:romText("SafeguardProtectText", player, wild)),
     "the player's status move is blocked by the enemy's own safeguard")
   T.eq(wild.status, nil, "the enemy stays unstatused under its own screen")
 end

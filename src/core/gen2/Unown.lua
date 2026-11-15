@@ -22,7 +22,8 @@
 
 local Runtime = require("src.mods.Runtime")
 
-local Unown = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local Unown = EngineFlags.expose({}, { "ENGINE_UNOWN_DEX" })
 
 -- constants/pokemon_constants.asm: NUM_UNOWN EQU 26.
 Unown.NUM_UNOWN = 26
@@ -86,20 +87,16 @@ end
 -- that flag unlocks one contiguous run of letters; the runs are uneven because
 -- they were cut to the four chamber puzzles, not to equal thirds.
 --
--- The ids are constants/engine_flags.asm indices, counted the same way
--- src/core/gen2/Apricorns.lua counts its daily flags (const_def, 0-based, with
--- const_skip advancing).  ENGINE_UNLOCKED_UNOWNS_A_TO_K is 42.
 -- ENGINE_UNOWN_DEX, the flag RuinsOfAlphResearchCenterGetUnownDexScript sets.
 -- It is what gates the #DEX's UNOWN MODE (Pokedex_CheckUnlockedUnownMode reads
 -- it as wStatusFlags bit STATUSFLAGS_UNOWN_DEX_F), and it is a different thing
 -- from having caught an Unown.
-Unown.ENGINE_UNOWN_DEX = 12
 
 Unown.UNLOCK_SETS = {
-  { flag = 42, name = "ENGINE_UNLOCKED_UNOWNS_A_TO_K", first = 1, last = 11 },
-  { flag = 43, name = "ENGINE_UNLOCKED_UNOWNS_L_TO_R", first = 12, last = 18 },
-  { flag = 44, name = "ENGINE_UNLOCKED_UNOWNS_S_TO_W", first = 19, last = 23 },
-  { flag = 45, name = "ENGINE_UNLOCKED_UNOWNS_X_TO_Z", first = 24, last = 26 },
+  { name = "ENGINE_UNLOCKED_UNOWNS_A_TO_K", first = 1, last = 11 },
+  { name = "ENGINE_UNLOCKED_UNOWNS_L_TO_R", first = 12, last = 18 },
+  { name = "ENGINE_UNLOCKED_UNOWNS_S_TO_W", first = 19, last = 23 },
+  { name = "ENGINE_UNLOCKED_UNOWNS_X_TO_Z", first = 24, last = 26 },
 }
 
 -- The four puzzles, in UNOWNPUZZLE_* order (constants/script_constants.asm),
@@ -107,11 +104,14 @@ Unown.UNLOCK_SETS = {
 -- UNOWNPUZZLE_KABUTO / special UnownPuzzle` is how the screen is told which
 -- picture to slice, so the id the script passes indexes this list from 0.
 Unown.PUZZLES = {
-  [0] = { id = "KABUTO", flag = 42, event = "EVENT_SOLVED_KABUTO_PUZZLE" },
-  [1] = { id = "OMANYTE", flag = 43, event = "EVENT_SOLVED_OMANYTE_PUZZLE" },
-  [2] = { id = "AERODACTYL", flag = 44,
+  [0] = { id = "KABUTO", flag = "ENGINE_UNLOCKED_UNOWNS_A_TO_K",
+          event = "EVENT_SOLVED_KABUTO_PUZZLE" },
+  [1] = { id = "OMANYTE", flag = "ENGINE_UNLOCKED_UNOWNS_L_TO_R",
+          event = "EVENT_SOLVED_OMANYTE_PUZZLE" },
+  [2] = { id = "AERODACTYL", flag = "ENGINE_UNLOCKED_UNOWNS_S_TO_W",
           event = "EVENT_SOLVED_AERODACTYL_PUZZLE" },
-  [3] = { id = "HO_OH", flag = 45, event = "EVENT_SOLVED_HO_OH_PUZZLE" },
+  [3] = { id = "HO_OH", flag = "ENGINE_UNLOCKED_UNOWNS_X_TO_Z",
+          event = "EVENT_SOLVED_HO_OH_PUZZLE" },
 }
 
 -- CheckUnownLetter: walk the four sets, skip a set whose bit is clear, and
@@ -122,7 +122,7 @@ function Unown.letterUnlocked(letter, engineFlags)
   local index = Unown.index(letter)
   if not index then return false end
   for _, set in ipairs(Unown.UNLOCK_SETS) do
-    if engineFlags and engineFlags[set.flag] then
+    if engineFlags and engineFlags[EngineFlags.id(set.name)] then
       if index >= set.first and index <= set.last then return true end
     end
   end
@@ -136,7 +136,7 @@ end
 function Unown.anyUnlocked(engineFlags)
   if not engineFlags then return false end
   for _, set in ipairs(Unown.UNLOCK_SETS) do
-    if engineFlags[set.flag] then return true end
+    if engineFlags[EngineFlags.id(set.name)] then return true end
   end
   return false
 end
@@ -147,7 +147,7 @@ end
 function Unown.unlockedLetters(engineFlags)
   local out = {}
   for _, set in ipairs(Unown.UNLOCK_SETS) do
-    if engineFlags and engineFlags[set.flag] then
+    if engineFlags and engineFlags[EngineFlags.id(set.name)] then
       for letter = set.first, set.last do out[#out + 1] = letter end
     end
   end

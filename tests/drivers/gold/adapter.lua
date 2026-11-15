@@ -17,7 +17,7 @@ local PartyMenu = require("src.ui.gen2.PartyMenu")
 local FieldMoves = require("src.world.gen2.FieldMoves")
 local Permissions = require("src.world.gen2.Permissions")
 
-local FLAGS = dofile("tests/drivers/gold/flag_names.lua")
+local FlagIds = require("src.core.gen2.FlagIds")
 
 local A = {}
 
@@ -533,11 +533,8 @@ end
 -- flags, items, party
 -- ---------------------------------------------------------------------------
 
--- EVENT_* by name.  The port keys its bitfield by the cart's numeric id
--- (src/world/gen2/Events.lua); flag_names.lua supplies the name -> id map and
--- tests/gold_flag_names_test.lua is what keeps it honest.
 function A.event(g, name)
-  local id = FLAGS.events[name]
+  local id = FlagIds.events(g.data.gen2Constants)[name]
   if not id then return nil end            -- nil, not false: an unknown NAME is
                                            -- a route bug, not an unset flag
   local w = g.world
@@ -546,15 +543,16 @@ function A.event(g, name)
 end
 
 function A.engine(g, name)
-  local id = FLAGS.engine[name]
+  local id = FlagIds.engine(g.data.gen2Constants)[name]
   if not id then return nil end
   local w = g.world
   if not w then return nil end
   return w:engineFlag(id) and true or false
 end
 
-function A.knownFlag(name)
-  return FLAGS.events[name] ~= nil or FLAGS.engine[name] ~= nil
+function A.knownFlag(g, name)
+  local constants = g.data.gen2Constants
+  return FlagIds.events(constants)[name] ~= nil or FlagIds.engine(constants)[name] ~= nil
 end
 
 function A.badges(g)

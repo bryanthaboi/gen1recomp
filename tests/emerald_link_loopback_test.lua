@@ -10,6 +10,7 @@ local Profile = require("src.core.game3.profile")
 Profile.reset()
 GameVersion.set("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local emCache = Dataset.cache()
 local meta = emCache and emCache.read and emCache:read("data/generated/gba/meta.json")
@@ -43,7 +44,7 @@ local function emRoot()
     local f = io.open(root .. "/data/generated/gba/meta.json", "rb")
     if f then f:close() return root end
   end
-  return nil
+  return require("tests.game3_cache").gameDir("emerald")
 end
 
 local function frRoot()

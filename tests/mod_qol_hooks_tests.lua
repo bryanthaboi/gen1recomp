@@ -106,7 +106,7 @@ end
 -- ------- ui.naming.grid (digits in names)
 
 do
-  local game = { data = {}, stack = { pop = function() end },
+  local game = { data = { text = dofile("tests/fixture_data/text.lua") }, stack = { pop = function() end },
                  input = { wasPressed = function() return false end } }
   local unsub = wrap("ui.naming.grid", function(next, grid, ctx)
     grid = next(grid, ctx)

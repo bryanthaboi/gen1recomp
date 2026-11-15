@@ -36,78 +36,60 @@
 -- `action` names the World method that carries it out; everything else in the
 -- table is that action's argument.
 
+local EngineFlags = require("src.core.gen2.EngineFlags")
 local GameVersion = require("src.core.GameVersion")
 local Permissions = require("src.world.gen2.Permissions")
 local Runtime = require("src.mods.Runtime")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Strings = require("src.core.Strings")
 
 local FieldMoves = {}
 
 -- ---------------------------------------------------------------- text
---
--- data/text/common_1.asm and common_2.asm, in the port's own TextBox markers:
--- \n is the text box's second line (`line`), \f is a page break (`para`), and
--- {STRBUF} is the shared wStringBuffer2 token that `text_ram wStringBuffer2`
--- expands to -- GetPartyNickname is what fills it, so it is always the
--- nickname of the mon CheckPartyMove picked.
---
--- These are transcribed rather than looked up for the same reason the headbutt
--- lines in World.lua are: engine/events/overworld.asm names each label
--- directly, the extractor only walks reachable SCRIPT pointers, and so
--- data/generated/text.lua has no key for any of them.  `#` is the four-tile
--- POKé compression byte.
--- Each one is wrapped in Strings.source so the catalog generator harvests it:
--- this table is built at require time, long before Strings.load has a catalog,
--- so the lookup itself happens at the World call sites through Strings(...).
+
+-- data/text/common_1.asm:1822
 FieldMoves.TEXT = {
-  BADGE_REQUIRED   = Strings.source("Sorry! A new BADGE\nis required."),
-  CANT_USE_HERE    = Strings.source("Can't use that\nhere."),
-  -- ../pokecrystal/data/text/common_2.asm:1516 _PokemonNotEnoughHPText
-  NOT_ENOUGH_HP    = Strings.source("Not enough HP!"),
+  BADGE_REQUIRED   = "_BadgeRequiredText",
+  CANT_USE_HERE    = "_CantUseItemText",
+  NOT_ENOUGH_HP    = "_PokemonNotEnoughHPText",
 
-  USE_CUT          = Strings.source("{STRBUF} used\nCUT!"),
-  CUT_NOTHING      = Strings.source("There's nothing to\nCUT here."),
-  ASK_CUT          = Strings.source("This tree can be\nCUT!"
-                     .. "\fWant to use CUT?"),
-  CAN_CUT          = Strings.source("This tree can be\nCUT!"),
+  USE_CUT          = "_UseCutText",
+  CUT_NOTHING      = "_CutNothingText",
+  ASK_CUT          = "_AskCutText",
+  CAN_CUT          = "_CanCutText",
 
-  BLINDING_FLASH   = Strings.source("A blinding FLASH\nlights the area!"),
+  BLINDING_FLASH   = "_BlindingFlashText",
 
-  USED_SURF        = Strings.source("{STRBUF} used\nSURF!"),
-  CANT_SURF        = Strings.source("You can't SURF\nhere."),
-  ALREADY_SURFING  = Strings.source("You're already\nSURFING."),
-  ASK_SURF         = Strings.source("The water is calm.\nWant to SURF?"),
+  USED_SURF        = "_UsedSurfText",
+  CANT_SURF        = "_CantSurfText",
+  ALREADY_SURFING  = "_AlreadySurfingText",
+  ASK_SURF         = "_AskSurfText",
 
-  USE_WATERFALL    = Strings.source("{STRBUF} used\nWATERFALL!"),
-  HUGE_WATERFALL   = Strings.source("Wow, it's a huge\nwaterfall."),
-  ASK_WATERFALL    = Strings.source("Do you want to use\nWATERFALL?"),
+  USE_WATERFALL    = "_UseWaterfallText",
+  HUGE_WATERFALL   = "_HugeWaterfallText",
+  ASK_WATERFALL    = "_AskWaterfallText",
 
-  USE_STRENGTH     = Strings.source("{STRBUF} used\nSTRENGTH!"),
-  MOVE_BOULDER     = Strings.source("{STRBUF} can\nmove boulders."),
-  ASK_STRENGTH     = Strings.source("A #MON may be\nable to move this."
-                     .. "\fWant to use\nSTRENGTH?"),
-  BOULDERS_MOVE    = Strings.source("Boulders may now\nbe moved!"),
-  BOULDERS_MAY_MOVE = Strings.source("A #MON may be\nable to move this."),
+  USE_STRENGTH     = "_UseStrengthText",
+  MOVE_BOULDER     = "_MoveBoulderText",
+  ASK_STRENGTH     = "_AskStrengthText",
+  BOULDERS_MOVE    = "_BouldersMoveText",
+  BOULDERS_MAY_MOVE = "_BouldersMayMoveText",
 
-  -- EscapeRopeOrDig's three lines (engine/events/overworld.asm): _UseDigText
-  -- and _UseEscapeRopeText open the shared warp, _CantUseDigText is DIG's own
-  -- refusal (the rope's .FailDig arm prints nothing and leaves the PACK to
-  -- its .Oak line).
-  USE_DIG          = Strings.source("{STRBUF} used\nDIG!"),
-  USE_ESCAPE_ROPE  = Strings.source("{PLAYER} used an\nESCAPE ROPE."),
-  -- TeleportFunction: _TeleportReturnText on the way out, _CantUseTeleportText
-  -- indoors.
-  TELEPORT_RETURN  = Strings.source("Return to the last\n#MON CENTER."),
+  USE_DIG          = "_UseDigText",
+  USE_ESCAPE_ROPE  = "_UseEscapeRopeText",
+  TELEPORT_RETURN  = "_TeleportReturnText",
 
-  USE_WHIRLPOOL    = Strings.source("{STRBUF} used\nWHIRLPOOL!"),
-  MAY_PASS_WHIRLPOOL = Strings.source("It's a vicious\nwhirlpool!"
-                     .. "\fA #MON may be\nable to pass it."),
-  ASK_WHIRLPOOL    = Strings.source("A whirlpool is in\nthe way."
-                     .. "\fWant to use\nWHIRLPOOL?"),
-  -- Not a cart line: the prompt World:askFlyPoint falls back to when there is
-  -- no screen at all to push -- a headless probe, never a real run.
-  ASK_FLY_TO       = Strings.source("Fly to %s?"),
+  USE_WHIRLPOOL    = "_UseWhirlpoolText",
+  MAY_PASS_WHIRLPOOL = "_MayPassWhirlpoolText",
+  ASK_WHIRLPOOL    = "_AskWhirlpoolText",
 }
+
+FieldMoves.ASK_FLY_TO = Strings.source("Fly to %s?")
+
+function FieldMoves.line(data, label, ...)
+  return CommonText.plain(RomText(data, label, nil, ...))
+end
 
 -- ---------------------------------------------------------------- badges
 --
@@ -155,44 +137,49 @@ FieldMoves.KANTO_BADGES = {
 -- World:setEngineFlag / World:engineFlag route badge ids here so there is one
 -- store again, the same way ENGINE_BUG_CONTEST_TIMER is routed to
 -- save.bugContest rather than kept as a second copy.
--- Crystal declares 162 engine flags to Gold's 93 and the badge block sits one
--- higher (constants/engine_flags.asm:39 vs pokegold's :38), so the ids come
--- from the cache's engineFlagOrder when it has one.
 -- Crystal only; pokegold constants/engine_flags.asm:4-111 has no such row.
 FieldMoves.FEMALE_FLAG_NAME = "ENGINE_PLAYER_IS_FEMALE"
 
-function FieldMoves.bindEngineFlags(order)
-  local byName = {}
-  if type(order) == "table" then
-    -- pairs, not ipairs: a const_skip leaves a hole and ipairs would stop
-    -- there, silently dropping every badge past it.
-    for index, name in pairs(order) do
-      if type(index) == "number" and type(name) == "string" then
-        byName[name] = index - 1
-      end
-    end
-  end
+local derived = {}
+
+local function derive()
+  local order = EngineFlags.order()
+  if order == nil then error("engine flags are not bound", 3) end
+  if derived.order == order then return derived end
   local flags = {}
-  local function place(names, store, goldBase)
-    for index, name in ipairs(names) do
-      local id = byName["ENGINE_" .. name .. "BADGE"] or (goldBase + index)
-      flags[id] = { store = store, name = name }
+  local function place(names, store)
+    for _, name in ipairs(names) do
+      flags[EngineFlags.id("ENGINE_" .. name .. "BADGE")] = { store = store, name = name }
     end
   end
-  place(FieldMoves.JOHTO_BADGES, "badges", 25)
-  place(FieldMoves.KANTO_BADGES, "kantoBadges", 33)
-  FieldMoves.BADGE_FLAG = flags
-  -- The flag IS wPlayerGender's bit 0, so World routes it to the gender byte
-  -- (data/events/engine_flags.asm:131, constants/engine_flags.asm:121).
-  FieldMoves.FEMALE_FLAG = byName[FieldMoves.FEMALE_FLAG_NAME]
-  -- Crystal's ENGINE_MOBILE_SYSTEM (constants/engine_flags.asm:25) has no Gold
-  -- row, so every id from BUG_CONTEST_TIMER up shifts one.
-  FieldMoves.BUG_CONTEST_FLAG = byName["ENGINE_BUG_CONTEST_TIMER"] or 16
-  FieldMoves.BIKE_SHOP_CALL_FLAG = byName["ENGINE_BIKE_SHOP_CALL_ENABLED"] or 19
-  return flags
+  place(FieldMoves.JOHTO_BADGES, "badges")
+  place(FieldMoves.KANTO_BADGES, "kantoBadges")
+  derived = {
+    order = order,
+    BADGE_FLAG = flags,
+    -- data/events/engine_flags.asm:131, constants/engine_flags.asm:121
+    FEMALE_FLAG = EngineFlags.has(FieldMoves.FEMALE_FLAG_NAME)
+      and EngineFlags.id(FieldMoves.FEMALE_FLAG_NAME) or nil,
+    BUG_CONTEST_FLAG = EngineFlags.id("ENGINE_BUG_CONTEST_TIMER"),
+    BIKE_SHOP_CALL_FLAG = EngineFlags.id("ENGINE_BIKE_SHOP_CALL_ENABLED"),
+  }
+  return derived
 end
 
-FieldMoves.bindEngineFlags(nil)
+local DERIVED = { BADGE_FLAG = true, FEMALE_FLAG = true, BUG_CONTEST_FLAG = true,
+  BIKE_SHOP_CALL_FLAG = true }
+
+setmetatable(FieldMoves, {
+  __index = function(_, key)
+    if DERIVED[key] then return derive()[key] end
+    return nil
+  end,
+})
+
+function FieldMoves.bindEngineFlags(order)
+  EngineFlags.bind(order)
+  return derive().BADGE_FLAG
+end
 
 function FieldMoves.hasBadge(save, badge)
   if not badge then return true end

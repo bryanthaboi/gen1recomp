@@ -140,22 +140,16 @@ M.PALLET_TOWN = {
     -- OaksLabOakChooseMonSpeechScript.  Yellow's OakChooseMon text is
     -- the single-ball speech, not Red's "there are 3 POKéMON".
     local function chooseMonSpeech()
-      local function say(key, fb, next)
-        game.stack:push(TextBox.new(game, t[key] or fb, next))
+      local function say(key, next)
+        game.stack:push(TextBox.new(game, t[key], next))
       end
-      say("_OaksLabRivalFedUpWithWaitingText",
-          "{RIVAL}: Gramps!\nI'm fed up with\nwaiting!", function()
+      say("_OaksLabRivalFedUpWithWaitingText", function()
         hold(3, nil, function()
-          say("_OaksLabOakChooseMonText",
-              yellow
-                and "OAK: Look, {PLAYER}! Do\nyou see that ball\non the table?"
-                or "OAK: Here, {PLAYER}!\fThere are 3\nPOKéMON here!\fYou can have one!\nChoose!", function()
+          say("_OaksLabOakChooseMonText", function()
             hold(3, nil, function()
-              say("_OaksLabRivalWhatAboutMeText",
-                  "{RIVAL}: Hey!\nGramps! What\nabout me?", function()
+              say("_OaksLabRivalWhatAboutMeText", function()
                 hold(3, nil, function()
-                  say("_OaksLabOakBePatientText",
-                      "OAK: Be patient!\n{RIVAL}, you can\nhave one too!", function()
+                  say("_OaksLabOakBePatientText", function()
                     game.save.flags.EVENT_OAK_ASKED_TO_CHOOSE_MON = true
                   end)
                 end)
@@ -251,26 +245,23 @@ M.PALLET_TOWN = {
     local function afterOakArrives(oak)
       if not yellow then
         game.stack:push(TextBox.new(game,
-          t._PalletTownOakItsUnsafeText
-          or "OAK: It's unsafe!\nWild POKéMON\nlive in tall grass!",
+          t._PalletTownOakItsUnsafeText,
           function() escortToLab(oak) end))
         return
       end
       local function comeWithMe()
         game.stack:push(TextBox.new(game,
-          t._PalletTownOakComeWithMe
-          or "OAK: Here, come with\nme!",
+          t._PalletTownOakComeWithMe,
           function() escortToLab(oak) end))
       end
       local function afterPikaBattle()
         if oak then oak.facing = "up" end
         game.stack:push(TextBox.new(game,
-          t._PalletTownOakWhewText or "OAK: Whew...",
+          t._PalletTownOakWhewText,
           comeWithMe))
       end
       game.stack:push(TextBox.new(game,
-        t._PalletTownOakThatWasCloseText
-        or "OAK: That was\nclose!\fWild POKéMON live\nin tall grass!",
+        t._PalletTownOakThatWasCloseText,
         function()
           -- Oak turns toward the horizontally adjacent grass (left exit
           -- looks right, right exit looks left -- the
@@ -308,7 +299,7 @@ M.PALLET_TOWN = {
     end
 
     game.stack:push(TextBox.new(game,
-      t._PalletTownOakHeyWaitDontGoOutText or "OAK: Hey! Wait!\nDon't go out!",
+      t._PalletTownOakHeyWaitDontGoOutText,
       function()
         ow.emote = nil
         oakAppearsAndWalks()
@@ -356,23 +347,22 @@ local function saffronGate(guardText, triggers, horizontal, face)
         local t = game.data.text
         if game.save.flags.EVENT_GAVE_GUARDS_DRINK then
           game.stack:push(TextBox.new(game,
-            t._SaffronGateGuardThanksForTheDrinkText or "Gee, that was\ntasty!", done))
+            t._SaffronGateGuardThanksForTheDrinkText, done))
           return
         end
         if takeGuardDrink(game) then
           -- SaffronGateGuardGiveDrinkText: sound_get_key_item sits between the
           -- two text_far halves (scripts/Route5Gate.asm:102-106)
           game.stack:push(TextBox.new(game,
-            t._SaffronGateGuardImParchedText or "Whoa, boy!\nI'm parched!",
+            t._SaffronGateGuardImParchedText,
             function()
               game.stack:push(TextBox.new(game,
-                (t._SaffronGateGuardYouCanGoOnThroughText or
-                 "You can go on\nthrough!"), done))
+                t._SaffronGateGuardYouCanGoOnThroughText, done))
             end, TextBox.soundOpts(game, "Get_Key_Item")))
           return
         end
         game.stack:push(TextBox.new(game,
-          t._SaffronGateGuardGeeImThirstyText or "Gee, I'm thirsty\nthough!", done))
+          t._SaffronGateGuardGeeImThirstyText, done))
       end,
     },
     -- the gate's trigger cells (each gate's PlayerInCoordsArray):
@@ -400,16 +390,15 @@ local function saffronGate(guardText, triggers, horizontal, face)
       -- BIT_GAVE_SAFFRON_GUARDS_DRINK, and only a player carrying nothing
       if takeGuardDrink(game) then
         game.stack:push(TextBox.new(game,
-          t._SaffronGateGuardImParchedText or "Whoa, boy!\nI'm parched!",
+          t._SaffronGateGuardImParchedText,
           function()
             game.stack:push(TextBox.new(game,
-              (t._SaffronGateGuardYouCanGoOnThroughText or
-               "You can go on\nthrough!")))
+              t._SaffronGateGuardYouCanGoOnThroughText))
           end, TextBox.soundOpts(game, "Get_Key_Item")))
         return true
       end
       game.stack:push(TextBox.new(game,
-        t._SaffronGateGuardGeeImThirstyText or "Gee, I'm thirsty\nthough!\nThe road's closed.",
+        t._SaffronGateGuardGeeImThirstyText,
         function()
           ow:scriptMove(ow.player, back, 1, nil, { collide = true })
         end))
@@ -657,13 +646,13 @@ local function mtMoonFossil(itemId, otherName, gotFlag)
       return
     end
     local want = (itemId == "DOME_FOSSIL")
-      and (t._MtMoonB2FDomeFossilYouWantText or "You want the\nDOME FOSSIL?")
-      or (t._MtMoonB2FHelixFossilYouWantText or "You want the\nHELIX FOSSIL?")
+      and t._MtMoonB2FDomeFossilYouWantText
+      or t._MtMoonB2FHelixFossilYouWantText
     game.stack:push(TextBox.new(game, want, nil, { choice = function(yes)
       if not yes then done() return end
       if not require("src.inventory.Bag").add(game.save, itemId, 1) then
         game.stack:push(TextBox.new(game,
-          t._MtMoonB2FYouHaveNoRoomText or "Look, you've got\nno room for this.",
+          t._MtMoonB2FYouHaveNoRoomText,
           done))
         return
       end
@@ -674,8 +663,7 @@ local function mtMoonFossil(itemId, otherName, gotFlag)
       -- text_waitbutton -- the jingle plays after the box has typed and
       -- the button wait comes after it
       game.stack:push(TextBox.new(game,
-        t._MtMoonB2FReceivedFossilText
-          or ("{PLAYER} got the\n" .. game.stringBuffer .. "!"),
+        t._MtMoonB2FReceivedFossilText,
         function()
           local Commands = require("src.script.Commands")
           Commands.hide_object(
@@ -720,10 +708,8 @@ M.MT_MOON_B2F = {
       local t = game.data.text
       local flags = game.save.flags
       local line = (flags.EVENT_GOT_DOME_FOSSIL or flags.EVENT_GOT_HELIX_FOSSIL)
-        and (t._MtMoonB2FSuperNerdTheresAPokemonLabText
-             or "Far away, on\nCINNABAR ISLAND,\nthere's a POKéMON\nLAB.")
-        or (t._MtMoonB2fSuperNerdEachTakeOneText
-            or "We'll each take\none!\nNo being greedy!")
+        and t._MtMoonB2FSuperNerdTheresAPokemonLabText
+        or t._MtMoonB2fSuperNerdEachTakeOneText
       game.stack:push(TextBox.new(game, line, done))
     end,
     TEXT_MTMOONB2F_DOME_FOSSIL = mtMoonFossil(
@@ -737,62 +723,54 @@ M.MT_MOON_B2F = {
 -- Declining at the rope shoves the player one tile south (#151)
 local function museumClerk(game, ow, done, onDecline)
   local TextBox = require("src.render.TextBox")
-  local t = game.data.text or {}
+  local t = game.data.text
   local p = ow and ow.player
   -- scripts/Museum1F.asm:45 (#1690)
   if p and ((p.cellY == 4 and p.cellX == 13)
             or (p.cellY == 3 and p.cellX == 12)) then
     game.stack:push(TextBox.new(game,
-      t._Museum1FScientist1DoYouKnowWhatAmberIsText
-        or "You can't sneak\nin the back way!\fOh, whatever!\nDo you know what\vAMBER is?",
+      t._Museum1FScientist1DoYouKnowWhatAmberIsText,
       nil, { choice = function(yes)
         game.stack:push(TextBox.new(game, yes
-          and (t._Museum1FScientist1TheresALabSomewhereText
-               or "There's a lab\nsomewhere trying\vto resurrect\vancient POKéMON\vfrom AMBER.")
-          or (t._Museum1FScientist1AmberIsFossilizedTreeSapText
-              or "AMBER is fossil-\nized tree sap."), done))
+          and t._Museum1FScientist1TheresALabSomewhereText
+          or t._Museum1FScientist1AmberIsFossilizedTreeSapText, done))
       end }))
     return
   end
   if game.save.flags.EVENT_BOUGHT_MUSEUM_TICKET then
     game.stack:push(TextBox.new(game,
-      t._Museum1FScientist1TakePlentyOfTimeText
-        or "Take your time,\nand enjoy it all!", done))
+      t._Museum1FScientist1TakePlentyOfTimeText, done))
     return
   end
   -- scripts/Museum1F.asm:58
   if p and p.cellY ~= 4 then
     game.stack:push(TextBox.new(game,
-      t._Museum1FScientist1GoToOtherSideText
-        or "Please go to the\nother side!", done))
+      t._Museum1FScientist1GoToOtherSideText, done))
     return
   end
   -- scripts/Museum1F.asm:72
   local money = function() return game.save.money end
   game.stack:push(TextBox.new(game,
-    t._Museum1FScientist1WouldYouLikeToComeInText
-      or "It's ¥50 for a\nchild's ticket.\fWould you like to\ncome in?",
+    t._Museum1FScientist1WouldYouLikeToComeInText,
     nil, { money = money, choice = function(yes)
       if yes and game.save.money >= 50 then
         game.save.money = game.save.money - 50
         game.save.flags.EVENT_BOUGHT_MUSEUM_TICKET = true
         -- scripts/Museum1F.asm:106
         game.stack:push(TextBox.new(game,
-          t._Museum1FScientist1ThankYouText or "Right, ¥50!\nThank you!", done,
+          t._Museum1FScientist1ThankYouText, done,
           { money = money }))
       elseif yes then
         -- scripts/Museum1F.asm:90-92
         game.stack:push(TextBox.new(game,
-          t._Museum1FScientist1DontHaveEnoughMoneyText
-            or "You don't have\nenough money.", function()
+          t._Museum1FScientist1DontHaveEnoughMoneyText, function()
             game.stack:push(TextBox.new(game,
               t._Museum1FScientist1ComeAgainText, onDecline or done,
               { money = money }))
           end, { money = money }))
       else
         game.stack:push(TextBox.new(game,
-          t._Museum1FScientist1ComeAgainText
-            or "Come again!", onDecline or done, { money = money }))
+          t._Museum1FScientist1ComeAgainText, onDecline or done, { money = money }))
       end
     end }))
 end
@@ -820,7 +798,7 @@ M.MUSEUM_1F = {
     TEXT_MUSEUM1F_OLD_AMBER = function(game, ow, npc, done)
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
-        game.data.text._Museum1FOldAmberText or "The OLD AMBER.", done))
+        game.data.text._Museum1FOldAmberText, done))
     end,
   },
 }
@@ -871,8 +849,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
         if f.EVENT_LAB_STILL_REVIVING_FOSSIL then
           -- .check_done_reviving -> still pending this visit
           game.stack:push(TextBox.new(game,
-            t._CinnabarLabFossilRoomScientist1GoForAWalkText or
-            "I take a little\ntime!\fYou go for walk a\nlittle while!", done))
+            t._CinnabarLabFossilRoomScientist1GoForAWalkText, done))
           return
         end
         -- STILL_REVIVING was cleared (CINNABAR_ISLAND was reloaded
@@ -883,8 +860,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
         f.EVENT_LAB_HANDING_OVER_FOSSIL_MON = true
         game.stack:push(TextBox.new(game,
           fillFossilText(
-            t._CinnabarLabFossilRoomScientist1FossilIsBackToLifeText or
-            "Where were you?\fYour fossil is\nback to life!\fIt was {RAM:x}\nlike I think!",
+            t._CinnabarLabFossilRoomScientist1FossilIsBackToLifeText,
             subs),
           function()
             if not species then
@@ -916,8 +892,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
       -- No fossil deposited yet: the intro always plays first (.Text),
       -- then either the fossil-select menu (GiveFossilToCinnabarLab)
       -- or NoFossilsText.
-      local introText = t._CinnabarLabFossilRoomScientist1Text or
-        "Hiya!\fI am important\ndoctor!\fI study here rare\nPOKéMON fossils!\fYou! Have you a\nfossil for me?"
+      local introText = t._CinnabarLabFossilRoomScientist1Text
 
       local carried = {}
       for _, fossil in ipairs(FOSSIL_ORDER) do
@@ -929,8 +904,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
       if #carried == 0 then
         game.stack:push(TextBox.new(game, introText, function()
           game.stack:push(TextBox.new(game,
-            t._CinnabarLabFossilRoomScientist1NoFossilsText or
-            "No! Is too bad!", done))
+            t._CinnabarLabFossilRoomScientist1NoFossilsText, done))
         end))
         return
       end
@@ -945,8 +919,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
       end
       local function comeAgain()
         game.stack:push(TextBox.new(game,
-          t._CinnabarLabFossilRoomScientist1ComeAgainText or
-          "Aiyah! You come\nagain!", finish))
+          t._CinnabarLabFossilRoomScientist1ComeAgainText, finish))
       end
       local items = {}
       for _, fossil in ipairs(carried) do
@@ -962,8 +935,7 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
             subs.wStringBuffer = def and def.name or species
             game.stack:push(TextBox.new(game,
               fillFossilText(
-                t._CinnabarLabFossilRoomScientist1SeesFossilText or
-                "Oh! That is\n{RAM:wNameBuffer}!\fIt is fossil of\n{RAM:wStringBuffer}, a\nPOKéMON that is\nalready extinct!\fMy Resurrection\nMachine will make\nthat POKéMON live\nagain!",
+                t._CinnabarLabFossilRoomScientist1SeesFossilText,
                 subs),
               nil, { choice = function(yes)
                 if not yes then comeAgain() return end
@@ -973,13 +945,11 @@ M.CINNABAR_LAB_FOSSIL_ROOM = {
                 f.EVENT_LAB_STILL_REVIVING_FOSSIL = true
                 game.stack:push(TextBox.new(game,
                   fillFossilText(
-                    t._CinnabarLabFossilRoomScientist1TakesFossilText or
-                    "So! You hurry and\ngive me that!\f{PLAYER} handed\nover {RAM:wNameBuffer}!",
+                    t._CinnabarLabFossilRoomScientist1TakesFossilText,
                     subs),
                   function()
                     game.stack:push(TextBox.new(game,
-                      t._CinnabarLabFossilRoomScientist1GoForAWalkText2 or
-                      "I take a little\ntime!\fYou go for walk a\nlittle while!", finish))
+                      t._CinnabarLabFossilRoomScientist1GoForAWalkText2, finish))
                   end))
               end }))
           end,
@@ -1081,22 +1051,18 @@ M.DAYCARE = {
           wDayCareTotalCost = fee,
         }
         local statusText = levelsGrown > 0
-          and (t._DaycareGentlemanMonHasGrownText
-            or "Your {RAM:wNameBuffer}\nhas grown a lot!\fBy level, it's\ngrown by {NUM:wDayCareNumLevelsGrown, 1, 3}!\fAren't I great?")
-          or (t._DaycareGentlemanMonNeedsMoreTimeText
-            or "Back already?\nYour {RAM:wNameBuffer}\nneeds some more\ntime with me.")
+          and t._DaycareGentlemanMonHasGrownText
+          or t._DaycareGentlemanMonNeedsMoreTimeText
 
         game.stack:push(TextBox.new(game, fillDaycareText(statusText, subs), function()
           if #game.save.party >= Party.MAX then
             game.stack:push(TextBox.new(game,
-              t._DaycareGentlemanNoRoomForMonText
-                or "You have no room\nfor this POKéMON!", done))
+              t._DaycareGentlemanNoRoomForMonText, done))
             return
           end
           game.stack:push(TextBox.new(game,
             fillDaycareText(
-              t._DaycareGentlemanOweMoneyText
-                or "You owe me ¥{NUM:wDayCareTotalCost, 2 | LEADING_ZEROES | LEFT_ALIGN}\nfor the return\nof this POKéMON.",
+              t._DaycareGentlemanOweMoneyText,
               subs),
             nil, {
             -- scripts/Daycare.asm:133
@@ -1106,16 +1072,15 @@ M.DAYCARE = {
                 -- .leaveMonInDayCare: revert any transient level bump
                 mon.level = startLevel
                 game.stack:push(TextBox.new(game,
-                  (t._DaycareGentlemanAllRightThenText or "All right then,\n")
-                    .. (t._DaycareGentlemanComeAgainText or "come again."),
+                  t._DaycareGentlemanAllRightThenText
+                    .. t._DaycareGentlemanComeAgainText,
                   done, { money = showMoney }))
                 return
               end
               if (game.save.money or 0) < fee then
                 mon.level = startLevel
                 game.stack:push(TextBox.new(game,
-                  t._DaycareGentlemanNotEnoughMoneyText
-                    or "Hey, you don't\nhave enough ¥!", done, { money = showMoney }))
+                  t._DaycareGentlemanNotEnoughMoneyText, done, { money = showMoney }))
                 return
               end
               game.save.money = game.save.money - fee
@@ -1131,12 +1096,10 @@ M.DAYCARE = {
               table.insert(game.save.party, mon)
               game.save.daycare = nil
               game.stack:push(TextBox.new(game,
-                t._DaycareGentlemanHeresYourMonText
-                  or "Thank you! Here's\nyour POKéMON!", function()
+                t._DaycareGentlemanHeresYourMonText, function()
                 game.stack:push(TextBox.new(game,
                   fillDaycareText(
-                    t._DaycareGentlemanGotMonBackText
-                      or "{PLAYER} got\n{RAM:wDayCareMonName} back!",
+                    t._DaycareGentlemanGotMonBackText,
                     subs), done, {
                   money = showMoney,
                   -- scripts/Daycare.asm:202
@@ -1159,22 +1122,20 @@ M.DAYCARE = {
       end
 
       game.stack:push(TextBox.new(game,
-        t._DaycareGentlemanIntroText
-          or "I run a DAYCARE.\nWould you like me\nto raise one of\nyour POKéMON?",
+        t._DaycareGentlemanIntroText,
         nil, { choice = function(yes)
           if not yes then
             game.stack:push(TextBox.new(game,
-              t._DaycareGentlemanComeAgainText or "come again.", done))
+              t._DaycareGentlemanComeAgainText, done))
             return
           end
           if #game.save.party < 2 then
             game.stack:push(TextBox.new(game,
-              t._DaycareGentlemanOnlyHaveOneMonText
-                or "You only have one\nPOKéMON with you.", done))
+              t._DaycareGentlemanOnlyHaveOneMonText, done))
             return
           end
           game.stack:push(TextBox.new(game,
-            t._DaycareGentlemanWhichMonText or "Which POKéMON\nshould I raise?",
+            t._DaycareGentlemanWhichMonText,
             function()
               local PartyMenu = require("src.ui.PartyMenu")
               game.stack:push(PartyMenu.new(game, {
@@ -1207,13 +1168,11 @@ M.DAYCARE = {
                   }
                   game.stack:push(TextBox.new(game,
                     fillDaycareText(
-                      t._DaycareGentlemanWillLookAfterMonText
-                        or "Fine, I'll look\nafter {RAM:wNameBuffer}\nfor a while.",
+                      t._DaycareGentlemanWillLookAfterMonText,
                       { player = playerName, wNameBuffer = name }),
                     function()
                       game.stack:push(TextBox.new(game,
-                        t._DaycareGentlemanComeSeeMeInAWhileText
-                          or "Come see me in\na while.", done, {
+                        t._DaycareGentlemanComeSeeMeInAWhileText, done, {
                         -- scripts/Daycare.asm:58
                         preSound = function()
                           -- pokeyellow scripts/Daycare.asm:66

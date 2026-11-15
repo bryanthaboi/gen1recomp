@@ -34,6 +34,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local HallOfFame = require("src.core.gen2.HallOfFame")
 local Palettes = require("src.world.gen2.Palettes")
+local RomText = require("src.core.RomText")
 local TileSheet = require("src.ui.gen2.TileSheet")
 local Nests = require("src.core.gen2.Nests")
 local Sound = require("src.core.Sound")
@@ -41,32 +42,38 @@ local Sprites = require("src.pokemon.Sprites")
 local Unown = require("src.core.gen2.Unown")
 local Strings = require("src.core.Strings")
 local MenuRepeat = require("src.ui.MenuRepeat")
-local TypeChart = require("src.battle.TypeChart")
 
--- `db $3b, " OPTION ", $3c` / `db $3b, " SEARCH ", $3c"`: the panel titles
--- drawn by drawOption/drawSearch below, declared here (rather than inline)
--- so Strings.source puts them in the catalog harvest.
-local OPTION_LABEL = Strings.source(" OPTION ")
-local SEARCH_LABEL = Strings.source(" SEARCH ")
-local MODE_LABELS = {
-  NEW = Strings.source("NEW"),
-  OLD = Strings.source("OLD"),
-  ["A-Z"] = Strings.source("A-Z"),
-}
-local SEEN_LABEL = Strings.source("SEEN")
-local OWN_LABEL = Strings.source("OWN")
+-- engine/pokedex/pokedex.asm:1202, :1236
+local OPTION_LABEL = "Pokedex_DrawOptionScreenBG.Title#1"
+local SEARCH_LABEL = "Pokedex_DrawSearchScreenBG.Title#1"
+-- engine/pokedex/pokedex.asm:1129, :1131
+local SEEN_LABEL = "String_SEEN"
+local OWN_LABEL = "String_OWN"
+-- engine/pokedex/pokedex.asm:1173-1177
+local HEIGHT_STRING = "Pokedex_DrawDexEntryScreenBG.Height"
+local WEIGHT_STRING = "Pokedex_DrawDexEntryScreenBG.Weight"
+local ENTRY_ACTION_LABEL = "Pokedex_DrawDexEntryScreenBG.MenuItems#1"
 local HEIGHT_LABEL = Strings.source("HT")
 local WEIGHT_LABEL = Strings.source("WT")
-local SEARCH_TYPE1_LABEL = Strings.source("TYPE1")
-local SEARCH_TYPE2_LABEL = Strings.source("TYPE2")
-local BEGIN_SEARCH_LABEL = Strings.source("BEGIN SEARCH!!")
-local CANCEL_LABEL = Strings.source("CANCEL")
-local NO_SEARCH_RESULTS = Strings.source("No <PK><MN> found!")
-local ENTRY_ACTION_LABEL = Strings.source(" PAGE AREA CRY PRNT")
-local POUND_LABEL = Strings.source("lb")
+-- engine/pokedex/pokedex.asm:1242, :1247
+local SEARCH_TYPES_LABEL = "Pokedex_DrawSearchScreenBG.Types"
+local SEARCH_MENU_LABEL = "Pokedex_DrawSearchScreenBG.Menu"
+-- engine/pokedex/pokedex.asm:1969
+local NO_SEARCH_RESULTS = "Pokedex_DisplayTypeNotFoundMessage.TypeNotFound"
 local METRE_LABEL = Strings.source("m")
 local KILOGRAM_LABEL = Strings.source("kg")
-local NEST_TITLE = Strings.source("%s'S NEST")
+-- engine/pokegear/pokegear.asm:2424
+local NEST_TITLE = "Pokedex_GetArea.String_SNest"
+-- engine/pokedex/pokedex.asm:1563
+local NAME_NOT_SEEN = "Pokedex_PlaceDefaultStringIfNotSeen.NameNotSeen"
+-- engine/pokedex/pokedex.asm:1205, :1211
+local OPTION_MODES_LABEL = "Pokedex_DrawOptionScreenBG.Modes"
+local OPTION_UNOWN_LABEL = "Pokedex_DrawOptionScreenBG.UnownMode"
+-- data/types/search_strings.asm:1
+local SEARCH_TYPE_STRINGS = "PokedexTypeSearchStrings#"
+
+-- constants/charmap.asm:34-35, :267
+local DEX_TILE_GLYPHS = { ["<ROCKET>"] = 0x5e, ["<DEXEND>"] = 0x5f, ["\xe3\x81\xb6"] = 0x3c }
 
 local LIST_DIRS = { "up", "down" }
 
@@ -97,8 +104,6 @@ local TILE_BORDER = { -- Pokedex_PlaceBorder
   bottomLeft = 0x38, bottom = 0x39, bottomRight = 0x3a,
 }
 local TILE_CAUGHT = 0x4f
-local TILE_FOOT = 0x5e
-local TILE_INCH = 0x5f
 local TILE_NO = { 0x5c, 0x5d }
 local TILE_DIVIDER = 0x61
 local TILE_PAGE_TOP = 0x55
@@ -157,6 +162,11 @@ local CURSOR_OAM_OLD = {
   sprite(20, 5, -2, 0, 0x31, true, true), sprite(20, 4, -2, 0, 0x30, true, true),
 }
 
+-- ../pokecrystal/home/fade.asm:35-41, :112-115
+local CLOSE_FADE_ROWS = { 0x90, 0x40, 0x00 }
+-- ../pokecrystal/home/fade.asm:57-58
+local CLOSE_FADE_FRAMES = 8
+
 -- Pokedex_PutScrollbarOAM: one OBJ, tile $0f, x 161, y from 20 to 141.
 local SCROLLBAR_TILE = 0x0f
 local SCROLLBAR_X = 161 - 8
@@ -165,6 +175,46 @@ local SCROLLBAR_TRAVEL = 121
 
 function PokedexMenu:wantsFillScale() return true end
 function PokedexMenu:drawsWidescreen() return true end
+
+function PokedexMenu:rom(label)
+  return RomText(self.data, label)
+end
+
+-- engine/pokedex/pokedex.asm:1409 Pokedex_PlaceString
+function PokedexMenu:dexString(str, tx, ty)
+  local run, runX, x, i = {}, tx, tx, 1
+  local function flush()
+    if #run > 0 then self:text(table.concat(run), runX, ty) end
+    run = {}
+  end
+  while i <= #str do
+    local glyph = str:match("^<[^>]+>", i)
+    if not glyph then
+      local lead = str:byte(i)
+      local len = lead >= 0xf0 and 4 or lead >= 0xe0 and 3 or lead >= 0xc0 and 2 or 1
+      glyph = str:sub(i, i + len - 1)
+    end
+    local tile = DEX_TILE_GLYPHS[glyph]
+    if tile then
+      flush()
+      self:tile(tile, x, ty)
+    else
+      if #run == 0 then runX = x end
+      run[#run + 1] = glyph
+    end
+    x = x + 1
+    i = i + #glyph
+  end
+  flush()
+end
+
+function PokedexMenu:romLines(label)
+  local lines = {}
+  for line in (self:rom(label) .. "\n"):gmatch("(.-)\n") do
+    lines[#lines + 1] = line
+  end
+  return lines
+end
 
 -- opts: save, pokedex (pokedex.lua), pokemon (pokemon.lua), palettes,
 -- menuGfx (menu_gfx.lua), onClose(), entrySpecies (open straight on that
@@ -244,15 +294,17 @@ function PokedexMenu.new(game, opts)
   -- REVERSED, because the routine inverts the tiles on their way into VRAM
   -- the same way Pokedex_LoadInvertedFont inverts the ordinary font.
   local font = opts.font or data.font
-  if font and font.imageUnown and gfx then
-    self.unownFontBase = font.unownBase or 0x40
+  if font and gfx then
+    if not font.imageUnown then error("font.lua has no imageUnown") end
+    self.unownFontBase = font.unownBase
     self.unownFont = TileSheet.new({
-      path = font.imageUnown, wide = font.unownWide or 3,
-      firstTile = font.unownBase or 0x40,
+      path = font.imageUnown, wide = font.unownWide,
+      firstTile = font.unownBase,
+      raw = true,
       paletteFor = function()
         local pal = self.dexPalette
         if not pal then return nil end
-        return { pal[4], pal[3], pal[2], pal[1] }
+        return Chrome.throughPalette(pal, true)
       end,
     })
   end
@@ -283,10 +335,6 @@ end
 
 function PokedexMenu:mode()
   return MODES[self.modeIndex]
-end
-
-function PokedexMenu:styled()
-  return self.sheet ~= nil and self.sheet:available()
 end
 
 -- The species list in the current sort order.  OLD is the national (index)
@@ -367,7 +415,24 @@ function PokedexMenu:close()
   if self.onClose then self.onClose() end
 end
 
+-- ../pokecrystal/home/fade.asm:35-62
+function PokedexMenu:closeFadeBgp()
+  local tick = self.closeFade
+  if not tick then return nil end
+  local index = math.floor(tick / CLOSE_FADE_FRAMES) + 1
+  return CLOSE_FADE_ROWS[math.min(#CLOSE_FADE_ROWS, index)]
+end
+
 function PokedexMenu:update(_dt)
+  if self.closeFade then
+    self.closeFade = self.closeFade + 1
+    if self.closeFade >= CLOSE_FADE_FRAMES * #CLOSE_FADE_ROWS then
+      self.closeFade = nil
+      self.closeFadeDone = true
+      self:close()
+    end
+    return
+  end
   self.entryBlink = (self.entryBlink or 0) + 1
   local input = self.game and self.game.input
   if not input then return end
@@ -375,11 +440,13 @@ function PokedexMenu:update(_dt)
     -- NewPokedexEntry is two WaitPressAorB_BlinkCursor pages and then out
     -- (engine/pokedex/new_pokedex_entry.asm:19-23).
     if self.newEntry then
+      if self.closeFadeDone then return end
       if input:wasPressed("a") or input:wasPressed("b") then
         if self.page == 1 then
           self.page = 2
         else
-          self:close()
+          -- ../pokecrystal/engine/pokedex/new_pokedex_entry.asm:27
+          self.closeFade = 0
         end
       end
       return
@@ -696,9 +763,9 @@ function PokedexMenu:drawMainBackground()
   self:border(0, 9, 6, 7)
 
   local seen, caught = self:totals()
-  self:text(Strings(SEEN_LABEL), 1, 11)
+  self:text(self:rom(SEEN_LABEL), 1, 11)
   self:text(printNumString(seen, 3), 5, 12)
-  self:text(Strings(OWN_LABEL), 1, 14)
+  self:text(self:rom(OWN_LABEL), 1, 14)
   self:text(printNumString(caught, 3), 5, 15)
 
   for i, id in ipairs(BOTTOM_CAPTION) do self:tile(id, i, 17) end
@@ -754,7 +821,7 @@ function PokedexMenu:drawMainWindow()
         if entry.caught then self:tile(TILE_CAUGHT, 0, ty) end
         self:text(self:monName(entry.species), 1, ty)
       else
-        self:text("-----", 1, ty)
+        self:text(self:rom(NAME_NOT_SEEN), 1, ty)
       end
     end
   end
@@ -912,23 +979,14 @@ end
 -- engine/pokegear/pokegear.asm:2298
 function PokedexMenu:drawNestIcon(x, y)
   if self.nestIcon == nil then
-    self.nestIcon = false
     local path = self.mapGfx and self.mapGfx.nestIcon
-    if path then
-      local ok, image = pcall(Assets.image, path)
-      if ok and image then self.nestIcon = image end
-    end
+    if not path then error("menu_gfx.lua pokegear has no nestIcon") end
+    local ok, image = pcall(Assets.image, path)
+    self.nestIcon = ok and image or false
   end
+  if not self.nestIcon then return end
   local G = love.graphics
   G.setColor(1, 1, 1, 1)
-  if not self.nestIcon then
-    local ink = self:nestIconColors()
-    local dark = ink and GbcPalette.color(ink, 4) or { 0, 0, 0 }
-    G.setColor(dark[1] / 255, dark[2] / 255, dark[3] / 255, 1)
-    G.rectangle("fill", x + 1, y + 1, 6, 6)
-    G.setColor(1, 1, 1, 1)
-    return
-  end
   local function body() G.draw(self.nestIcon, x, y) end
   local colors = self:nestIconColors()
   if colors and GbcPalette.available() then
@@ -970,7 +1028,7 @@ function PokedexMenu:drawArea()
     self:drawTilemap(cells)
   end
 
-  self:drawAreaHeader(Strings(NEST_TITLE, self:monName(row.species)))
+  self:drawAreaHeader(self:monName(row.species) .. self:rom(NEST_TITLE))
 
   -- engine/pokegear/pokegear.asm:2385
   local on = ((self.areaBlink or 0) % 32) < 16
@@ -1017,7 +1075,7 @@ function PokedexMenu:drawEntryBody(row, entry)
   self:tile(0x3b, 0, 17)
   -- _NewPokedexEntry ByteFills the action row away (pokedex.asm:2540-2545).
   if not self.newEntry then
-    self:text(Strings(ENTRY_ACTION_LABEL), 1, 17)
+    self:dexString(self:rom(ENTRY_ACTION_LABEL), 1, 17)
     -- Pokedex_InitArrowCursor parks an arrow on the selected action; without it
     -- the four words are decoration and there is no way to tell what A will do.
     --
@@ -1048,11 +1106,9 @@ function PokedexMenu:drawEntryBody(row, entry)
   self:tile(TILE_NO[2], 3, 8)
   self:text(printNumString(entry.dex or 0, 3, true), 4, 8)
 
-  -- .Height / .Weight are placeholder strings until the mon is caught:
-  -- "HT  ?'??"" at (9,7) and "WT   ???lb" at (9,9).
-  self:text(Strings(HEIGHT_LABEL), 9, 7)
-  self:text(Strings(WEIGHT_LABEL), 9, 9)
   if entry.heightM then
+    self:text(Strings(HEIGHT_LABEL), 9, 7)
+    self:text(Strings(WEIGHT_LABEL), 9, 9)
     self:text(self.metricLabels[1], 17, 7)
     self:text(self.metricLabels[2], 17, 9)
     local height = row.caught and metricString(entry.heightM) or "???"
@@ -1061,16 +1117,11 @@ function PokedexMenu:drawEntryBody(row, entry)
     self:text(weight, 17 - #weight, 9)
     if not row.caught then return end
   else
-    self:tile(TILE_FOOT, 14, 7)
-    self:text(Strings(POUND_LABEL), 17, 9)
-
-    if not row.caught then
-      self:text("  ?", 11, 7)
-      self:text("??", 15, 7)
-      self:tile(TILE_INCH, 17, 7)
-      self:text("  ???", 11, 9)
-      return
-    end
+    -- .Height / .Weight are placeholder strings until the mon is caught:
+    -- "HT  ?'??"" at (9,7) and "WT   ???lb" at (9,9).
+    self:dexString(self:rom(HEIGHT_STRING), 9, 7)
+    self:dexString(self:rom(WEIGHT_STRING), 9, 9)
+    if not row.caught then return end
 
     -- The height word is four digits with two in front of the point and the
     -- point replaced by the foot mark; the weight word is five with four in
@@ -1078,7 +1129,6 @@ function PokedexMenu:drawEntryBody(row, entry)
     local height = printNumString(entry.height or 0, 4, false, 2)
     self:text(height:sub(1, 2), 12, 7)
     self:text(height:sub(4), 15, 7)
-    self:tile(TILE_INCH, 17, 7)
     self:text(printNumString(entry.weight or 0, 5, false, 4), 11, 9)
   end
 
@@ -1098,116 +1148,30 @@ function PokedexMenu:drawEntryBody(row, entry)
   end
 end
 
--- ------------------------------------------------------------------ fallbacks
-
--- A cache from before the dex sheet was extracted has no `pokedex` table.
--- Rather than draw nothing, fall back to the plain boxes this screen used
--- before the sweep.
-function PokedexMenu:drawPlain()
-  Chrome.clear()
-  if self.view == "unown" then
-    -- Without the dex sheet there are no border tiles, so the ring of letters
-    -- is printed straight onto a plain box; the slot coordinates are the same
-    -- ones the styled screen uses.
-    Chrome.box(2, 1, 15, 13)
-    local list = self:unownDex()
-    local slot = math.min(self.unownIndex or 0, math.max(0, #list - 1))
-    for index, value in ipairs(list) do
-      local coords = PokedexMenu.UNOWN_COORDS[index]
-      if coords then
-        Chrome.print(Unown.name(value) or "?", coords[1], coords[2])
-        if index == slot + 1 then Chrome.cursor(coords[3], coords[4]) end
-      end
-    end
-    local letter = list[slot + 1]
-    if letter then
-      self:drawUnownPic(letter, 6, 5)
-      Chrome.print(Unown.word(letter) or "", 4, 15)
-    end
-    return
-  end
-  if self.view == "entry" then
-    local row = self:current()
-    local entry = row and self.dex and self.dex.entries
-      and self.dex.entries[row.species]
-    Chrome.box(0, 0, 20, 10)
-    if entry then
-      Chrome.print(("%s  %s"):format(
-        Chrome.number(entry.dex or 0, 3, true), self:monName(row.species)), 1, 1)
-      Chrome.print(entry.kind or "", 1, 3)
-      if entry.heightM then
-        Chrome.print(Strings(HEIGHT_LABEL) .. " " .. metricString(entry.heightM) .. self.metricLabels[1], 1, 5)
-        Chrome.print(Strings(WEIGHT_LABEL) .. " " .. metricString(entry.weightKg) .. self.metricLabels[2], 1, 7)
-      else
-        Chrome.print(Strings(HEIGHT_LABEL) .. " "
-          .. printNumString(entry.height or 0, 4, false, 2), 1, 5)
-        Chrome.print(Strings(WEIGHT_LABEL) .. " "
-          .. printNumString(entry.weight or 0, 5, false, 4), 1, 7)
-      end
-      self:drawPic(row, 12, 1, true)
-      Chrome.box(0, 10, 20, 8)
-      local ty = 11
-      for part in ((entry.text or "") .. "<NEXT>"):gmatch("(.-)<NEXT>") do
-        if ty > 16 then break end
-        Chrome.print(part, 1, ty)
-        ty = ty + 1
-      end
-    end
-    return
-  end
-  Chrome.box(0, 0, 13, 18)
-  for row = 1, VISIBLE_ROWS do
-    local i = row + self.scroll
-    local entry = self.rows[i]
-    if entry then
-      local ty = 1 + (row - 1) * 2
-      if i == self.index then Chrome.cursor(0, ty) end
-      Chrome.print(Chrome.number(entry.dex or 0, 3, true), 1, ty)
-      Chrome.print(entry.seen and self:monName(entry.species) or "-----", 5, ty)
-    end
-  end
-  Chrome.box(13, 0, 7, 11)
-  self:drawPic(self:current(), 13, 1)
-  Chrome.box(13, 11, 7, 7)
-  local seen, caught = self:totals()
-  Chrome.print(Strings(MODE_LABELS[self:mode()] or self:mode()), 14, 12)
-  Chrome.print(Strings(SEEN_LABEL), 14, 14)
-  Chrome.printRight(tostring(seen), 19, 15)
-  Chrome.print(Strings(OWN_LABEL), 14, 16)
-  Chrome.printRight(tostring(caught), 19, 17)
-end
-
 -- ---------------------------------------------------------- OPTION / SEARCH
 --
 -- Pokedex_DrawOptionScreenBG and Pokedex_DrawSearchScreenBG, transcribed at
 -- their own hlcoords.  Both draw over the dex's own background fill rather
 -- than into a text box, which is why they use `border` and `text` here.
 
--- The SEARCH screen's type wheel: "-----" is index 0 and the eighteen real
--- types follow, in the order data/types/names.asm lists them.
+-- data/types/search_types.asm:4-20
 PokedexMenu.SEARCH_TYPES = {
-  "NORMAL", "FIGHTING", "FLYING", "POISON", "GROUND", "ROCK", "BUG", "GHOST",
-  "STEEL", "FIRE", "WATER", "GRASS", "ELECTRIC", "PSYCHIC", "ICE", "DRAGON",
-  "DARK",
+  "NORMAL", "FIRE", "WATER", "GRASS", "ELECTRIC", "ICE", "FIGHTING", "POISON",
+  "GROUND", "FLYING", "PSYCHIC", "BUG", "ROCK", "GHOST", "DRAGON", "DARK",
+  "STEEL",
 }
 
 -- .Modes, and the two-line description Pokedex_DisplayModeDescription prints
--- under each one.
--- `#` is the compression byte for POKé, four tiles either way, so the label
--- is spelled out here the way every other Gen 2 screen in the port spells it.
+-- under each one (engine/pokedex/pokedex.asm:1728-1748).
 PokedexMenu.OPTION_MODES = {
-  { label = Strings.source("NEW POKéDEX MODE"), mode = "NEW",
-    lines = { Strings.source("<PK><MN> are listed by"),
-      Strings.source("evolution type.") } },
-  { label = Strings.source("OLD POKéDEX MODE"), mode = "OLD",
-    lines = { Strings.source("<PK><MN> are listed by"),
-      Strings.source("official type.") } },
-  { label = Strings.source("A to Z MODE"), mode = "A-Z",
-    lines = { Strings.source("<PK><MN> are listed"),
-      Strings.source("alphabetically.") } },
-  { label = Strings.source("UNOWN MODE"), mode = "UNOWN", unown = true,
-    lines = { Strings.source("UNOWN are listed"),
-      Strings.source("in catching order.") } },
+  { label = OPTION_MODES_LABEL, line = 1, mode = "NEW",
+    description = "Pokedex_DisplayModeDescription.NewMode" },
+  { label = OPTION_MODES_LABEL, line = 2, mode = "OLD",
+    description = "Pokedex_DisplayModeDescription.OldMode" },
+  { label = OPTION_MODES_LABEL, line = 3, mode = "A-Z",
+    description = "Pokedex_DisplayModeDescription.ABCMode" },
+  { label = OPTION_UNOWN_LABEL, line = 1, mode = "UNOWN", unown = true,
+    description = "Pokedex_DisplayModeDescription.UnownMode" },
 }
 
 -- Pokedex_CheckUnlockedUnownMode: `ld a, [wStatusFlags] / bit
@@ -1350,19 +1314,16 @@ end
 -- ring is `ld a, [hl] / add FIRST_UNOWN_CHAR - 1` (Pokedex_UpdateUnownMode),
 -- and data/pokemon/unown_words.asm's own `unownword` macro spells each word
 -- as `CHARVAL(...) - 'A' + FIRST_UNOWN_CHAR`, so a word is 26 letter tiles
--- too.  A cache built before UnownFont was extracted has no sheet, and both
--- fall back to the inverted ordinary font, which is what this screen printed
--- before.
+-- too.
 
 -- One letter of the Unown font: 'A' is tile FIRST_UNOWN_CHAR.  Anything that
 -- is not a letter (the '?' a corrupt slot would print) has no tile at all and
 -- goes through the ordinary font instead.
 function PokedexMenu:unownGlyph(char, tx, ty)
-  local sheet = self.unownFont
-  if not (sheet and sheet:available()) then return false end
   local index = Unown.index(char)
   if not index then return false end
-  return sheet:draw((self.unownFontBase or 0x40) + index - 1, tx, ty)
+  self.unownFont:draw(self.unownFontBase + index - 1, tx, ty)
+  return true
 end
 
 function PokedexMenu:unownText(str, tx, ty)
@@ -1377,14 +1338,9 @@ end
 
 -- FIRST_UNOWN_CHAR + NUM_UNOWN, the diamond the ring is pointed at with: the
 -- 27th tile of the sheet, which is why the font is one tile longer than the
--- alphabet.  Without the sheet the shared cursor glyph stands in.
+-- alphabet.
 function PokedexMenu:unownCursor(tx, ty)
-  local sheet = self.unownFont
-  if sheet and sheet:available()
-    and sheet:draw((self.unownFontBase or 0x40) + Unown.NUM_UNOWN, tx, ty) then
-    return
-  end
-  self:text("\xe2\x96\xb6", tx, ty)
+  self.unownFont:draw(self.unownFontBase + Unown.NUM_UNOWN, tx, ty)
 end
 
 function PokedexMenu:drawUnownPic(letter, tx, ty)
@@ -1445,16 +1401,11 @@ function PokedexMenu:updateSearch(input)
   end
 end
 
+-- engine/pokedex/pokedex.asm:1861 Pokedex_PlaceTypeString
 function PokedexMenu:searchTypeName(slot)
-  local index = self.searchType[slot] or 0
-  if index == 0 then return "-----" end
-  local id = PokedexMenu.SEARCH_TYPES[index]
-  return id and TypeChart.displayName(id, self.data) or "-----"
+  return self:rom(SEARCH_TYPE_STRINGS .. ((self.searchType[slot] or 0) + 1))
 end
 
--- Search compares internal type ids, never their translated display names.
--- Keeping this separate from searchTypeName lets a registry rename and even
--- reorder the visible label without changing which species the wheel finds.
 function PokedexMenu:searchTypeId(slot)
   local index = self.searchType[slot] or 0
   return index ~= 0 and PokedexMenu.SEARCH_TYPES[index] or nil
@@ -1501,17 +1452,17 @@ function PokedexMenu:drawOption()
   -- `db $3b, " OPTION ", $3c`: the two end-cap tiles are the dex sheet's, not
   -- font glyphs.
   self:tile(0x3b, 0, 1)
-  self:text(Strings(OPTION_LABEL), 1, 1)
-  self:tile(0x3c, 9, 1)
+  self:dexString(self:rom(OPTION_LABEL), 1, 1)
   local rows = self:optionRows()
   for i, row in ipairs(rows) do
-    self:text(Strings(row.label), 3, 2 + i * 2)
+    self:text(self:romLines(row.label)[row.line], 3, 2 + i * 2)
     if i == self.optionIndex then self:text("\xe2\x96\xb6", 2, 2 + i * 2) end
   end
   local current = rows[self.optionIndex]
   if current then
-    self:text(Strings(current.lines[1]), 1, 14)
-    self:text(Strings(current.lines[2]), 1, 15)
+    local lines = self:romLines(current.description)
+    self:text(lines[1], 1, 14)
+    self:text(lines[2], 1, 15)
   end
 end
 
@@ -1521,32 +1472,34 @@ function PokedexMenu:drawSearch()
   self:fill(TILE_BG, 0, 0, Chrome.SCREEN_W, Chrome.SCREEN_H)
   self:border(0, 2, 14, 18)
   self:tile(0x3b, 0, 1)
-  self:text(Strings(SEARCH_LABEL), 1, 1)
-  self:tile(0x3c, 9, 1)
-  self:text(Strings(SEARCH_TYPE1_LABEL), 3, 4)
-  self:text(Strings(SEARCH_TYPE2_LABEL), 3, 6)
-  self:text(self:searchTypeName(1), 10, 4)
-  self:text(self:searchTypeName(2), 10, 6)
+  self:dexString(self:rom(SEARCH_LABEL), 1, 1)
+  local types = self:romLines(SEARCH_TYPES_LABEL)
+  self:text(types[1], 3, 4)
+  self:text(types[2], 3, 6)
+  -- engine/pokedex/pokedex.asm:1852, :1855
+  self:text(self:searchTypeName(1), 9, 4)
+  self:text(self:searchTypeName(2), 9, 6)
   -- `.TypeLeftRightArrows: db $3d, "        ", $3e` -- two of the dex sheet's
   -- own tiles at columns 8 and 17, not font glyphs.
   for _, y in ipairs({ 4, 6 }) do
     self:tile(0x3d, 8, y)
     self:tile(0x3e, 17, y)
   end
-  self:text(Strings(BEGIN_SEARCH_LABEL), 3, 13)
-  self:text(Strings(CANCEL_LABEL), 3, 15)
-  if self.searchMessage then self:text(Strings(self.searchMessage), 3, 10) end
+  local menu = self:romLines(SEARCH_MENU_LABEL)
+  self:text(menu[1], 3, 13)
+  self:text(menu[2], 3, 15)
+  if self.searchMessage then
+    for i, line in ipairs(self:romLines(self.searchMessage)) do
+      self:text(line, 1, 8 + i * 2)
+    end
+  end
   local rows = { 4, 6, 13, 15 }
   local y = rows[self.searchIndex] or 4
   self:text("\xe2\x96\xb6", 2, y)
 end
 
 function PokedexMenu:drawPanel()
-  if not self:styled() then
-    self:drawPlain()
-    love.graphics.setColor(1, 1, 1, 1)
-    return
-  end
+  if not self.sheet then error("menu_gfx.lua has no pokedex") end
   local G = love.graphics
   -- Every dex screen starts from a full-screen fill, so the frame under it
   -- is the sheet's own background rather than the white a text box wants.
@@ -1569,7 +1522,13 @@ function PokedexMenu:drawPanel()
 end
 
 function PokedexMenu:draw()
+  self:drawFaded()
+end
+
+function PokedexMenu:drawFaded()
+  local previous = GbcPalette.setBgp(self:closeFadeBgp() or GbcPalette.bgp)
   self:drawPanel()
+  GbcPalette.setBgp(previous)
 end
 
 function PokedexMenu:drawWidescreen(winW, winH)
@@ -1579,7 +1538,7 @@ function PokedexMenu:drawWidescreen(winW, winH)
   G.push()
   G.translate(Chrome.fitOrigin(winW, winH, scale))
   G.scale(scale, scale)
-  self:drawPanel()
+  self:drawFaded()
   G.pop()
 end
 

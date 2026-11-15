@@ -268,6 +268,10 @@ do
   local Vm = require("src.core.game3.scripting.vm")
   local Adapters = require("src.core.game3.scripting.adapters")
   local VAR_RESULT = 0x800D
+  local Multichoice = require("src.core.game3.scripting.multichoice")
+  if not Multichoice.LISTS[Prize.LIST_TM_PRIZES] then
+    Multichoice.LISTS[Prize.LIST_TM_PRIZES] = { labels = INVENTED_TWO }
+  end
 
   local store = Flags.newStore()
   local vm = Vm.new({

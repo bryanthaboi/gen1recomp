@@ -1,5 +1,7 @@
 return function()
-  return {
+  local S7A = require("tests.fixture_data.gen2_rom_text_s7_a")
+  local S7B = require("tests.fixture_data.gen2_rom_text_s7_b")
+  return S7A.text(S7B.text(require("tests.gen2_capture_text_fixture")({
     _BallSentToPCText = "{STRBUF} was\nsent to BILL's PC.{PROMPT}",
     FrozenSolidText = "{USER}\nis frozen solid!{PROMPT}",
     FullyParalyzedText = "{USER}'s\nfully paralyzed!{PROMPT}",
@@ -44,5 +46,5 @@ return function()
     DidntAffect1Text = "It didn't affect\n{TARGET}!{PROMPT}",
     DoesntAffectText = "It doesn't affect\n{TARGET}!{PROMPT}",
     ButItFailedText = "But it failed!{PROMPT}",
-  }
+  }), require("src.core.GameVersion").get()), require("src.core.GameVersion").get())
 end

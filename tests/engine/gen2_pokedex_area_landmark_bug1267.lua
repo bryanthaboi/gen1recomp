@@ -13,6 +13,7 @@ local Nests = require("src.core.gen2.Nests")
 
 -- one Johto landmark (index 5), one species that nests there
 local data = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_e"),
   gen2Encounters = {
     grass = {
       ROUTE_30 = { slots = { day = { { species = "RATTATA" } } } },

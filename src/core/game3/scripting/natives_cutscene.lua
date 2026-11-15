@@ -11,6 +11,10 @@ local SE = require("src.core.game3.se_ids") -- pokefirered/include/constants/son
 local SPECIES_KABUTOPS = 141 -- pokefirered/src/script_menu.c:1165
 local SPECIES_AERODACTYL = 142 -- pokefirered/src/script_menu.c:1171
 
+local function metatile(name)
+  return require("src.core.game3.constants").active():require("metatile_labels", name)
+end
+
 local function flagsMod()
   return require("src.core.game3.scripting.flags")
 end
@@ -71,7 +75,7 @@ Cutscene.BY_NAME = {
     end
     return false
   end,
-  -- src/special_field_anim.c:223-265, include/constants/metatile_labels.h:177-186
+  -- pokefirered/src/special_field_anim.c:223-283
   AnimateTeleporterHousing = function(ctx)
     local P = package.loaded["src.core.game3.player"]
       or require("src.core.game3.player")
@@ -83,15 +87,21 @@ Cutscene.BY_NAME = {
     local x = tonumber(P.cellX) or 0
     local y = (tonumber(P.cellY) or 0) - 5
     if varGet(ctx, VAR_0x8004) == 0 then x = x + 6 else x = x - 1 end
+    local lightYellow = metatile("METATILE_SeaCottage_Teleporter_Light_Yellow")
+    local doorHalf = metatile("METATILE_SeaCottage_Teleporter_Door_HalfGlowing")
+    local lightRed = metatile("METATILE_SeaCottage_Teleporter_Light_Red")
+    local doorFull = metatile("METATILE_SeaCottage_Teleporter_Door_FullGlowing")
+    local lightGreen = metatile("METATILE_SeaCottage_Teleporter_Light_Green")
+    local door = metatile("METATILE_SeaCottage_Teleporter_Door")
     local timer, state = 0, 0
     Task.spawn(function()
       if timer == 0 then
         if state % 2 == 0 then
-          Field.setMetatile(x, y, 0x2B5, true)
-          Field.setMetatile(x, y + 2, 0x2B7, true)
+          Field.setMetatile(x, y, lightYellow, true)
+          Field.setMetatile(x, y + 2, doorHalf, true)
         else
-          Field.setMetatile(x, y, 0x2B6, true)
-          Field.setMetatile(x, y + 2, 0x2B8, true)
+          Field.setMetatile(x, y, lightRed, true)
+          Field.setMetatile(x, y + 2, doorFull, true)
         end
       end
       timer = timer + 1
@@ -99,13 +109,13 @@ Cutscene.BY_NAME = {
       timer = 0
       state = state + 1
       if state ~= 13 then return false end
-      Field.setMetatile(x, y, 0x28A, true)
-      Field.setMetatile(x, y + 2, 0x296, true)
+      Field.setMetatile(x, y, lightGreen, true)
+      Field.setMetatile(x, y + 2, door, true)
       return true
     end)
     return false
   end,
-  -- src/special_field_anim.c:285-330
+  -- pokefirered/src/special_field_anim.c:285-336
   AnimateTeleporterCable = function()
     local P = package.loaded["src.core.game3.player"]
       or require("src.core.game3.player")
@@ -116,17 +126,21 @@ Cutscene.BY_NAME = {
     end
     local x = (tonumber(P.cellX) or 0) + 4
     local y = (tonumber(P.cellY) or 0) - 5
+    local cableTop = metatile("METATILE_SeaCottage_Teleporter_Cable_Top")
+    local cableBottom = metatile("METATILE_SeaCottage_Teleporter_Cable_Bottom")
+    local ballTop = metatile("METATILE_SeaCottage_Teleporter_CableBall_Top")
+    local ballBottom = metatile("METATILE_SeaCottage_Teleporter_CableBall_Bottom")
     local timer, state = 0, 0
     Task.spawn(function()
       if timer == 0 then
         if state ~= 0 then
-          Field.setMetatile(x, y, 0x285, true)
-          Field.setMetatile(x, y + 1, 0x2B4, true)
+          Field.setMetatile(x, y, cableTop, true)
+          Field.setMetatile(x, y + 1, cableBottom, true)
           if state == 4 then return true end
           x = x - 1
         end
-        Field.setMetatile(x, y, 0x2B9, true)
-        Field.setMetatile(x, y + 1, 0x2BA, true)
+        Field.setMetatile(x, y, ballTop, true)
+        Field.setMetatile(x, y + 1, ballBottom, true)
       end
       timer = timer + 1
       if timer == 4 then

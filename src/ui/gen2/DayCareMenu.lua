@@ -34,13 +34,6 @@
 -- PARTYMENUACTION_GIVE_MON, whose PartyMenuStrings row is ChooseAMonString --
 -- the plain "Choose a #MON." prompt, not one of the item-flavoured ones.
 --
--- Every string is transcribed from data/text/common_1.asm's _DayCare* /
--- _Breed* block, and paired with its pokegold label in LABELS below.  No
--- script bytecode points at any of them -- PrintDayCareText is asm -- so the
--- extractor seeds its text walker at the block by name (RomExtractorGen2's
--- NAMED_TEXT) and the screen prefers the cache's own characters, falling back
--- to the transcription for a cache built before that seed.
---
 -- The MODEL is src/core/gen2/Breeding.lua -- every refusal, price, deposit and
 -- egg roll below is one call into it, so the conversation can be wrong about
 -- its layout without ever being wrong about the rules.
@@ -49,18 +42,15 @@ local Breeding = require("src.core.gen2.Breeding")
 local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Screens = require("src.ui.Screens")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local DayCareMenu = {}
 DayCareMenu.__index = DayCareMenu
 DayCareMenu.isOpaque = false
 
--- charmap.asm's currency glyph and the text-advance arrow (font code $ee),
--- spelled the same way MartMenu spells them so both go through Font.split's
--- charmap match rather than through four ASCII tiles.
-local YEN = "\xc2\xa5"
+-- constants/charmap.asm:190
 local DOWN_ARROW = "\xe2\x96\xbc"
 
 -- ---------------------------------------------------------------- layout
@@ -84,122 +74,7 @@ local SFX_GET_EGG = "Sfx_GetEgg"
 -- again.
 local GET_EGG_FRAMES = 120
 
--- ----------------------------------------------------------------- text
---
--- A "page" is one screenful: up to two lines, TEXT_LINE rows apart.  A `para`
--- in the ASM starts a new page; a `cont` scrolls one line, which shows as a
--- page whose first line is the previous page's second.
-local function page(...) return { ... } end
-local function pages(...) return { ... } end
-
-local TEXT = {
-  -- _DayCareManIntroText / _DayCareManIntroEggText.  The "_EGG" one is the
-  -- LONGER first-meeting script -- DayCareIntroText's `inc a` picks it the one
-  -- time DAYCARE_INTRO_SEEN_F is clear, so it explains what eggs are rather
-  -- than announcing that you have one.
-  manIntro = pages(
-    page("I'm the DAY-CARE", "MAN. Want me to"),
-    page("MAN. Want me to", "raise a #MON?")),
-  manIntroEgg = pages(
-    page("I'm the DAY-CARE", "MAN. Do you know"),
-    page("MAN. Do you know", "about EGGS?"),
-    page("I was raising", "#MON with my"),
-    page("#MON with my", "wife, you see."),
-    page("We were shocked to", "find an EGG!"),
-    page("How incredible is", "that?"),
-    page("So, want me to", "raise a #MON?")),
-  ladyIntro = pages(
-    page("I'm the DAY-CARE", "LADY."),
-    page("Should I raise a", "#MON for you?")),
-  ladyIntroEgg = pages(
-    page("I'm the DAY-CARE", "LADY. Do you know"),
-    page("LADY. Do you know", "about EGGS?"),
-    page("My husband and I", "were raising some"),
-    page("were raising some", "#MON, you see."),
-    page("We were shocked to", "find an EGG!"),
-    page("How incredible", "could that be?"),
-    page("Should I raise a", "#MON for you?")),
-
-  -- DAYCARETEXT_WHICH_ONE, a `prompt`: it waits for a button and only then
-  -- does SelectTradeOrDayCareMon open the party list over it.
-  whichOne = pages(page("What should I", "raise for you?")),
-
-  -- DayCareAskDepositPokemon's refusals, keyed by the Breeding.REFUSE_* the
-  -- model hands back.
-  lastMon = pages(page("Oh? But you have", "just one #MON.")),
-  cantAcceptEgg = pages(page("Sorry, but I can't", "accept an EGG.")),
-  removeMail = pages(page("Remove MAIL before", "you come see me.")),
-  lastAliveMon = pages(
-    page("If you give me", "that, what will"),
-    page("that, what will", "you battle with?")),
-  partyFull = pages(page("You have no room", "for it.")),
-  notEnoughMoney = pages(page("You don't have", "enough money.")),
-  ohFine = pages(page("Oh, fine then.")),
-  comeAgain = pages(page("Come again.")),
-  comeBackLater = pages(page("Come back for it", "later.")),
-
-  -- _IllRaiseYourMonText: the nickname is a text_ram field, so it is spliced
-  -- rather than being part of the string.
-  deposit = function(name)
-    return pages(page("OK. I'll raise", ("your %s."):format(name)))
-  end,
-  geniuses = function(name)
-    return pages(
-      page("Are we geniuses or", "what? Want to see"),
-      page("what? Want to see", ("your %s?"):format(name)))
-  end,
-  -- _YourMonHasGrownText: `text_decimal wStringBuffer2 + 1, 1, 3` is the
-  -- levels grown as a 3-wide left-aligned field, and
-  -- `text_decimal wStringBuffer2 + 2, 3, 4` the price as a 4-wide one -- both
-  -- LEFTALIGN, so neither is space padded.
-  hasGrown = function(name, grown, price)
-    return pages(
-      page(("Your %s"):format(name), "has grown a lot."),
-      page("By level, it's", ("grown by %d."):format(grown)),
-      page("If you want your", "#MON back, it"),
-      page("#MON back, it", ("will cost %s%d."):format(YEN, price)))
-  end,
-  -- _BackAlreadyText, the "grew nothing" branch.  Its price is a LITERAL
-  -- ¥100 in the string, not a decimal field, which is the same number
-  -- GetPriceToRetrieveBreedmon computes for zero levels grown.
-  backAlready = function(name)
-    return pages(
-      page("Huh? Back already?", ("Your %s"):format(name)),
-      page("needs a little", "more time with us."),
-      page("If you want your", "#MON back, it"),
-      page("#MON back, it", ("will cost %s100."):format(YEN)))
-  end,
-  withdraw = pages(page("Perfect! Here's", "your #MON.")),
-  gotBack = function(player, name)
-    return pages(page(("%s got back"):format(player), ("%s."):format(name)))
-  end,
-
-  -- DayCareManOutside.
-  notYet = pages(page("Not yet…")),
-  foundAnEgg = pages(
-    page("Ah, it's you!"),
-    page("We were raising", "your #MON, and"),
-    page("my goodness, were", "we surprised!"),
-    page("Your #MON had", "an EGG!"),
-    page("We don't know how", "it got there, but"),
-    page("your #MON had", "it. You want it?")),
-  receivedEgg = function(player)
-    return pages(page(("%s received"):format(player), "the EGG!"))
-  end,
-  takeGoodCare = pages(page("Take good care of", "it.")),
-  illKeepIt = pages(page("Well then, I'll", "keep it. Thanks!")),
-  noRoomForEgg = pages(
-    page("You have no room", "in your party."),
-    page("in your party.", "Come back later.")),
-}
-
-DayCareMenu.TEXT = TEXT
-
--- ...and the data/text/common_1.asm label each of those entries transcribes.
--- The extractor seeds its text walker at this whole block now
--- (RomExtractorGen2's NAMED_TEXT), so the cache carries the cart's own
--- characters and `self.TEXT` below prefers them; the transcription above is
--- what a cache built before that seed falls back to.
+-- data/text/common_1.asm:1333
 local LABELS = {
   manIntro = "_DayCareManIntroText",
   manIntroEgg = "_DayCareManIntroEggText",
@@ -231,10 +106,6 @@ local LABELS = {
 
 DayCareMenu.LABELS = LABELS
 
--- The six entries that take arguments hand them to CommonText.fill in the
--- order their string names its markers -- the text_ram nickname, then the
--- levels grown, then the price -- so each formatted entry keeps the signature
--- its transcription above already has.
 local FILL = {
   deposit = function(name) return { name } end,
   geniuses = function(name) return { name } end,
@@ -243,25 +114,6 @@ local FILL = {
   gotBack = function(player, name) return { name, player = player } end,
   receivedEgg = function(player) return { player = player } end,
 }
-
--- TEXT with every entry the cache carries replaced by the extracted string.
--- Anything the cache is missing falls through the metatable to the
--- transcription, so a partial cache is a mix rather than a hole.
-local function extractedText(text)
-  local out = setmetatable({}, { __index = TEXT })
-  for key, label in pairs(LABELS) do
-    local list = CommonText.of(text, label)
-    if list then
-      local fill = FILL[key]
-      if fill then
-        out[key] = function(...) return CommonText.fill(list, fill(...)) end
-      else
-        out[key] = list
-      end
-    end
-  end
-  return out
-end
 
 function DayCareMenu:wantsFillScale() return true end
 
@@ -283,7 +135,7 @@ function DayCareMenu.new(game, opts)
   -- text.lua rides on the world, the way the Pokegear's phone strings do:
   -- this screen is pushed over the overworld and never without one.
   self.textData = opts.text or (game and game.world and game.world.text)
-  self.TEXT = extractedText(self.textData)
+  self.TEXT = CommonText.texts(self.textData, LABELS, FILL)
   self.side = opts.side or "man"
   self.onClose = opts.onClose
   self.rng = opts.rng
@@ -551,8 +403,10 @@ end
 
 function DayCareMenu:drawYesNo(choice)
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  local data = self.game and self.game.data
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 

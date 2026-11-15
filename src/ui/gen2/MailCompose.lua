@@ -31,56 +31,37 @@ local Assets = require("src.render.Assets")
 local Chrome = require("src.ui.gen2.Chrome")
 local Font = require("src.render.Font")
 local Mail = require("src.core.gen2.Mail")
-local Strings = require("src.core.Strings")
+local RomText = require("src.core.RomText")
 
 local MailCompose = {}
 MailCompose.__index = MailCompose
 MailCompose.isOpaque = true
 
--- data/text/mail_input_chars.asm, cell for cell.  Each ASM row is twenty
--- columns with the character on the even ones, so cell N is index N*2-1; the
--- rows carrying multi-byte glyphs are written out as arrays instead, the same
--- way src/ui/gen2/NamingScreen.lua writes its symbol rows.
-local function rowCells(row)
-  local out = {}
-  for i = 1, 10 do
-    out[i] = row:sub(i * 2 - 1, i * 2 - 1)
+local function glyphs(row)
+  local out, i = {}, 1
+  while i <= #row do
+    local glyph = row:match("^<[^>]+>", i) or row:match("^'[dlmrstv]", i)
+      or row:match("^[%z\1-\127\194-\244][\128-\191]*", i)
+    out[#out + 1] = glyph
+    i = i + #glyph
   end
   return out
 end
 
-local MAIL_INPUT_UPPER = {
-  rowCells("A B C D E F G H I J"),
-  rowCells("K L M N O P Q R S T"),
-  rowCells("U V W X Y Z   , ? !"),
-  rowCells("1 2 3 4 5 6 7 8 9 0"),
-  -- "<PK> <MN> <PO> <KE> é ♂ ♀ ¥ … ×".  All ten are single font glyphs and
-  -- Font.split matches charmap sequences, so <PO>/<KE> draw one tile each.
-  { "<PK>", "<MN>", "<PO>", "<KE>", "\xc3\xa9", "\xe2\x99\x82",
-    "\xe2\x99\x80", "\xc2\xa5", "\xe2\x80\xa6", "\xc3\x97" },
-}
-local MAIL_INPUT_LOWER = {
-  rowCells("a b c d e f g h i j"),
-  rowCells("k l m n o p q r s t"),
-  rowCells("u v w x y z   . - /"),
-  -- "'d 'l 'm 'r 's 't 'v & ( )": the seven apostrophe pairs are one glyph
-  -- each ($d0-$d6), not two characters.
-  { "'d", "'l", "'m", "'r", "'s", "'t", "'v", "&", "(", ")" },
-  -- "“ ” [ ] ' : ;      "
-  { "\xe2\x80\x9c", "\xe2\x80\x9d", "[", "]", "'", ":", ";", " ", " ", " " },
-}
+-- data/text/mail_input_chars.asm:3
+function MailCompose.keyboard(data, case)
+  local rows = {}
+  for r = 1, 5 do
+    local cells = glyphs(RomText(data, ("MailEntry_%s#%d"):format(case, r)))
+    local line = {}
+    for c = 1, 10 do line[c] = cells[c * 2 - 1] or " " end
+    rows[r] = line
+  end
+  rows.bottom = RomText(data, ("MailEntry_%s#6"):format(case))
+  return rows
+end
 
--- "lower  DEL   END   " / "UPPER  DEL   END   ", written raw from x = 1: the
--- labels land on columns 1, 8 and 14.  The cursor is a sprite on the cart
--- (.CaseDelEnd's $00/$30/$60 x offsets); here it is the same ▶ the naming
--- screen falls back to, one column left of each label.
-local BOTTOM_LABELS = {
-  Strings.source("lower"), Strings.source("DEL"), Strings.source("END"),
-}
-local BOTTOM_UPPER_LABELS = {
-  Strings.source("UPPER"), Strings.source("DEL"), Strings.source("END"),
-}
-local BOTTOM_LABEL_TX = { 1, 8, 14 }
+local BOTTOM_X = 1
 local BOTTOM_CURSOR_TX = { 0, 7, 13 }
 
 -- .PlaceMailCharset: first row at (1,7), stepping two rows.
@@ -109,7 +90,10 @@ function MailCompose.new(game, opts)
   self.text = Mail.trim(opts.initial or "")
   self.col = 0
   self.row = 0
-  self.gfx = opts.menuGfx or (game and game.data and game.data.gen2MenuGfx)
+  local data = game and game.data
+  self.upper = MailCompose.keyboard(data, "Uppercase")
+  self.lowerKeys = MailCompose.keyboard(data, "Lowercase")
+  self.gfx = opts.menuGfx or (data and data.gen2MenuGfx)
   self.tiles = {}
   if self.gfx then
     for _, key in ipairs({ "border", "middleLine", "underLine", "cursor" }) do
@@ -123,7 +107,7 @@ function MailCompose.new(game, opts)
 end
 
 function MailCompose:rows()
-  return self.lower and MAIL_INPUT_LOWER or MAIL_INPUT_UPPER
+  return self.lower and self.lowerKeys or self.upper
 end
 
 function MailCompose:onBottomRow()
@@ -313,11 +297,8 @@ function MailCompose:drawPanel()
     end
   end
 
-  local labels = self.lower and BOTTOM_UPPER_LABELS or BOTTOM_LABELS
   local bottomY = KEYBOARD_TOP + BOTTOM_ROW * 2
-  for i, label in ipairs(labels) do
-    Chrome.print(Strings(label), BOTTOM_LABEL_TX[i], bottomY)
-  end
+  Chrome.print(grid.bottom, BOTTOM_X, bottomY)
 
   local cursorTx, cursorTy
   if self:onBottomRow() then
@@ -358,8 +339,5 @@ function MailCompose:cursorCharacter()
   end
   return self:characterAt(self.col, self.row)
 end
-
-MailCompose.MAIL_INPUT_UPPER = MAIL_INPUT_UPPER
-MailCompose.MAIL_INPUT_LOWER = MAIL_INPUT_LOWER
 
 return MailCompose

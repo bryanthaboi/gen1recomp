@@ -39,7 +39,8 @@ moves.FUTURE_SIGHT.power = 80
 moves.COUNTER.type = "FIGHTING"
 moves.MIRROR_COAT.type = "PSYCHIC_TYPE"
 moves.PURSUIT.type = "DARK"
-local text = {}
+local text = require("tests.fixture_data.gen2_rom_text_s7_a").text(
+  require("tests.fixture_data.gen2_rom_text_s7_b").text(nil, "crystal"), "crystal")
 for _, label in ipairs({ "EliminatedStatsText", "BellChimedText", "SharedPainText",
     "DestinyBondEffectText", "MimicLearnedMoveText", "TransformedTypeText",
     "ShedLeechSeedText", "BlewSpikesText", "ReleasedByText", "RageBuildingText",

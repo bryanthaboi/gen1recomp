@@ -38,15 +38,12 @@
 --   Slots_PayoutText      .Text_PrintPayout lays the matched symbol's four
 --                         tiles at (2,13),(3,13),(2,14),(3,14) and the ▼ at
 --                         (18,17)
---
--- Reel art (gfx/slots/slots_1..3.2bpp.lz + slots.tilemap) is extracted into
--- assets/generated/slots/ when the Gold/Silver manifest carries Slots*LZ.
--- Until those files exist, drawReels falls back to labelled cells.
 
 local Chrome = require("src.ui.gen2.Chrome")
 local CoinCase = require("src.core.gen2.CoinCase")
+local CommonText = require("src.core.gen2.CommonText")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 
 local SlotMachine = {}
 SlotMachine.__index = SlotMachine
@@ -73,12 +70,6 @@ SlotMachine.NO_BIAS = -1
 SlotMachine.NAMES = {
   [0x00] = "SEVEN", [0x04] = "POKEBALL", [0x08] = "CHERRY",
   [0x0c] = "PIKACHU", [0x10] = "SQUIRTLE", [0x14] = "STARYU",
-}
-
--- What a symbol cell shows while the cart's own 2x2 reel tiles are unextracted.
-SlotMachine.LABELS = {
-  [0x00] = "7", [0x04] = "()", [0x08] = "CH",
-  [0x0c] = "PI", [0x10] = "SQ", [0x14] = "ST",
 }
 
 -- Slots_GetPayout .PayoutTable, indexed by wSlotMatched srl'd once.  The payout
@@ -606,10 +597,6 @@ local TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W, TEXT_BOX_H = 0, 12, 20, 6
 local TEXT_X, TEXT_Y, TEXT_LINE = 1, 14, 2
 
 -- ------------------------------------------------------------------- text
---
--- data/text/common_2.asm and common_3.asm.  None of these are in the cache's
--- text.lua: no script bytecode points at them, so the extractor -- which walks
--- reachable script pointers -- never reaches them.
 local function splitLines(text)
   local out = {}
   for line in (text .. "\n"):gmatch("(.-)\n") do
@@ -618,57 +605,19 @@ local function splitLines(text)
   return out
 end
 
--- `english` is derived from `source` once here rather than typed out a
--- second time, so the two cannot drift apart when the English wording
--- changes.
-local function staticText(source)
-  return { source = source, english = splitLines(source) }
-end
-
-local TEXTS = {
-  betHowMany = staticText(Strings.source("Bet how many\ncoins?")),
-  start = staticText(Strings.source("Start!")),
-  notEnough = staticText(Strings.source("Not enough\ncoins.")),
-  ranOut = staticText(Strings.source("Darn… Ran out of\ncoins…")),
-  playAgain = staticText(Strings.source("Play again?")),
-  darn = staticText(Strings.source("Darn!")),
+-- data/text/common_3.asm:684
+SlotMachine.LABELS = {
+  betHowMany = "_SlotsBetHowManyCoinsText",
+  start = "_SlotsStartText",
+  notEnough = "_SlotsNotEnoughCoinsText",
+  ranOut = "_SlotsRanOutOfCoinsText",
+  playAgain = "_SlotsPlayAgainText",
+  darn = "_SlotsDarnText",
+  linedUp = "_SlotsLinedUpText",
 }
-SlotMachine.TEXTS = TEXTS
 
--- Keyed by the `lines` table itself (weak so a freshly built linedUpLines()
--- table cannot leak): draw() calls localizedLines() every frame the bet/
--- result screens are up, but the split only changes if the translated text
--- does, so re-running the gmatch loop every frame is wasted work.
-local lineCache = setmetatable({}, { __mode = "k" })
-
--- Deliberately \n-only, unlike CommonText.pages/pagesOf elsewhere in Gen2
--- UI: every entry in TEXTS above is a fixed two-line (or shorter) cart
--- message, and the box it draws into (TEXT_BOX_H = 6, TEXT_LINE = 2) only
--- has room for two printed lines before a third would land past its bottom
--- edge. The draw loops above have no page break at all, so a translation
--- that needs a third line here would silently overflow instead of
--- paginating -- route through CommonText.pages instead if that is ever
--- needed.
-local function localizedLines(lines)
-  if not (lines and lines.source) then return lines or {} end
-  local translated
-  if lines.args then
-    translated = Strings(lines.source, unpack(lines.args))
-  else
-    translated = Strings(lines.source)
-  end
-  if translated == lines.source then return lines.english or splitLines(translated) end
-  local cached = lineCache[lines]
-  if cached and cached.text == translated then return cached.lines end
-  local out = splitLines(translated)
-  lineCache[lines] = { text = translated, lines = out }
-  return out
-end
-
--- _SlotsLinedUpText: "lined up!" / "Won @<wStringBuffer2> coins!", with the
--- matched symbol's 2x2 tiles printed to its left by .Text_PrintPayout.
-local function linedUpLines(payout)
-  return { source = Strings.source("    lined up!\nWon %d coins!"), args = { payout } }
+function SlotMachine.lines(data, key, ...)
+  return splitLines(CommonText.plain(RomText(data, SlotMachine.LABELS[key], nil, ...)))
 end
 
 -- Slots_PlaySFX's labels, spelled the pokegold way (Sound.GEN2_ALIASES is what
@@ -728,6 +677,10 @@ function SlotMachine:coins()
   return CoinCase.coins(self.save)
 end
 
+function SlotMachine:text(key, ...)
+  return SlotMachine.lines(self.game and self.game.data, key, ...)
+end
+
 -- ---------------------------------------------------------------- phases
 --
 -- SlotsAction_Init: clear the match flags, then straight into the bet menu.
@@ -741,7 +694,10 @@ end
 
 -- Slots_AskBet: `ld a, 4 / sub b` turns the cursor row into the bet, so the
 -- top row is three coins and the bottom is one.
-local BET_ROWS = { " 3", " 2", " 1" }
+-- engine/games/slot_machine.asm:1723
+local BET_ROWS = {
+  "Slots_AskBet.MenuData#1", "Slots_AskBet.MenuData#2", "Slots_AskBet.MenuData#3",
+}
 
 function SlotMachine:updateBet(input)
   if self.message then
@@ -762,7 +718,7 @@ function SlotMachine:updateBet(input)
   elseif input:wasPressed("a") then
     local bet = 4 - self.betIndex
     if self:coins() < bet then
-      self.message = TEXTS.notEnough
+      self.message = self:text("notEnough")
       return
     end
     self.bet = bet
@@ -779,7 +735,7 @@ function SlotMachine:startSpin()
   self.phase = "spinning"
   self.reel = 1
   self.delay = 32
-  self.message = TEXTS.start
+  self.message = self:text("start")
   self.stopped = nil
   self.matched = SlotMachine.NO_MATCH
   self.matchingSevens = false
@@ -922,7 +878,7 @@ function SlotMachine:reelStopped(i)
   self.matched = SlotMachine.matchAll(self.bet, r1, r2, r3)
   if self.matched == SlotMachine.NO_MATCH then
     self.phase = "payoutText"
-    self.message = TEXTS.darn
+    self.message = self:text("darn")
     return
   end
   self.phase = "flash"
@@ -936,7 +892,10 @@ function SlotMachine:beginPayout()
   self.payoutLeft = SlotMachine.payout(self.matched)
   self.payoutTick = 0
   self.phase = "payoutText"
-  self.message = linedUpLines(self.payoutLeft)
+  local lines = self:text("linedUp", tostring(self.payoutLeft))
+  -- engine/games/slot_machine.asm:1919
+  lines[1] = (" "):rep(4) .. lines[1]
+  self.message = lines
   if self.matched == SlotMachine.SEVEN then
     self:sfx(SFX_SEVENS)
     -- .LinedUpSevens decides here whether the seven streak survives.
@@ -969,13 +928,13 @@ end
 function SlotMachine:enterAgain()
   if self:coins() <= 0 then
     self.phase = "ranOut"
-    self.message = TEXTS.ranOut
+    self.message = self:text("ranOut")
     self.ranOutDelay = 60 -- `ld c, 60 / call DelayFrames`
     return
   end
   self.phase = "again"
   self.againChoice = 1
-  self.message = TEXTS.playAgain
+  self.message = self:text("playAgain")
 end
 
 function SlotMachine:quit()
@@ -1173,75 +1132,54 @@ end
 
 -- ------------------------------------------------------------------- draw
 --
--- Authentic Color Game Boy palettes and tile graphics matching pret/pokegold
 local TileSheet = require("src.ui.gen2.TileSheet")
 local GbcPalette = require("src.render.GbcPalette")
 
-local GBC_PALS = {
-  bg = {
-    [0] = { { 255, 255, 255 }, { 198, 206, 231 }, { 198, 198, 74 }, { 0, 0, 0 } },  -- 0: Base Frame
-    [1] = { { 255, 255, 255 }, { 247, 82, 49 },   { 198, 198, 74 }, { 0, 0, 0 } },  -- 1: Vileplume / Active Lights
-    [2] = { { 255, 255, 255 }, { 123, 255, 0 },   { 198, 198, 74 }, { 0, 0, 0 } },  -- 2: Bet 3 Indicators
-    [3] = { { 255, 255, 255 }, { 255, 123, 255 }, { 198, 198, 74 }, { 0, 0, 0 } },  -- 3: Bet 2 Indicators
-    [4] = { { 255, 255, 255 }, { 123, 173, 255 }, { 198, 198, 74 }, { 0, 0, 0 } },  -- 4: Bet 1 Indicators
-    [5] = { { 255, 255, 90 },  { 255, 255, 49 },   { 198, 198, 74 }, { 0, 0, 0 } },  -- 5: Yellow Highlights
-    [6] = { { 255, 255, 255 }, { 132, 156, 239 }, { 206, 181, 0 },  { 0, 0, 0 } },  -- 6: Textbox frame
-    [7] = { { 255, 255, 255 }, { 173, 173, 173 }, { 107, 107, 107 }, { 0, 0, 0 } },  -- 7: Inactive / Gray
-  },
-  obj = {
-    [0] = { { 255, 255, 255 }, { 247, 82, 49 },   { 255, 0, 0 },    { 0, 0, 0 } },  -- 0: Seven (Red)
-    [1] = { { 255, 255, 255 }, { 99, 206, 8 },    { 41, 115, 0 },   { 0, 0, 0 } },  -- 1: Pokeball (Green/Red)
-    [2] = { { 255, 255, 255 }, { 99, 206, 8 },    { 247, 82, 49 },  { 0, 0, 0 } },  -- 2: Cherry
-    [3] = { { 255, 255, 255 }, { 255, 255, 49 },  { 165, 123, 24 }, { 0, 0, 0 } },  -- 3: Pikachu (Yellow)
-    [4] = { { 255, 255, 255 }, { 255, 255, 49 },  { 123, 173, 255 }, { 0, 0, 0 } }, -- 4: Squirtle (Blue/Yellow)
-    [5] = { { 255, 255, 255 }, { 255, 255, 49 },  { 165, 123, 24 }, { 0, 0, 0 } },  -- 5: Staryu / Golem (Rock)
-    [6] = { { 255, 255, 255 }, { 255, 198, 173 }, { 255, 107, 255 }, { 0, 0, 0 } }, -- 6: Chansey (Pink)
-    [7] = { { 255, 255, 255 }, { 255, 255, 255 }, { 0, 0, 0 },     { 0, 0, 0 } },  -- 7: Flashing
-  }
-}
-
-local TILEMAP = nil
-local function getTilemap()
-  if TILEMAP == nil then
-    local path = "assets/generated/slots/gold_slots.tilemap"
-    local data = love and love.filesystem and love.filesystem.read(path)
-    if data and #data > 0 then
-      TILEMAP = {}
-      for i = 1, #data do
-        TILEMAP[i] = string.byte(data, i)
-      end
-    else
-      TILEMAP = false
-    end
-  end
-  return TILEMAP or nil
+function SlotMachine:need(key)
+  local data = self.game and self.game.data
+  local menu = data and data.gen2MenuGfx
+  local slots = menu and menu.slots
+  if not slots then error("menu_gfx.lua has no slots", 2) end
+  local value = slots[key]
+  if value == nil then error("menu_gfx.lua slots has no " .. key, 2) end
+  return value
 end
 
--- Placeholder 2x2 symbol cell used when reel sheets are not in the cache yet.
-local function cell(tx, ty, label)
-  local G = love.graphics
-  G.setColor(0, 0, 0, 1)
-  G.rectangle("line", tx * 8, ty * 8, 16, 16)
-  Chrome.print(label, tx, ty + 1)
+function SlotMachine:pals()
+  return self:need("palettes")
+end
+
+local TILEMAPS = {}
+function SlotMachine:tilemap()
+  local path = self:need("tilemap")
+  local tilemap = TILEMAPS[path]
+  if not tilemap then
+    local data = love.filesystem.read(path)
+    if not data or #data == 0 then error(path .. " is missing") end
+    tilemap = {}
+    for i = 1, #data do
+      tilemap[i] = string.byte(data, i)
+    end
+    TILEMAPS[path] = tilemap
+  end
+  return tilemap
 end
 
 function SlotMachine:sheets()
   if self.sheet1 == nil then
-    self.sheet1 = TileSheet.new({ path = "assets/generated/slots/gold_slots_1.png", wide = 2, firstTile = 0 })
-    self.sheet2 = TileSheet.new({ path = "assets/generated/slots/gold_slots_2.png", wide = 2, firstTile = 0 })
-    self.sheet3 = TileSheet.new({ path = "assets/generated/slots/gold_slots_3.png", wide = 3, firstTile = 0 })
+    self.sheet1 = TileSheet.new({ path = self:need("sheet1"), wide = 2, firstTile = 0 })
+    self.sheet2 = TileSheet.new({ path = self:need("sheet2"), wide = 2, firstTile = 0 })
+    self.sheet3 = TileSheet.new({ path = self:need("sheet3"), wide = 3, firstTile = 0 })
+    for _, sheet in ipairs({ self.sheet1, self.sheet2, self.sheet3 }) do
+      if not sheet:available() then error(sheet.path .. " is missing") end
+    end
   end
   return self.sheet1, self.sheet2, self.sheet3
 end
 
 function SlotMachine:drawBackground()
   local s1, s2 = self:sheets()
-  local tm = getTilemap()
-  if not tm or not s1:available() then
-    -- Fallback simple background if assets unavailable
-    Chrome.clear()
-    return
-  end
+  local tm = self:tilemap()
 
   local bet = self.bet or 0
 
@@ -1274,7 +1212,7 @@ function SlotMachine:drawBackground()
         end
       end
 
-      local colors = GBC_PALS.bg[pal]
+      local colors = self:pals().bg[pal]
       s1.palette = colors
       s2.palette = colors
 
@@ -1303,40 +1241,31 @@ function SlotMachine:drawReels()
     -- Draw 4 consecutive 2x2 symbols from bottom to top, exactly matching SlotMachine.window
     for row = 0, 3 do
       local sym = strip[a + row + 1]
-      if type(sym) ~= "number" then
-        cell(REEL_X[i], REEL_ROW[row + 1], "?")
+      local py = 64 - (row * 16) + dy
+      local pal = self:pals().obj[math.floor(sym / 4)] or self:pals().obj[0]
+      s2.palette = pal
+
+      -- 2x2 tiles in 2-wide sheet:
+      -- sym + 0 = top-left (col 0, row 0)
+      -- sym + 1 = top-right (col 1, row 0)
+      -- sym + 2 = bottom-left (col 0, row 1)
+      -- sym + 3 = bottom-right (col 1, row 1)
+      local t0 = s2:quad(sym + 0)
+      local t1 = s2:quad(sym + 1)
+      local t2 = s2:quad(sym + 2)
+      local t3 = s2:quad(sym + 3)
+      local img = s2:image()
+
+      local function drawSym()
+        G.draw(img, t0, rx, py)
+        G.draw(img, t1, rx + 8, py)
+        G.draw(img, t2, rx, py + 8)
+        G.draw(img, t3, rx + 8, py + 8)
+      end
+      if GbcPalette.available() then
+        GbcPalette.with(pal, drawSym)
       else
-        local py = 64 - (row * 16) + dy
-        local pal = GBC_PALS.obj[math.floor(sym / 4)] or GBC_PALS.obj[0]
-        s2.palette = pal
-
-        -- 2x2 tiles in 2-wide sheet:
-        -- sym + 0 = top-left (col 0, row 0)
-        -- sym + 1 = top-right (col 1, row 0)
-        -- sym + 2 = bottom-left (col 0, row 1)
-        -- sym + 3 = bottom-right (col 1, row 1)
-        local t0 = s2:quad(sym + 0)
-        local t1 = s2:quad(sym + 1)
-        local t2 = s2:quad(sym + 2)
-        local t3 = s2:quad(sym + 3)
-        local img = s2:image()
-
-        if img and t0 and t1 and t2 and t3 then
-          local function drawSym()
-            G.draw(img, t0, rx, py)
-            G.draw(img, t1, rx + 8, py)
-            G.draw(img, t2, rx, py + 8)
-            G.draw(img, t3, rx + 8, py + 8)
-          end
-          if GbcPalette.available() then
-            GbcPalette.with(pal, drawSym)
-          else
-            drawSym()
-          end
-        else
-          -- Fallback label
-          cell(REEL_X[i], REEL_ROW[row + 1], SlotMachine.LABELS[sym] or "?")
-        end
+        drawSym()
       end
     end
   end
@@ -1344,42 +1273,35 @@ end
 
 function SlotMachine:actorsImage()
   if self.actorsLoaded == nil then
-    local Assets = require("src.render.Assets")
-    local ok, img = pcall(Assets.image, "assets/generated/slots/gold_slots_actors.png")
-    if not (ok and img) then
-      ok, img = pcall(Assets.image, "assets/generated/slots/gold_slots_3.png")
-    end
-    self.actorsLoaded = (ok and img) or false
-    if self.actorsLoaded then
-      local G = love.graphics
-      -- 24x240 sheet:
-      --   Y=0:   Golem 1 (Standing, 24x32)
-      --   Y=32:  Golem 2 (Ball, 24x32)
-      --   Y=64:  Chansey 1 (Standing / Step 1, 24x32)
-      --   Y=96:  Chansey 2 (Step 2, 24x32)
-      --   Y=128: Chansey 3 (Step 3, 24x32)
-      --   Y=160: Chansey 4 (Arm raised / Step 4, 24x32)
-      --   Y=192: Chansey 5 (Egg Drop pose, 24x32)
-      --   Y=224: Egg (8x16 at X=0)
-      self.quadGolemStand  = G.newQuad(0, 0,   24, 32, 24, 240)
-      self.quadGolemBall   = G.newQuad(0, 32,  24, 32, 24, 240)
-      self.quadChansey1    = G.newQuad(0, 64,  24, 32, 24, 240)
-      self.quadChansey2    = G.newQuad(0, 96,  24, 32, 24, 240)
-      self.quadChansey3    = G.newQuad(0, 128, 24, 32, 24, 240)
-      self.quadChansey4    = G.newQuad(0, 160, 24, 32, 24, 240)
-      self.quadChanseyDrop = G.newQuad(0, 192, 24, 32, 24, 240)
-      self.quadEgg         = G.newQuad(0, 224, 8,  16, 24, 240)
-    end
+    local _, _, s3 = self:sheets()
+    self.actorsLoaded = s3:image()
+    local G = love.graphics
+    -- 24x240 sheet:
+    --   Y=0:   Golem 1 (Standing, 24x32)
+    --   Y=32:  Golem 2 (Ball, 24x32)
+    --   Y=64:  Chansey 1 (Standing / Step 1, 24x32)
+    --   Y=96:  Chansey 2 (Step 2, 24x32)
+    --   Y=128: Chansey 3 (Step 3, 24x32)
+    --   Y=160: Chansey 4 (Arm raised / Step 4, 24x32)
+    --   Y=192: Chansey 5 (Egg Drop pose, 24x32)
+    --   Y=224: Egg (8x16 at X=0)
+    self.quadGolemStand  = G.newQuad(0, 0,   24, 32, 24, 240)
+    self.quadGolemBall   = G.newQuad(0, 32,  24, 32, 24, 240)
+    self.quadChansey1    = G.newQuad(0, 64,  24, 32, 24, 240)
+    self.quadChansey2    = G.newQuad(0, 96,  24, 32, 24, 240)
+    self.quadChansey3    = G.newQuad(0, 128, 24, 32, 24, 240)
+    self.quadChansey4    = G.newQuad(0, 160, 24, 32, 24, 240)
+    self.quadChanseyDrop = G.newQuad(0, 192, 24, 32, 24, 240)
+    self.quadEgg         = G.newQuad(0, 224, 8,  16, 24, 240)
   end
-  return self.actorsLoaded or nil
+  return self.actorsLoaded
 end
 
 -- Redraw the top Vileplume row (rows 2..3) and bottom frame brackets (rows 10..11)
 -- over the reels with solid backdrop to naturally mask any sprite overhang like the Game Boy hardware does.
 function SlotMachine:drawOverlays()
   local s1, s2 = self:sheets()
-  local tm = getTilemap()
-  if not tm or not s1:available() then return end
+  local tm = self:tilemap()
 
   local G = love.graphics
   -- Solid backdrop over header (rows 0..3) and footer (rows 10..11) between columns 4..15
@@ -1393,7 +1315,7 @@ function SlotMachine:drawOverlays()
       local idx = ty * 20 + tx + 1
       local tileId = tm[idx]
       local pal = (ty <= 3) and 1 or 0
-      local colors = GBC_PALS.bg[pal]
+      local colors = self:pals().bg[pal]
       s1.palette = colors
       s2.palette = colors
 
@@ -1409,46 +1331,44 @@ function SlotMachine:drawOverlays()
   if self.golemAnim then
     local actors = self:actorsImage()
     local g = self.golemAnim
-    if actors then
-      local quad = self.quadGolemBall
-      local scaleX = 1
-      local scaleY = 1
-      if g.state == "falling" then
+    local quad = self.quadGolemBall
+    local scaleX = 1
+    local scaleY = 1
+    if g.state == "falling" then
+      quad = self.quadGolemBall
+    elseif g.state == "rolling" then
+      -- Frameset_SlotsGolem: 0=Standing, 1=Ball, 2=StandingYFlip, 3=BallXFlip
+      local rotFrame = (g.animFrame or 0) % 4
+      if rotFrame == 0 then
+        quad = self.quadGolemStand
+        scaleX = 1
+        scaleY = 1
+      elseif rotFrame == 1 then
         quad = self.quadGolemBall
-      elseif g.state == "rolling" then
-        -- Frameset_SlotsGolem: 0=Standing, 1=Ball, 2=StandingYFlip, 3=BallXFlip
-        local rotFrame = (g.animFrame or 0) % 4
-        if rotFrame == 0 then
-          quad = self.quadGolemStand
-          scaleX = 1
-          scaleY = 1
-        elseif rotFrame == 1 then
-          quad = self.quadGolemBall
-          scaleX = 1
-          scaleY = 1
-        elseif rotFrame == 2 then
-          quad = self.quadGolemStand
-          scaleX = 1
-          scaleY = -1
-        elseif rotFrame == 3 then
-          quad = self.quadGolemBall
-          scaleX = -1
-          scaleY = 1
-        end
+        scaleX = 1
+        scaleY = 1
+      elseif rotFrame == 2 then
+        quad = self.quadGolemStand
+        scaleX = 1
+        scaleY = -1
+      elseif rotFrame == 3 then
+        quad = self.quadGolemBall
+        scaleX = -1
+        scaleY = 1
       end
-      G.setColor(1, 1, 1, 1)
-      local function drawGolem()
-        -- Draw rotated around center (ox=12, oy=16)
-        G.draw(actors, quad,
-          math.floor(g.x + 12),
-          math.floor(g.y + 16),
-          0, scaleX, scaleY, 12, 16)
-      end
-      if GbcPalette.available() then
-        GbcPalette.with(GBC_PALS.obj[5], drawGolem)
-      else
-        drawGolem()
-      end
+    end
+    G.setColor(1, 1, 1, 1)
+    local function drawGolem()
+      -- Draw rotated around center (ox=12, oy=16)
+      G.draw(actors, quad,
+        math.floor(g.x + 12),
+        math.floor(g.y + 16),
+        0, scaleX, scaleY, 12, 16)
+    end
+    if GbcPalette.available() then
+      GbcPalette.with(self:pals().obj[5], drawGolem)
+    else
+      drawGolem()
     end
   end
 
@@ -1456,29 +1376,27 @@ function SlotMachine:drawOverlays()
   if self.chanseyAnim then
     local actors = self:actorsImage()
     local c = self.chanseyAnim
-    if actors then
-      local quad = self.quadChansey1
-      if c.state == "walking" then
-        local walkCycle = { self.quadChansey1, self.quadChansey2, self.quadChansey3, self.quadChansey4 }
-        quad = walkCycle[((c.animPose or 0) % 4) + 1] or self.quadChansey1
-      elseif c.state == "egg_pause" then
-        quad = self.quadChansey4
-      elseif c.state == "egg_drop" or c.state == "spinning" then
-        quad = self.quadChanseyDrop
-      end
+    local quad = self.quadChansey1
+    if c.state == "walking" then
+      local walkCycle = { self.quadChansey1, self.quadChansey2, self.quadChansey3, self.quadChansey4 }
+      quad = walkCycle[((c.animPose or 0) % 4) + 1] or self.quadChansey1
+    elseif c.state == "egg_pause" then
+      quad = self.quadChansey4
+    elseif c.state == "egg_drop" or c.state == "spinning" then
+      quad = self.quadChanseyDrop
+    end
 
-      G.setColor(1, 1, 1, 1)
-      local function drawChansey()
-        G.draw(actors, quad, math.floor(c.x), math.floor(c.y or 44))
-        if c.eggVisible and c.eggX and c.eggY then
-          G.draw(actors, self.quadEgg, math.floor(c.eggX), math.floor(c.eggY))
-        end
+    G.setColor(1, 1, 1, 1)
+    local function drawChansey()
+      G.draw(actors, quad, math.floor(c.x), math.floor(c.y or 44))
+      if c.eggVisible and c.eggX and c.eggY then
+        G.draw(actors, self.quadEgg, math.floor(c.eggX), math.floor(c.eggY))
       end
-      if GbcPalette.available() then
-        GbcPalette.with(GBC_PALS.obj[6], drawChansey)
-      else
-        drawChansey()
-      end
+    end
+    if GbcPalette.available() then
+      GbcPalette.with(self:pals().obj[6], drawChansey)
+    else
+      drawChansey()
     end
   end
 end
@@ -1486,42 +1404,34 @@ end
 function SlotMachine:drawMessage()
   if not self.message then return end
   Chrome.textbox(TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W - 2, TEXT_BOX_H - 2)
-  for i, line in ipairs(localizedLines(self.message)) do
+  for i, line in ipairs(self.message) do
     Chrome.print(line, TEXT_X, TEXT_Y + (i - 1) * TEXT_LINE)
   end
   if self.matched and self.matched ~= SlotMachine.NO_MATCH
       and self.phase == "payoutText" then
     local _, s2 = self:sheets()
     local sym = self.matched
-    if type(sym) ~= "number" then
-      cell(PAYOUT_SYMBOL_X, PAYOUT_SYMBOL_Y, "?")
+    local pal = self:pals().obj[math.floor(sym / 4)] or self:pals().obj[0]
+    s2.palette = pal
+    local t0 = s2:quad(sym + 0)
+    local t1 = s2:quad(sym + 1)
+    local t2 = s2:quad(sym + 2)
+    local t3 = s2:quad(sym + 3)
+    local img = s2:image()
+    local G = love.graphics
+    local px, py = PAYOUT_SYMBOL_X * 8, PAYOUT_SYMBOL_Y * 8
+    local function drawWin()
+      G.setColor(1, 1, 1, 1)
+      G.draw(img, t0, px, py)
+      G.draw(img, t1, px + 8, py)
+      G.draw(img, t2, px, py + 8)
+      G.draw(img, t3, px + 8, py + 8)
+    end
+    G.setColor(1, 1, 1, 1)
+    if GbcPalette.available() then
+      GbcPalette.with(pal, drawWin)
     else
-      local pal = GBC_PALS.obj[math.floor(sym / 4)] or GBC_PALS.obj[0]
-      s2.palette = pal
-      local t0 = s2:quad(sym + 0)
-      local t1 = s2:quad(sym + 1)
-      local t2 = s2:quad(sym + 2)
-      local t3 = s2:quad(sym + 3)
-      local img = s2:image()
-      local G = love.graphics
-      local px, py = PAYOUT_SYMBOL_X * 8, PAYOUT_SYMBOL_Y * 8
-      if img and t0 and t1 and t2 and t3 then
-        local function drawWin()
-          G.setColor(1, 1, 1, 1)
-          G.draw(img, t0, px, py)
-          G.draw(img, t1, px + 8, py)
-          G.draw(img, t2, px, py + 8)
-          G.draw(img, t3, px + 8, py + 8)
-        end
-        G.setColor(1, 1, 1, 1)
-        if GbcPalette.available() then
-          GbcPalette.with(pal, drawWin)
-        else
-          drawWin()
-        end
-      else
-        cell(PAYOUT_SYMBOL_X, PAYOUT_SYMBOL_Y, SlotMachine.LABELS[sym] or "?")
-      end
+      drawWin()
     end
   end
 end
@@ -1538,7 +1448,8 @@ function SlotMachine:drawPanel()
   if self.phase == "bet" then
     -- Left speech textbox for "Bet how many coins?"
     Chrome.textbox(0, 12, 12, 4)
-    local betLines = localizedLines(TEXTS.betHowMany)
+    self.betLines = self.betLines or self:text("betHowMany")
+    local betLines = self.betLines
     Chrome.print(betLines[1] or "", 1, 14)
     Chrome.print(betLines[2] or "", 1, 16)
 
@@ -1547,25 +1458,27 @@ function SlotMachine:drawPanel()
     for i, label in ipairs(BET_ROWS) do
       local ty = 12 + (i - 1) * 2
       if i == self.betIndex then Chrome.cursor(15, ty) end
-      Chrome.print(label, 16, ty)
+      Chrome.print(RomText(self.game and self.game.data, label), 16, ty)
     end
 
     if self.message then
       -- If "Not enough coins." message is shown, overlay full speech box
       Chrome.textbox(0, 12, 18, 4)
-      for i, line in ipairs(localizedLines(self.message)) do
+      for i, line in ipairs(self.message) do
         Chrome.print(line, TEXT_X, TEXT_Y + (i - 1) * TEXT_LINE)
       end
     end
   elseif self.phase == "again" then
     -- Speech box: "Play again?"
     Chrome.textbox(0, 12, 18, 4)
-    Chrome.print(localizedLines(TEXTS.playAgain)[1] or "", TEXT_X, TEXT_Y)
+    self.againLines = self.againLines or self:text("playAgain")
+    Chrome.print(self.againLines[1] or "", TEXT_X, TEXT_Y)
 
     -- PlaceYesNoBox at (14, 12): 6x5 box with YES at (16,13), NO at (16,15)
     Chrome.textbox(14, 12, 4, 3)
-    Chrome.print(Strings("YES"), 16, 13)
-    Chrome.print(Strings("NO"), 16, 15)
+    -- home/menu.asm:473
+    Chrome.print(RomText(self.game and self.game.data, "YesNoMenuHeader.MenuData#1"), 16, 13)
+    Chrome.print(RomText(self.game and self.game.data, "YesNoMenuHeader.MenuData#2"), 16, 15)
     Chrome.cursor(15, 13 + (self.againChoice - 1) * 2)
   else
     self:drawMessage()

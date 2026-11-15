@@ -14,6 +14,7 @@
 -- mod-free path answers exactly what it answered before.
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 
 local T = require("tests.modkit")
 local Events = require("src.mods.Events")
@@ -28,6 +29,7 @@ local Happiness = require("src.core.gen2.Happiness")
 local Mail = require("src.core.gen2.Mail")
 local Mon = require("src.battle.gen2.Mon")
 local Phone = require("src.core.gen2.Phone")
+require("tests.fixtures.gen2_phone_events").install()
 local PhoneRing = require("src.core.gen2.PhoneRing")
 local Pokerus = require("src.core.gen2.Pokerus")
 local Roamers = require("src.core.gen2.Roamers")
@@ -296,9 +298,11 @@ end
 
 do
   local save = {}
-  Roamers.init(save)
+  local roamEncounters = require("tests.fixtures.gen2_roamers").encounters("gold")
+  Roamers.init(save, { encounters = roamEncounters })
   local seen = capture("roamer.moved", function()
-    Roamers.jumpAll(save, "ROUTE_29", function(n) return n - 1 end)
+    Roamers.jumpAll(save, "ROUTE_29", function(n) return n - 1 end,
+      roamEncounters)
   end)
   T.check(#seen > 0, "roamer.moved fires when JumpRoamMons scatters the beasts")
   for _, payload in ipairs(seen) do
@@ -610,7 +614,8 @@ do
     "intro.boot.copyright carries { screen, game }")
 
   seen = capture("intro.boot.gamefreak", function()
-    GameFreakPresents.new(game, {}):enter()
+    GameFreakPresents.new(game,
+      { oakSpeech = require("tests.fixtures.gen2_oak_speech").data() }):enter()
   end)
   T.eq(#seen, 1, "the GAME FREAK splash raises intro.boot.gamefreak once")
   T.check(seen[1].screen ~= nil and seen[1].game == game,
@@ -641,7 +646,7 @@ do
   T.eq(seen[1].skipped, false, "a movie watched through reports skipped = false")
 
   seen = capture("intro.boot.title", function()
-    TitleState.new(game, {}):enter()
+    TitleState.new(game, { title = require("tests.fixture_data.gen2_title_s7_c").gold }):enter()
   end)
   T.eq(#seen, 1, "the title screen raises intro.boot.title once")
   T.check(seen[1].screen ~= nil and seen[1].game == game,

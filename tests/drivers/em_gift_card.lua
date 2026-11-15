@@ -52,7 +52,7 @@ return function(game)
   S.setVar("VAR_DISTRIBUTE_EON_TICKET", 0)
 
   local function preset(key)
-    for _, e in ipairs(MysteryGift.builtins("rse")) do
+    for _, e in ipairs(require("tests.fixtures.game3_gift_cards").cards("rse")) do
       if e.key == key then return MysteryGift.normalizeCard(e.card, "emerald") end
     end
   end

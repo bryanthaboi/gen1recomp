@@ -20,6 +20,7 @@ love = require("tests.love_stub")
 
 local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
+local ROM_TEXT = require("tests.fixtures.gen2_rom_text").text()
 local Specials = require("src.script.gen2.Specials")
 local TextBox = require("src.render.TextBox")
 
@@ -53,6 +54,7 @@ local function dstVm(record)
     specials = {
       save = function() return record end,
       world = { hour = function() return 10 end },
+      data = function() return { text = ROM_TEXT } end,
     },
     showText = function(body, onDone)
       shown[#shown + 1] = body
@@ -75,7 +77,7 @@ do
   check(not vm:running(), "and settles on a double yes")
   eq(#shown, 2, "two pages: the question and the confirmation")
   -- The minutes are the host clock's, so the pin is a pattern.
-  check(shown[2]:match("^10:%d%d DST,\nis that OK%?$") ~= nil,
+  check(shown[2]:match("^10:%d%d DST,\nis that OK%?{DONE}$") ~= nil,
     "the set arm prints the time and .DSTIsThatOKText")
   eq(record.rtc and record.rtc.dst, true, "and DST_F is set")
 end
@@ -90,7 +92,7 @@ do
   for _ = 1, 20 do vm:update() end
   check(not vm:running(), "a refused confirmation loops and then settles")
   eq(#shown, 4, "question, confirm, question again, confirm again")
-  check(shown[2]:match("^10:%d%d,\nis that OK%?$") ~= nil,
+  check(shown[2]:match("^10:%d%d,\nis that OK%?{DONE}$") ~= nil,
     "the clear arm prints the time and .TimeAskOkayText")
   eq(shown[3], shown[1], "the loop re-asks the cart's own question")
   eq(record.rtc and record.rtc.dst, false, "and DST_F ends clear")
@@ -248,6 +250,9 @@ do
   local vm = Vm.new({}, {}, Events.new(), {
     specials = {
       save = function() return rec end,
+      data = function()
+        return { text = require("tests.fixture_data.gen2_rom_text_s7_f1").text() }
+      end,
       money = function() return 0 end,
       setMoney = function() end,
     },
@@ -452,6 +457,9 @@ do
   local function drive(handler, specials, answers)
     local texts, stays = {}, {}
     local ai = 0
+    if specials.data == nil then
+      specials.data = function() return { text = ROM_TEXT } end
+    end
     local vm = Vm.new({}, {}, Events.new(), { specials = specials })
     vm.showTextFn = function() end
     vm.co = coroutine.create(function() Specials.HANDLERS[handler](vm) end)
@@ -482,7 +490,7 @@ do
     check(#page <= 2,
       ("intro page %d holds at most the box's two lines"):format(i))
   end
-  eq(intro[3][2], "#MON forget?", "the question is the last page")
+  eq(intro[3][2], "POKéMON forget?", "the question is the last page")
   assertPlayable("_DeleterWhichMonText", texts[2])
   assertPlayable("_DeleterDeclinedText", texts[3])
 

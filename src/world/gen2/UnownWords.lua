@@ -133,8 +133,12 @@ end
 -- ../pokecrystal/constants/script_constants.asm:319 UNOWNWORDS_*
 function UnownWords.wallFor(data, scriptVar)
   local walls = data and data.gen2EventTables and data.gen2EventTables.unownWalls
-  if not walls then return nil end
-  return walls[(scriptVar or 0) + 1]
+  if type(walls) ~= "table" then error("events.lua has no unownWalls", 2) end
+  local wall = walls[(scriptVar or 0) + 1]
+  if not wall then
+    error(("events.lua has no unown wall %d"):format(scriptVar or 0), 2)
+  end
+  return wall
 end
 
 -- opts: wall (an events.unownWalls row), world, onClose()

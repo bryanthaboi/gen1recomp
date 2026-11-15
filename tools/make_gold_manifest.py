@@ -92,9 +92,21 @@ def read_asm(path, defines=None):
             if re.match(r"IF\b", s):
                 stack.append([True, False])  # unmodeled condition: keep body
                 continue
+            m = re.match(r"ELIF\s+(!)?DEF\((\w+)\)\s*$", s, re.IGNORECASE)
+            if m and stack and stack[-1][1]:
+                if len(stack[-1]) < 3:
+                    stack[-1].append(stack[-1][0])
+                defined = m.group(2) in defines
+                cond = (not defined) if m.group(1) else defined
+                stack[-1][0] = cond and not stack[-1][2]
+                stack[-1][2] = stack[-1][2] or cond
+                continue
             if re.match(r"ELSE\s*$", s, re.IGNORECASE) and stack:
                 if stack[-1][1]:
-                    stack[-1][0] = not stack[-1][0]
+                    if len(stack[-1]) >= 3:
+                        stack[-1][0] = not stack[-1][2]
+                    else:
+                        stack[-1][0] = not stack[-1][0]
                 continue
             if re.match(r"ENDC\s*$", s, re.IGNORECASE) and stack:
                 stack.pop()
@@ -697,6 +709,10 @@ REQUIRED_SYMBOLS = {
     # Underground shop's own `dbw item, price` rows -- the one shop whose
     # prices do not come from ItemAttributes.
     "Marts", "BargainShopData",
+    # data/items/marts.asm:403, engine/items/mart.asm:13 (pokegold), :122 (pokecrystal)
+    "DefaultMart",
+    # engine/overworld/wildmons.asm:488 (pokegold), :493 (pokecrystal).
+    "InitRoamMons",
     # GBC colour (engine/gfx/color.asm LoadMapPals).  TilesetBGPalette is the
     # shared pool of $2a four-colour palettes; EnvironmentColorsPointers picks
     # 8 of them per environment per time of day; MapObjectPals recolours OW
@@ -731,6 +747,17 @@ REQUIRED_SYMBOLS = {
     # contest_2.asm) resets and then sets five of, a set flag being what keeps
     # that trainer off NationalParkBugContest.
     "BugCatchingContestantEventFlagTable",
+    # engine/events/bug_contest/display_stats.asm:82-87, the three `db`
+    # labels DisplayCaughtContestMonStats places.
+    "DisplayCaughtContestMonStats.Health", "DisplayCaughtContestMonStats.Stock",
+    "DisplayCaughtContestMonStats.This",
+    # engine/menus/scrolling_menu.asm:408 and engine/items/pack.asm:311
+    "ScrollingMenu_UpdateDisplay.CancelString", "MenuHeader_UsableKeyItem",
+    # data/phone/non_trainer_names.asm:1 and engine/phone/phone.asm:306,319
+    "OakRatings", "PermanentNumbers", "HappinessData_OlderHaircutBrother",
+    "HappinessData_YoungerHaircutBrother", "HappinessData_DaisysGrooming",
+    "NonTrainerCallerNames", "SpecialCallOnlyWhenOutside",
+    "SpecialCallWhereverYouAre",
     # Trainers (data/trainers/*)
     "Trainers", "TrainerGroups", "TrainerClassNames",
     "TrainerClassAttributes", "TrainerPicPointers",
@@ -778,6 +805,10 @@ REQUIRED_SYMBOLS = {
     # _CGB_BattleColors loads the same block -- but the label is still in the
     # ROM, so the colours are read rather than transcribed.
     "BattleObjectPals",
+    # data/events/magikarp_lengths.asm:1, engine/events/magikarp.asm:299-301
+    "MagikarpLengths", "MagikarpHouseSign",
+    # engine/menus/intro_menu.asm:190 (pokegold), :277 (pokecrystal)
+    "InitializeMagikarpHouse.Ralph",
     # Battle HUD tiles (engine/gfx/load_font.asm LoadHPBar): the L-shaped
     # frame tiles the enemy and player HUDs are built from, and the exp bar's
     # nine fill cells.  "HP:" and the ten HP-bar cells come from
@@ -849,6 +880,10 @@ REQUIRED_SYMBOLS = {
     "Slots1LZ", "Slots2LZ", "Slots3LZ", "SlotsTilemap",
     "CardFlipLZ01", "CardFlipLZ02", "CardFlipLZ03",
     "CardFlipOnButtonGFX", "CardFlipOffButtonGFX", "CardFlipTilemap",
+    # engine/games/card_flip.asm:1578-1585 (pokegold), :1584-1593 (pokecrystal)
+    "CardFlip_InitAttrPals.palettes",
+    # engine/gfx/color.asm:1250 (pokegold), :1339 (pokecrystal)
+    "SlotMachinePals",
     # engine/games/card_flip.asm:388
     "PlaceCardFaceDown.FaceDownCardTilemap",
     # engine/games/card_flip.asm:458
@@ -1020,13 +1055,219 @@ def text_labels(pokegold, defines=None):
     return sorted(labels)
 
 
+ENGINE_STRING_ROOTS = ("engine", "home", "mobile", "data")
+ENGINE_STRING_SKIP = (
+    "data/text",
+    "data/maps",
+    "data/trainers/parties.asm",
+    "data/pokemon/dex_entries",
+    "data/items/descriptions.asm",
+    "data/moves/descriptions.asm",
+    "mobile/fixed_words.asm",
+)
+ENGINE_LABEL_RE = re.compile(
+    r"(\.?[A-Za-z_][\w.]*)::?(?:\s+(.*))?$|(\.[A-Za-z_]\w*)(?:\s+(.*))?$")
+FIXED_ROW_FILES = (
+    "data/text/name_input_chars.asm",
+    "data/text/mail_input_chars.asm",
+)
+
+
+def engine_string_labels(pokegold, symbols, defines=None):
+    strings, texts = {}, set()
+    tokens = charmap_tokens(pokegold, defines)
+    for top in ENGINE_STRING_ROOTS:
+        base = os.path.join(pokegold, top)
+        if not os.path.isdir(base):
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames.sort()
+            for filename in sorted(filenames):
+                if not filename.endswith(".asm"):
+                    continue
+                path = os.path.join(dirpath, filename)
+                rel = os.path.relpath(path, pokegold).replace(os.sep, "/")
+                if rel not in FIXED_ROW_FILES and any(
+                        rel == skip or rel.startswith(skip + "/")
+                        for skip in ENGINE_STRING_SKIP):
+                    continue
+                blocks, parent, charmaps = [], None, 0
+                for _, line in read_asm(path, defines):
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    if re.match(r"(pushc|setcharmap)\b", stripped):
+                        charmaps += 1
+                        continue
+                    if re.match(r"popc\b", stripped):
+                        charmaps = max(0, charmaps - 1)
+                        continue
+                    match = ENGINE_LABEL_RE.fullmatch(stripped)
+                    if match:
+                        name = match.group(1) or match.group(3)
+                        if name.startswith("."):
+                            name = (parent or "") + name
+                        else:
+                            parent = name
+                        blocks.append((name, [], charmaps > 0))
+                        rest = match.group(2) or match.group(4)
+                        if rest:
+                            blocks[-1][1].append(rest.strip())
+                        continue
+                    if blocks:
+                        blocks[-1][1].append(stripped)
+                for name, body, foreign in blocks:
+                    if foreign or not body or name not in symbols.by_name:
+                        continue
+                    if re.match(r"text(_\w+)?\b", body[0]):
+                        texts.add(name)
+                        continue
+                    ops = string_block_ops(body, tokens, fixed=rel in FIXED_ROW_FILES)
+                    if ops:
+                        strings[name] = ops
+    return strings, sorted(texts)
+
+
+def charmap_tokens(pokegold, defines=None):
+    names = set()
+    path = os.path.join(pokegold, "constants/charmap.asm")
+    for _, line in read_asm(path, defines):
+        stripped = line.strip()
+        if re.match(r"(pushc|newcharmap)\b", stripped):
+            break
+        m = re.match(r'charmap\s+"((?:[^"\\]|\\.)*)",', stripped)
+        if m:
+            names.add(m.group(1))
+    return sorted(names, key=len, reverse=True)
+
+
+def string_bytes(text, tokens):
+    count, index = 0, 0
+    while index < len(text):
+        for token in tokens:
+            if token and text.startswith(token, index):
+                index += len(token)
+                break
+        else:
+            raise ValueError("no charmap entry at %r" % text[index:])
+        count += 1
+    return count
+
+
+def asm_operands(rest):
+    return [op.strip() for op in re.findall(r'"[^"]*"|[^,]+', rest) if op.strip()]
+
+
+def string_block_ops(body, tokens, fixed=False):
+    ops, pending, seen_string = [], None, False
+    for line in body:
+        if re.match(r"(list_start|assert_list_length|table_width|"
+                    r"assert_table_length)\b", line):
+            continue
+        m = re.fullmatch(r"(db|dw|dwcoord|li|next|line|cont|para|page)\s+(.*)",
+                         line)
+        if not m:
+            break
+        kind, operands = m.group(1), asm_operands(m.group(2))
+        if kind in ("dw", "dwcoord"):
+            if pending is not None or any(op.startswith('"') for op in operands):
+                break
+            ops.append(2 * len(operands) if kind == "dw" else 2)
+            continue
+        if kind == "li":
+            if len(operands) != 1 or not operands[0].startswith('"'):
+                break
+            ops.append("@")
+            seen_string = True
+            continue
+        stop = False
+        for op in operands:
+            if op.startswith('"'):
+                text = op[1:-1]
+                if fixed and kind == "db" and "@" not in text:
+                    ops.append("#%d" % string_bytes(text, tokens))
+                    seen_string = True
+                    continue
+                pending = (pending or "") + text
+                while pending is not None and "@" in pending:
+                    pending = pending.split("@", 1)[1] or None
+                    ops.append("@")
+                    seen_string = True
+            elif pending is not None and op in ("-1", "$ff", "$FF"):
+                ops.append("-1")
+                pending = None
+                seen_string = True
+            elif pending is None and kind == "db":
+                ops.append(1)
+            elif pending is not None:
+                continue
+            else:
+                stop = True
+                break
+        if stop:
+            break
+    while ops and not isinstance(ops[-1], str):
+        ops.pop()
+    return ops if seen_string else None
+
+
+def rematch_flags(pokegold, contact_order, defines=None):
+    tables = {}
+    for kind, name in (("event", "event_flags.asm"), ("engine", "engine_flags.asm")):
+        order = parse_const_block(
+            os.path.join(pokegold, "constants", name), defines=defines)
+        tables[kind] = {const: i for i, const in enumerate(order) if const}
+    rows = []
+    for index, contact in enumerate(contact_order):
+        if not contact:
+            continue
+        who = contact.rsplit("_", 1)[-1]
+        for kind, prefix in (("event", "EVENT_"), ("engine", "ENGINE_")):
+            flag = tables[kind].get(prefix + who + "_READY_FOR_REMATCH")
+            if flag is not None:
+                rows.append([index, kind, flag])
+    return rows
+
+
+def time_fish_group_count(pokegold, defines=None):
+    """data/wild/fish.asm:210 TimeFishGroups row count."""
+    path = os.path.join(pokegold, "data/wild/fish.asm")
+    count, inside = 0, False
+    for _, line in read_asm(path, defines):
+        s = line.strip()
+        if not s:
+            continue
+        if re.match(r"TimeFishGroups::?$", s):
+            inside = True
+            continue
+        if not inside:
+            continue
+        if re.match(r"db\s", s):
+            count += 1
+            continue
+        break
+    if count == 0:
+        raise ValueError("data/wild/fish.asm has no TimeFishGroups rows")
+    return count
+
+
+PHONE_SCRIPT_RE = re.compile(r"\w+Phone(Callee|Caller|Lecture)Script|UnusedPhoneScript")
+
+
+def phone_script_labels(symbols):
+    """Every contact script label in engine/phone/scripts/*.asm."""
+    return sorted(name for name in symbols.by_name
+                  if PHONE_SCRIPT_RE.fullmatch(name))
+
+
 def embedded_symbols(symbols, pokemon_labels, song_labels=(),
                      text_label_names=(), required=None):
     """Resolve REQUIRED_SYMBOLS + pic labels + songs + text labels."""
     if required is None:
         required = REQUIRED_SYMBOLS
     names = (set(required) | set(pokemon_labels)
-             | set(song_labels) | set(text_label_names))
+             | set(song_labels) | set(text_label_names)
+             | set(phone_script_labels(symbols)))
     for symbol_name in symbols.by_name:
         # Pokedex entries are split across four banks and the game derives the
         # bank arithmetically from the species id (radio.asm's rlca/maskbits
@@ -1214,6 +1455,7 @@ def generate(pokegold, symbols_path, defines=None, required=None,
     special_call_order = parse_const_block_at(
         phone_consts, "SPECIALCALL_NONE", stop_at="NUM_SPECIALCALLS",
         defines=defines)
+    time_fish_count = time_fish_group_count(pokegold, defines)
 
     npc_trade = os.path.join(pokegold, "constants/npc_trade_constants.asm")
     trade_gender_order = parse_prefixed_consts(
@@ -1252,7 +1494,10 @@ def generate(pokegold, symbols_path, defines=None, required=None,
             pokemon_labels.append(asset["backLabel"])
 
     songs = music_order(pokegold, defines)
-    text_label_names = text_labels(pokegold, defines)
+    engine_strings, engine_texts = engine_string_labels(
+        pokegold, symbols, defines)
+    text_label_names = sorted(
+        set(text_labels(pokegold, defines)) | set(engine_texts))
     sfx = sfx_order(pokegold, defines)
 
     # Index 0 is NO_ITEM, so the parsed list is already 1-based on item id.
@@ -1334,6 +1579,22 @@ def generate(pokegold, symbols_path, defines=None, required=None,
             # and SpecialPhoneCallList row → SPECIALCALL_* name
             "phoneContactOrder": phone_contact_order,
             "specialCallOrder": special_call_order,
+            # data/wild/fish.asm TimeFishGroups rows
+            "timeFishGroupCount": time_fish_count,
+            # engine/phone/scripts/*.asm contact script labels
+            "phoneScriptLabels": phone_script_labels(symbols),
+            "engineFlagOrder": parse_const_block(
+                os.path.join(pokegold, "constants/engine_flags.asm"),
+                defines=defines),
+            "eventFlagOrder": [
+                name or False for name in parse_const_block(
+                    os.path.join(pokegold, "constants/event_flags.asm"),
+                    defines=defines)],
+            "rematchFlags": rematch_flags(
+                pokegold, phone_contact_order, defines),
+            "happinessChangeOrder": parse_const_block_at(
+                os.path.join(pokegold, "constants/pokemon_data_constants.asm"),
+                "HAPPINESS_GAINLEVEL", defines=defines)[1:],
             # `trade` row enums (data/events/npc_trades.asm)
             "tradeGenderOrder": trade_gender_order,
             "tradeDialogOrder": trade_dialog_order,
@@ -1353,7 +1614,7 @@ def generate(pokegold, symbols_path, defines=None, required=None,
         },
         # Label -> decoded string is built at import time from these, the
         # same way Gen 1 builds data/generated/text.lua from its own list.
-        "text": {"labels": text_label_names},
+        "text": {"labels": text_label_names, "strings": engine_strings},
         "charmap": charmap(pokegold, defines),
         "fontCharmap": font_extract.parse_charmap(pokegold),
         "pokemonAssets": assets,
@@ -1363,7 +1624,8 @@ def generate(pokegold, symbols_path, defines=None, required=None,
         "tilesets": {name: {} for name in tilesets},
     }
     data["symbols"] = embedded_symbols(
-        symbols, pokemon_labels, songs, text_label_names, required=required)
+        symbols, pokemon_labels, songs,
+        text_label_names + sorted(engine_strings), required=required)
     return data
 
 

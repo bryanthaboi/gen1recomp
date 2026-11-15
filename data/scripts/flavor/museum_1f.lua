@@ -23,7 +23,7 @@ return {
         local Commands = require("src.script.Commands")
         local t = game.data.text
         local function say(label, cb, sopts)
-          game.stack:push(TextBox.new(game, t[label] or label, cb, sopts))
+          game.stack:push(TextBox.new(game, t[label], cb, sopts))
         end
 
         if game.save.flags.EVENT_GOT_OLD_AMBER then

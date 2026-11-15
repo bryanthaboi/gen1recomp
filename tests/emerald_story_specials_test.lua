@@ -19,6 +19,10 @@ for _, r in ipairs(roots) do
     break
   end
 end
+if not ROOT then
+  local dir = require("tests.game3_cache").gameDir("emerald", "pokemon/hoenn.lua")
+  ROOT = dir and dir .. "/"
+end
 
 local fs = {}
 function fs:read(rel)

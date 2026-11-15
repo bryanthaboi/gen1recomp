@@ -4,7 +4,6 @@
 -- can't be forgotten; B gives up on the new move.
 
 local Font = require("src.render.Font")
-local Strings = require("src.core.Strings")
 local romText = require("src.core.RomText")
 
 local MoveLearnMenu = {}
@@ -48,9 +47,7 @@ function MoveLearnMenu:enter()
   -- _TryingToLearnText is the whole exchange in pokered, delete prompt
   -- included, so the extracted line carries all four slots at once
   game.stack:push(TextBox.new(game,
-    romText(game.data, "_TryingToLearnText",
-      "%s is\ntrying to learn\v%s!\fBut, %s\ncan't learn more\vthan 4 moves!\f"
-      .. "Delete an older\nmove to make room\vfor %s?",
+    romText(game.data, "_TryingToLearnText", nil,
       name, mdef.name, name, mdef.name),
     nil, {
       choice = function(yes)
@@ -68,8 +65,7 @@ function MoveLearnMenu:askForget()
   local TextBox = require("src.render.TextBox")
   local game = self.game
   self.selecting = false
-  local text = romText(game.data, "_WhichMoveToForgetText",
-    "Which move should\nbe forgotten?")
+  local text = romText(game.data, "_WhichMoveToForgetText", nil)
   self.forgetPrompt = TextBox.strip(text)
   local box
   box = TextBox.new(game, text, nil, { stay = {
@@ -103,8 +99,7 @@ function MoveLearnMenu:update(dt)
       local TextBox = require("src.render.TextBox")
       self.selecting = false
       self.game.stack:push(TextBox.new(self.game,
-        romText(self.game.data, "_HMCantDeleteText",
-          "HM techniques\ncan't be deleted!"),
+        romText(self.game.data, "_HMCantDeleteText", nil),
         function() self:askForget() end))
       return
     end
@@ -124,8 +119,7 @@ function MoveLearnMenu:confirmAbandon()
   local mdef = game.data.moves[self.newMoveId]
   self.selecting = false
   game.stack:push(TextBox.new(game,
-    romText(game.data, "_AbandonLearningText",
-      "Abandon learning\n%s?", mdef.name), nil, {
+    romText(game.data, "_AbandonLearningText", nil, mdef.name), nil, {
       choice = function(yes)
         if yes then self:finish(false) else self:enter() end
       end,
@@ -147,21 +141,18 @@ function MoveLearnMenu:finish(learned)
     -- pokered pages this as four texts in a row; _ForgotAndText carries
     -- the "And..." tail.  Each text_pause holds the box, and the first one
     -- is followed by SFX_SWAP (engine/pokemon/learn_move.asm:208-222).
-    msg = romText(game.data, "_OneTwoAndText", "1, 2 and...")
+    msg = romText(game.data, "_OneTwoAndText", nil)
       .. TextBox.PAUSE
-      .. romText(game.data, "_PoofText", " Poof!")
+      .. romText(game.data, "_PoofText", nil)
       .. TextBox.PAUSE
-      .. romText(game.data, "_ForgotAndText",
-           "\f%s forgot\n%s!\fAnd...", name, self.forgot)
-      .. "\f" .. romText(game.data, "_LearnedMove1Text",
-           "%s learned\n%s!", name, mdef.name)
+      .. romText(game.data, "_ForgotAndText", nil, name, self.forgot)
+      .. "\f" .. romText(game.data, "_LearnedMove1Text", nil, name, mdef.name)
     -- engine/pokemon/learn_move.asm:189
     opts = { pauseSounds = { "Swap" }, waitButton = false, auto = { sound = function()
       return require("src.core.Sound").play(game.data, self.learnedSound)
     end, wait = true } }
   else
-    msg = romText(game.data, "_DidNotLearnText",
-      "%s\ndid not learn\v%s!", name, mdef.name)
+    msg = romText(game.data, "_DidNotLearnText", nil, name, mdef.name)
   end
   game.stack:push(TextBox.new(game, msg, function()
     if self.onDone then self.onDone(learned) end
@@ -175,7 +166,7 @@ function MoveLearnMenu:draw()
   -- engine/pokemon/learn_move.asm:121
   Font.drawBox(0, 12, 20, 6)
   love.graphics.setColor(0, 0, 0, 1)
-  local prompt = self.forgetPrompt or Strings("Which move should\nbe forgotten?")
+  local prompt = self.forgetPrompt
   local first, rest = prompt:match("^(.-)\n(.*)$")
   Font.draw(first or prompt, 8, 14 * 8)
   if rest then Font.draw(rest, 8, 16 * 8) end

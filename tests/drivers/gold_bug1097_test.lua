@@ -31,7 +31,7 @@ return function(game)
 
   -- Route31CheckMomCallCallback (maps/Route31.asm:14) fires on every NEWMAP
   -- arrival until the errand is over; set its event so the walk is not spent
-  -- behind a phone call.  tests/drivers/gold/flag_names.lua:1132.
+  -- behind a phone call.  constants/event_flags.asm:73.
   if world.events then world.events:set(64, true) end
 
   -- maps/DarkCaveVioletEntrance.asm warp 1 is (3,15) -> ROUTE_31 warp 3.

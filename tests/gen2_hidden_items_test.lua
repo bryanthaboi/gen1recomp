@@ -8,6 +8,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 hidden items")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 local HiddenItems = require("src.world.gen2.HiddenItems")
@@ -20,6 +21,15 @@ local Vm = require("src.script.gen2.Vm")
 -- MAX_POTION is item 15 (constants/item_constants.asm) and the flag is 173
 -- (constants/event_flags.asm).
 local MAX_POTION, ROUTE_42_FLAG = 15, 173
+
+local TEXT = require("tests.fixture_data.gen2_rom_text_s7_g").text()
+local DATA = { text = TEXT }
+local S7F1_TEXT = require("tests.fixture_data.gen2_rom_text_s7_f1").text()
+local function rom(label, item)
+  local body = TEXT[label]:gsub("{DONE}", ""):gsub("{PROMPT}", "")
+  if item then body = body:gsub("{STRBUF}", item) end
+  return body
+end
 
 local function itemRow(x, y, item, event)
   return { x = x, y = y, kind = HiddenItems.BGEVENT_ITEM,
@@ -100,7 +110,7 @@ end
 
 -- ---- HiddenItemScript -----------------------------------------------------
 do
-  local script = HiddenItems.pickupScript(MAX_POTION, ROUTE_42_FLAG)
+  local script = HiddenItems.pickupScript(MAX_POTION, ROUTE_42_FLAG, DATA)
   local ops = {}
   for _, cmd in ipairs(script) do ops[#ops + 1] = cmd.op end
   eq(table.concat(ops, ","),
@@ -139,26 +149,30 @@ local function runPickup(bagFull)
     end,
     specialSound = function() end,
     waitSfx = function() return true end,
+    specials = { data = function() return { text = S7F1_TEXT } end },
   })
-  vm:start(HiddenItems.pickupScript(MAX_POTION, ROUTE_42_FLAG))
+  vm:start(HiddenItems.pickupScript(MAX_POTION, ROUTE_42_FLAG, DATA))
   for _ = 1, 8 do vm:update() end
   return events, log, given
 end
 
 do
   local events, log, given = runPickup(false)
-  eq(log[1], "{PLAYER} found\nMAX POTION.",
+  eq(log[1], rom("_PlayerFoundItemText", "MAX POTION"),
     "_PlayerFoundItemText names the item; {PLAYER} is TextBox's to fill")
   eq(given.index, MAX_POTION, "and the item lands in the pack")
   eq(given.qty, 1, "one of it")
   check(events:get(ROUTE_42_FLAG), "SetMemEvent ticks the flag off")
-  eq(log[2], "{PLAYER} put the\nMAX POTION in\nthe ITEM POCKET.",
-    "itemnotify is the second line")
+  local putIn = 0
+  eq(log[2], (S7F1_TEXT._PutItemInPocketText:gsub("{STRBUF}", function()
+    putIn = putIn + 1
+    return putIn == 1 and "MAX POTION" or S7F1_TEXT["ItemPocketNames.Item"]
+  end)), "itemnotify is the second line, _PutItemInPocketText")
 
   local fullEvents, fullLog = runPickup(true)
   check(not fullEvents:get(ROUTE_42_FLAG),
     "a full pack leaves the flag CLEAR, so the item is still there")
-  eq(fullLog[2], "But {PLAYER} has\nno space left…", "_ButNoSpaceText instead")
+  eq(fullLog[2], rom("_ButNoSpaceText"), "_ButNoSpaceText instead")
 end
 
 -- ---- FindItemInBallScript, the OBJECTTYPE_ITEMBALL press -------------------
@@ -189,8 +203,9 @@ local function runBallPickup(bagFull)
     playSound = function(id) sfx = id end,
     specialSound = function() end,
     waitSfx = function() return true end,
+    specials = { data = function() return { text = S7F1_TEXT } end },
   })
-  vm:start(HiddenItems.ballPickupScript(MAX_POTION, 1, 2))
+  vm:start(HiddenItems.ballPickupScript(MAX_POTION, 1, 2, nil, DATA))
   -- The cart's `pause 60` now rides the found line's own row as `hold` (see
   -- the order assertion below), and a `hold` is counted by the TEXT BOX, not
   -- by the VM -- this stub showText answers straight away, so nothing parks
@@ -201,7 +216,7 @@ local function runBallPickup(bagFull)
 end
 
 do
-  local script = HiddenItems.ballPickupScript(MAX_POTION, 3, 5)
+  local script = HiddenItems.ballPickupScript(MAX_POTION, 3, 5, nil, DATA)
   local ops = {}
   for _, cmd in ipairs(script) do ops[#ops + 1] = cmd.op end
   -- FindItemInBallScript is `writetext .FoundItemText / playsound SFX_ITEM /
@@ -228,7 +243,7 @@ do
   eq(script[7].hold, 60, "and `pause 60` holds the world under that box")
 
   local log, given, gone, sfx, vm = runBallPickup(false)
-  eq(log[1], "{PLAYER} found\nHM07!",
+  eq(log[1], rom("_FoundItemText", "HM07"),
     "_FoundItemText ends on '!' -- the '.' one is the hidden item's")
   eq(given.index, MAX_POTION, "and the item lands in the pack")
   eq(gone, 2, "the ball object disappears -- its event flag rides on that")
@@ -238,8 +253,8 @@ do
   local fullLog, fullGiven, fullGone = runBallPickup(true)
   check(fullGiven == nil, "a full pack takes nothing")
   check(fullGone == nil, "and the ball stays where it is")
-  eq(fullLog[1], "{PLAYER} found\nHM07!", "the .no_room arm shows the find too")
-  eq(fullLog[2], "But {PLAYER} can't\ncarry any more\vitems!",
+  eq(fullLog[1], rom("_FoundItemText", "HM07"), "the .no_room arm shows the find too")
+  eq(fullLog[2], rom("_CantCarryItemText"),
     "_CantCarryItemText is the second box, not _ButNoSpaceText")
 end
 
@@ -251,7 +266,7 @@ do
     return fallback + 100
   end
   local found = HiddenItems.itemfinderScript(
-    { x = 1, y = 1, item = MAX_POTION, event = ROUTE_42_FLAG }, sfxId)
+    { x = 1, y = 1, item = MAX_POTION, event = ROUTE_42_FLAG }, sfxId, DATA)
   local ops = {}
   for _, cmd in ipairs(found) do ops[#ops + 1] = cmd.op end
   eq(#asked, 8, ".ItemfinderSound is four rounds of two sounds")
@@ -265,7 +280,7 @@ do
     "playsound,opentext,rawtext,waitbutton,closetext,end",
     "and the text lands after the last sound, unwaited")
 
-  local nothing = HiddenItems.itemfinderScript(nil, sfxId)
+  local nothing = HiddenItems.itemfinderScript(nil, sfxId, DATA)
   local nothingOps = {}
   for _, cmd in ipairs(nothing) do nothingOps[#nothingOps + 1] = cmd.op end
   eq(table.concat(nothingOps, ","),
@@ -281,7 +296,7 @@ local COLL_FLOOR = 0x00
 
 local function fakeWorld(bgEvents, px, py, facing)
   local game = {
-    data = { items = {
+    data = { text = TEXT, items = {
       MAX_POTION = { id = "MAX_POTION", name = "MAX POTION",
         pocket = "ITEM", index = MAX_POTION },
       ITEMFINDER = { id = "ITEMFINDER", name = "ITEMFINDER",

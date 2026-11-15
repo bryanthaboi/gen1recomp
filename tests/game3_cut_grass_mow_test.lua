@@ -57,6 +57,9 @@ Field._game, Field._session = game, session
 Map._def, Map.current = def, "FR_CUT_TEST"
 Player.cellX, Player.cellY, Player.elevation = 0, 2, 3
 Audio.playSe = function() end
+require("src.core.game3.scripting.interaction_scripts").behaviors = {
+  cut_test = { [0x001] = 0, [0x00D] = 0, [0x281] = 0, [0x284] = 0, [0x3FF] = 0 },
+}
 require("src.core.game3.collision").bindMap(game, "FR_CUT_TEST", def)
 local grassCb = 0
 FieldEffects.startCutGrass = function(_, _, cb) grassCb = grassCb + 1; if cb then cb() end end

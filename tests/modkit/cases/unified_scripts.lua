@@ -152,7 +152,8 @@ local function fixture(version)
   local data = generation == 3 and Sdk.gen3Data() or Fixtures.fresh()
   setmetatable(data, { __index = require("src.core.Data") })
   data.maps = { SCRIPT_HOME = mapDef("SCRIPT_HOME"), SCRIPT_AWAY = mapDef("SCRIPT_AWAY") }
-  data.text, data.text_pointers = {}, {}
+  data.text = generation == 1 and dofile("tests/fixture_data/text.lua") or {}
+  data.text_pointers = {}
   data.items = data.items or {}
   f.potionId = generation == 2 and 18 or generation == 3 and 13 or 20
   data.items.POTION = { name = "POTION", index = f.potionId, price = 300,

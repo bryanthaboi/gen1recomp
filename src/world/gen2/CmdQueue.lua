@@ -18,7 +18,6 @@
 --   CmdQueue_Type4      an hSCY shake, unreferenced by any map
 --
 -- love-free: the caller supplies the objects, the warps and a collision lookup.
-local Strings = require("src.core.Strings")
 
 local CmdQueue = {}
 
@@ -154,97 +153,7 @@ function CmdQueue.poll(queue, ctx)
   return nil
 end
 
---------------------------------------------------------------------------
--- The two stone tables
---------------------------------------------------------------------------
---
--- These are DATA the extractor cannot reach yet.  A stone table hangs off a
--- MAPCALLBACK_CMDQUEUE callback, maps.lua carries no callbacks at all, and the
--- per-boulder scripts are reachable only through the table -- so none of it is
--- in scripts.lua.  There are exactly two of them in the whole game and both are
--- eight lines of pokegold, so they are hand-ported here with their source
--- cited, the same standing arrangement the Pokegear's radio lines have.
---
--- When the extractor grows map callbacks these become the fallback rather than
--- the source: World:writeCmdQueue prefers an extracted entry.
---
--- Object ids are the cart's own (`object_const_def` is `const_def 2`, so the
--- first object_event of a map is id 2), which is the numbering `disappear`
--- already speaks.  Warp numbers are 1-based into the map's warp_events.
---
--- Event flags are the numbers this cache assigns:
---   EVENT_BOULDER_IN_ICE_PATH_1..4   1801..1804  (the B1F boulders themselves)
---   EVENT_BOULDER_IN_ICE_PATH_1A..4A 1805..1808  (their twins one floor down,
---       on ICE_PATH_B2F_MAHOGANY_SIDE -- clearing one is what makes the fallen
---       boulder appear down there)
--- They are consecutive `const`s in constants/event_flags.asm, and
--- tests/gen2_world_test.lua pins the four the cache actually emits.
-local ICE_PATH_BOULDER_EVENT = { 1805, 1806, 1807, 1808 }
-
--- maps/IcePathB1F.asm .FinishBoulder, shared by all four rows:
---   pause 30 / scall .BoulderFallsThrough / opentext / writetext / waitbutton /
---   closetext / end, where .BoulderFallsThrough is playsound SFX_STRENGTH +
---   earthquake 80 (two pixels for sixteen frames -- one byte, two numbers).
-local function boulderScript(objectId, clearEvent, text)
-  local script = {
-    { op = "disappear", object = objectId },
-  }
-  if clearEvent then
-    script[#script + 1] = { op = "clearevent", event = clearEvent }
-  end
-  script[#script + 1] = { op = "pause", frames = 30 }
-  script[#script + 1] = { op = "playsound", id = 27 } -- SFX_STRENGTH
-  script[#script + 1] = { op = "earthquake", param = 80 }
-  script[#script + 1] = { op = "opentext" }
-  -- `rawtext` is the port's own command, not the cart's: `writetext` names a
-  -- key into text.lua and this string was never extracted (see the note above).
-  script[#script + 1] = { op = "rawtext", text = text }
-  script[#script + 1] = { op = "waitbutton" }
-  script[#script + 1] = { op = "closetext" }
-  script[#script + 1] = { op = "end" }
-  return script
-end
-
-local ICE_PATH_TEXT = Strings.source("The boulder fell\nthrough.")
-local BLACKTHORN_TEXT = Strings.source("The boulder fell\nthrough!")
-
-CmdQueue.STONE_TABLES = {
-  -- maps/IcePathB1F.asm IcePathB1FSetUpStoneTableCallback.
-  ICE_PATH_B1F = {
-    { warp = 3, object = 2,
-      script = boulderScript(2, ICE_PATH_BOULDER_EVENT[1], ICE_PATH_TEXT) },
-    { warp = 4, object = 3,
-      script = boulderScript(3, ICE_PATH_BOULDER_EVENT[2], ICE_PATH_TEXT) },
-    { warp = 5, object = 4,
-      script = boulderScript(4, ICE_PATH_BOULDER_EVENT[3], ICE_PATH_TEXT) },
-    { warp = 6, object = 5,
-      script = boulderScript(5, ICE_PATH_BOULDER_EVENT[4], ICE_PATH_TEXT) },
-  },
-  -- maps/BlackthornGym2F.asm.  Note the warp order: BOULDER1 goes to warp 5,
-  -- BOULDER2 to warp 3 and BOULDER3 to warp 4, which is not the order the rows
-  -- are written in and is transcribed rather than tidied.  These three clear no
-  -- event: nothing appears on the floor below, the boulder is simply gone.
-  BLACKTHORN_GYM_2F = {
-    { warp = 5, object = 4, script = boulderScript(4, nil, BLACKTHORN_TEXT) },
-    { warp = 3, object = 5, script = boulderScript(5, nil, BLACKTHORN_TEXT) },
-    { warp = 4, object = 6, script = boulderScript(6, nil, BLACKTHORN_TEXT) },
-  },
-}
-
--- MAPCALLBACK_CMDQUEUE's whole job on both maps: `writecmdqueue .CommandQueue`
--- where the entry is `cmdqueue CMDQUEUE_STONETABLE, .StoneTable`.
-function CmdQueue.mapEntry(mapId)
-  local rows = CmdQueue.STONE_TABLES[mapId]
-  if not rows then return nil end
-  return { kind = CmdQueue.STONETABLE, rows = rows, mapId = mapId }
-end
-
--- The same entry taken from the cache instead of from the table above: the
--- extractor now follows `writecmdqueue`'s operand through the cmdqueue struct
--- into the stonetable, so a row arrives naming a scripts.lua key rather than
--- carrying an inlined command list.  Answers nil for a cache that predates
--- that, or for any of the four queue types nothing acts on, so the caller
--- falls back to STONE_TABLES rather than writing an entry with no rows.
+-- engine/overworld/scripting.asm:1999
 function CmdQueue.fromExtracted(entry, mapId)
   if type(entry) ~= "table" then return nil end
   if entry.type ~= CmdQueue.STONETABLE then return nil end

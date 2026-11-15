@@ -38,6 +38,7 @@ local DATA = {
   type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = { NORMAL = { id = "NORMAL", index = 0,
     category = "physical" } }, matchups = {} },
   items = {},
+  text = require("tests.gen2_battle_text_fixture")(),
 }
 
 local perfect = { attack = 15, defense = 15, speed = 15, special = 15 }

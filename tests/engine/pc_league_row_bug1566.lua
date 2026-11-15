@@ -20,6 +20,9 @@ local fakeGame = {
   data = { text = {
     _TurnedOnPC1Text = "RED turned on\nthe PC.",
     _AccessedHoFPCText = "Accessed POKéMON\nLEAGUE's site.",
+    SomeonesPCText = "SOMEONE's PC", PlayersPCText = "'s PC",
+    OaksPCText = "PROF.OAK's PC", PKMNLeaguePCText = "<PK><MN>LEAGUE",
+    LogOffPCText = "LOG OFF",
   } },
   save = {
     flags = { EVENT_GOT_POKEDEX = true },

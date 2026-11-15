@@ -91,9 +91,12 @@ function M.register(DEF, ID, H)
       if not img then return end
       local ba = fx.bld1 or { 0, 16 }
       local eva, evb = math.min(16, ba[1]), math.min(16, ba[2])
-      local v = fx.vofs1 or {}
       local function hofs() return 0 end
-      local function vofs(y) return v[y] or 0 end
+      local function vofs(y)
+        local f, sy = H.rowSrc(fx, y)
+        local v = f.vofs1
+        return v and v[sy] or 0
+      end
       if evb < 16 then
         G.setColor(0, 0, 0, 1 - evb / 16)
         A.drawRows(G, img, hofs, vofs, DW, DH)
@@ -106,6 +109,7 @@ function M.register(DEF, ID, H)
       end
       G.setColor(1, 1, 1, 1)
     end,
+    row0 = "first",
   }
 
   local SQUARE_SIZE, MARGIN_SIZE = 4, 1

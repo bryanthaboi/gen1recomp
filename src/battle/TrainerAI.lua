@@ -19,16 +19,18 @@
 -- enemy PP -- Gen 1 AI never reads wEnemyMonPP).
 
 local TypeChart = require("src.battle.TypeChart")
-local Strings = require("src.core.Strings")
 local Status = require("src.battle.Status")
 local romText = require("src.core.RomText")
 
 local TrainerAI = {}
 
--- pokered's <USER>/<TARGET> text macros print "Enemy " before the
--- enemy mon's nickname (home/text.asm PlaceMoveUsersName)
-local function displayName(b)
-  return b.isPlayer and b.name or Strings("Enemy %s", b.name)  -- #779
+local function romLine(data, label, ...)
+  return romText(data, label, nil, ...)
+end
+
+-- home/text.asm:185
+local function displayName(data, b)
+  return b.isPlayer and b.name or romLine(data, "EnemyText") .. b.name
 end
 
 local HEAL_AMOUNT = { POTION = 20, SUPER_POTION = 50, HYPER_POTION = 200 }
@@ -45,14 +47,8 @@ function TrainerAI.playsRestoringSfx(item)
   return RESTORING_SFX[item] == true
 end
 
--- Strings.source, not Strings: harvested at require time so the catalog
--- generator can see the literal, same pattern as MoveEffects.lua's
--- STAT_LABEL (#811) -- Strings(stat:upper()) alone is a dynamic argument
--- the harvester can't discover.
-local STAT_LABEL = {
-  attack = Strings.source("ATTACK"), defense = Strings.source("DEFENSE"),
-  speed = Strings.source("SPEED"), special = Strings.source("SPECIAL"),
-}
+-- data/battle/stat_mod_names.asm:4
+local STAT_MOD_NAME = { attack = 1, defense = 2, speed = 3, special = 4 }
 
 -- The trainer's ai_classes record from the merged registry; the direct
 -- require covers battles built without a loader.  A trainer record's
@@ -129,8 +125,7 @@ function TrainerAI.useItem(battle, item)
   local enemy = battle.enemy
   local trainerName = battle.trainer.name
   local itemName = battle.data.items[item] and battle.data.items[item].name or item
-  local msgs = { romText(battle.data, "_AIBattleUseItemText",
-    "%s\nused %s!", trainerName, itemName, enemy.name) }
+  local msgs = { romLine(battle.data, "_AIBattleUseItemText", trainerName, itemName, enemy.name) }
   if item == "FULL_HEAL" then
     Status.keepPenaltyOnCure(battle, enemy)
     enemy.mon.status = nil
@@ -146,7 +141,7 @@ function TrainerAI.useItem(battle, item)
     local stat = X_STAT[item]
     if (enemy.stages[stat] or 0) >= 6 or require("src.battle.Damage").statAtCap(battle, enemy, stat) then
       -- engine/battle/effects.asm:372-373
-      table.insert(msgs, romText(battle.data, "_NothingHappenedText", "Nothing happened!"))
+      table.insert(msgs, romLine(battle.data, "_NothingHappenedText"))
       return msgs
     end
     enemy.stages[stat] = (enemy.stages[stat] or 0) + 1
@@ -155,7 +150,10 @@ function TrainerAI.useItem(battle, item)
     enemy.hazeStatReset = nil
     -- trainer_ai.asm:716 -> effects.asm:484 (PlayCurrentMoveAnimation)
     table.insert(msgs, { anim = "XSTATITEM_DUPLICATE_ANIM" })
-    table.insert(msgs, Strings("%s's\n%s rose!", displayName(enemy), Strings(STAT_LABEL[stat])))
+    -- engine/battle/effects.asm:516
+    table.insert(msgs, romLine(battle.data, "_MonsStatsRoseText", displayName(battle.data, enemy),
+      romLine(battle.data, "StatModTextStrings." .. STAT_MOD_NAME[stat])):gsub("{DONE}$", "")
+      .. romLine(battle.data, "_RoseText"))
   elseif item == "GUARD_SPEC" then
     -- engine/battle/trainer_ai.asm:645
     enemy.mist = true

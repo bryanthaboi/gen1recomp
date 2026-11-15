@@ -22,24 +22,10 @@ class Gen2RegistryUiHarvestTest(TestCase):
             for literal, _location in modkit.harvest_engine_strings(str(REPO))
         }
         expected_sources = {
-            # Party list, submenu, and complete prompt records.
-            "ABLE", "NOT ABLE", "FNT", "EGG", "STATS", "SWITCH",
-            "MOVE", "ITEM", "MAIL", "CANCEL", "Choose a POKéMON.",
-            "Use on which <PK><MN>?", "Which <PK><MN>?",
-            "Teach which <PK><MN>?", "Move to where?",
-            "To which <PK><MN>?", "You have no <PK><MN>!",
             # Summary labels and full egg prose keys.
-            "OK", "POKéRUS", "TO", "PP", "ATTK/", "OT/", "<ID>№.", "№.",
-            "ATTACK", "DEFENSE", "SPCL.ATK", "SPCL.DEF", "SPEED",
-            "STATUS/", "TYPE/", "EXP POINTS", "LEVEL UP", "Where?",
-            "It's making sounds<NEXT>inside. It's going<NEXT>to hatch soon!",
-            "This EGG needs a<NEXT>lot more time to<NEXT>hatch.",
-            # Pokedex and Pokegear display records.
-            " PAGE AREA CRY PRNT", "lb", "%s'S NEST", "SEEN", "OWN",
-            "HT", "WT", "TYPE1", "TYPE2", "BEGIN SEARCH!!",
-            "CLOCK", "MAP", "PHONE", "RADIO", "FLY", "NO CARD DATA",
-            "AM", "PM", "DAY", "CALL", "DELETE",
-            "Whom do you want to call?", "Press any button to exit.",
+            "PP", "№.",
+            # Pokedex display records.
+            "HT", "WT",
         }
         expected = {lua_literal(source) for source in expected_sources}
         self.assertEqual(expected - harvested, set())

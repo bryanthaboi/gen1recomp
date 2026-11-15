@@ -30,22 +30,16 @@
 -- rule Evolution.apply follows: Breeding.hatch hands Mon.new the egg's species,
 -- level, DVs and moves and lets the one builder produce the record, so a
 -- hatchling can never end up with the half-filled shape a second builder gives.
---
--- Two data fields this reads that the extractor does not write yet:
---   def.eggMoves   data/pokemon/egg_moves.asm, one list of move ids per
---                  species.  Absent from the cache today; every reader below
---                  falls back to an empty list, which costs exactly the
---                  "father passes an egg move" branch of GetEggMove and
---                  nothing else.  It starts working the moment the field
---                  appears -- see the test's cache block.
--- (def.tmhm, def.eggGroups, def.eggSteps, def.genderRatio and def.evolutions
--- are all already in data/generated/pokemon.lua.)
 
 local Mail = require("src.core.gen2.Mail")
 local Mon = require("src.battle.gen2.Mon")
 local Runtime = require("src.mods.Runtime")
 
-local Breeding = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
+local Breeding = EngineFlags.expose({}, {
+  "ENGINE_DAY_CARE_MAN_HAS_EGG", "ENGINE_DAY_CARE_MAN_HAS_MON",
+  "ENGINE_DAY_CARE_LADY_HAS_MON",
+})
 
 --------------------------------------------------------------------------
 -- Constants
@@ -508,7 +502,10 @@ function Breeding.canInheritMove(data, eggSpecies, move, otherMoves)
   local def = defOf(data, eggSpecies)
   if not (def and move) then return false end
 
-  for _, id in ipairs(def.eggMoves or {}) do
+  if type(def.eggMoves) ~= "table" then
+    error("pokemon.lua has no eggMoves for " .. tostring(eggSpecies), 2)
+  end
+  for _, id in ipairs(def.eggMoves) do
     if id == move then return true, "eggMove" end
   end
 
@@ -665,17 +662,13 @@ end
 -- The day-care record
 --------------------------------------------------------------------------
 
--- The three ENGINE_* ids that are literal bits of the two day-care bytes:
+-- The three ENGINE_* flags that are literal bits of the two day-care bytes:
 -- data/events/engine_flags.asm's table maps them to wDayCareMan's
 -- DAYCAREMAN_HAS_EGG_F and DAYCAREMAN_HAS_MON_F and to wDayCareLady's
--- DAYCARELADY_HAS_MON_F, and constants/engine_flags.asm numbers them 5, 6 and
--- 7 (the pokegear block is 0..4).  They are NOT a save flag byte of their own:
+-- DAYCARELADY_HAS_MON_F.  They are NOT a save flag byte of their own:
 -- checkflag/setflag on any of these three reads or writes the day-care record
 -- below, which is why the DayCare and ROUTE_34 object callbacks see the yard
 -- mons and the gramps outside the moment a mon is deposited or an egg is due.
-Breeding.ENGINE_DAY_CARE_MAN_HAS_EGG = 5
-Breeding.ENGINE_DAY_CARE_MAN_HAS_MON = 6
-Breeding.ENGINE_DAY_CARE_LADY_HAS_MON = 7
 
 -- save.dayCare, created on demand the way Boxes.box creates a box.
 --   man / lady  { mon = <party record>, introSeen = bool }

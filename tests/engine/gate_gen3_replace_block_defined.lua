@@ -65,10 +65,12 @@ local function warnsAbout(mid)
 end
 eq(Field.setMetatile(1, 1, 5), true, "Field.setMetatile answers true on a write")
 eq(warnsAbout(5), 0, "a defined metatile write logs nothing")
-eq(Field.setMetatile(1, 1, 7), true, "Field.setMetatile still writes an undefined integer metatile")
+local landOk = pcall(Field.setMetatile, 1, 1, 7)
+eq(landOk, false, "a passable write of an undefined metatile raises instead of becoming LAND")
+eq(Field.setMetatile(1, 1, 7, true), true, "Field.setMetatile still writes an impassable undefined metatile")
 eq(applied[#applied] and applied[#applied][3], 7, "the undefined metatile reaches the layout")
 eq(warnsAbout(7), 1, "an undefined metatile write logs the id and the pair")
-Field.setMetatile(2, 1, 7)
+Field.setMetatile(2, 1, 7, true)
 eq(warnsAbout(7), 1, "the undefined metatile log fires once per pair and id")
 Collision.patchCell = realPatchCell
 Field.metatileOverrides = {}

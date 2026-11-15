@@ -111,7 +111,8 @@ check("the rebind screen is unmoved", OptionsMenu.ROWS[8].id, "controls")
 check("the port's audio group is unmoved", OptionsMenu.ROWS[9].key, "musicVol")
 
 -- The screen is built from ROWS, so the row has to survive buildRows too.
-local menu = OptionsMenu.new({ options = Save.defaultOptions() },
+local menu = OptionsMenu.new({ options = Save.defaultOptions(),
+  data = { text = require("tests.fixture_data.gen2_rom_text_s7_c").text() } },
   { options = Save.defaultOptions() })
 local built
 for _, row in ipairs(menu.rows) do

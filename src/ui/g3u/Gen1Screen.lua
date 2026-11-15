@@ -103,7 +103,8 @@ function Gen1Screen.who(ctx, ref)
   local mon, seat = refMon(ctx, ref)
   if not mon then return nil end
   local name = Gen1Screen.monName(ctx.data, mon)
-  if seat ~= ctx.seat then return Strings("Enemy %s", name) end
+  -- home/text.asm:185
+  if seat ~= ctx.seat then return RomText(ctx.data, "EnemyText", nil) .. name end
   return name
 end
 
@@ -123,26 +124,34 @@ local function speciesOf(ctx, v)
   return speciesName(ctx.data, Gen1Screen.speciesKey(ctx.data, n))
 end
 
+-- data/battle/stat_mod_names.asm:4-10
 local STAT_LABEL = {
-  attack = "ATTACK", atk = "ATTACK", defense = "DEFENSE", def = "DEFENSE", speed = "SPEED", spe = "SPEED",
-  spAtk = "SPECIAL", spDef = "SPECIAL", spatk = "SPECIAL", spdef = "SPECIAL", spa = "SPECIAL", spd = "SPECIAL",
-  special = "SPECIAL", accuracy = "ACCURACY", acc = "ACCURACY", evasion = "EVADE", eva = "EVADE",
+  attack = 1, atk = 1, defense = 2, def = 2, speed = 3, spe = 3,
+  spAtk = 4, spDef = 4, spatk = 4, spdef = 4, spa = 4, spd = 4,
+  special = 4, accuracy = 5, acc = 5, evasion = 6, eva = 6,
 }
 
+-- engine/battle/effects.asm:1032-1054
 local CHARGE = {
-  STRINGID_PKMNFLEWHIGH = { "_FlewUpHighText", "%s\nflew up high!" },
-  STRINGID_PKMNDUGHOLE = { "_DugAHoleText", "%s\ndug a hole!" },
-  STRINGID_PKMNWHIPPEDWHIRLWIND = { "_MadeWhirlwindText", "%s\nmade a whirlwind!" },
-  STRINGID_PKMNTOOKSUNLIGHT = { "_TookInSunlightText", "%s\ntook in sunlight!" },
-  STRINGID_PKMNLOWEREDHEAD = { "_LoweredItsHeadText", "%s\nlowered its head!" },
-  STRINGID_PKMNISGLOWING = { "_SkyAttackGlowingText", "%s\nis glowing!" },
+  STRINGID_PKMNFLEWHIGH = "_FlewUpHighText",
+  STRINGID_PKMNDUGHOLE = "_DugAHoleText",
+  STRINGID_PKMNWHIPPEDWHIRLWIND = "_MadeWhirlwindText",
+  STRINGID_PKMNTOOKSUNLIGHT = "_TookInSunlightText",
+  STRINGID_PKMNLOWEREDHEAD = "_LoweredItsHeadText",
+  STRINGID_PKMNISGLOWING = "_SkyAttackGlowingText",
 }
 
-local function rom(ctx, label, fallback, ...)
+local function rom(ctx, label, ...)
   for i = 1, select("#", ...) do
     if select(i, ...) == nil then return nil end
   end
-  return RomText(ctx.data, label, fallback, ...)
+  return RomText(ctx.data, label, nil, ...)
+end
+
+local function joined(...)
+  local parts = { ... }
+  for i = 1, #parts do parts[i] = parts[i]:gsub("{DONE}$", ""):gsub("{SCROLL}", "\n") end
+  return table.concat(parts)
 end
 
 local function first(f, ...)
@@ -154,45 +163,48 @@ end
 
 local function statText(ctx, ref, f)
   local name = Gen1Screen.who(ctx, ref)
-  local label = STAT_LABEL[f.stat or ""] or STAT_LABEL[tostring(f.stat or ""):lower()]
+  local index = STAT_LABEL[f.stat or ""] or STAT_LABEL[tostring(f.stat or ""):lower()]
   local delta = tonumber(f.delta)
-  if not name or not label or not delta or delta == 0 then return nil end
-  label = Strings(label)
-  if delta >= 2 then return Strings("%s's\n%s\ngreatly rose!", name, label) end
-  if delta == 1 then return Strings("%s's\n%s rose!", name, label) end
-  if delta == -1 then return Strings("%s's\n%s fell!", name, label) end
-  return Strings("%s's\n%s\ngreatly fell!", name, label)
+  if not name or not index or not delta or delta == 0 then return nil end
+  local label = RomText(ctx.data, "StatModTextStrings." .. index, nil)
+  -- engine/battle/effects.asm:516-538, :718-742
+  if delta > 0 then
+    return joined(rom(ctx, "_MonsStatsRoseText", name, label),
+      delta >= 2 and rom(ctx, "_GreatlyRoseText") or "", rom(ctx, "_RoseText"))
+  end
+  return joined(rom(ctx, "_MonsStatsFellText", name, label),
+    delta <= -2 and rom(ctx, "_GreatlyFellText") or "", rom(ctx, "_FellText"))
 end
 
-local function failed(ctx) return rom(ctx, "_ButItFailedText", "But, it failed!") end
-local function nothing(ctx) return rom(ctx, "_NothingHappenedText", "Nothing happened!") end
-local function didntAffect(ctx, f) return rom(ctx, "_DidntAffectText", "It didn't affect\n%s!", Gen1Screen.who(ctx, f.def)) end
+local function failed(ctx) return rom(ctx, "_ButItFailedText") end
+local function nothing(ctx) return rom(ctx, "_NothingHappenedText") end
+local function didntAffect(ctx, f) return rom(ctx, "_DidntAffectText", Gen1Screen.who(ctx, f.def)) end
 
 local function faintedText(ctx, ref)
   local _, seat = refMon(ctx, ref)
   local name = rawName(ctx, ref)
   if not name then return nil end
-  if seat == ctx.seat then return rom(ctx, "_PlayerMonFaintedText", "%s\nfainted!", name) end
-  return rom(ctx, "_EnemyMonFaintedText", "Enemy %s\nfainted!", name)
+  if seat == ctx.seat then return rom(ctx, "_PlayerMonFaintedText", name) end
+  return rom(ctx, "_EnemyMonFaintedText", name)
 end
 
 local TEXT = {
-  STRINGID_CRITICALHIT = function(c) return rom(c, "_CriticalHitText", "Critical hit!") end,
-  STRINGID_ONEHITKO = function(c) return rom(c, "_OHKOText", "One-hit KO!") end,
-  STRINGID_SUPEREFFECTIVE = function(c) return rom(c, "_SuperEffectiveText", "It's super\neffective!") end,
-  STRINGID_NOTVERYEFFECTIVE = function(c) return rom(c, "_NotVeryEffectiveText", "It's not very\neffective...") end,
+  STRINGID_CRITICALHIT = function(c) return rom(c, "_CriticalHitText") end,
+  STRINGID_ONEHITKO = function(c) return rom(c, "_OHKOText") end,
+  STRINGID_SUPEREFFECTIVE = function(c) return rom(c, "_SuperEffectiveText") end,
+  STRINGID_NOTVERYEFFECTIVE = function(c) return rom(c, "_NotVeryEffectiveText") end,
   STRINGID_ITDOESNTAFFECT = function(c, f)
-    return rom(c, "_DoesntAffectMonText", "It doesn't affect\n%s!", Gen1Screen.who(c, f.def))
+    return rom(c, "_DoesntAffectMonText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_ATTACKMISSED = function(c, f)
-    return rom(c, "_AttackMissedText", "%s's\nattack missed!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_AttackMissedText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNPROTECTEDBYMIST = function(c, f)
     local user = f.atk or (c.lastUser ~= nil and { side = c.lastUser }) or nil
-    return rom(c, "_AttackMissedText", "%s's\nattack missed!", Gen1Screen.who(c, user))
+    return rom(c, "_AttackMissedText", Gen1Screen.who(c, user))
   end,
   STRINGID_PKMNAVOIDEDATTACK = function(c, f)
-    return rom(c, "_EvadedAttackText", "%s\nevaded attack!", Gen1Screen.who(c, f.def))
+    return rom(c, "_EvadedAttackText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_BUTITFAILED = failed,
   STRINGID_MIRRORMOVEFAILED = failed,
@@ -208,159 +220,159 @@ local TEXT = {
   STRINGID_PKMNALREADYPOISONED = didntAffect,
   STRINGID_PKMNISALREADYPARALYZED = didntAffect,
   STRINGID_PKMNUNAFFECTED = function(c, f)
-    return rom(c, "_UnaffectedText", "%s's\nunaffected!", Gen1Screen.who(c, f.def))
+    return rom(c, "_UnaffectedText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_HITXTIMES = function(c, f)
     local n = tonumber(f.buff1)
     if not n then return nil end
-    if c.lastUser == c.seat then return rom(c, "_MultiHitText", "Hit the enemy\n%d times!", n) end
-    return rom(c, "_HitXTimesText", "Hit %d times!", n)
+    if c.lastUser == c.seat then return rom(c, "_MultiHitText", n) end
+    return rom(c, "_HitXTimesText", n)
   end,
   STRINGID_TARGETFAINTED = function(c, f) return faintedText(c, f.def) end,
   STRINGID_ATTACKERFAINTED = function(c, f) return faintedText(c, f.atk) end,
   STRINGID_PKMNHURTBYPOISON = function(c, f)
-    return rom(c, "_HurtByPoisonText", "%s's\nhurt by poison!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_HurtByPoisonText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNHURTBYBURN = function(c, f)
-    return rom(c, "_HurtByBurnText", "%s's\nhurt by the burn!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_HurtByBurnText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNSAPPEDBYLEECHSEED = function(c, f)
-    return rom(c, "_HurtByLeechSeedText", "LEECH SEED saps\n%s!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_HurtByLeechSeedText", Gen1Screen.who(c, f.atk))
   end,
-  STRINGID_PKMNWOKEUP = function(c, f) return rom(c, "_WokeUpText", "%s\nwoke up!", Gen1Screen.who(c, f.atk)) end,
+  STRINGID_PKMNWOKEUP = function(c, f) return rom(c, "_WokeUpText", Gen1Screen.who(c, f.atk)) end,
   STRINGID_PKMNISFROZEN = function(c, f)
-    return rom(c, "_IsFrozenText", "%s\nis frozen solid!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_IsFrozenText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNISPARALYZED = function(c, f)
-    return rom(c, "_FullyParalyzedText", "%s's\nfully paralyzed!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_FullyParalyzedText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNHEALEDCONFUSION = function(c, f)
-    return rom(c, "_ConfusedNoMoreText", "%s's\nconfused no more!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_ConfusedNoMoreText", Gen1Screen.who(c, f.atk))
   end,
-  STRINGID_ITHURTCONFUSION = function(c) return rom(c, "_HurtItselfText", "It hurt itself in\nits confusion!") end,
-  STRINGID_PKMNFLINCHED = function(c, f) return rom(c, "_FlinchedText", "%s\nflinched!", Gen1Screen.who(c, f.atk)) end,
+  STRINGID_ITHURTCONFUSION = function(c) return rom(c, "_HurtItselfText") end,
+  STRINGID_PKMNFLINCHED = function(c, f) return rom(c, "_FlinchedText", Gen1Screen.who(c, f.atk)) end,
   STRINGID_PKMNMUSTRECHARGE = function(c, f)
-    return rom(c, "_MustRechargeText", "%s\nmust recharge!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_MustRechargeText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNFATIGUECONFUSION = function(c, f)
-    return rom(c, "_BecameConfusedText", "%s\nbecame confused!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_BecameConfusedText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNUNLEASHEDENERGY = function(c, f)
-    return rom(c, "_UnleashedEnergyText", "%s\nunleashed energy!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_UnleashedEnergyText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNSTORINGENERGY = function(c, f)
     local name = Gen1Screen.who(c, f.atk)
     return name and Strings("%s\nis storing energy!", name) or nil
   end,
   STRINGID_PKMNRAGEBUILDING = function(c, f)
-    return rom(c, "_BuildingRageText", "%s's\nRAGE is building!", Gen1Screen.who(c, first(f, "def", "atk")))
+    return rom(c, "_BuildingRageText", Gen1Screen.who(c, first(f, "def", "atk")))
   end,
   STRINGID_PKMNHITWITHRECOIL = function(c, f)
-    return rom(c, "_HitWithRecoilText", "%s's\nhit with recoil!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_HitWithRecoilText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNCRASHED = function(c, f)
-    return rom(c, "_KeptGoingAndCrashedText", "%s\nkept going and\ncrashed!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_KeptGoingAndCrashedText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNENERGYDRAINED = function(c, f)
-    return rom(c, "_SuckedHealthText", "Sucked health from\n%s!", Gen1Screen.who(c, f.def))
+    return rom(c, "_SuckedHealthText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_PKMNDREAMEATEN = function(c, f)
-    return rom(c, "_DreamWasEatenText", "%s's\ndream was eaten!", Gen1Screen.who(c, f.def))
+    return rom(c, "_DreamWasEatenText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_PKMNREGAINEDHEALTH = function(c, f)
-    return rom(c, "_RegainedHealthText", "%s\nregained health!", Gen1Screen.who(c, first(f, "def", "atk")))
+    return rom(c, "_RegainedHealthText", Gen1Screen.who(c, first(f, "def", "atk")))
   end,
   STRINGID_PKMNWENTTOSLEEP = function(c, f)
-    return rom(c, "_StartedSleepingEffect", "%s\nstarted sleeping!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_StartedSleepingEffect", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNSLEPTHEALTHY = function(c, f)
-    return rom(c, "_FellAsleepBecameHealthyText", "%s\nfell asleep and\nbecame healthy!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_FellAsleepBecameHealthyText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNFELLASLEEP = function(c, f)
-    return rom(c, "_FellAsleepText", "%s\nfell asleep!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_FellAsleepText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNALREADYASLEEP = function(c, f)
-    return rom(c, "_AlreadyAsleepText", "%s's\nalready asleep!", Gen1Screen.who(c, f.def))
+    return rom(c, "_AlreadyAsleepText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_PKMNWASPOISONED = function(c, f)
-    return rom(c, "_PoisonedText", "%s\nwas poisoned!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_PoisonedText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNBADLYPOISONED = function(c, f)
-    return rom(c, "_BadlyPoisonedText", "%s's\nbadly poisoned!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_BadlyPoisonedText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNWASBURNED = function(c, f)
-    return rom(c, "_BurnedText", "%s\nwas burned!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_BurnedText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNWASFROZEN = function(c, f)
-    return rom(c, "_FrozenText", "%s\nwas frozen solid!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_FrozenText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNWASPARALYZED = function(c, f)
-    return rom(c, "_ParalyzedMayNotAttackText", "%s's\nparalyzed! It may\nnot attack!",
+    return rom(c, "_ParalyzedMayNotAttackText",
       Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNWASCONFUSED = function(c, f)
-    return rom(c, "_BecameConfusedText", "%s\nbecame confused!", Gen1Screen.who(c, first(f, "eff", "def")))
+    return rom(c, "_BecameConfusedText", Gen1Screen.who(c, first(f, "eff", "def")))
   end,
   STRINGID_PKMNWASDEFROSTED = function(c, f)
-    return rom(c, "_FireDefrostedText", "Fire defrosted\n%s!", Gen1Screen.who(c, first(f, "def", "atk", "eff")))
+    return rom(c, "_FireDefrostedText", Gen1Screen.who(c, first(f, "def", "atk", "eff")))
   end,
   STRINGID_ATTACKERSSTATROSE = function(c, f) return statText(c, f.atk, f) end,
   STRINGID_ATTACKERSSTATFELL = function(c, f) return statText(c, f.atk, f) end,
   STRINGID_DEFENDERSSTATROSE = function(c, f) return statText(c, f.def, f) end,
   STRINGID_DEFENDERSSTATFELL = function(c, f) return statText(c, f.def, f) end,
   STRINGID_STATCHANGESGONE = function(c)
-    return rom(c, "_StatusChangesEliminatedText", "All STATUS changes\nare eliminated!")
+    return rom(c, "_StatusChangesEliminatedText")
   end,
   STRINGID_PKMNSHROUDEDINMIST = function(c, f)
-    return rom(c, "_ShroudedInMistText", "%s's\nshrouded in mist!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_ShroudedInMistText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNGETTINGPUMPED = function(c, f)
-    return rom(c, "_GettingPumpedText", "%s's\ngetting pumped!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_GettingPumpedText", Gen1Screen.who(c, f.atk))
   end,
-  STRINGID_PKMNMADESUBSTITUTE = function(c) return rom(c, "_SubstituteText", "It created a\nSUBSTITUTE!") end,
+  STRINGID_PKMNMADESUBSTITUTE = function(c) return rom(c, "_SubstituteText") end,
   STRINGID_PKMNHASSUBSTITUTE = function(c, f)
-    return rom(c, "_HasSubstituteText", "%s\nhas a SUBSTITUTE!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_HasSubstituteText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_TOOWEAKFORSUBSTITUTE = function(c)
-    return rom(c, "_TooWeakSubstituteText", "Too weak to make\na SUBSTITUTE!")
+    return rom(c, "_TooWeakSubstituteText")
   end,
   STRINGID_SUBSTITUTEDAMAGED = function(c, f)
-    return rom(c, "_SubstituteTookDamageText", "The SUBSTITUTE\ntook damage for\n%s!", Gen1Screen.who(c, f.def))
+    return rom(c, "_SubstituteTookDamageText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_PKMNSUBSTITUTEFADED = function(c, f)
-    return rom(c, "_SubstituteBrokeText", "%s's\nSUBSTITUTE broke!", Gen1Screen.who(c, f.def))
+    return rom(c, "_SubstituteBrokeText", Gen1Screen.who(c, f.def))
   end,
   STRINGID_PKMNTRANSFORMEDINTO = function(c, f)
-    return rom(c, "_TransformedText", "%s\ntransformed into\n%s!", Gen1Screen.who(c, f.atk), speciesOf(c, f.buff1))
+    return rom(c, "_TransformedText", Gen1Screen.who(c, f.atk), speciesOf(c, f.buff1))
   end,
   STRINGID_PKMNMOVEWASDISABLED = function(c, f)
-    return rom(c, "_MoveWasDisabledText", "%s's\n%s was\ndisabled!", Gen1Screen.who(c, f.def), moveOf(c, f.buff1))
+    return rom(c, "_MoveWasDisabledText", Gen1Screen.who(c, f.def), moveOf(c, f.buff1))
   end,
   STRINGID_PKMNMOVEDISABLEDNOMORE = function(c, f)
-    return rom(c, "_DisabledNoMoreText", "%s's\ndisabled no more!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_DisabledNoMoreText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNMOVEISDISABLED = function(c, f)
-    return rom(c, "_MoveIsDisabledText", "%s's\n%s is\ndisabled!", Gen1Screen.who(c, f.atk),
+    return rom(c, "_MoveIsDisabledText", Gen1Screen.who(c, f.atk),
       moveOf(c, first(f, "currentMove", "buff1")))
   end,
   STRINGID_PKMNSEEDED = function(c, f)
-    return rom(c, "_WasSeededText", "%s\nwas seeded!", Gen1Screen.who(c, f.def))
+    return rom(c, "_WasSeededText", Gen1Screen.who(c, f.def))
   end,
-  STRINGID_COINSSCATTERED = function(c) return rom(c, "_CoinsScatteredText", "Coins scattered\neverywhere!") end,
+  STRINGID_COINSSCATTERED = function(c) return rom(c, "_CoinsScatteredText") end,
   STRINGID_PKMNRAISEDDEF = function(c, f)
-    return rom(c, "_ReflectGainedArmorText", "%s\ngained armor!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_ReflectGainedArmorText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNRAISEDSPDEF = function(c, f)
-    return rom(c, "_LightScreenProtectedText", "%s's\nprotected against\nspecial attacks!", Gen1Screen.who(c, f.atk))
+    return rom(c, "_LightScreenProtectedText", Gen1Screen.who(c, f.atk))
   end,
   STRINGID_PKMNLEARNEDMOVE2 = function(c, f)
-    return rom(c, "_MimicLearnedMoveText", "%s\nlearned\n%s!", Gen1Screen.who(c, f.atk), moveOf(c, f.buff1))
+    return rom(c, "_MimicLearnedMoveText", Gen1Screen.who(c, f.atk), moveOf(c, f.buff1))
   end,
   STRINGID_PKMNHASNOMOVESLEFT = function(c, f)
-    return rom(c, "_NoMovesLeftText", "%s has no\nmoves left!", rawName(c, f.atk))
+    return rom(c, "_NoMovesLeftText", rawName(c, f.atk))
   end,
-  STRINGID_NOPPLEFT = function(c) return rom(c, "_MoveNoPPText", "No PP left for\nthis move!") end,
-  STRINGID_BUTNOPPLEFT = function(c) return rom(c, "_MoveNoPPText", "No PP left for\nthis move!") end,
+  STRINGID_NOPPLEFT = function(c) return rom(c, "_MoveNoPPText") end,
+  STRINGID_BUTNOPPLEFT = function(c) return rom(c, "_MoveNoPPText") end,
   STRINGID_PKMNCHANGEDTYPE = function(c, f)
     local name = Gen1Screen.who(c, f.atk)
     local t = type(f.buff1) == "table" and tonumber(f.buff1.type) or nil
@@ -399,15 +411,15 @@ function Gen1Screen.textFor(id, fill, ctx)
     local name = Gen1Screen.who(ctx, fill.atk)
     local mv = moveOf(ctx, fill.currentMove)
     if not name or not mv then return nil end
-    return rom(ctx, "_ItemUseText001", "%s\nused %s!", name, mv), true
+    -- engine/battle/used_move_text.asm:5-6
+    return joined(rom(ctx, "_ActorNameText", name), rom(ctx, "_UsedMove1Text"),
+      rom(ctx, "_MoveNameText", mv)), true
   end
   local charge = CHARGE[id]
   if charge then
     local name = Gen1Screen.who(ctx, fill.atk)
     if not name then return nil end
-    local frag = ctx.data and ctx.data.text and ctx.data.text[charge[1]]
-    if frag then return name .. frag end
-    return Strings(charge[2], name)
+    return joined(rom(ctx, "_ChargeMoveEffectText", name), rom(ctx, charge))
   end
   local fn = TEXT[id]
   if not fn then return nil end
@@ -507,10 +519,10 @@ local function baseRowsFor(ev, ctx, rest, restAt)
 end
 
 TEXT.STRINGID_PKMNFASTASLEEP = function(c, f)
-  return rom(c, "_FastAsleepText", "%s\nis fast asleep!", Gen1Screen.who(c, f.atk))
+  return rom(c, "_FastAsleepText", Gen1Screen.who(c, f.atk))
 end
 TEXT.STRINGID_PKMNISCONFUSED = function(c, f)
-  return rom(c, "_IsConfusedText", "%s\nis confused!", Gen1Screen.who(c, f.atk))
+  return rom(c, "_IsConfusedText", Gen1Screen.who(c, f.atk))
 end
 
 function Gen1Screen.rowsFor(ev, ctx, rest, restAt)
@@ -543,10 +555,10 @@ function Gen1Screen.endRows(result, ctx)
   end
   if outcome == "win" then
     -- engine/battle/core.asm:956
-    say(RomText(ctx.data, "_TrainerDefeatedText", "%s defeated\n%s!", me, foe))
+    say(RomText(ctx.data, "_TrainerDefeatedText", nil, me, foe))
   elseif outcome == "lose" then
     -- engine/battle/core.asm:1157
-    say(RomText(ctx.data, "_LinkBattleLostText", "%s lost to\n%s!", me, foe))
+    say(RomText(ctx.data, "_LinkBattleLostText", nil, me, foe))
   else
     say(Strings("The match ended\nin a draw!"))
   end
@@ -670,7 +682,7 @@ function Host:draw()
   Font.drawBox(3, 10, 13, 3)
   love.graphics.setColor(0, 0, 0, 1)
   -- engine/link/print_waiting_text.asm:21
-  Font.draw(Strings("Waiting...!"), 32, 88)
+  Font.draw(RomText(self.game.data, "WaitingText", nil), 32, 88)
   love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -775,7 +787,7 @@ local function applyRows(s, rows)
         s:act(function()
           if not s.enemy or s.enemy.fainted then return end
           -- engine/battle/trainer_ai.asm:598
-          s:sayNext(s:romText("_AIBattleWithdrawText", "%s with-\ndrew %s!", s.opponentName, s.enemy.name))
+          s:sayNext(s:romLine("_AIBattleWithdrawText", s.opponentName, s.enemy.name))
           s:actNext(function() s.enemySendingOut = true end)
         end)
       end
@@ -806,7 +818,7 @@ local function applyRows(s, rows)
           s.enemySendingOut = true
           if not quiet then
             -- engine/battle/core.asm:1421
-            s:sayNextAuto(s:romText("_TrainerSentOutText", "%s sent\nout %s!", s.opponentName, s.enemy.name))
+            s:sayNextAuto(s:romLine("_TrainerSentOutText", s.opponentName, s.enemy.name))
           end
           s:actNext(function()
             s.enemySendingOut = false
@@ -844,7 +856,7 @@ local function openReplacement(s)
         for i, m in ipairs(s.playerParty) do if m == mon then idx = i end end
         if not idx or not legal.switches[idx] then
           -- engine/battle/core.asm:1484
-          if menu then menu:refuse(s:romText("_NoWillText", "There's no will\nto fight!")) end
+          if menu then menu:refuse(s:romLine("_NoWillText")) end
           return
         end
         s.g3uPick = { kind = "switch", index = idx }
@@ -968,7 +980,7 @@ local function install(s, host)
     if choice == "fight" then
       local legal = self.g3uLegal or Gen1Screen.menuFor(bs:legal())
       if not legal.any and legal.struggle then
-        self:say(self:romText("_NoMovesLeftText", "%s has no\nmoves left!", self.player.name))
+        self:say(self:romLine("_NoMovesLeftText", self.player.name))
         self.g3uPick = { kind = "move", slot = 0 }
         self.phase = "messages"
         self.afterQueue = "g3uMenu"
@@ -990,9 +1002,9 @@ local function install(s, host)
     local legal = self.g3uLegal or Gen1Screen.menuFor(bs:legal())
     if not legal.slots[index] then
       if self.player.disabledSlot == index or (move.pp or 0) > 0 then
-        self:say(self:romText("_MoveDisabledText", "The move is\ndisabled!"))
+        self:say(self:romLine("_MoveDisabledText"))
       else
-        self:say(self:romText("_MoveNoPPText", "No PP left for\nthis move!"))
+        self:say(self:romLine("_MoveNoPPText"))
       end
       self.phase = "messages"
       self.afterQueue = "g3uMenu"
@@ -1041,11 +1053,11 @@ local function install(s, host)
           local refusal
           -- engine/battle/core.asm:2403
           if mon == self.player.mon then
-            refusal = self:romText("_AlreadyOutText", "%s is\nalready out!", self.player.name)
+            refusal = self:romLine("_AlreadyOutText", self.player.name)
           elseif mon.hp <= 0 then
-            refusal = self:romText("_NoWillText", "There's no will\nto fight!")
+            refusal = self:romLine("_NoWillText")
           elseif not idx or not legal.switches[idx] then
-            refusal = self:romText("_CantEscapeText", "Can't escape!")
+            refusal = self:romLine("_CantEscapeText")
           end
           if refusal then
             if menu then menu:refuse(refusal) end
@@ -1090,7 +1102,7 @@ local function install(s, host)
       Font.drawBox(3, 10, 13, 3)
       love.graphics.setColor(0, 0, 0, 1)
       -- engine/link/print_waiting_text.asm:21
-      Font.draw(Strings("Waiting...!"), 32, 88)
+      Font.draw(RomText(self.data, "WaitingText", nil), 32, 88)
       love.graphics.setColor(1, 1, 1, 1)
     end
   end
@@ -1137,7 +1149,7 @@ function Host:startBattle(ready)
   s.enemyParty = ctx.mons[peer]
   s.opponentName = ctx.names.foe
   -- data/text/text_2.asm:1257
-  s.introText = s:romText("_TrainerWantsToFightText", "%s wants\nto fight!", ctx.names.foe)
+  s.introText = s:romLine("_TrainerWantsToFightText", ctx.names.foe)
   install(s, self)
   self.battle = s
   game.stack:push(s)

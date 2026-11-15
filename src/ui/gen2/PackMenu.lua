@@ -16,9 +16,10 @@ local CommonText = require("src.core.gen2.CommonText")
 local GameVersion = require("src.core.GameVersion")
 local Gen2Save = require("src.core.gen2.Save")
 local PackGfx = require("src.ui.gen2.PackGfx")
+local Runtime = require("src.mods.Runtime")
+local RomText = require("src.core.RomText")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local WaitPlaySFX = require("src.ui.gen2.WaitPlaySFX")
 local MenuRepeat = require("src.ui.MenuRepeat")
 
@@ -38,13 +39,12 @@ local LIST_X = 8
 local LIST_Y = 2
 local LIST_SPACING = 2
 
--- Display order and titles.  The cart shows the pocket name in a tab strip
--- across the top; these are the strings it uses.
+-- engine/items/pack.asm:4
 local POCKETS = {
-  { id = "ITEM", label = Strings.source("ITEMS") },
-  { id = "BALL", label = Strings.source("POKé BALLS") },
-  { id = "KEY_ITEM", label = Strings.source("KEY ITEMS") },
-  { id = "TM_HM", label = Strings.source("TM/HM") },
+  { id = "ITEM" },
+  { id = "BALL" },
+  { id = "KEY_ITEM" },
+  { id = "TM_HM" },
 }
 
 -- Five item rows fit under the tab strip, two lines each.
@@ -70,23 +70,16 @@ local VISIBLE_ROWS = 5
 --
 -- Without this menu a TOSS is unreachable and the PACK is a one-verb screen,
 -- which is what "the pack only offers USE" is.
-local SUBMENU_LABEL = {
-  use = Strings.source("USE"), give = Strings.source("GIVE"),
-  toss = Strings.source("TOSS"), sel = Strings.source("SEL"),
-  quit = Strings.source("QUIT"),
-}
+-- engine/items/pack.asm:311
+local SUBMENU_ROW = { use = 1, give = 2, toss = 3, sel = 4, quit = 5 }
 
--- _AskThrowAwayText / _AskQuantityThrowAwayText / _ThrewAwayText
--- (data/text/common_2.asm), the three lines TossMenu prints in order.
-local TOSS_HOW_MANY = Strings.source("Throw away how\nmany?")
-
--- _AskItemMoveText (data/text/common_2.asm:322), printed while wSwitchItem
--- holds a row and the cursor is looking for its new home.
-local ASK_ITEM_MOVE = Strings.source("Where should this\nbe moved to?")
-
--- _YouDontHaveAMonText and .AnEggCantHoldAnItemText, GiveItem's two refusals.
-local NO_POKEMON = Strings.source("You don't have a\n#MON!")
-local EGG_CANT_HOLD = Strings.source("An EGG can't hold\nan item.")
+local TOSS_HOW_MANY = "_AskThrowAwayText"
+local TOSS_ASK_QUANTITY = "_AskQuantityThrowAwayText"
+local TOSS_DONE = "_ThrewAwayText"
+local ASK_ITEM_MOVE = "_AskItemMoveText"
+local NO_POKEMON = "_YouDontHaveAMonText"
+-- engine/items/pack.asm:620
+local EGG_CANT_HOLD = "_AnEggCantHoldAnItemText"
 
 -- _CGB_PackPals' .KrisPackPals arm, and the BATTLETYPE_TUTORIAL test above it
 -- that forces the DUDE's (../pokecrystal/engine/gfx/cgb_layouts.asm:770-786).
@@ -157,20 +150,24 @@ local function messagePages(lines)
   return pages
 end
 
--- data/text/common_2.asm:627
-local OAK_THIS_ISNT_THE_TIME = Strings.source(
-  "OAK: {PLAYER}!\nThis isn't the\vtime to use that!")
-
--- RepelUsedEarlierIsStillInEffectText (data/text/common_3.asm): static, and
--- names REPEL no matter which of the three repel items is the one actually
--- still ticking down -- the cart never reads the active item back out to
--- print it.
--- ../pokecrystal/data/text/common_3.asm:1270 -- `cont` again, so two pages.
-local REPEL_STILL_ACTIVE = Strings.source(
-  "The REPEL used\nearlier is still\vin effect.")
+local OAK_THIS_ISNT_THE_TIME = "_OakThisIsntTheTimeText"
+local REPEL_STILL_ACTIVE = "_RepelUsedEarlierIsStillInEffectText"
 
 function PackMenu:wantsFillScale() return true end
 function PackMenu:drawsWidescreen() return true end
+
+function PackMenu:romText(label, ...)
+  local data = self.game and self.game.data
+  return CommonText.plain(RomText(data, label, nil, ...))
+end
+
+function PackMenu:submenuLabel(id)
+  local data = self.game and self.game.data
+  local items = data and data.gen2EventTables and data.gen2EventTables.packSubmenu
+  local label = items and items[SUBMENU_ROW[id]]
+  if not label then error("events.lua has no packSubmenu row for " .. tostring(id), 2) end
+  return label
+end
 
 -- opts: save, items (items.lua), onChoose(itemId, count), onClose(),
 -- pocket (starting pocket id), world (the overworld a field item acts on;
@@ -456,7 +453,7 @@ function PackMenu:useSelected()
   if self:inBattle() then
     local def = self.items and self.items[row.id]
     if def and def.battleMenu == "ITEMMENU_NOUSE" then
-      self:showMessage(Strings(OAK_THIS_ISNT_THE_TIME))
+      self:showMessage(self:romText(OAK_THIS_ISNT_THE_TIME))
       return
     end
     if self.onChoose then
@@ -466,34 +463,47 @@ function PackMenu:useSelected()
     return
   end
   local world = self.world
+  if world and world.useFieldItem and Runtime.wantsHook("item.use") then
+    return Runtime.call("item.use", function(game, battle, id, target, pack)
+      return PackMenu.useFieldRow(game, battle, id, target, pack or self)
+    end, self.game, nil, row.id, nil, self)
+  end
+  return PackMenu.useFieldRow(self.game, nil, row.id, nil, self)
+end
+
+function PackMenu:rowFor(id)
+  local current = self.rows[self.index]
+  if current and current.id == id then return current end
+  for _, row in ipairs(self.rows) do
+    if row.id == id then return row end
+  end
+  return { id = id, count = 0, name = PackMenu.label(id, self.items and self.items[id]) }
+end
+
+-- ../pokecrystal/engine/items/pack.asm:425-470
+function PackMenu.useFieldRow(_, _, id, _, self)
+  local row = self:rowFor(id)
+  local world = self.world
   local result, extra = nil, nil
   if world and world.useFieldItem then result, extra = world:useFieldItem(row.id) end
   if result then
     if result == "nowhere" then
-      self:showMessage(Strings(OAK_THIS_ISNT_THE_TIME))
+      self:showMessage(self:romText(OAK_THIS_ISNT_THE_TIME))
     elseif result == "coin_case" then
-      -- _CoinCaseCountText (data/text/common_3.asm:336): "Coins:" then the
-      -- count, text_decimal 4 digits with PRINTNUM_LEFTALIGN_F so no padding.
-      self:showMessage(Strings(Strings.source("Coins:\n%d"), extra or 0))
+      self:showMessage(self:romText("_CoinCaseCountText", extra or 0))
     elseif result == "blue_card" then
-      -- _BlueCardBalanceText (../pokecrystal/data/text/common_3.asm:1297).
-      self:showMessage(Strings(Strings.source("You now have\n%d points."),
-        extra or 0))
+      self:showMessage(self:romText("_BlueCardBalanceText", extra or 0))
     elseif result == "repel_used" then
-      -- ItemUsedText (data/text/common_3.asm): "<PLAYER> used the\n<ITEM>."
-      -- World already wrote the counter and took the item out of the bag, so
-      -- the row list is rebuilt under the message the way a TOSS would.
-      self:showMessage(Strings(Strings.source("{PLAYER} used the\n%s."), row.name))
+      self:showMessage(self:romText("_ItemUsedText", row.name))
       self:rebuild()
     elseif result == "repel_active" then
-      self:showMessage(Strings(REPEL_STILL_ACTIVE))
+      self:showMessage(self:romText(REPEL_STILL_ACTIVE))
     elseif result == "trophy_sent" then
       -- ../pokecrystal/data/text/common_3.asm:1338
       if world.playSfxNamed then
         world:playSfxNamed("Sfx_DexFanfare5079", SFX_DEX_FANFARE_50_79)
       end
-      self:showMessage(Strings(Strings.source(
-        "There was a trophy\ninside!\f{PLAYER} sent the\ntrophy home.")))
+      self:showMessage(self:romText("_SentTrophyHomeText", self:playerName()))
       self:rebuild()
     else
       self:exitToField()
@@ -518,7 +528,7 @@ function PackMenu:useSelected()
       return
     end
     if def and def.fieldMenu == "ITEMMENU_NOUSE" then
-      self:showMessage(Strings(OAK_THIS_ISNT_THE_TIME))
+      self:showMessage(self:romText(OAK_THIS_ISNT_THE_TIME))
       return
     end
   end
@@ -658,7 +668,7 @@ end
 -- -- the item is untouched and the PACK is exactly where it was.
 function PackMenu:tossItem(row)
   if not row then return end
-  self:showMessage(Strings(TOSS_HOW_MANY))
+  self:showMessage(self:romText(TOSS_HOW_MANY))
   self.qtyState = {
     row = row,
     qty = 1,
@@ -672,14 +682,13 @@ function PackMenu:confirmToss()
   self.qtyState = nil
   local row, qty = state.row, state.qty
   self.confirm = {
-    prompt = messageTokens(Strings(Strings.source(
-      "Throw away %d\n%s(S)?"), qty, row.name)),
+    prompt = messageTokens(self:romText(TOSS_ASK_QUANTITY, qty, row.name)),
     -- YesNoBox opens on YES; B and NO are the same `jr c, .finish`.
     choice = 1,
     onYes = function()
       Bag.remove(self.save, row.id, qty)
       self:rebuild()
-      self:showMessage(Strings(Strings.source("Threw away\n%s(S)."), row.name))
+      self:showMessage(self:romText(TOSS_DONE, row.name))
     end,
   }
 end
@@ -696,7 +705,7 @@ function PackMenu:giveItem(row)
   local game = self.game
   local party = (self.save and self.save.party) or {}
   if #party == 0 then
-    self:showMessage(Strings(NO_POKEMON))
+    self:showMessage(self:romText(NO_POKEMON))
     return
   end
   if not (game and game.stack) then return end
@@ -737,7 +746,7 @@ function PackMenu:giveToSlot(slot, row)
   if mon.isEgg then
     -- `cp EGG / jr nz, .give`: the refusal prints over the party list, which
     -- stays up (`jr .loop`) for another pick.
-    held:say(CommonText.pages(Strings(EGG_CANT_HOLD)),
+    held:say(CommonText.pages(self:romText(EGG_CANT_HOLD)),
       function() game.stack:pop() end)
     return
   end
@@ -749,7 +758,7 @@ function PackMenu:openTeachParty(row)
   local game = self.game
   local party = (self.save and self.save.party) or {}
   if #party == 0 then
-    self:showMessage(Strings(NO_POKEMON))
+    self:showMessage(self:romText(NO_POKEMON))
     return
   end
   if not (game and game.stack) then return end
@@ -783,15 +792,16 @@ function PackMenu:openTeachParty(row)
           world:playSfxNamed("Sfx_Wrong", SFX_WRONG)
         end
         if game.say then
-          game:say(Strings(Strings.source("%s can't learn %s!"),
+          game:say(self:romText("_TMHMNotCompatibleText", moveName,
             require("src.battle.gen2.Mon").displayName(mon), moveName))
         end
         return
       end
       for _, move in ipairs(mon.moves or {}) do
         if move.id == moveId then
+          -- engine/pokemon/knows_move.asm:1
           if game.say then
-            game:say(Strings(Strings.source("%s already knows %s!"),
+            game:say(self:romText("_KnowsMoveText",
               require("src.battle.gen2.Mon").displayName(mon), moveName))
           end
           return
@@ -910,7 +920,7 @@ function PackMenu:armSwitch()
   if self:isCancel() then return end
   if not self.rows[self.index] then return end
   self.switching = self.index
-  self:showMessage(Strings(ASK_ITEM_MOVE))
+  self:showMessage(self:romText(ASK_ITEM_MOVE))
 end
 
 -- `.switching_item` (engine/items/pack.asm:1297): A or SELECT places, B backs
@@ -1025,11 +1035,9 @@ function PackMenu:registerSelected()
   if ok then
     -- engine/items/pack.asm:551
     self:playSfx("Sfx_FullHeal")
-    -- RegisteredItemText: "Registered the\n<item>."
-    self:showMessage(Strings(Strings.source("Registered the\n%s."), row.name))
+    self:showMessage(self:romText("_RegisteredItemText", row.name))
   else
-    -- CantRegisterText: "You can't register\nthat item."
-    self:showMessage(Strings(Strings.source("You can't register\nthat item.")))
+    self:showMessage(self:romText("_CantRegisterText"))
   end
 end
 
@@ -1110,7 +1118,9 @@ function PackMenu:drawList(listX, listY)
       end
     elseif i == self:total() then
       if i == self.index then self:cursorAt(listX - 1, ty, picked) end
-      Chrome.printThrough(Strings("CANCEL"), listX, ty, Chrome.DEFAULT_BOX_PALETTE)
+      Chrome.printThrough(CommonText.get(self.game and self.game.data
+        and self.game.data.gen2Text, "ScrollingMenu_UpdateDisplay.CancelString"),
+        listX, ty, Chrome.DEFAULT_BOX_PALETTE)
     end
   end
 end
@@ -1162,7 +1172,7 @@ function PackMenu:drawSubmenu()
   for i, id in ipairs(menu.rows) do
     local ty = top + 1 + (i - 1) * 2
     if i == menu.index then Chrome.cursorThrough(x + 1, ty, Chrome.DEFAULT_BOX_PALETTE) end
-    Chrome.printThrough(Strings(SUBMENU_LABEL[id] or id), x + 2, ty,
+    Chrome.printThrough(self:submenuLabel(id), x + 2, ty,
       Chrome.DEFAULT_BOX_PALETTE)
   end
 end
@@ -1177,8 +1187,8 @@ end
 -- YesNoBox's own coords, the same box every other Gen 2 screen here draws.
 function PackMenu:drawYesNo()
   Chrome.box(14, 7, 6, 5)
-  Chrome.printThrough(Strings("YES"), 16, 8, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.printThrough(Strings("NO"), 16, 10, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(self:romText("YesNoMenuHeader.MenuData#1"), 16, 8, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(self:romText("YesNoMenuHeader.MenuData#2"), 16, 10, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.cursorThrough(15, self.confirm.choice == 1 and 8 or 10, Chrome.DEFAULT_BOX_PALETTE)
 end
 
@@ -1189,29 +1199,14 @@ function PackMenu:drawOverlays()
 end
 
 function PackMenu:drawPanel()
-  if self.gfx:available() then
-    -- Pack_InitGFX's screen: the header strip, the patterned left column, the
-    -- bag picture for this pocket and the pocket plaque, then Textbox at
-    -- (0,12) for the item description.
-    self.gfx:draw(self:pocket().id)
-    Chrome.box(0, PackGfx.DESCRIPTION_Y, 20, 6)
-    self:drawList(LIST_X, LIST_Y)
-    self:drawDescription(PackGfx.DESCRIPTION_Y + 2)
-    self:drawOverlays()
-    love.graphics.setColor(1, 1, 1, 1)
-    return
-  end
-
-  -- No pack tiles in the cache (an import from before the pack stage): plain
-  -- boxes, the layout this screen shipped with.
-  Chrome.clear()
-  Chrome.box(0, 0, 20, 3)
-  Chrome.printThrough(Strings(self:pocket().label), 2, 1,
-    Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.box(0, 3, 20, 12)
-  self:drawList(5, 4)
-  Chrome.box(0, 12, 20, 6)
-  self:drawDescription(14)
+  if not self.gfx:available() then error("menu_gfx.lua has no PACK tiles", 2) end
+  -- Pack_InitGFX's screen: the header strip, the patterned left column, the
+  -- bag picture for this pocket and the pocket plaque, then Textbox at
+  -- (0,12) for the item description.
+  self.gfx:draw(self:pocket().id)
+  Chrome.box(0, PackGfx.DESCRIPTION_Y, 20, 6)
+  self:drawList(LIST_X, LIST_Y)
+  self:drawDescription(PackGfx.DESCRIPTION_Y + 2)
   self:drawOverlays()
   love.graphics.setColor(1, 1, 1, 1)
 end

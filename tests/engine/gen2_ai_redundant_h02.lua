@@ -13,7 +13,8 @@ local function context(move,mine,theirs,love,confused)
   return {moves={{id=move,pp=15},{id='TACKLE',pp=35}},
     moveDef=function(id) return id=='TACKLE' and {effect='EFFECT_NORMAL_HIT',power=35,type='NORMAL'} or {effect='EFFECT_'..id,power=0,type='NORMAL'} end,
     attacker={gender=mine,level=20,stats={attack=30},types={'NORMAL'}},
-    defender={gender=theirs,attract=love,confused=confused,hp=50,stats={defense=30},types={'NORMAL'}},flags=Ai.FLAGS.BASIC,random=function() return 0 end}
+    defender={gender=theirs,attract=love,confused=confused,hp=50,stats={defense=30},types={'NORMAL'}},flags=Ai.FLAGS.BASIC,random=function() return 0 end,
+    typeChart={types={NORMAL={category='physical'}},matchups={}}}
 end
 local cases={
   {'same','ATTRACT','male','male',false,false,true},
@@ -73,7 +74,7 @@ for _,version in ipairs({'gold','silver','crystal'}) do
       eq(captured.defender.attract,love or nil,version..' '..name..' love bridge')
       eq(captured.defender.confused,confused,version..' '..name..' confused bridge')
       captured.flags=Ai.FLAGS.BASIC
-      _,scores=Ai.choose(captured);eq(scores[1],bad and 30 or 20,version..' '..name..' actual BASIC')
+      local _s,scores=Ai.choose(captured);eq(scores[1],bad and 30 or 20,version..' '..name..' actual BASIC')
       captured.flags=Ai.FLAGS.SMART
       local _,smart=Ai.choose(captured)
       captured.flags=Ai.FLAGS.SMART+Ai.FLAGS.BASIC

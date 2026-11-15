@@ -22,11 +22,15 @@ return function(game)
     tmp = os.tmpname()
     path = tmp .. "-map-s8.lua"
     local file = assert(io.open(path, "wb"))
-    file:write(Serializer.encode(Gen.newGame(version))); file:close()
+    file:write(Serializer.encode(Gen.newGame(version, game.data))); file:close()
     App.load(path, { version = version, embedded = true })
     local S = App.getState()
     assert(S.save and not S.loadError and not S.missingCache, S.status)
     local generation = Gen.ofState(S)
+    if generation == 2 then
+      pass(type(S.save.player.name) == "string" and S.save.player.name ~= "",
+        "the Gen 2 stub carries the cart's default name (" .. tostring(S.save.player.name) .. ")")
+    end
     local maps = Gen.maps(S.data)
     local mapId
     for _, id in ipairs({ "PALLET_TOWN", "NEW_BARK_TOWN", "FR_PALLET_TOWN", "LITTLEROOT_TOWN" }) do

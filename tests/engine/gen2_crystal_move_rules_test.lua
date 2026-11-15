@@ -37,7 +37,8 @@ moves.MIRROR_COAT.type = "PSYCHIC_TYPE"
 moves.PURSUIT.type = "DARK"
 moves.RAGE.power, moves.DOUBLE_KICK.power = 20, 30
 moves.JUMP_KICK.power, moves.JUMP_KICK.type = 70, "FIGHTING"
-local text = {}
+local text = require("tests.fixture_data.gen2_rom_text_s7_a").text(
+  require("tests.fixture_data.gen2_rom_text_s7_b").text(nil, "crystal"), "crystal")
 for _, label in ipairs({ "EliminatedStatsText", "BellChimedText", "SharedPainText",
     "DestinyBondEffectText", "MimicLearnedMoveText", "TransformedTypeText",
     "ShedLeechSeedText", "BlewSpikesText", "ReleasedByText", "RageBuildingText",
@@ -242,7 +243,9 @@ battle.moveRuleFutureSight = { player = { count = 2, damage = 30 } }
 local turnEvents = battle:takeLinkTurn({ kind = "move", move = "TACKLE" }, { kind = "move", move = "PROTECT" })
 local blocked = false
 for _, event in ipairs(turnEvents) do
-  if event.text and event.text:find("protected itself") then blocked = true end
+  if event.text == battle:romText("ProtectingItselfText", battle.player, battle.enemy) then
+    blocked = true
+  end
 end
 check(blocked, "Protect blocks the Tackle")
 check(b.hp < b.maxHp, "Future Sight lands on a target whose Protect ended with the foe's move")

@@ -110,14 +110,6 @@ local function Cos(i, a) return s16(arshift(a * SINE[band(i + 64, 0xFF) + 1], 8)
 
 local function WIN_RANGE(a, b) return u16(bor(lshift(a, 8), b)) end
 
-local function winH(v)
-  v = u16(v or 0)
-  local l, r = rshift(v, 8), band(v, 0xFF)
-  if r > DW or l > r then r = DW end
-  if l >= r then return nil end
-  return l, r
-end
-
 local function winHSpans(v, out)
   v = u16(v or 0)
   local l, r = rshift(v, 8), band(v, 0xFF)
@@ -137,11 +129,41 @@ local function winHSpans(v, out)
   return 1
 end
 
+local WS = {}
+
+local function winInside(v, out, n)
+  n = n or 0
+  local k = winHSpans(v, WS)
+  for i = 1, 2 * k do out[2 * n + i] = WS[i] end
+  return n + k
+end
+
+local function winOutside(v, out)
+  local k = winHSpans(v, WS)
+  local n, x = 0, 0
+  for i = 1, k do
+    local a, b = WS[2 * i - 1], WS[2 * i]
+    if a > x then n = n + 1; out[2 * n - 1], out[2 * n] = x, a end
+    x = b
+  end
+  if x < DW then n = n + 1; out[2 * n - 1], out[2 * n] = x, DW end
+  return n
+end
+
 local function winV(v)
   v = u16(v or 0)
   local t, b = rshift(v, 8), band(v, 0xFF)
   if b > DH or t > b then b = DH end
   return t, b
+end
+
+-- pokeemerald/src/scanline_effect.c:50
+local function rowSrc(fx, y)
+  local row0 = fx.def.row0
+  if not row0 then return fx, y end
+  if y ~= 0 then return fx, y - 1 end
+  if row0 == "prev" then return fx.prev or fx, DH - 1 end
+  return fx, 0
 end
 
 -- src/battle_transition.c:2952
@@ -293,6 +315,7 @@ DEF[ID.SWIRL] = {
     if not w then return 0, 0 end
     return Sin(w.idx + 2 * y, w.amp), 0
   end,
+  row0 = "first",
   redraw = true,
 }
 
@@ -327,6 +350,7 @@ DEF[ID.SHUFFLE] = {
     if not s then return 0, 0 end
     return 0, Sin(rshift(u16(s.sinVal + 4224 * y), 8), s.amp)
   end,
+  row0 = "first",
   redraw = true,
 }
 
@@ -447,16 +471,10 @@ DEF[ID.BIG_POKEBALL] = {
   end,
   winSpans = function(fx, y, out)
     if not fx.mask1 then return 0 end
-    local l, r = winH(fx.mask1[y])
-    if not l then
-      out[1], out[2] = 0, DW
-      return 1
-    end
-    local n = 0
-    if l > 0 then n = n + 1; out[2 * n - 1], out[2 * n] = 0, l end
-    if r < DW then n = n + 1; out[2 * n - 1], out[2 * n] = r, DW end
-    return n
+    return winOutside(fx.mask1[y], out)
   end,
+  row0 = "prev",
+  front = { "mask1", "hofs1" },
 }
 
 -- src/battle_transition.c:1099
@@ -655,6 +673,7 @@ DEF[ID.CLOCKWISE_WIPE] = {
   winSpans = function(fx, y, out)
     return winHSpans(fx.buf1[y], out)
   end,
+  row0 = "first",
 }
 
 -- src/battle_transition.c:1412
@@ -692,6 +711,7 @@ DEF[ID.RIPPLE] = {
     if not s then return 0, 0 end
     return 0, Sin(rshift(u16(s.sinVal + 384 * y), 8), s.amp)
   end,
+  row0 = "first",
   redraw = true,
 }
 
@@ -746,6 +766,8 @@ DEF[ID.WAVE] = {
     out[1], out[2] = R.X0, R.hmapR(x)
     return 1
   end,
+  row0 = "prev",
+  front = { "wv1" },
 }
 
 -- src/battle_transition.c:2293
@@ -795,6 +817,8 @@ DEF[ID.SLICE] = {
     if band(y, 1) == 1 then return e, 0 end
     return -e, 0
   end,
+  row0 = "prev",
+  front = { "sl1" },
   redraw = true,
 }
 
@@ -905,7 +929,8 @@ DEF[ID.WHITE_BARS_FADE] = {
     R.rowBands(function(y)
       local v
       if y >= 0 and y < DH then
-        v = fx.buf1[y] or 0
+        local f, sy = rowSrc(fx, y)
+        v = f.buf1[sy] or 0
       else
         v = fx.barLevel1[floor(y / WHITE_BAR_HEIGHT) % NUM_WHITE_BARS] or 0
       end
@@ -918,6 +943,8 @@ DEF[ID.WHITE_BARS_FADE] = {
       end
     end)
   end,
+  -- src/battle_transition.c:2521
+  row0 = "first",
 }
 
 -- src/battle_transition.c:2583
@@ -1035,16 +1062,9 @@ DEF[ID.ANGLED_WIPES] = {
     if fx.T.vblankDma then copyBuf(fx.buf1, fx.buf0, DH) end
   end,
   winSpans = function(fx, y, out)
-    local l, r = winH(fx.buf1[y])
-    if not l then
-      out[1], out[2] = 0, DW
-      return 1
-    end
-    local n = 0
-    if l > 0 then n = n + 1; out[2 * n - 1], out[2 * n] = 0, l end
-    if r < DW then n = n + 1; out[2 * n - 1], out[2 * n] = r, DW end
-    return n
+    return winOutside(fx.buf1[y], out)
   end,
+  row0 = "first",
 }
 
 -- src/battle_transition.c:1566
@@ -1185,20 +1205,16 @@ DEF[ID.SPIRAL] = {
     end
     fx.win0V1, fx.win1V1 = T.win0V, T.win1V
   end,
-  winSpans = function(fx, y, out)
+  winSpans = function(fx, y, out, screenY)
     local n = 0
     local t0, b0 = winV(fx.win0V1 or 0)
-    if y >= t0 and y < b0 then
-      local l, r = winH(fx.buf0[y * 2])
-      if l then n = n + 1; out[1], out[2] = l, r end
-    end
+    if screenY >= t0 and screenY < b0 then n = winInside(fx.buf0[y * 2], out, n) end
     local t1, b1 = winV(fx.win1V1 or 0)
-    if y >= t1 and y < b1 then
-      local l, r = winH(fx.buf0[y * 2 + 1])
-      if l then n = n + 1; out[2 * n - 1], out[2 * n] = l, r end
-    end
+    if screenY >= t1 and screenY < b1 then n = winInside(fx.buf0[y * 2 + 1], out, n) end
     return n
   end,
+  -- src/battle_transition.c:1819
+  row0 = "first",
 }
 
 local PIC_SLIDE_SPEEDS = { [0] = 12, [1] = -12 }
@@ -1395,6 +1411,8 @@ local MUGSHOT_DEF = {
     fx.hofsOpp1, fx.hofsPl1 = T.hofsOpp, T.hofsPl
     fx.darken1 = fx.darken
   end,
+  row0 = "prev",
+  front = { "buf1" },
 }
 
 for mid in pairs(MUGSHOT_BY_ID) do DEF[mid] = MUGSHOT_DEF end
@@ -1410,10 +1428,10 @@ BattleTransition.RSE_MODULES = {
 BattleTransition.H = {
   DW = DW, DH = DH, Pal = Pal, Audio = Audio,
   s16 = s16, u16 = u16, u8 = u8, Sin = Sin, Cos = Cos,
-  WIN_RANGE = WIN_RANGE, winH = winH, winHSpans = winHSpans, winV = winV,
+  WIN_RANGE = WIN_RANGE, winHSpans = winHSpans, winInside = winInside, winOutside = winOutside, winV = winV,
   initBlackWipe = initBlackWipe, updateBlackWipe = updateBlackWipe,
   setCircularMask = setCircularMask, fadeScreenBlack = fadeScreenBlack, copyBuf = copyBuf,
-  getChrome = getChrome, getTrainerPic = getTrainerPic,
+  getChrome = getChrome, getTrainerPic = getTrainerPic, rowSrc = rowSrc,
 }
 
 function BattleTransition.defs(family)
@@ -1432,6 +1450,8 @@ function BattleTransition.defs(family)
     for _, module in ipairs(BattleTransition.RSE_MODULES) do
       require(module).register(t, Ids.ID, BattleTransition.H)
     end
+  elseif Ids.GAME == "ruby" or Ids.GAME == "sapphire" then
+    require("src.core.game3.battle_transition_rse_a").registerWhiteBars(t, Ids.ID, BattleTransition.H, true)
   end
   DEFS[key] = t
   return t
@@ -1486,6 +1506,31 @@ local function newFx(tid, opts)
   return fx
 end
 
+local function keepPrev(fx)
+  local p = fx.prev
+  if not p then
+    p = setmetatable({}, { __index = fx })
+    fx.prev = p
+  end
+  for _, k in ipairs(fx.def.front) do
+    local v = fx[k]
+    if type(v) == "table" then
+      local c = rawget(p, k)
+      if type(c) == "table" then
+        for i in pairs(c) do c[i] = nil end
+      else
+        c = {}
+      end
+      for i, x in pairs(v) do c[i] = x end
+      p[k] = c
+    elseif v == nil then
+      p[k] = false
+    else
+      p[k] = v
+    end
+  end
+end
+
 local function stepFx(fx)
   local def = fx.def
   local funcs = def.funcs
@@ -1502,6 +1547,7 @@ local function stepFx(fx)
     fx.sprites = alive
   end
   fx.pal:updateFade()
+  if def.row0 == "prev" then keepPrev(fx) end
   if def.vblank then def.vblank(fx) end
 end
 
@@ -1640,13 +1686,21 @@ function BattleTransition.blackSpans(y, X0, X1)
   local def = fx.def
   local R = makeView(X0 or 0, X1 or DW, 0, DH)
   local n = 0
+  local f, sy = rowSrc(fx, y)
   if def.rowSpans then
-    n = def.rowSpans(fx, y, R, SCRATCH)
+    n = def.rowSpans(f, sy, R, SCRATCH, y)
   elseif def.winSpans then
-    n = def.winSpans(fx, y, SCRATCH)
+    n = def.winSpans(f, sy, SCRATCH, y)
   end
   for i = 1, 2 * n do out[i] = SCRATCH[i] end
   return out
+end
+
+function BattleTransition.rowShift(y)
+  local fx = BattleTransition._fx
+  if not (fx and fx.def.shift) then return 0, 0 end
+  local f, sy = rowSrc(fx, y)
+  return fx.def.shift(f, sy, makeView(0, DW, 0, DH), y)
 end
 
 function BattleTransition.screenCoverage()
@@ -1687,7 +1741,8 @@ local function drawFieldRows(R, G, fx)
       G.draw(tex, q, R.X0, runStart)
     end
     for y = R.Y0, R.Y1 - 1 do
-      local dx, dy = def.shift(fx, y, R)
+      local f, sy = rowSrc(fx, y)
+      local dx, dy = def.shift(f, sy, R, y)
       if not (runStart and dx == rdx and dy == rdy) then
         flush(y)
         runStart, rdx, rdy = y, dx, dy
@@ -1764,7 +1819,8 @@ local function drawWindowBlack(R, G, fx)
   local screen = {}
   local tmp = {}
   for y = 0, DH - 1 do
-    local n = def.winSpans(fx, y, tmp)
+    local f, sy = rowSrc(fx, y)
+    local n = def.winSpans(f, sy, tmp, y)
     local s = {}
     for i = 1, 2 * n do s[i] = tmp[i] end
     screen[y] = s
@@ -1815,6 +1871,8 @@ local function drawWindowBlack(R, G, fx)
   edge(DH, function(y) return blackAt(DW - 1, y) end, function(a, b) wedge(DW, a, DW, b) end)
 end
 
+local BIG_HOFS = { const = 240 }
+
 local function drawBigPokeball(R, G, fx)
   if not fx.pattern then return end
   local Chrome = getChrome()
@@ -1827,10 +1885,11 @@ local function drawBigPokeball(R, G, fx)
     q = G.newQuad(0, 0, 1, 1, DW, DH)
     BattleTransition._bigQuad = q
   end
-  local h = fx.hofs1 or { const = 240 }
   local function rowHofs(y)
+    local f, sy = rowSrc(fx, y)
+    local h = f.hofs1 or BIG_HOFS
     if h.const then return h.const end
-    return Sin(h.idx + 132 * y, h.amp)
+    return Sin(h.idx + 132 * sy, h.amp)
   end
   local function pass()
     for y = 0, DH - 1 do
@@ -1910,6 +1969,8 @@ local function drawGrid(R, G, fx)
   G.draw(img, q, R.X0, R.Y0)
 end
 
+local MUG_SPANS = {}
+
 local function drawMugshot(R, G, fx)
   local Chrome = getChrome()
   local vsbar = fx.banner and Chrome and Chrome.vsbar and Chrome.vsbar(fx.mugKey, fx.female and "female" or "male")
@@ -1922,17 +1983,25 @@ local function drawMugshot(R, G, fx)
     G.setColor(1, 1, 1, 1)
     local y0, y1 = math.max(R.Y0, 0), math.min(R.Y1, DH)
     for y = y0, y1 - 1 do
-      local a, b
+      local k
       if fx.fadeMode then
-        a, b = R.X0, R.X1
+        k = 1
+        MUG_SPANS[1], MUG_SPANS[2] = R.X0, R.X1
       else
-        local l, r = winH(fx.buf1[y])
-        if l then a, b = R.hmapL(l), R.hmapR(r) end
+        local f, sy = rowSrc(fx, y)
+        k = winHSpans(f.buf1[sy], MUG_SPANS)
+        for i = 1, k do
+          MUG_SPANS[2 * i - 1], MUG_SPANS[2 * i] = R.hmapL(MUG_SPANS[2 * i - 1]), R.hmapR(MUG_SPANS[2 * i])
+        end
       end
-      if a and b > a then
-        local hofs = (y < DH / 2) and (fx.hofsOpp1 or 0) or (fx.hofsPl1 or 0)
-        q:setViewport(a + hofs, y, b - a, 1, 256, DH)
-        G.draw(vsbar, q, a, y)
+      -- src/battle_transition.c:2140
+      local hofs = (y > 0 and y <= DH / 2) and (fx.hofsOpp1 or 0) or (fx.hofsPl1 or 0)
+      for i = 1, k do
+        local a, b = MUG_SPANS[2 * i - 1], MUG_SPANS[2 * i]
+        if b > a then
+          q:setViewport(a + hofs, y, b - a, 1, 256, DH)
+          G.draw(vsbar, q, a, y)
+        end
       end
     end
   end
@@ -1970,7 +2039,8 @@ local function drawMugshotPost(R, G, fx)
     local yy = y
     if yy < 0 then yy = 0 end
     if yy > DH - 1 then yy = DH - 1 end
-    local v = band(fx.buf1[yy] or 0, 0x1F)
+    local f, sy = rowSrc(fx, yy)
+    local v = band(f.buf1[sy] or 0, 0x1F)
     if v > 16 then v = 16 end
     return v
   end, function(v, y0, y1)
@@ -1995,7 +2065,10 @@ local function render(R, G)
     if fx.mugKey then drawMugshot(R, G, fx) end
     if def.draw then def.draw(fx, R, G) end
     if def.rowSpans then
-      drawSpanRows(R, G, function(y, out) return def.rowSpans(fx, y, R, out) end)
+      drawSpanRows(R, G, function(y, out)
+        local f, sy = rowSrc(fx, y)
+        return def.rowSpans(f, sy, R, out, y)
+      end)
     elseif def.winSpans then
       drawWindowBlack(R, G, fx)
     end

@@ -7,13 +7,15 @@ love = require("tests.love_stub")
 
 local Vm = require("src.script.gen2.Vm")
 local Events = require("src.world.gen2.Events")
-local FlagNames = require("src.core.gen2.FlagNames")
+local FlagIds = require("src.core.gen2.FlagIds")
+local EventFlagOrder = require("tests.fixture_data.gen2_event_flag_order")
 local Ser = require("src.core.SaveSerializer")
 local Save = require("src.core.gen2.Save")
 
 -- pokecrystal constants/event_flags.asm:70
-local HEALED = FlagNames.events.EVENT_HEALED_MOOMOO
-local TALKED = FlagNames.events.EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO
+local EVENTS = FlagIds.events({ eventFlagOrder = EventFlagOrder.crystal })
+local HEALED = EVENTS.EVENT_HEALED_MOOMOO
+local TALKED = EVENTS.EVENT_TALKED_TO_FARMER_ABOUT_MOOMOO
 -- pokecrystal ram/wram.asm:3142 wMooMooBerries
 local BERRIES = 0xd962
 local BERRY_ITEM = 173

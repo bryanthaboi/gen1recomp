@@ -12,10 +12,9 @@
 -- src/ui/gen2/BattleState.lua, conversion first, the way the asm orders
 -- them.
 
-local BerryJuice = {}
+local EngineFlags = require("src.core.gen2.EngineFlags")
 
--- constants/engine_flags.asm index 21, same gate Pokerus.give reads.
-BerryJuice.ENGINE_REACHED_GOLDENROD = 21
+local BerryJuice = {}
 
 -- `cp 1 out_of 16` with out_of = `* $100 /`: a byte under 16 converts.
 BerryJuice.ROLL_LIMIT = 16
@@ -53,7 +52,7 @@ function BerryJuice.convertAfterBattle(save, party, opts)
   return BerryJuice.convert(party or save.party or {}, {
     random = opts.random,
     reachedGoldenrod =
-      flags[BerryJuice.ENGINE_REACHED_GOLDENROD] == true,
+      flags[EngineFlags.id("ENGINE_REACHED_GOLDENROD")] == true,
   })
 end
 

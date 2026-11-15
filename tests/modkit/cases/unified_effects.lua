@@ -347,6 +347,10 @@ local function gen2Dispatch(data, version)
   local Mon = require("src.battle.gen2.Mon")
   data.type_chart = data.type_chart or {}
   data.type_chart.battleRules = data.type_chart.battleRules or require("tests.gen2_battle_rules_fixture")()
+  data.text = data.text or {}
+  for label, text in pairs(require("tests.gen2_battle_text_fixture")()) do
+    if data.text[label] == nil then data.text[label] = text end
+  end
   for _, row in ipairs(CASES) do
     local id = "FX_" .. row[1]
     local user, target = Mon.new(data, "MEW", 30), Mon.new(data, "FIXMON_C", 30)

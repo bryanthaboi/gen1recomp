@@ -72,6 +72,8 @@ return function(game)
       result(okS == true, name .. " battle started " .. tostring(serr or ""))
       local frames, mainAt, trace = 0, nil, {}
       local aliasFrames, stripRows = 0, 0
+      local coveredFrames, marginBad, followFrames, followBad = 0, 0, 0, 0
+      local sliceRows, sliceBad = 0, 0
       local limit = HANGS[name] or 900
       while frames < limit do
         U.wait(1)
@@ -80,31 +82,68 @@ return function(game)
         local fx = BattleTransition._fx
         if phase == "main" and not mainAt then mainAt = frames end
         trace[#trace + 1] = string.format("%s%s", phase:sub(1, 1), fx and tostring(fx.state) or "-")
-        if name == "SHRED_SPLIT" and fx and fx.shred1 and fx.shred1[160] == (fx.t.cameraX - 240) % 0x10000 then
-          aliasFrames = aliasFrames + 1
-          local row0 = BattleTransition.blackSpans(0, 0, 240)
+        if name == "SHRED_SPLIT" and fx and fx.shred1 and fx.pal.slots[0].y < 16 then
+          local function same(a, b) return #a == #b and a[1] == b[1] and a[2] == b[2] end
+          local row1 = BattleTransition.blackSpans(1, 0, 240)
+          local alias = fx.shred1[160] == (fx.t.cameraX - 240) % 0x10000
+          if alias then aliasFrames = aliasFrames + 1 end
+          local lit = false
+          for y = 0, 159 do
+            if y ~= 1 then
+              local s = BattleTransition.blackSpans(y, 0, 240)
+              if not (#s == 2 and s[1] == 0 and s[2] == 240) then lit = true end
+            end
+          end
+          local top, bottom = BattleTransition.blackSpans(0, 0, 240), BattleTransition.blackSpans(159, 0, 240)
+          if lit then followFrames = followFrames + 1 else coveredFrames = coveredFrames + 1 end
           for d = 1, 16 do
             local up = BattleTransition.blackSpans(-d, 0, 240)
-            if #up == #row0 and up[1] == row0[1] and up[2] == row0[2] then stripRows = stripRows + 1 end
+            local down = BattleTransition.blackSpans(159 + d, 0, 240)
+            if alias and same(up, row1) then stripRows = stripRows + 1 end
+            if lit then
+              if not (same(up, top) and same(down, bottom)) then followBad = followBad + 1 end
+            elseif not (same(up, { 0, 240 }) and same(down, { 0, 240 })) then
+              marginBad = marginBad + 1
+            end
           end
         end
-        if every then
-          U.still(game, string.format("%s/%s/f%04d.png", DIR, name:lower(), frames))
-        elseif mainAt and (frames - mainAt) % 12 == 0 and frames - mainAt <= 144 then
-          U.still(game, string.format("%s/%s_%03d.png", DIR, name:lower(), frames - mainAt))
+        if name == "SLICE" and fx and (fx.sl1 or 0) > 0 and fx.sl1 < 240 and fx.pal.slots[0].y < 16 then
+          for y = 1, 159 do
+            local s = BattleTransition.blackSpans(y, 0, 240)
+            sliceRows = sliceRows + 1
+            local fromLeft = s[1] == 0 and s[2] < 240
+            if fromLeft ~= ((y - 1) % 2 == 0) then sliceBad = sliceBad + 1 end
+          end
         end
         if Battle.isActive() then break end
+        if every then
+          U.still(game, string.format("%s/%s/f%04d.png", DIR, name:lower(), frames))
+        elseif mainAt and (frames - mainAt) % 12 == 0 and frames - mainAt <= (HANGS[name] and 192 or 144) then
+          U.still(game, string.format("%s/%s_%03d.png", DIR, name:lower(), frames - mainAt))
+        end
       end
       local active = Battle.isActive()
       realPrint(string.format("[driver] %s id %d intro %s frames %d battle %s", name, tid, tostring(mainAt), frames,
         tostring(active)))
       realPrint("[driver] " .. name .. " trace " .. table.concat(trace, " "))
       result(#noPort == before, name .. " has a port (no SLICE fallback)")
+      if name == "SLICE" then
+        result(sliceRows > 0 and sliceBad == 0, string.format(
+          "SLICE screen rows 1, 3, 5... slide in from the left like buffer rows 0, 2, 4 (%d of %d wrong)", sliceBad,
+          sliceRows))
+      end
       if HANGS[name] then
         result(not active and BattleTransition._fx and BattleTransition._fx.state == 2,
           name .. " stays in ShredSplit_BrokenCheck like the cart")
         result(aliasFrames > 0 and stripRows == 0, string.format(
-          "%s row 0 alias strip stays on row 0 (%d margin rows copy it over %d frames)", name, stripRows, aliasFrames))
+          "%s row 0 alias strip stays on screen row 1 (%d margin rows copy it over %d frames)", name, stripRows,
+          aliasFrames))
+        result(followFrames > 0 and followBad == 0, string.format(
+          "%s margin rows follow the edge rows while the field shows (%d of %d wrong)", name, followBad,
+          followFrames * 16))
+        result(coveredFrames > 0 and marginBad == 0, string.format(
+          "%s margin rows black once the shred covers the screen (%d of %d wrong)", name, marginBad,
+          coveredFrames * 16))
         BattleTransition.abort()
         local Field = package.loaded["src.core.game3.field"]
         if Field and Field.unlock then Field.unlock() end

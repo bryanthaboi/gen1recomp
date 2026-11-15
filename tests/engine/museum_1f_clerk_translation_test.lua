@@ -1,10 +1,7 @@
 -- The museum 1F ticket clerk's take-your-time/not-enough-money/come-again
 -- lines used to be bare English literals, invisible to game.data.text no
 -- matter what a translation mod put there. tests/engine/museum_money_box_
--- bug1335.lua only ever runs with an empty game.data.text, so it can't
--- tell a properly-wired t._Key or "..." fallback apart from a literal that
--- never looked at t at all -- every assertion there passes either way.
--- This test populates game.data.text with translated values and checks
+-- bug1335.lua runs with stub labels.  This test populates game.data.text with translated values and checks
 -- they actually reach the pushed TextBox, for all three lines.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
@@ -56,13 +53,11 @@ pushed[1].opts.choice(false)
 T.eq(pushed[2].text, TRANSLATED._Museum1FScientist1ComeAgainText,
   "declining opens the translated come-again box")
 
--- unpopulated game.data.text still falls back to the English literal
 g = { data = { text = {} }, save = { money = 3000, flags = {} },
   stack = { push = function(_, box) pushed[#pushed + 1] = box end } }
 pushed = {}
 g.save.flags.EVENT_BOUGHT_MUSEUM_TICKET = true
 clerk(g, nil, nil, function() end)
-T.check(tostring(pushed[1].text):find("Take your time", 1, true) ~= nil,
-  "an empty catalog still falls back to the English take-your-time line")
+T.eq(pushed[1].text, nil, "an empty catalog has no hand-typed take-your-time line")
 
 T.finish("museum_1f_clerk_translation_test")

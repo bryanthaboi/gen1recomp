@@ -2,11 +2,9 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 love = require("tests.love_stub")
 local T = require("tests.harness").suite("Battle AI MOVE_NONE #2643")
 local version = os.getenv("AI2643_EDITION") or "emerald"
-local root = (version == "emerald" and os.getenv("POKEPORT_EMERALD_CACHE")) or os.getenv("H2643_CACHE") or os.getenv("POKEPORT_GBA_CACHE")
-if not root then print("SKIP #2643 set POKEPORT_EMERALD_CACHE or explicit edition cache"); T.finish(); return end
-local f = io.open(root .. "/pokemon/battle_moves.lua", "rb")
-if not f then print("SKIP #2643 requires exact Emerald battle/AI cache"); T.finish(); return end
-f:close()
+local Cache = require("tests.game3_cache")
+local root = Cache.root(version, "pokemon/battle_moves.lua")
+if not root then print("[skip] #2643 battle AI: " .. tostring(Cache.reason)); T.finish(); return end
 local candidate = os.getenv("AI2643_CANDIDATE")
 if candidate then package.preload["src.core.game3.battle.ai_cmds"] = assert(loadfile(candidate)) end
 require("src.core.GameVersion").set(version)
@@ -93,12 +91,12 @@ T.check(realDamage > 0, "real move damage remains evaluated")
 Damage.calc = damage
 Moves.get = get
 local cache = Dataset.cache(); local read = cache.read
-local rows, loaded = Moves._rom, Moves._romLoaded
-Moves._rom, Moves._romLoaded = nil, false
+local rows, loaded, chunk, chunkCache = Moves._rom, Moves._romLoaded, Moves._romChunk, Moves._romChunkCache
+Moves._rom, Moves._romLoaded, Moves._romChunk, Moves._romChunkCache = nil, false, nil, nil
 cache.read = function(self, path) if path:find("pokemon/battle_moves.lua", 1, true) then return nil end; return read(self, path) end
 T.raises(function() Cmds.move_power(0) end, "cache", "sentinel metadata refuses missing required ROM pack")
 T.raises(function() Cmds.move_power(0) end, "cache", "sentinel metadata still refuses after failed pack lookup")
-cache.read = read; Moves._rom, Moves._romLoaded = rows, loaded
+cache.read = read; Moves._rom, Moves._romLoaded, Moves._romChunk, Moves._romChunkCache = rows, loaded, chunk, chunkCache
 local battleRows = Pokemon._battleMoves
 local withoutNone = {}; for id, row in pairs(battleRows) do if id ~= 0 then withoutNone[id] = row end end
 Pokemon._battleMoves = withoutNone

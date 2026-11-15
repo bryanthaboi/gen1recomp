@@ -296,7 +296,7 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
     return id, metadata()
   end
 
-  local function flagId(name)
+  local function flagId(name, game)
     if type(name) == "string" then
       local key = name:match("^mod:(.+)$")
       if not key and name:sub(1, 4) == "mod." then
@@ -323,10 +323,10 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
     elseif generation == 2 then
       if integer(name, 0, 2047) then return name, "native" end
       if identifier(name) then
-        if version == "crystal" then
-          return nil, "symbolic event flags unavailable for Crystal; use native ids"
-        end
-        local id = req("src.core.gen2.FlagNames").events[name]
+        local constants = game and game.data and game.data.gen2Constants
+        local ok, ids = pcall(req("src.core.gen2.FlagIds").events, constants)
+        if not ok then return nil, "the cache has no event flag names" end
+        local id = ids[name]
         if integer(id, 0, 2047) then return id, "native" end
       end
     else
@@ -344,7 +344,7 @@ function UnifiedWorld.new(gameProvider, generation, version, modId, engineRequir
 
   local function flag(game, api, name, value, write)
     if write and type(value) ~= "boolean" then return nil, "flag value must be boolean" end
-    local id, kind = flagId(name)
+    local id, kind = flagId(name, game)
     if id == nil then return nil, kind end
     local save = saveOf(game)
     if not save then return nil, "no save" end

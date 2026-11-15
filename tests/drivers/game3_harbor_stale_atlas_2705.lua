@@ -52,9 +52,20 @@ return function(game)
   CacheFs.unmountVersion(other:gsub("/$", ""))
 
   fs.write(prefix .. rel, raw)
-  local okBad, errBad = pcall(Decode.pair, cache, ROOT, PAIR)
-  check(not okBad and tostring(errBad):find("is not deflated", 1, true) ~= nil,
-    "2705 raw_versioned_atlas_fails_loudly")
+  local okRaw, resRaw = pcall(Decode.pair, cache, ROOT, PAIR)
+  check(okRaw and type(resRaw) == "table", "2705 raw_versioned_atlas_reads_as_miss")
+  local healed = fs.read(prefix .. rel)
+  check(type(healed) == "string" and healed:byte(1) == 0x78 and #healed ~= #raw,
+    "2705 raw_versioned_atlas_rebaked_deflated")
+
+  local idxRel = prefix .. path .. "/mids.idx"
+  local savedIdx = fs.read(idxRel)
+  fs.write(idxRel, string.rep("\0", 64))
+  local okIdx, errIdx = pcall(Decode.pair, cache, ROOT, PAIR)
+  fs.write(idxRel, savedIdx)
+  check(not okIdx and tostring(errIdx):find(path .. "/mids.idx", 1, true) ~= nil
+    and tostring(errIdx):find("is not deflated", 1, true) ~= nil,
+    "2705 raw_versioned_mids_idx_fails_loudly")
 
   fs.remove(prefix .. rel)
   fs.remove(rel)

@@ -28,7 +28,8 @@ local check, eq = S.check, S.eq
 local MAP = "CELADON_MANSION_ROOF_HOUSE"
 
 for _, key in ipairs({ "_LinkCableHelpText1", "_LinkCableHelpText2",
-    "_LinkCableInfoText1", "_LinkCableInfoText2", "_LinkCableInfoText3" }) do
+    "_LinkCableInfoText1", "_LinkCableInfoText2", "_LinkCableInfoText3",
+    "HowToLinkText" }) do
   check(type(Data.text[key]) == "string" and Data.text[key] ~= "",
         key .. " is extracted")
 end

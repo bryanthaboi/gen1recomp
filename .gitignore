@@ -75,6 +75,13 @@ mobile/dist/
 !/tests/fixtures/save/
 !/tests/fixtures/gen2_buena.lua
 !/tests/fixtures/gen2_flypoints.lua
+!/tests/fixtures/game3_gift_cards.lua
+!/tests/fixtures/gen2_common_text.lua
+!/tests/fixtures/gen2_naming.lua
+!/tests/fixtures/gen2_oak_speech.lua
+!/tests/fixtures/gen2_phone_events.lua
+!/tests/fixtures/gen2_roamers.lua
+!/tests/fixtures/gen2_rom_text.lua
 
 # per-machine iOS bundle-id pin (see scripts/build_ios.sh)
 mobile/ios/bundle_id.local

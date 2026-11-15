@@ -291,9 +291,12 @@ eq(Happiness.levelUp(home, 9), 85, "and the +5 away from home")
 
 -- ---- the save layer -------------------------------------------------------
 
-eq(Save.defaultPlayerName("gold"), "GOLD", "PlayerNameArray's first row")
-eq(Save.defaultPlayerName("silver"), "SILVER", "on Silver")
-eq(Save.defaultPlayerName("crystal"), "CHRIS", "and MalePlayerNameArray's")
+local NameText = require("tests.fixture_data.gen2_rom_text_s7_c")
+eq(Save.defaultPlayerName({ text = NameText.text() }), "GOLD", "PlayerNameArray's first row")
+eq(Save.defaultPlayerName({ text = NameText.text({ ["PlayerNameArray#1"] = "SILVER" }) }),
+  "SILVER", "on Silver")
+eq(Save.defaultPlayerName({ text = NameText.text(nil, "crystal") }), "CHRIS",
+  "and MalePlayerNameArray's")
 
 local normalized = Save.normalize({ version = "crystal", player = {} })
 eq(normalized.player.gender, "male", "normalize defaults wPlayerGender to 0")

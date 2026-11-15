@@ -9,6 +9,7 @@ require("src.import.gba.versions").select("emerald")
 require("src.core.game3.se_ids").select("emerald")
 require("src.core.game3.song_ids").select("emerald")
 
+require("tests.game3_cache").mount("emerald")
 local Dataset = require("src.core.game3.dataset")
 local cache = Dataset.cache()
 local ROOT = "data/generated/gba/"

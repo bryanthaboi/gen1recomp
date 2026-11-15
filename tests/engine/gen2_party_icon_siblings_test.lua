@@ -34,7 +34,7 @@ local NamingScreen = require("src.ui.gen2.NamingScreen")
 local RED = { { 1, 2, 3 }, { 4, 5, 6 } }
 
 local function newGame(trueColorIcon)
-  return {
+  local game = {
     data = {
       gen2Icons = {
         species = { CHIKORITA = "ICON_ODDISH", MAGNEMITE = "ICON_VOLTORB" },
@@ -46,8 +46,11 @@ local function newGame(trueColorIcon)
         },
       },
       gen2Palettes = { partyMenu = { RED } },
+      text = require("tests.fixture_data.gen2_rom_text_s7_c").text(),
     },
   }
+  require("tests.fixtures.gen2_naming").fill(game.data)
+  return game
 end
 
 local function mon(hp, maxHp, species)

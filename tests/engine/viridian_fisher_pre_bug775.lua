@@ -1,10 +1,7 @@
 -- Headless regression: the Viridian fisher's TM42 gift skipped his pre
 -- text and jumped straight to "received TM42!" (#775).  pokered's
 -- ViridianCityFisherText (scripts/ViridianCity.asm) prints
--- .YouCanHaveThisText before GiveItem; on Red that label sits outside the
--- extractor's symbol set (no leading underscore, same class as the
--- SilphCo2F worker in #393), so the ported literal has to carry the flow
--- when the text table has no entry.  ROM-free: the gift closure only
+-- .YouCanHaveThisText before GiveItem.  ROM-free: the gift closure only
 -- touches text/items/flags, so TextBox, Sound and Bag are stubbed and the
 -- boxes are advanced by hand.
 package.path = "./?.lua;./?/init.lua;" .. package.path
@@ -46,37 +43,31 @@ local function newGame(textTable)
   }
 end
 
--- Red-like: empty text table, the fallback literal must carry the scene
-local game = newGame({})
+local game = newGame({
+  ViridianCityFisherYouCanHaveThisText = "PRE",
+  _ViridianCityFisherReceivedTM42Text = "{PLAYER} received\n{RAM:}!",
+})
 local finished = false
 fisher(game, nil, nil, function() finished = true end)
 
 T.eq(#boxes, 1, "talking opens exactly one box before any A press")
-local pre = boxes[1].text
-T.check(type(pre) == "string" and pre:sub(1, 5) == "Yawn!",
-  "the first box is the fisher's pre text, not the receipt")
-T.check(pre:find("DROWZEE", 1, true) ~= nil,
-  "the fallback carries the DROWZEE dream paragraph")
-T.check(pre:find("have this TM.", 1, true) ~= nil,
-  "and ends on the hand-over line")
+T.eq(boxes[1].text, "PRE", "the first box is the fisher's pre text, not the receipt")
 T.check(not game.save.flags.EVENT_GOT_TM42,
   "the flag stays unset until the pre text is dismissed")
 
 boxes[1].onDone()
 T.eq(#boxes, 2, "dismissing the pre text opens the received box")
 T.eq(boxes[2].text, "RED received\nTM42!",
-  "the received fallback is filled with player and item")
+  "the received text is filled with player and item")
 T.eq(game.save.inventory.TM_DREAM_EATER, 1, "TM42 reached the bag")
 T.check(game.save.flags.EVENT_GOT_TM42 == true, "the event flag is set")
 boxes[2].onDone()
 T.eq(#boxes, 2, "no explanation box follows the receipt")
 T.check(finished, "the talk chain hands control back after the receipt")
 
--- Yellow-like: the extracted string exists, so it wins over the fallback
-game = newGame({ ViridianCityFisherYouCanHaveThisText = "ROM STRING" })
-fisher(game, nil, nil, function() end)
-T.eq(boxes[1].text, "ROM STRING",
-  "an extracted ViridianCityFisherYouCanHaveThisText beats the fallback")
+game = newGame({})
+T.check(not pcall(fisher, game, nil, nil, function() end) and #boxes == 0,
+  "an empty text table prints no hand-typed line")
 
 -- repeat visit: the flag routes straight to the explanation, no re-gift
 game = newGame({ _ViridianCityFisherTM42ExplanationText = "EXPLAIN" })

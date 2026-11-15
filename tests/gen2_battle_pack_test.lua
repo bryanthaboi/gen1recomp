@@ -111,7 +111,10 @@ local ITEMS = {
 local DATA = {
   pokemon = POKEMON,
   moves = MOVES,
-  text = require("tests.gen2_battle_text_fixture")(), type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
+  text = require("tests.fixtures.gen2_rom_text").text(require("tests.fixture_data.gen2_rom_text_s7_g").text(nil, require("tests.gen2_battle_text_fixture")())),
+  gen2Text = require("tests.fixtures.gen2_common_text").text(),
+  gen2EventTables = require("tests.fixtures.gen2_phone_events").events,
+  type_chart = { battleRules = require("tests.gen2_battle_rules_fixture")(), types = TYPES, matchups = {} },
   items = ITEMS,
 }
 
@@ -194,7 +197,7 @@ local function openPackFromMenu(screen, pushed)
   screen:update(1 / 60)
   Input:overlayReleased("down")
   Input:step()
-  eq(BattleState.MENU[screen.menuIndex], "PACK", "the cursor is on PACK")
+  eq(BattleState.MENU_ACTION[screen.menuIndex], "item", "the cursor is on PACK")
   Input:overlayPressed("a")
   Input:step()
   screen:update(1 / 60)
@@ -506,6 +509,8 @@ do
     "with no pocket to read, it lands in the general pocket")
   pack.index = 2
   eq(pack:description(), nil, "it has no description to print")
+  pack.gfx = { available = function() return true end, draw = function() end,
+    colorsAt = function() return nil end }
   local ok, err = pcall(function() pack:drawPanel() end)
   check(ok, "and the pocket still draws (" .. tostring(err) .. ")")
 
@@ -531,7 +536,7 @@ do
   check(runToMenu(screen), "the intro drains to the battle menu")
   -- The 2x2 cursor stays where it was left, so walk it onto PACK each time.
   local function openPack()
-    while BattleState.MENU[screen.menuIndex] ~= "PACK" do
+    while BattleState.MENU_ACTION[screen.menuIndex] ~= "item" do
       Input:overlayPressed("down")
       Input:step()
       screen:update(1 / 60)

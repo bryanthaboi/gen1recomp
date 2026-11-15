@@ -99,7 +99,7 @@ local originalPrompt = withdraw.footer
 withdraw.onChoose(rows.FIX_POTION, withdraw)
 local quantity = pushed
 T.eq(withdraw.hollowIndex, withdraw.index, "list_menu.asm:91 chosen row goes hollow")
-T.eq(withdraw.footer, "How many?", "quantity selection replaces the PC prompt")
+T.eq(withdraw.footer, Data.text._WithdrawHowManyText, "quantity selection replaces the PC prompt")
 quantity.onDone(nil)
 T.eq(withdraw.footer, originalPrompt,
   "canceling quantity restores the withdraw prompt")

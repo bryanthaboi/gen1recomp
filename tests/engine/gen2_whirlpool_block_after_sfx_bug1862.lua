@@ -12,7 +12,8 @@ local busy = false
 Sound.sfxBusy = function() return busy end
 
 local log = {}
-local world = setmetatable({}, { __index = World })
+local world = setmetatable({ game = { data = {
+  text = require("tests.fixture_data.gen2_rom_text_s7_g").text() } } }, { __index = World })
 world.setNickname = function() end
 world.showText = function(_, _, done) if done then done() end end
 world.playSfxNamed = function() log[#log + 1] = "sfx" end
@@ -21,7 +22,7 @@ world.replaceBlock = function(_, index, blockId)
   return true
 end
 
-world:runWhirlpool({ text = "USED WHIRLPOOL", blockIndex = 7, replacement = 3 })
+world:runWhirlpool({ text = "_UseWhirlpoolText", blockIndex = 7, replacement = 3 })
 T.eq(#log, 0, "the box closing does not swap the block yet")
 T.eq(world.fieldMove and world.fieldMove.phase, "whirlpoolsfx",
   "closing the box parks the WaitSFX phase")

@@ -16,6 +16,8 @@ require("src.core.Logger").warn = function() end
 local Battle = require("src.battle.gen2.Battle")
 local BattleState = require("src.ui.gen2.BattleState")
 local Mon = require("src.battle.gen2.Mon")
+local RomText = require("src.core.RomText")
+local TextBox = require("src.render.TextBox")
 
 local TYPES = {
   NORMAL = { id = "NORMAL", index = 0, category = "physical" },
@@ -95,6 +97,10 @@ local function texts(events)
   return out
 end
 
+local function line(label, fills)
+  return TextBox.strip(RomText(DATA, label, nil, fills))
+end
+
 local function has(events, text)
   for _, t in ipairs(texts(events)) do if t == text then return true end end
   return false
@@ -158,13 +164,14 @@ end
 do
   local battle, player, wild = wildBattle({ "GROWL" }, { "GROWL" })
   battle:useMove(player, wild, "GROWL")
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY's ATTACK fell!"), "foe's stat line")
+  T.check(has(battle:takeEvents(), "Enemy PIDGEY's\nATTACK fell!"), "foe's stat line")
   battle.random = function(n) return 200 % math.max(1, n or 256) end
   battle:useMove(wild, player, "GROWL")
-  T.check(has(battle:takeEvents(), "MACHOP's ATTACK fell!"), "player's stat line")
+  T.check(has(battle:takeEvents(), "MACHOP's\nATTACK fell!"), "player's stat line")
   battle.random = zero
   for _ = 1, 6 do battle:useMove(player, wild, "GROWL") end
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY's ATTACK won't drop anymore!"),
+  T.check(has(battle:takeEvents(), line("WontDropAnymoreText",
+    { TARGET = "Enemy PIDGEY", STRBUF = DATA.text["StatNames#1"] })),
     "WontDropAnymoreText (battle.asm:740)")
 end
 
@@ -172,15 +179,19 @@ end
 do
   local battle, player, wild = wildBattle({ "CONFUSE_RAY", "EMBER" }, { "EMBER" })
   battle:useMove(player, wild, "CONFUSE_RAY")
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY became confused!"), "BecameConfusedText (battle.asm:413)")
+  T.check(has(battle:takeEvents(), line("BecameConfusedText", { TARGET = "Enemy PIDGEY" })),
+    "BecameConfusedText (battle.asm:413)")
   battle:useMove(player, wild, "EMBER")
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY was burned!"), "WasBurnedText (battle.asm:717)")
+  T.check(has(battle:takeEvents(), line("WasBurnedText", { TARGET = "Enemy PIDGEY" })),
+    "WasBurnedText (battle.asm:717)")
   battle:tickStatus(wild)
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY is hurt by its burn!"), "HurtByBurnText (battle.asm:62)")
+  T.check(has(battle:takeEvents(), line("HurtByBurnText", { USER = "Enemy PIDGEY" })),
+    "HurtByBurnText (battle.asm:62)")
   battle:useMove(wild, player, "EMBER")
   battle:takeEvents()
   battle:tickStatus(player)
-  T.check(has(battle:takeEvents(), "MACHOP is hurt by its burn!"), "player's residual line is bare")
+  T.check(has(battle:takeEvents(), line("HurtByBurnText", { USER = "MACHOP" })),
+    "player's residual line is bare")
   T.eq(battle:canAct(wild, "TACKLE") ~= nil, true, "canAct runs")
   T.check(has(battle:takeEvents(), "Enemy PIDGEY\nis confused!"), "IsConfusedText (battle.asm:398)")
 end
@@ -189,10 +200,12 @@ end
 do
   local battle, player, wild = wildBattle({ "WRAP" })
   battle:useMove(player, wild, "WRAP")
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY was WRAPPED by MACHOP!"),
+  T.check(has(battle:takeEvents(), line("WrappedByText",
+    { TARGET = "Enemy PIDGEY", USER = "MACHOP" })),
     "WrappedByText: <TARGET> prefixed, <USER> bare (battle.asm:463)")
   battle:tickWrap(wild)
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY's hurt by WRAP!"), "BattleText_UsersHurtByStringBuffer1")
+  T.check(has(battle:takeEvents(), line("BattleText_UsersHurtByStringBuffer1",
+    { USER = "Enemy PIDGEY", STRBUF = "WRAP" })), "BattleText_UsersHurtByStringBuffer1")
 end
 
 -- ---- held berry: RecoveredUsingText (battle.asm:289) ---------------------
@@ -226,33 +239,39 @@ do
   local battle, player, wild = wildBattle()
   wild.hp = 0
   battle:announceEnemyFaint()
-  T.check(has(battle:takeEvents(), "Enemy PIDGEY fainted!"), "wild foe: Enemy X fainted! (battle.asm:162)")
+  T.check(has(battle:takeEvents(), line("BattleText_EnemyMonFainted", { STRBUF = "PIDGEY" })),
+    "wild foe: Enemy X fainted! (battle.asm:162)")
   local tb, _, foe = trainerBattle()
   foe.hp = 0
   tb:announceEnemyFaint()
-  T.check(has(tb:takeEvents(), "Enemy GEODUDE fainted!"), "trainer foe: the same line")
+  T.check(has(tb:takeEvents(), line("BattleText_EnemyMonFainted", { STRBUF = "GEODUDE" })),
+    "trainer foe: the same line")
   player.hp = 0
   battle:announcePlayerFaint()
-  T.check(has(battle:takeEvents(), "MACHOP fainted!"), "BattleText_MonFainted is bare (battle.asm:208)")
+  T.check(has(battle:takeEvents(), line("BattleText_MonFainted", { STRBUF = "MACHOP" })),
+    "BattleText_MonFainted is bare (battle.asm:208)")
 end
 
 -- ---- raw-nickname lines stay bare ----------------------------------------
 do
-  T.eq(BattleState.battleStartText("PIDGEY", nil), "Wild PIDGEY appeared!",
+  T.eq(BattleState.battleStartText(DATA, "PIDGEY", nil), "Wild PIDGEY\nappeared!",
     "WildPokemonAppearedText (battle.asm:10)")
-  T.eq(Battle.sentOutText("JOEY", "GEODUDE"), "JOEY\nsent out\vGEODUDE!",
+  T.eq(line("BattleText_EnemySentOut", { ENEMY = "JOEY", STRBUF = "GEODUDE" }),
+    "JOEY\nsent out\vGEODUDE!",
     "BattleText_EnemySentOut (battle.asm:240)")
   local battle = wildBattle()
   battle:enemyFled()
   local evs = battle:takeEvents()
-  T.check(has(evs, "Wild PIDGEY fled!"), "BattleText_WildFled (battle.asm:43)")
+  T.check(has(evs, line("BattleText_WildFled", { STRBUF = "PIDGEY" })),
+    "BattleText_WildFled (battle.asm:43)")
   T.check(lacks(evs, "Enemy "), "and no Enemy anywhere in the fled turn")
 
   local tb = trainerBattle()
   tb.enemyParty[2] = mon("PIDGEY", 15)
   tb:switchEnemy(2)
   local sw = tb:takeEvents()
-  T.check(has(sw, "JOEY withdrew GEODUDE!"), "the withdraw line names the mon bare")
+  T.check(has(sw, line("EnemyWithdrewText", { ENEMY = "JOEY", STRBUF = "GEODUDE" })),
+    "the withdraw line names the mon bare")
   T.check(lacks(sw, "Enemy "), "and the send-out does too")
 end
 
@@ -285,7 +304,8 @@ do
       moves[("MOVE%03d"):format(id)] = { index = id, name = ("MOVE%03d"):format(id) }
     end
     pokemon.growthRates = {}
-    local game = { data = { pokemon = pokemon, moves = moves },
+    local game = { data = { pokemon = pokemon, moves = moves,
+      text = require("tests.fixture_data.gen2_rom_text_s7_b").text() },
       save = { player = { name = "GOLD" } } }
     local t2 = assert(Table.build(F.gen2(), 2))
     local netA, netB = L.pair()
@@ -309,7 +329,7 @@ do
     T.eq(facade:N({ side = 1, index = 1 }), "Enemy MON004", "facade: the peer's mon is Enemy")
     T.eq(facade:nameOf(facade.enemy), "MON004", "facade: nameOf stays raw")
     local msg = Gen2Facade.MSG.STRINGID_PKMNFLINCHED(facade, { atk = { side = 1, index = 1 } })
-    T.eq(msg, "Enemy MON004 flinched!", "facade: <USER> text on the peer")
+    T.eq(msg, "Enemy MON004\nflinched!", "facade: <USER> text on the peer")
   else
     print("[skip] g3u fixtures unavailable")
   end

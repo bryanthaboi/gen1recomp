@@ -13,6 +13,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local S = require("tests.harness").suite("gen2 map radio")
+require("tests.fixture_data.gen2_engine_flags").bind("gold")
 local check, eq = S.check, S.eq
 
 love = require("tests.love_stub")
@@ -46,10 +47,10 @@ local function newInput()
   return input
 end
 
-local LANDMARKS = { landmarks = {
+local LANDMARKS = require("tests.fixture_data.gen2_landmarks_s7_d").anchored({ landmarks = {
   LANDMARK_NEW_BARK_TOWN = { index = 2 },
   LANDMARK_VERMILION_CITY = { index = 50 },
-} }
+} })
 
 local function newGame(save)
   return {
@@ -57,7 +58,8 @@ local function newGame(save)
     save = save,
     options = Save.defaultOptions(),
     data = { audio = {}, pokemon = {}, items = {},
-      gen2Landmarks = LANDMARKS },
+      gen2Landmarks = LANDMARKS,
+      text = require("tests.fixture_data.gen2_rom_text_s7_d").text() },
     stack = { _items = {},
       push = function(self, s) self._items[#self._items + 1] = s end,
       pop = function(self) return table.remove(self._items) end,
@@ -74,6 +76,7 @@ local RADIO_DATA = {
   caught = function() return false end,
   dex = {}, classes = {}, hidden = {},
   weekday = 2, luckyNumber = 42, inJohto = true,
+  text = require("tests.fixture_data.gen2_rom_text_s7_d").text(),
 }
 
 -- ---- the blocking loop -----------------------------------------------------
@@ -89,6 +92,8 @@ do
   })
   game.stack:push(mr)
   eq(mr.station, "LETS_ALL_SING", "MAPRADIO index 7 is Let's All Sing")
+  eq(mr:name(), game.data.text.LetsAllSingName,
+    "the quoted name is the cache's LetsAllSingName")
   eq(mr.radioMusicPlaying, "enterMap",
     ".PlayStation parks ENTER_MAP_MUSIC before the show starts")
 

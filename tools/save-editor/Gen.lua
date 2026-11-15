@@ -141,7 +141,17 @@ function Gen.bindGoldData(data)
   data.gen2Landmarks = data.gen2Landmarks or loadGen("landmarks")
   data.gen2Roofs = data.gen2Roofs or loadGen("roofs") or data.roofs
   data.gen2Sprites = data.gen2Sprites or loadGen("sprites")
+  data.gen2EventTables = data.gen2EventTables or loadGen("events")
+  data.text = data.text or loadGen("rom_text")
   return data
+end
+
+function Gen.gen2CacheReady(version)
+  version = versionOf(nil, version)
+  if not require("src.import.CacheContract").isReady(version) then return false end
+  local constants = require("src.save_convert.SaveConvert").gen2Constants(version)
+  if type(constants) ~= "table" then return false end
+  return (pcall(require("src.core.gen2.FlagIds").events, constants))
 end
 
 function Gen.game3CacheReady()
@@ -209,10 +219,9 @@ function Gen.bindGame3Data(data)
     end
 
     data.moves = data.moves or {}
-    local okB, BuiltinMoves = pcall(require, "src.core.game3.battle.builtin_moves")
     for id = 1, 354 do
       local mName = Pokemon.moveName(id)
-      local bMove = Pokemon.battleMove(id) or (okB and BuiltinMoves and BuiltinMoves[id])
+      local bMove = Pokemon.battleMove(id)
       if mName and mName ~= "-------" and not mName:find("^MOVE %d+") then
         local mDef = {
           id = mName,
@@ -263,7 +272,7 @@ function Gen.bindGame3Data(data)
   return data
 end
 
-function Gen.newGame(version)
+function Gen.newGame(version, data)
   local id = type(version) == "string" and GameVersion.VERSIONS[version] and version
     or nil
   local g = versionGeneration(id) or GameVersion.generation()
@@ -271,9 +280,7 @@ function Gen.newGame(version)
     return require("src.core.game3.save_schema_firered").newGame({ version = id })
   elseif g == 2 then
     local Save2 = require("src.core.gen2.Save")
-    local save = Save2.newGame({
-      playerName = id and Save2.defaultPlayerName(id) or nil,
-    })
+    local save = Save2.newGame({ data = data })
     if id then save.version = id end
     return save
   end

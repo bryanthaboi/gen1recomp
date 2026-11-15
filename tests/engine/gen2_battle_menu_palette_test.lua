@@ -27,11 +27,12 @@ local function spy(name)
 end
 
 local function fakeState()
-  return {
+  return setmetatable({
     phase = "menu", menuIndex = 1, safari = nil, demo = false,
     bottomUIVisible = function() return true end,
     game = { save = { generation = 2, version = "gold" } },
-  }
+    data = { text = dofile("tests/fixture_data/text.lua") },
+  }, { __index = BattleState })
 end
 
 do

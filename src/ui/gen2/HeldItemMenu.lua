@@ -32,8 +32,8 @@ local Chrome = require("src.ui.gen2.Chrome")
 local CommonText = require("src.core.gen2.CommonText")
 local Mail = require("src.core.gen2.Mail")
 local Screens = require("src.ui.Screens")
+local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
-local Strings = require("src.core.Strings")
 local Typer = require("src.ui.gen2.Typer")
 
 local HeldItemMenu = {}
@@ -51,39 +51,10 @@ local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 14, 7, 6, 5
 local DOWN_ARROW = "\xe2\x96\xbc"
 local ARROW_X, ARROW_Y = 18, 17
 
+-- engine/pokemon/mon_menu.asm:377
 local ENTRIES = {
-  { id = "give", label = Strings.source("GIVE") },
-  { id = "take", label = Strings.source("TAKE") },
-}
-
-local function page(...) return { ... } end
-local function pages(...) return { ... } end
-
--- data/text/common_2.asm.  The {STRBUF} markers are text_ram fields, spliced
--- here rather than being part of the string.
-local TEXT = {
-  hold = function(mon, item)
-    return pages(page(("Made %s"):format(mon), ("hold %s."):format(item)))
-  end,
-  removeMail = pages(page("Please remove the", "MAIL first.")),
-  notHolding = function(mon)
-    return pages(page(("%s isn't"):format(mon), "holding anything."))
-  end,
-  storageFull = pages(page("Item storage space", "full.")),
-  tookItem = function(item, mon)
-    return pages(page(("Took %s"):format(item), ("from %s."):format(mon)))
-  end,
-  askSwap = function(mon, item)
-    return pages(
-      page(("%s is"):format(mon), "already holding"),
-      page(("%s."):format(item), "Switch items?"))
-  end,
-  swapped = function(mon, old, new)
-    return pages(
-      page(("Took %s's"):format(mon), ("%s and"):format(old)),
-      page("made it hold", ("%s."):format(new)))
-  end,
-  cantHold = pages(page("This item can't be", "held.")),
+  { id = "give", rom = "GiveTakeItemMenuData.Items#1" },
+  { id = "take", rom = "GiveTakeItemMenuData.Items#2" },
 }
 
 local LABELS = {
@@ -106,25 +77,8 @@ local FILL = {
   swapped = function(mon, old, new) return { mon, old, new } end,
 }
 
-HeldItemMenu.TEXT = TEXT
 HeldItemMenu.LABELS = LABELS
 HeldItemMenu.ENTRIES = ENTRIES
-
-local function extractedText(text)
-  local out = setmetatable({}, { __index = TEXT })
-  for key, label in pairs(LABELS) do
-    local list = CommonText.of(text, label)
-    if list then
-      local fill = FILL[key]
-      if fill then
-        out[key] = function(...) return CommonText.fill(list, fill(...)) end
-      else
-        out[key] = list
-      end
-    end
-  end
-  return out
-end
 
 -- opts: save, slot, items (items.lua), text (text.lua), onClose()
 function HeldItemMenu.new(game, opts)
@@ -135,7 +89,7 @@ function HeldItemMenu.new(game, opts)
   self.slot = opts.slot or 1
   self.items = opts.items or (game and game.data and game.data.items)
   self.textData = opts.text or (game and game.world and game.world.text)
-  self.TEXT = extractedText(self.textData)
+  self.TEXT = CommonText.texts(self.textData, LABELS, FILL)
   self.onClose = opts.onClose
   self.index = 1
   self.busy = false
@@ -391,8 +345,10 @@ end
 
 function HeldItemMenu:drawYesNo(choice)
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
+  local data = self.game and self.game.data
+  -- home/menu.asm:473
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#1"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(RomText(data, "YesNoMenuHeader.MenuData#2"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 
@@ -424,7 +380,7 @@ function HeldItemMenu:drawPanel()
   for row, entry in ipairs(ENTRIES) do
     local ty = MENU_LABEL_Y + (row - 1) * 2
     if row == self.index then Chrome.cursor(MENU_LABEL_X - 1, ty) end
-    Chrome.print(Strings(entry.label), MENU_LABEL_X, ty)
+    Chrome.print(RomText(self.game and self.game.data, entry.rom), MENU_LABEL_X, ty)
   end
   love.graphics.setColor(1, 1, 1, 1)
 end
