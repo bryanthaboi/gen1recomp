@@ -134,6 +134,7 @@ check(
   "GB PP-Up bonus caps at seven"
 )
 check(MonOps.calcMaxPp(40, 3, 3) == 64, "GBA uses its own PP-Up bonus")
+S.data.moves.GROWL = S.data.moves.GROWL or { id = "GROWL", pp = 40 }
 bad = Copy(S.save.party[1])
 bad.moves[1] = { id = "GROWL", pp = 64, ppUps = 3, maxPp = 64 }
 check(L.mon(S, bad).errors > 0, "GB PP beyond 61 is rejected")
