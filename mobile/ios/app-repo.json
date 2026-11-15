@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.6",
+          "date": "2026-11-15",
+          "size": 44804672,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.6/gen1recomp++-0.4.6-ios.ipa",
+          "localizedDescription": "ripped out hand typed rom text and fallbacks, fixed crystal engine flags, odd egg ids, frlg mail, quest log, link names and transitions\n\n## Contributors\n\n- @bryanthaboi"
+        },
+        {
           "version": "0.4.5",
           "date": "2026-11-14",
           "size": 44742127,
