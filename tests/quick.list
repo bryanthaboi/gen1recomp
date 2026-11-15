@@ -113,6 +113,7 @@ tests/engine/falling_objects_delta_bug2428.lua
 tests/engine/fanfare_music_hold.lua
 tests/engine/fast_forward_rate_bug2471.lua
 tests/engine/field_move_submenu_bug2273.lua
+tests/engine/file_browser_desktop_test.lua
 tests/engine/firered_house_wall_warp_bug2297.lua
 tests/engine/fishing_cast_timing_bug2064.lua
 tests/engine/fixed_damage_immunity_bug616.lua
