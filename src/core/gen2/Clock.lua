@@ -25,9 +25,16 @@ local Clock = {}
 Clock.MINUTES_PER_DAY = 24 * 60
 Clock.DAYS = 7
 
+local dataset = nil
+
+function Clock.useData(data)
+  dataset = data
+end
+
 -- engine/menus/main_menu.asm:237 PrintDayOfWeek
 function Clock.weekdayName(day, data)
   if type(day) ~= "number" or day < 1 or day > Clock.DAYS then return nil end
+  data = data or dataset
   return RomText(data, "PrintDayOfWeek.Days#" .. day)
     .. RomText(data, "PrintDayOfWeek.Day")
 end
@@ -41,7 +48,7 @@ local SET_DAY_LABEL = {
 
 function Clock.setDayName(day, data)
   local label = SET_DAY_LABEL[day]
-  return label and RomText(data, label)
+  return label and RomText(data or dataset, label)
 end
 
 -- engine/rtc/timeset.asm:688 GetTimeOfDayString
@@ -52,7 +59,7 @@ local DAYTIME_LABEL = {
 }
 
 function Clock.daytimeLabel(hour, data)
-  return RomText(data, DAYTIME_LABEL[Palettes.clockDaytime(hour)])
+  return RomText(data or dataset, DAYTIME_LABEL[Palettes.clockDaytime(hour)])
 end
 
 -- InitClock's own default: `ld a, 10 ; default hour = 10 AM`, with the minute

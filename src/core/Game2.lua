@@ -1140,6 +1140,7 @@ function Game2:load(opts)
   -- read by src/battle/gen2/AnimRunner.lua.
   self.data.gen2BattleAnims = loadGenerated("data/generated/battle_anims.lua")
   self.data.gen2Constants = loadGenerated("data/generated/constants.lua")
+  require("src.core.gen2.EngineFlags").ensure(self.data)
   -- The overworld's own tables.  src/world/gen2/World.lua:load used to read
   -- these straight off disk into World fields, which meant they never passed
   -- through game.data and a registry had no Data path to merge into -- the one
@@ -1225,8 +1226,10 @@ function Game2:load(opts)
   -- actually uses.  `landmarks` and `radio_channels` need no call: their
   -- consumers (src/core/gen2/Nests.lua, src/ui/gen2/MapRadio.lua) read
   -- game.data at the point of use.
+  require("src.core.gen2.EngineFlags").ensure(self.data)
   ItemEffects.applyHeldItems(self.data, heldBefore)
   Game2.applyFieldEmotes(self.data)
+  Clock.useData(self.data)
   require("src.core.gen2.Phone").useRegistry(self.data)
   require("src.core.gen2.Decorations").useRegistry(self.data)
   require("src.core.gen2.Apricorns").useRegistry(self.data)
