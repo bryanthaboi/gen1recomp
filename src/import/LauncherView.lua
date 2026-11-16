@@ -2013,12 +2013,15 @@ local function romModel(imp, version, info, ready, locked)
         :gsub("^%s+", ""):gsub("%s+$", ""),
       label = importLabel, enabled = true }
   elseif baseRom then
+    local revision = baseRom.revision and (" rev " .. baseRom.revision) or ""
     return { state = Strings("Compatible ROM found"),
-      detail = Strings("Found in baseroms/: %s", baseRom.name),
+      detail = Strings("Found in baseroms/: %s (SHA-1%s)",
+        baseRom.name, revision),
       label = Strings("Import detected ROM"), enabled = true }
   elseif scanning then
     return { state = Strings("Checking baseroms..."),
-      detail = Strings("Looking for compatible Red, Blue, and Yellow ROMs."),
+      detail = imp.baseRomDirHint and Strings("Looking in %s", imp.baseRomDirHint)
+        or Strings("Looking for compatible ROMs in baseroms/."),
       label = Strings("Import ROM"), enabled = false }
   elseif imp.returning[version] then
     return { state = Strings("Update required"),

@@ -20,6 +20,7 @@ tests/engine/bag_item_box_bug1521.lua
 tests/engine/bag_split_stack_bug2671.lua
 tests/engine/bag_use_toss_hollow_cursor_2063.lua
 tests/engine/ball_toss_sound_sync_bug2611.lua
+tests/engine/baserom_scan_test.lua
 tests/engine/battle_ai_item_messages_2589.lua
 tests/engine/battle_ai_item_sfx_bug2541.lua
 tests/engine/battle_already_out_bug1953.lua
@@ -683,6 +684,7 @@ tests/engine/residual_psn_seed_order_bug2542.lua
 tests/engine/restore_standing_trigger_bug1547.lua
 tests/engine/resume_boot_music_no_fade.lua
 tests/engine/rom_cache_contract_test.lua
+tests/engine/rom_detect_test.lua
 tests/engine/rom_importer_nx_flags_test.lua
 tests/engine/rom_importer_source_tree_test.lua
 tests/engine/rom_pick_error_bug442.lua

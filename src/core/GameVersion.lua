@@ -25,6 +25,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Red",
     launcherName = "Red",       -- game-panel header in the launcher
     sha1 = "ea9bcae617fdf159b045185467ae58b2e4a48b9a",
+    romSize = 1024 * 1024,
     manifest = "tools/rom_manifest.json",
     cachePrefix = "red/",   -- red/data/generated, red/assets/generated (#899)
     saveSuffix = "",        -- save.lua / save.lua.bak / save.lua.tmp
@@ -37,6 +38,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Blue",
     launcherName = "Blue",
     sha1 = "d7037c83e1ae5b39bde3c30787637ba1d4c48ce2",
+    romSize = 1024 * 1024,
     manifest = "tools/rom_manifest_blue.json",
     cachePrefix = "blue/",  -- blue/data/generated, blue/assets/generated
     saveSuffix = "_blue",   -- save_blue.lua / .bak / .tmp
@@ -48,6 +50,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Yellow",
     launcherName = "Yellow",
     sha1 = "cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1",
+    romSize = 1024 * 1024,
     manifest = "tools/rom_manifest_yellow.json",
     cachePrefix = "yellow/",  -- yellow/data/generated, yellow/assets/generated
     saveSuffix = "_yellow",   -- save_yellow.lua / .bak / .tmp
@@ -62,6 +65,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Gold",
     launcherName = "Gold",
     sha1 = "d8b8a3600a465308c9953dfa04f0081c05bdcb94",
+    romSize = 2 * 1024 * 1024,
     manifest = "tools/rom_manifest_gold.json",
     cachePrefix = "gold/",    -- gold/data/generated, gold/assets/generated
     saveSuffix = "_gold",     -- save_gold.lua / .bak / .tmp
@@ -77,6 +81,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Silver",
     launcherName = "Silver",
     sha1 = "49b163f7e57702bc939d642a18f591de55d92dae",
+    romSize = 2 * 1024 * 1024,
     manifest = "tools/rom_manifest_silver.json",
     cachePrefix = "silver/",  -- silver/data/generated, silver/assets/generated
     saveSuffix = "_silver",   -- save_silver.lua / .bak / .tmp
@@ -89,6 +94,7 @@ GameVersion.VERSIONS = {
     displayName = "Pokemon Crystal",
     launcherName = "Crystal",
     sha1 = "f4cd194bdee0d04ca4eac29e09b8e4e9d818c133",
+    romSize = 2 * 1024 * 1024,
     manifest = "tools/rom_manifest_crystal.json",
     cachePrefix = "crystal/",  -- crystal/data/generated, crystal/assets/generated
     saveSuffix = "_crystal",   -- save_crystal.lua / .bak / .tmp
@@ -117,6 +123,7 @@ GameVersion.VERSIONS = {
     launcherName = "Fire Red",
     beta = true,
     sha1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc",
+    romSize = 16 * 1024 * 1024,
     revisions = {
       { sha1 = "41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc", label = "1.0" },
       { sha1 = "dd5945db9b930750cb39d00c84da8571feebf417", label = "1.1" },
@@ -136,6 +143,7 @@ GameVersion.VERSIONS = {
     id = "leafgreen", label = "LeafGreen", displayName = "Pokemon LeafGreen",
     launcherName = "Leaf Green", beta = true,
     sha1 = "574fa542ffebb14be69902d1d36f1ec0a4afd71e",
+    romSize = 16 * 1024 * 1024,
     revisions = {
       { sha1 = "574fa542ffebb14be69902d1d36f1ec0a4afd71e", label = "1.0" },
       { sha1 = "7862c67bdecbe21d1d69ce082ce34327e1c6ed5e", label = "1.1" },
@@ -151,6 +159,7 @@ GameVersion.VERSIONS = {
     id = "emerald", label = "Emerald", displayName = "Pokemon Emerald",
     launcherName = "Emerald", beta = true,
     sha1 = "f3ae088181bf583e55daf962a92bb46f4f1d07b7",
+    romSize = 16 * 1024 * 1024,
     revisions = {
       { sha1 = "f3ae088181bf583e55daf962a92bb46f4f1d07b7", label = "1.0" },
     },
@@ -165,6 +174,7 @@ GameVersion.VERSIONS = {
     id = "ruby", label = "Ruby", displayName = "Pokemon Ruby",
     launcherName = "Ruby", beta = true,
     sha1 = "f28b6ffc97847e94a6c21a63cacf633ee5c8df1e",
+    romSize = 16 * 1024 * 1024,
     revisions = {
       { sha1 = "f28b6ffc97847e94a6c21a63cacf633ee5c8df1e", label = "1.0" },
       { sha1 = "610b96a9c9a7d03d2bafb655e7560ccff1a6d894", label = "1.1" },
@@ -181,6 +191,7 @@ GameVersion.VERSIONS = {
     id = "sapphire", label = "Sapphire", displayName = "Pokemon Sapphire",
     launcherName = "Sapphire", beta = true,
     sha1 = "3ccbbd45f8553c36463f13b938e833f652b793e4",
+    romSize = 16 * 1024 * 1024,
     revisions = {
       { sha1 = "3ccbbd45f8553c36463f13b938e833f652b793e4", label = "1.0" },
       { sha1 = "4722efb8cd45772ca32555b98fd3b9719f8e60a9", label = "1.1" },

@@ -68,6 +68,19 @@ function Platform.isPS4()
   return Platform.detect().ps4
 end
 
+-- Windows, Linux and macOS, including the handheld Linux ports.
+function Platform.isDesktop()
+  local osName = Platform.detect().os
+  return osName == "Windows" or osName == "Linux" or osName == "OS X"
+end
+
+-- The Linux handheld ports run the desktop build but have no game folder.
+function Platform.isHandheld()
+  return os.getenv("HANDHELD") == "1" or os.getenv("PORTMASTER") == "1"
+    or os.getenv("POKEPORT_HANDHELD") == "1" or os.getenv("TRIMUI") == "1"
+    or os.getenv("MUOS") == "1" or os.getenv("KNULLI") == "1"
+end
+
 function Platform.romImportMode()
   return Platform.detect().romImportMode
 end
