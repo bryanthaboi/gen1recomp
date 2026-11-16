@@ -334,7 +334,6 @@ build_win() {
   mkdir -p "$out_dir"
   cp "$love_dir"/*.dll "$out_dir"/
   cp "$love_dir"/license.txt "$out_dir"/ 2>/dev/null || true
-  # RecompLauncher reads this next to the exe to set the game up.
   cp "$ROOT/recomplauncher.json" "$out_dir/recomplauncher.json"
 
   # Native AOT TLS dialer for outbound wss:// (e.g. Archipelago hosted rooms).
@@ -449,7 +448,6 @@ build_linux() {
   unsquashfs -q -no-xattrs -o "$sfs_offset" -d "$appdir" "$love_appimage" >/dev/null
 
   cp "$LOVE_FILE" "$appdir/game.love"
-  # RecompLauncher reads this from the AppImage root to set the game up.
   cp "$ROOT/recomplauncher.json" "$appdir/recomplauncher.json"
   bundle_shader_bridge "$appdir" "liblibrashader_bridge.so" linux-x64
 

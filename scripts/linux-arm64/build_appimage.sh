@@ -438,7 +438,6 @@ cp -R "$jit_share/jit" "$APPDIR/share/$LUAJIT_SHARE_DIR/"
 
 # --------------------------------------------------------------- branding
 cp "$IN/game.love" "$APPDIR/game.love"
-# RecompLauncher reads this from the AppImage root to set the game up.
 cp "$IN/recomplauncher.json" "$APPDIR/recomplauncher.json"
 unzip -Z1 "$APPDIR/game.love" > "$WORK/love-listing.txt"
 grep -qxF "tools/rom_manifest_gold.json" "$WORK/love-listing.txt" \
