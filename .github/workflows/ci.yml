@@ -440,7 +440,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -648,7 +648,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: set up Java 17 for Android picker copy tests
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
