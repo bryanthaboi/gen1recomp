@@ -217,6 +217,11 @@ local function loadWinApi()
     return out
   end
 
+  function api.isDir(p)
+    local a = api.attrs(p)
+    return a ~= nil and a % 32 >= 16
+  end
+
   winApi = api
   return winApi
 end
@@ -271,6 +276,14 @@ local function loadPosixApi()
       end
       C.closedir(d)
       return out
+    end
+    -- opendir on a non-directory fails at once, so this never opens the file
+    -- itself: opening a fifo (/dev/watchdog on a handheld) would block.
+    function api.isDir(p)
+      local d = C.opendir(p)
+      if d == nil then return false end
+      C.closedir(d)
+      return true
     end
   end
   posixApi = api
@@ -335,6 +348,13 @@ local function nativeList(path)
   return api.list(path)
 end
 
+-- nil when the platform has no cheap probe; callers fall back to statNative.
+local function nativeIsDir(path)
+  local api = loadWinApi() or loadPosixApi()
+  if not (api and api.isDir) then return nil end
+  return api.isDir(path)
+end
+
 local function pathExists(path)
   return nativeStat(path) ~= nil
 end
@@ -344,6 +364,7 @@ SaveData.removeNative = nativeRemove
 SaveData.statNative = nativeStat
 SaveData.mkdirNative = nativeMkdirp
 SaveData.listNative = nativeList
+SaveData.isDirNative = nativeIsDir
 
 -- an io.* filesystem exposing the love.filesystem subset the save/options
 -- round-trip needs (getInfo/read/write/remove), rooted at `dir`

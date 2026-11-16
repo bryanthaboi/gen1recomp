@@ -16,6 +16,12 @@ love = love or require("tests.love_stub")
 local FileBrowser = require("src.ui.kit.FileBrowser")
 local HostShell = require("src.core.HostShell")
 
+-- This suite is about the shell path: a directory name has to reach `ls`
+-- quoted.  A native enumerator (SaveData's FFI listing, used on desktop since
+-- the Windows fix) bypasses the shell entirely, so opt out of it here; the
+-- desktop listing has its own suite in file_browser_desktop_test.lua.
+FileBrowser.nativeFs = {}
+
 local realRomArchive = package.loaded["src.import.RomArchive"]
 package.loaded["src.import.RomArchive"] = {
   capabilities = function() return { zip = true, z7 = false } end,
@@ -117,5 +123,6 @@ io.popen = realPopen
 love.filesystem.getDirectoryItems = realItems
 love.filesystem.getInfo = realInfo
 package.loaded["src.import.RomArchive"] = realRomArchive
+FileBrowser.nativeFs = nil
 
 T.finish("game3_file_browser_quote_test")

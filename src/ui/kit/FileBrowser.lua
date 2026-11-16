@@ -33,32 +33,172 @@ local FileBrowser = {
   onSelect = nil,
   onCancel = nil,
   shortcutIdx = 1,
+  -- Test seam: replaces SaveData's native FS (listNative, statNative, ...).
+  nativeFs = nil,
 }
 
-local SHORTCUTS = {
-  { label = "SD Card", path = "/mnt/SDCARD" },
-  { label = "GB ROMs", path = "/roms/gb" },
-  { label = "GBC ROMs", path = "/roms/gbc" },
-  { label = "Ports", path = "/roms/ports" },
-  { label = "Game Dir", path = "." },
-  { label = "Storage", path = "/storage" },
-  { label = "Userdata", path = "/userdata/roms" },
-  { label = "Root /", path = "/" },
+-- ------- paths
+-- Windows paths keep their drive letter (C:/roms, not /C:/roms).
+local function stripTrailingSlash(p)
+  if #p > 1 and p:sub(-1) == "/" and not p:match("^%a:/$") then
+    return p:sub(1, -2)
+  end
+  return p
+end
+
+local function normalizePath(p)
+  if not p or p == "" then return "/" end
+  p = p:gsub("\\", "/"):gsub("/+", "/")
+  if p == "." or p == "./" then return "." end
+  if p:match("^%a:$") then return p .. "/" end
+  if p:match("^%a:/") then return stripTrailingSlash(p) end
+  if p:sub(1, 1) ~= "/" and p:sub(1, 2) ~= "./" and p:sub(1, 3) ~= "../" then
+    p = "/" .. p
+  end
+  return stripTrailingSlash(p)
+end
+
+local function parentDir(p)
+  p = normalizePath(p)
+  if p == "/" or p == "." then return "/" end
+  if p:match("^%a:/$") then return p end
+  local parent = p:match("^(.*)/[^/]+$")
+  if not parent or parent == "" then return "/" end
+  if parent:match("^%a:$") then return parent .. "/" end
+  return parent
+end
+
+local function joinPath(dir, name)
+  if dir == "/" then return "/" .. name end
+  if dir:sub(-1) == "/" then return dir .. name end
+  return dir .. "/" .. name
+end
+
+local function isRootPath(p)
+  p = normalizePath(p)
+  return p == "/" or p == "." or p:match("^%a:/$") ~= nil
+end
+
+-- ------- filesystem access
+-- love.filesystem only reaches the save directory, so absolute paths need the
+-- native enumerator in SaveData.
+local nativeFs, nativeProbed = nil, false
+local function getNativeFs()
+  -- Test seam: a stub table overrides the real module.
+  if type(FileBrowser.nativeFs) == "table" then return FileBrowser.nativeFs end
+  if nativeProbed then return nativeFs end
+  nativeProbed = true
+  local ok, SaveData = pcall(require, "src.core.SaveData")
+  if ok and type(SaveData) == "table"
+      and type(SaveData.listNative) == "function"
+      and type(SaveData.statNative) == "function" then
+    nativeFs = SaveData
+  end
+  return nativeFs
+end
+
+local function osName()
+  return (love and love.system and love.system.getOS and love.system.getOS()) or ""
+end
+
+local function isWindows() return osName() == "Windows" end
+
+-- A handheld keeps its ROMs on an SD card, not in the game folder.
+local function isHandheldEnv()
+  return os.getenv("HANDHELD") == "1" or os.getenv("PORTMASTER") == "1"
+    or os.getenv("POKEPORT_HANDHELD") == "1" or os.getenv("TRIMUI") == "1"
+    or os.getenv("MUOS") == "1" or os.getenv("KNULLI") == "1"
+end
+
+local function isDesktopShell()
+  local o = osName()
+  return (o == "Windows" or o == "Linux" or o == "OS X") and not isHandheldEnv()
+end
+
+local function nativeList(dir)
+  local fs = getNativeFs()
+  if not (fs and type(fs.listNative) == "function") then return nil end
+  local ok, names = pcall(fs.listNative, dir)
+  if not ok or type(names) ~= "table" then return nil end
+  return names
+end
+
+local function nativeStat(path)
+  local fs = getNativeFs()
+  if not (fs and type(fs.statNative) == "function") then return nil end
+  local ok, st = pcall(fs.statNative, path)
+  if not ok then return nil end
+  return st
+end
+
+local function isDirectory(path)
+  local fs = getNativeFs()
+  if fs and type(fs.isDirNative) == "function" then
+    local ok, yes = pcall(fs.isDirNative, path)
+    if ok and yes ~= nil then return yes and true or false end
+  end
+  local st = nativeStat(path)
+  return st ~= nil and st.type == "directory"
+end
+
+-- Where the SD-card mounts would be on a handheld.
+local SD_CARD_CANDIDATES = {
+  "/mnt/SDCARD",
+  "/mnt/sdcard",
+  "/mnt/mmc",
+  "/sdcard",
+  "/roms",
+  "/storage/roms",
+  "/userdata/roms",
+  "/storage",
+  "/userdata",
 }
+
+-- The first existing folder from SaveData.gameFolders(), or the save directory.
+local function desktopStartDir()
+  local fs = getNativeFs()
+  if fs and type(fs.gameFolders) == "function" then
+    local ok, folders = pcall(fs.gameFolders)
+    if ok and type(folders) == "table" then
+      for _, dir in ipairs(folders) do
+        if type(dir) == "string" and dir ~= "" then
+          local norm = normalizePath(dir)
+          if isDirectory(norm) then return norm end
+        end
+      end
+    end
+  end
+  if love and love.filesystem and love.filesystem.getSaveDirectory then
+    local dir = love.filesystem.getSaveDirectory()
+    if type(dir) == "string" and dir ~= "" then return normalizePath(dir) end
+  end
+  return nil
+end
+
+-- baseroms/ in any game folder; it is not always the first one gameFolders()
+-- returns.
+local function romDropDir()
+  local fs = getNativeFs()
+  if not (fs and type(fs.gameFolders) == "function") then return nil end
+  local ok, folders = pcall(fs.gameFolders)
+  if not ok or type(folders) ~= "table" then return nil end
+  for _, dir in ipairs(folders) do
+    if type(dir) == "string" and dir ~= "" then
+      local roms = joinPath(normalizePath(dir), "baseroms")
+      if isDirectory(roms) then return roms end
+    end
+  end
+  return nil
+end
 
 local function findSdCardRoot()
-  local candidates = {
-    "/mnt/SDCARD",
-    "/mnt/sdcard",
-    "/mnt/mmc",
-    "/sdcard",
-    "/roms",
-    "/storage/roms",
-    "/userdata/roms",
-    "/storage",
-    "/userdata",
-  }
-  for _, path in ipairs(candidates) do
+  if isDesktopShell() then
+    local dir = desktopStartDir()
+    if dir then return dir end
+    -- No native enumerator: the POSIX probes below would only fail on Windows.
+    if isWindows() then return "/" end
+  end
+  for _, path in ipairs(SD_CARD_CANDIDATES) do
     local ok, h = pcall(io.popen, string.format("test -d %s && echo \"yes\"", shQuote(path)))
     if ok and h then
       local res = h:read("*a")
@@ -71,22 +211,47 @@ local function findSdCardRoot()
   return "/"
 end
 
-local function normalizePath(p)
-  if not p or p == "" then return "/" end
-  p = p:gsub("\\", "/")
-  if p:sub(1, 1) ~= "/" and p:sub(1, 2) ~= "./" and p:sub(1, 3) ~= "../" then
-    p = "/" .. p
+local HANDHELD_SHORTCUTS = {
+  { label = "SD Card", path = "/mnt/SDCARD" },
+  { label = "GB ROMs", path = "/roms/gb" },
+  { label = "GBC ROMs", path = "/roms/gbc" },
+  { label = "Ports", path = "/roms/ports" },
+  { label = "Game Dir", path = "." },
+  { label = "Storage", path = "/storage" },
+  { label = "Userdata", path = "/userdata/roms" },
+  { label = "Root /", path = "/" },
+}
+
+-- The handheld list is meaningless on a desktop (/mnt/SDCARD does not exist).
+local function desktopShortcuts()
+  local out, seen = {}, {}
+  local function add(label, path)
+    if type(path) ~= "string" or path == "" then return end
+    local norm = normalizePath(path)
+    if seen[norm] then return end
+    seen[norm] = true
+    out[#out + 1] = { label = label, path = norm }
   end
-  p = p:gsub("/+", "/")
-  return p
+  local start = desktopStartDir()
+  add("Game Dir", start)
+  local fs = getNativeFs()
+  if fs and type(fs.gameFolders) == "function" then
+    local ok, folders = pcall(fs.gameFolders)
+    if ok and type(folders) == "table" then
+      for i = 2, #folders do add("Game Dir " .. i, folders[i]) end
+    end
+  end
+  add("baseroms/", romDropDir())
+  if love and love.filesystem and love.filesystem.getSaveDirectory then
+    add("Save Dir", love.filesystem.getSaveDirectory())
+  end
+  if #out == 0 then return HANDHELD_SHORTCUTS end
+  return out
 end
 
-local function parentDir(p)
-  p = normalizePath(p)
-  if p == "/" or p == "." then return "/" end
-  local parent = p:match("^(.*)/[^/]+/?$")
-  if not parent or parent == "" then return "/" end
-  return parent
+local function shortcuts()
+  if isDesktopShell() then return desktopShortcuts() end
+  return HANDHELD_SHORTCUTS
 end
 
 local function isMatchingFilter(name, isDir, mode)
@@ -113,21 +278,32 @@ local function scanDirectory(dir, mode)
   dir = normalizePath(dir)
   local entries = {}
 
-  local ok, handle = pcall(io.popen, string.format("ls -1ap %s 2>/dev/null", shQuote(dir)))
-  if ok and handle then
-    local output = handle:read("*a")
-    handle:close()
-    if output and #output > 0 then
-      for line in output:gmatch("[^\r\n]+") do
-        if line ~= "./" and line ~= "../" and line ~= "." and line ~= ".." then
-          local isDir = (line:sub(-1) == "/")
-          local cleanName = isDir and line:sub(1, -2) or line
-          if isMatchingFilter(cleanName, isDir, mode) then
-            table.insert(entries, {
-              name = cleanName,
-              isDir = isDir,
-              path = (dir == "/" and "/" .. cleanName) or (dir .. "/" .. cleanName),
-            })
+  local names = nativeList(dir)
+  if names then
+    for _, name in ipairs(names) do
+      local path = joinPath(dir, name)
+      local isDir = isDirectory(path)
+      if isMatchingFilter(name, isDir, mode) then
+        table.insert(entries, { name = name, isDir = isDir, path = path })
+      end
+    end
+  elseif not isWindows() then
+    local ok, handle = pcall(io.popen, string.format("ls -1ap %s 2>/dev/null", shQuote(dir)))
+    if ok and handle then
+      local output = handle:read("*a")
+      handle:close()
+      if output and #output > 0 then
+        for line in output:gmatch("[^\r\n]+") do
+          if line ~= "./" and line ~= "../" and line ~= "." and line ~= ".." then
+            local isDir = (line:sub(-1) == "/")
+            local cleanName = isDir and line:sub(1, -2) or line
+            if isMatchingFilter(cleanName, isDir, mode) then
+              table.insert(entries, {
+                name = cleanName,
+                isDir = isDir,
+                path = joinPath(dir, cleanName),
+              })
+            end
           end
         end
       end
@@ -138,7 +314,7 @@ local function scanDirectory(dir, mode)
     local okFs, items = pcall(love.filesystem.getDirectoryItems, dir)
     if okFs and items then
       for _, name in ipairs(items) do
-        local full = (dir == "/" and "/" .. name) or (dir .. "/" .. name)
+        local full = joinPath(dir, name)
         local info = love.filesystem.getInfo and love.filesystem.getInfo(full)
         local isDir = info and info.type == "directory"
         if isMatchingFilter(name, isDir, mode) then
@@ -173,10 +349,17 @@ function FileBrowser.open(opts)
   FileBrowser.selectedIdx = 1
   FileBrowser.page = 1
 
-  local initPath = opts.initialPath or findSdCardRoot()
-  FileBrowser.currentDir = initPath
+  local initPath = opts.initialPath
+  if not initPath then
+    initPath = findSdCardRoot()
+    if opts.mode == "rom" then
+      initPath = romDropDir() or initPath
+    end
+  end
+  FileBrowser.currentDir = normalizePath(initPath)
   FileBrowser.entries = scanDirectory(FileBrowser.currentDir, FileBrowser.mode)
-  if #FileBrowser.entries == 0 and initPath ~= "/" then
+  -- "/" is an SD-card notion; on a desktop it is the drive root.
+  if #FileBrowser.entries == 0 and initPath ~= "/" and not isDesktopShell() then
     FileBrowser.currentDir = "/"
     FileBrowser.entries = scanDirectory(FileBrowser.currentDir, FileBrowser.mode)
   end
@@ -205,8 +388,10 @@ function FileBrowser.setDirectory(dir)
 end
 
 function FileBrowser.cycleShortcut()
-  FileBrowser.shortcutIdx = (FileBrowser.shortcutIdx % #SHORTCUTS) + 1
-  local target = SHORTCUTS[FileBrowser.shortcutIdx]
+  local list = shortcuts()
+  if #list == 0 then return end
+  FileBrowser.shortcutIdx = (FileBrowser.shortcutIdx % #list) + 1
+  local target = list[FileBrowser.shortcutIdx]
   FileBrowser.setDirectory(target.path)
 end
 
@@ -252,7 +437,7 @@ function FileBrowser.gamepadpressed(button)
     end
     return true
   elseif button == "b" then
-    if FileBrowser.currentDir ~= "/" and FileBrowser.currentDir ~= "." then
+    if not isRootPath(FileBrowser.currentDir) then
       FileBrowser.setDirectory(parentDir(FileBrowser.currentDir))
     else
       FileBrowser.close(nil)
