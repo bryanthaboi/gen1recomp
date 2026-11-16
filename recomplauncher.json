@@ -30,7 +30,7 @@
     { "id": "emerald", "name": "Pokemon Emerald", "args": ["--game=emerald"], "inputs": ["rom-emerald"] }
   ],
   "start": {
-    "program": ["gen1recomp.exe"],
+    "program": ["gen1recomp.exe", "gen1recomp.AppImage"],
     "args": [
       "--rom={input:rom-red}",
       "--rom={input:rom-blue}",
