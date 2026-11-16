@@ -17,32 +17,19 @@
     { "id": "rom-emerald", "label": "Your Pokemon Emerald ROM (.gba, or a .zip / .7z that holds it). The US English release.", "optional": true, "formats": [{ "type": "file", "extensions": ["gba", "zip", "7z"] }] }
   ],
   "games": [
-    { "id": "red", "name": "Pokemon Red", "args": ["--game=red"], "inputs": ["rom-red"] },
-    { "id": "blue", "name": "Pokemon Blue", "args": ["--game=blue"], "inputs": ["rom-blue"] },
-    { "id": "yellow", "name": "Pokemon Yellow", "args": ["--game=yellow"], "inputs": ["rom-yellow"] },
-    { "id": "gold", "name": "Pokemon Gold", "args": ["--game=gold"], "inputs": ["rom-gold"] },
-    { "id": "silver", "name": "Pokemon Silver", "args": ["--game=silver"], "inputs": ["rom-silver"] },
-    { "id": "crystal", "name": "Pokemon Crystal", "args": ["--game=crystal"], "inputs": ["rom-crystal"] },
-    { "id": "firered", "name": "Pokemon FireRed", "args": ["--game=firered"], "inputs": ["rom-firered"] },
-    { "id": "leafgreen", "name": "Pokemon LeafGreen", "args": ["--game=leafgreen"], "inputs": ["rom-leafgreen"] },
-    { "id": "ruby", "name": "Pokemon Ruby", "args": ["--game=ruby"], "inputs": ["rom-ruby"] },
-    { "id": "sapphire", "name": "Pokemon Sapphire", "args": ["--game=sapphire"], "inputs": ["rom-sapphire"] },
-    { "id": "emerald", "name": "Pokemon Emerald", "args": ["--game=emerald"], "inputs": ["rom-emerald"] }
+    { "id": "red", "name": "Pokemon Red", "args": ["--game=red", "--rom={input:rom-red}"], "inputs": ["rom-red"] },
+    { "id": "blue", "name": "Pokemon Blue", "args": ["--game=blue", "--rom={input:rom-blue}"], "inputs": ["rom-blue"] },
+    { "id": "yellow", "name": "Pokemon Yellow", "args": ["--game=yellow", "--rom={input:rom-yellow}"], "inputs": ["rom-yellow"] },
+    { "id": "gold", "name": "Pokemon Gold", "args": ["--game=gold", "--rom={input:rom-gold}"], "inputs": ["rom-gold"] },
+    { "id": "silver", "name": "Pokemon Silver", "args": ["--game=silver", "--rom={input:rom-silver}"], "inputs": ["rom-silver"] },
+    { "id": "crystal", "name": "Pokemon Crystal", "args": ["--game=crystal", "--rom={input:rom-crystal}"], "inputs": ["rom-crystal"] },
+    { "id": "firered", "name": "Pokemon FireRed", "args": ["--game=firered", "--rom={input:rom-firered}"], "inputs": ["rom-firered"] },
+    { "id": "leafgreen", "name": "Pokemon LeafGreen", "args": ["--game=leafgreen", "--rom={input:rom-leafgreen}"], "inputs": ["rom-leafgreen"] },
+    { "id": "ruby", "name": "Pokemon Ruby", "args": ["--game=ruby", "--rom={input:rom-ruby}"], "inputs": ["rom-ruby"] },
+    { "id": "sapphire", "name": "Pokemon Sapphire", "args": ["--game=sapphire", "--rom={input:rom-sapphire}"], "inputs": ["rom-sapphire"] },
+    { "id": "emerald", "name": "Pokemon Emerald", "args": ["--game=emerald", "--rom={input:rom-emerald}"], "inputs": ["rom-emerald"] }
   ],
   "start": {
-    "program": ["gen1recomp.exe", "gen1recomp.AppImage"],
-    "args": [
-      "--rom={input:rom-red}",
-      "--rom={input:rom-blue}",
-      "--rom={input:rom-yellow}",
-      "--rom={input:rom-gold}",
-      "--rom={input:rom-silver}",
-      "--rom={input:rom-crystal}",
-      "--rom={input:rom-firered}",
-      "--rom={input:rom-leafgreen}",
-      "--rom={input:rom-ruby}",
-      "--rom={input:rom-sapphire}",
-      "--rom={input:rom-emerald}"
-    ]
+    "program": ["gen1recomp.exe", "gen1recomp.AppImage"]
   }
 }
