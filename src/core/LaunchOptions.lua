@@ -216,7 +216,8 @@ local function intentGame()
 end
 
 local function request(argv, rawArgv, uri)
-  local game = normalizeVersion(argValue(argv, "game"))
+  local argGame = normalizeVersion(argValue(argv, "game"))
+  local game = argGame
   if not game then
     if uri and uri.gameSpecified then
       game = uri.game
@@ -236,6 +237,7 @@ local function request(argv, rawArgv, uri)
     cart = uri.cart
     cartSpecified = true
   end
+  local rom = argGame and trim(argValue(argv, "rom")) or nil
   local launcher
   if argFlag(argv, "launcher") or argFlag(rawArgv, "launcher") then
     launcher = true
@@ -247,6 +249,7 @@ local function request(argv, rawArgv, uri)
   return {
     game = game,
     cart = cart,
+    rom = rom,
     slot = slot,
     cartSpecified = cartSpecified,
     launcher = launcher,

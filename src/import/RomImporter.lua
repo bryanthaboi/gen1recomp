@@ -2508,7 +2508,10 @@ end
 function RomImporter:setError(message, version)
   require("src.import.CacheFs").prefix = ""
   self.workState = "error"
-  self.errorVersion = version or self.importing or self.chooseVersion or "red"
+  local launchRom = self._launchRom
+  self._launchRom = nil
+  self.errorVersion = version or self.importing
+    or (launchRom and launchRom.version) or self.chooseVersion or "red"
   self.importing = nil
   self.notice = nil
   self.status = "That ROM could not be imported"
@@ -2591,6 +2594,13 @@ function RomImporter:startData(data, displayName, sourcePath)
   local version = self:_versionForSha1(actualHash)
   if not version then
     self:setError(unsupportedRomText(self, actualHash))
+    return
+  end
+  local wanted = self._launchRom and self._launchRom.version
+  if wanted and version ~= wanted then
+    local found = GameVersion.info(version).displayName
+    local expected = GameVersion.info(wanted).displayName
+    self:setError(Strings("That ROM is %s, not %s.", found, expected), wanted)
     return
   end
   self.romSha1 = actualHash
@@ -2732,13 +2742,16 @@ function RomImporter:_completeImport(version, prefix, displayName)
     self.detail = "Starting " .. info.displayName .. "..."
   end
   self.progress = 1
-  if self.launcher then
+  local launchRom = self._launchRom
+  self._launchRom = nil
+  if self.launcher and not launchRom then
     -- Stay on the launcher; the player presses Play to boot the new game.
     return
   end
   self._handedOff = true
   resetPointerCursor(self)
   if self._flex then require("src.import.LauncherView").detach(self) end
+  if launchRom then return launchRom.onImported(version) end
   if self.onComplete then self.onComplete(version) end
 end
 
@@ -3026,6 +3039,11 @@ function RomImporter:startPath(path)
   end
   self:startData(data, path:match("[^/\\]+$") or path,
     require("src.import.RomSources").absolute(path))
+end
+
+function RomImporter:startLaunchRom(path, version, onImported)
+  self._launchRom = { version = version, onImported = onImported }
+  self:startPath(path)
 end
 
 function RomImporter:_zipHoldsRom(data)

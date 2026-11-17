@@ -7,6 +7,7 @@ entry: a desktop shortcut per game, a Steam entry, or a handheld frontend.
 | Option | Effect |
 | --- | --- |
 | `--game=red` | boot Red, skipping the launcher (`blue`, `yellow`, `gold`, `silver`, `crystal`, `firered`, `leafgreen`, `ruby`, `sapphire` and `emerald` too, or just `r` / `b` / `y` / `g` / `s` / `c` / `fr` / `lg` / `ru` / `sa` / `em`) |
+| `--rom=/path/to/game.gb` | with `--game`: import that ROM first if the game is not imported yet, then boot it. Ignored once the game is imported, and without `--game`. A ROM that is not that game, or that fails to import, opens the launcher on that game's tab with the error |
 | `--cart=id` | boot the installed custom cart with that id |
 | `--slot=2` | load that save slot; takes a slot number or a slot id |
 | `--launcher` | open the launcher anyway, so you can edit a shortcut you already made |

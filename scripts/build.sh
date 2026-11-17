@@ -334,6 +334,7 @@ build_win() {
   mkdir -p "$out_dir"
   cp "$love_dir"/*.dll "$out_dir"/
   cp "$love_dir"/license.txt "$out_dir"/ 2>/dev/null || true
+  cp "$ROOT/recomplauncher.json" "$out_dir/recomplauncher.json"
 
   # Native AOT TLS dialer for outbound wss:// (e.g. Archipelago hosted rooms).
   # Release CI builds this on windows-2022 (Native AOT can't cross-compile
@@ -447,6 +448,7 @@ build_linux() {
   unsquashfs -q -no-xattrs -o "$sfs_offset" -d "$appdir" "$love_appimage" >/dev/null
 
   cp "$LOVE_FILE" "$appdir/game.love"
+  cp "$ROOT/recomplauncher.json" "$appdir/recomplauncher.json"
   bundle_shader_bridge "$appdir" "liblibrashader_bridge.so" linux-x64
 
   # Replace LÖVE's own desktop entry rather than keeping it: it says
