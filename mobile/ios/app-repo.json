@@ -13,6 +13,13 @@
       "category": "games",
       "versions": [
         {
+          "version": "0.4.8",
+          "date": "2026-11-17",
+          "size": 44801773,
+          "downloadURL": "https://github.com/bryanthaboi/gen1recomp/releases/download/v0.4.8/gen1recomp++-0.4.8-ios.ipa",
+          "localizedDescription": "Added recomp launcher support and some other junk type stuff\n\n## Issues closed\n\n- #887 MacOS Closing game just keeps reopening\n- #960 Missing sounds for logging off & walking into NPCs\n- #1151 [Gold] Following up of #1127\n- #1153 Battle hooks can't gate whether an action happens at all\n- #1154 Red rom not installing.\n- #1188 GoldenRod tower softlock\n\n## Contributors\n\n- @bryanthaboi\n- @Xarishark"
+        },
+        {
           "version": "0.4.7",
           "date": "2026-11-15",
           "size": 44801142,
