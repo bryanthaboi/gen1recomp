@@ -258,6 +258,15 @@ bool System::restartApp() const
 #endif
 }
 
+int System::requestStorageAccess() const
+{
+#ifdef LOVE_ANDROID
+	return love::android::requestStorageAccess();
+#else
+	return -1;
+#endif
+}
+
 bool System::installApk(const char *path) const
 {
 #ifdef LOVE_ANDROID

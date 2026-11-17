@@ -100,6 +100,7 @@ public class GameActivity extends SDLActivity {
     public static final int FILE_CREATE_REQUEST_CODE = 5;
     public static final int STEP_PERMISSION_REQUEST_CODE = 6;
     public static final int RESTART_REQUEST_CODE = 7;
+    public static final int STORAGE_FOLDER_REQUEST_CODE = 8;
     /** @deprecated Prefer FILE_PICKER_REQUEST_CODE; kept for older call sites. */
     public static final int ROM_PICKER_REQUEST_CODE = FILE_PICKER_REQUEST_CODE;
     // Mirrors conf.lua's t.identity ("pokemon-love2d"): where the picked file
@@ -838,6 +839,48 @@ public class GameActivity extends SDLActivity {
         }
         Runtime.getRuntime().exit(0);
         return true; // unreachable, but keeps the JNI signature honest
+    }
+
+    @Keep
+    public static int requestStorageAccess() {
+        final GameActivity self = (GameActivity) mSingleton;
+        if (self == null) return -1;
+        if (Build.VERSION.SDK_INT >= 30) {
+            if (Environment.isExternalStorageManager()) return 1;
+            self.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        self.startActivity(new Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:" + self.getPackageName())));
+                    } catch (Exception e) {
+                        try {
+                            self.startActivity(new Intent(
+                                Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                        } catch (Exception e2) {
+                            Log.d("GameActivity", "could not open all files access settings: "
+                                + e2.getMessage());
+                        }
+                    }
+                }
+            });
+            return 0;
+        }
+        if (ActivityCompat.checkSelfPermission(self, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED) {
+            return 1;
+        }
+        self.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ActivityCompat.requestPermissions(self, new String[]{
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }, STORAGE_FOLDER_REQUEST_CODE);
+            }
+        });
+        return 2;
     }
 
     /**

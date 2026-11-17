@@ -122,6 +122,7 @@ tests/engine/fly_map_arrows_bug1892.lua
 tests/engine/formulas.lua
 tests/engine/frame_cap_display.lua
 tests/engine/frame_cap_legacy_loop_2106.lua
+tests/engine/g1r_folder_move_test.lua
 tests/engine/game3_anim_pack_lazy_3116.lua
 tests/engine/game3_avatar_restore_2759_2761.lua
 tests/engine/game3_bag_select_icon_2892.lua

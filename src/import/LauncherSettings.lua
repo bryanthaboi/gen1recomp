@@ -914,6 +914,12 @@ function LauncherSettings.open(hooks, version)
       action = function() hooks.openExtras(); return false end,
     })
   end
+  local okG, G1RFolder = pcall(require, "src.core.G1RFolder")
+  if okG and G1RFolder.supported() then
+    for _, row in ipairs(G1RFolder.settingsRows()) do
+      launcher.rows[#launcher.rows + 1] = row
+    end
+  end
   local UnionSetting = require("src.online.union.Setting")
   launcher.rows[#launcher.rows + 1] = {
     label = Strings("Union Room"),

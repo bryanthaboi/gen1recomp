@@ -97,6 +97,8 @@ bool syncHealthSteps();
  **/
 bool restartApp();
 
+int requestStorageAccess();
+
 /**
  * Stages a checksum-verified APK from the current save directory and starts
  * Android's user-confirmed Package Installer flow. Android-only.

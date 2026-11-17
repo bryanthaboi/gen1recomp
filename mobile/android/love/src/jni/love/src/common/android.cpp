@@ -309,6 +309,25 @@ bool restartApp()
 	return result;
 }
 
+int requestStorageAccess()
+{
+	JNIEnv *env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+	jclass activity = env->FindClass("org/love2d/android/GameActivity");
+
+	jmethodID method = env->GetStaticMethodID(activity, "requestStorageAccess", "()I");
+	if (method == nullptr)
+	{
+		env->ExceptionClear();
+		env->DeleteLocalRef(activity);
+		return -1;
+	}
+
+	jint result = env->CallStaticIntMethod(activity, method);
+
+	env->DeleteLocalRef(activity);
+	return (int) result;
+}
+
 bool installApk(const char *path)
 {
 	if (path == nullptr || path[0] == '\0')

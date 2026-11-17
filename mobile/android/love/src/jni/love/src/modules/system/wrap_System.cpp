@@ -140,6 +140,20 @@ int w_restartApp(lua_State *L)
 	return 1;
 }
 
+int w_requestStorageAccess(lua_State *L)
+{
+	int result = instance()->requestStorageAccess();
+	const char *state = "unavailable";
+	if (result == 1)
+		state = "granted";
+	else if (result == 0)
+		state = "settings";
+	else if (result == 2)
+		state = "dialog";
+	lua_pushstring(L, state);
+	return 1;
+}
+
 int w_installApk(lua_State *L)
 {
 	const char *path = luaL_checkstring(L, 1);
@@ -351,6 +365,7 @@ static const luaL_Reg functions[] =
 	{ "exportImage", w_exportImage },
 	{ "syncHealthSteps", w_syncHealthSteps },
 	{ "restartApp", w_restartApp },
+	{ "requestStorageAccess", w_requestStorageAccess },
 	{ "installApk", w_installApk },
 	{ "updateShortcuts", w_updateShortcuts },
 	{ "getLaunchGame", w_getLaunchGame },
