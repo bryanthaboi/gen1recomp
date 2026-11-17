@@ -207,7 +207,8 @@ local function parentOf(path)
 end
 
 local function foreignEntry(SaveData, dir, ours)
-  local names = SaveData.listNative(dir) or {}
+  local names = SaveData.listNativeStrict(dir)
+  if not names then return nil, true end
   for _, name in ipairs(names) do
     if name == MARKER or name == OWNED then return nil end
   end
@@ -255,7 +256,7 @@ function G.move(target, progress)
     if not toExisted then os.remove(to) end
     return false, Strings("Can't write to %s.", G.pretty(target)) .. "\n\n" .. accessHelp()
   end
-  if SaveData.listNative(from) == nil then
+  if SaveData.listNativeStrict(from) == nil then
     if not toExisted then os.remove(to) end
     return false, Strings("Can't read the folder your files are in now.")
   end
@@ -269,7 +270,12 @@ function G.move(target, progress)
   local planError
   local function walk(rel)
     local abs = rel == "" and from or (from .. "/" .. rel)
-    for _, name in ipairs(SaveData.listNative(abs) or {}) do
+    local names = SaveData.listNativeStrict(abs)
+    if not names then
+      planError = Strings("Couldn't read the folder %s in %s.", rel == "" and "." or rel, where(from))
+      return
+    end
+    for _, name in ipairs(names) do
       if planError then return end
       local relPath = rel == "" and name or (rel .. "/" .. name)
       local skip = rel == "" and (name == "updates" or name:match("^picked_") ~= nil
@@ -288,10 +294,14 @@ function G.move(target, progress)
         if rel == "" then ours[name] = true end
         local srcPath = from .. "/" .. relPath
         local st = SaveData.statNative(srcPath)
-        if st and st.type == "directory" then
+        if not st then
+          planError = Strings("Couldn't read %s in %s.", relPath, where(from))
+          return
+        elseif st.type == "directory" then
           walk(relPath)
+          if planError then return end
           srcDirs[#srcDirs + 1] = srcPath
-        elseif st then
+        else
           local dst = to .. "/" .. relPath
           local reuse, shelf = false, nil
           if SaveData.statNative(dst) ~= nil then
@@ -323,7 +333,11 @@ function G.move(target, progress)
     return false, planError .. " " .. Strings("Nothing was moved.")
   end
   if to ~= saveDir then
-    local foreign = foreignEntry(SaveData, to, ours)
+    local foreign, unreadable = foreignEntry(SaveData, to, ours)
+    if unreadable then
+      if not toExisted then os.remove(to) end
+      return false, Strings("Couldn't read the folder %s.", G.pretty(target)) .. " " .. Strings("Nothing was moved.")
+    end
     if foreign then
       if not toExisted then os.remove(to) end
       return false, Strings("%s already has other files in it, such as %s. Pick an empty folder or a new one.",

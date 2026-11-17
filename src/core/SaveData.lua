@@ -205,10 +205,10 @@ local function loadWinApi()
   function api.list(p)
     local out = {}
     local w = wide((p:gsub("/", "\\")) .. "\\*")
-    if not w then return out end
+    if not w then return out, "bad path" end
     local data = ffi.new("PP_FIND_DATA_W[1]")
     local h = C.FindFirstFileW(w, data)
-    if not validHandle(h) then return out end
+    if not validHandle(h) then return out, "cannot open" end
     repeat
       local name = narrow(data[0].name)
       if name ~= "." and name ~= ".." and name ~= "" then out[#out + 1] = name end
@@ -262,7 +262,7 @@ local function loadPosixApi()
     function api.list(p)
       local out = {}
       local d = C.opendir(p)
-      if d == nil then return out end
+      if d == nil then return out, "cannot open" end
       while true do
         local ent = readdirFn(d)
         if ent == nil then break end
@@ -344,6 +344,11 @@ SaveData.removeNative = nativeRemove
 SaveData.statNative = nativeStat
 SaveData.mkdirNative = nativeMkdirp
 SaveData.listNative = nativeList
+SaveData.listNativeStrict = function(path)
+  local items, err = nativeList(path)
+  if items == nil or err ~= nil then return nil, err or "no directory lister" end
+  return items
+end
 
 -- an io.* filesystem exposing the love.filesystem subset the save/options
 -- round-trip needs (getInfo/read/write/remove), rooted at `dir`

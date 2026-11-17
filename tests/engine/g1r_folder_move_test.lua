@@ -244,6 +244,67 @@ do
   eq(G.ownsName("cache", { cache = true }), true, "a name the move brought in is ours")
 end
 
+local function unreadable(SaveData, how, suffix)
+  local field = how == "list" and "listNativeStrict" or "statNative"
+  local real = SaveData[field]
+  SaveData[field] = function(p, ...)
+    if p:sub(-#suffix) == suffix then return nil, "denied" end
+    return real(p, ...)
+  end
+  return function() SaveData[field] = real end
+end
+
+local function refusedUntouched(base, dest, pointerBefore, what, how, suffix)
+  local SaveData, G = fresh()
+  local restore = unreadable(SaveData, how, suffix)
+  local ok, moved, leftover = G.move(dest)
+  restore()
+  eq(ok, false, what .. ": the move is refused")
+  check(type(moved) == "string" and has(moved, "Couldn't read") and has(moved, "Nothing was moved"),
+    what .. ": and says why: " .. tostring(moved))
+  eq(leftover, nil, what .. ": no leftover count is reported")
+  eq(get(POINTER), pointerBefore, what .. ": the storage setting is unchanged")
+  originalsIntact(base, what)
+  local destDir = (dest == "" and APP) or dest
+  if destDir ~= base then noCopies(destDir, what) end
+end
+
+do
+  local SaveData = fresh()
+  eq(SaveData.listNativeStrict(ROOT .. "/no/such/folder"), nil, "a missing folder can't be listed")
+  mkdirp(ROOT .. "/empty")
+  local items = SaveData.listNativeStrict(ROOT .. "/empty")
+  check(type(items) == "table" and #items == 0, "an empty folder lists as empty, not as a failure")
+  eq(type(SaveData.listNative(ROOT .. "/no/such/folder")), "table",
+    "the lenient lister still returns a table for portable mode")
+end
+
+refusedUntouched(APP, ROOT .. "/phone/ListFail", nil,
+  "unlistable save folder, app storage to folder", "list", "/save")
+check(get(ROOT .. "/phone/ListFail/portable.txt") == nil, "no portable.txt was written")
+checkGone({ ROOT .. "/phone/ListFail" }, "the folder the move created was removed again")
+refusedUntouched(APP, ROOT .. "/phone/StatFail", nil,
+  "unreadable save file, app storage to folder", "stat", "/save/red.sav")
+
+if not WIN then
+  local locked = APP .. "/save"
+  os.execute('chmod 000 "' .. locked .. '"')
+  local SaveData = fresh()
+  local blocked = SaveData.listNativeStrict(locked) == nil
+  os.execute('chmod 755 "' .. locked .. '"')
+  if blocked then
+    os.execute('chmod 000 "' .. locked .. '"')
+    local _, G = fresh()
+    local ok = G.move(ROOT .. "/phone/Locked")
+    os.execute('chmod 755 "' .. locked .. '"')
+    eq(ok, false, "a really unreadable save folder refuses the move")
+    originalsIntact(APP, "really unreadable save folder")
+    eq(get(POINTER), nil, "the storage setting is unchanged")
+  else
+    print("(chmod 000 doesn't block listing here, probably running as root: real-lock check skipped)")
+  end
+end
+
 local FIRST = ROOT .. "/phone/First"
 do
   local SaveData, G = fresh()
@@ -270,6 +331,17 @@ do
   eq(get(FIRST .. "/portable.txt"), "", "the new folder is marked for portable mode")
   SaveData = fresh()
   eq(SaveData.portableBaseDir(), FIRST, "the next launch uses the new folder")
+end
+
+refusedUntouched(FIRST, "", FIRST .. "\n",
+  "unlistable save folder, folder back to app storage", "list", "/save")
+refusedUntouched(FIRST, ROOT .. "/phone/Elsewhere", FIRST .. "\n",
+  "unlistable save folder, folder to another folder", "list", "/save")
+refusedUntouched(FIRST, "", FIRST .. "\n",
+  "unreadable cache file, folder back to app storage", "stat", "/cache/rom.bin")
+do
+  local SaveData = fresh()
+  eq(SaveData.portableBaseDir(), FIRST, "after the refused moves the game still uses the storage folder")
 end
 
 do
