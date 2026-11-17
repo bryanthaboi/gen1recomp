@@ -829,6 +829,18 @@ local function startLaunchRequest(request)
 
   if not RomImporter.isReady(version) then
     showLauncher(version)
+    if request.rom then
+      local imported = {}
+      for key, value in pairs(request) do imported[key] = value end
+      imported.rom = nil
+      Importer:startLaunchRom(request.rom, version, function()
+        require("src.import.LauncherWindow").observe(0)
+        require("src.import.LauncherWindow").flush()
+        Importer = nil
+        startLaunchRequest(imported)
+      end)
+      return true
+    end
     autoUpdateMods(request)
     return true
   end

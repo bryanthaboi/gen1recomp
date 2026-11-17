@@ -4,6 +4,8 @@ A native LÖVE2D recreation of Poke Red, Blue, Yellow, Gold, Silver, Crystal, Fi
 The engine and map behavior are hand-written Lua; game data and graphics are 
 decoded from a ROM supplied by the player.
 
+<a href="https://recomplauncher.com/game/gen1recomp"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
 And before you say, "that's not a recomp", you're wrong. Recomp is an acronym. ***Reverse Engineering Causes Obsessive Mental Problems***
 
 [Click Here for the AI Use Disclosure!](AIDisclosure.md)
