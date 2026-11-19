@@ -17,8 +17,11 @@ end
 
 local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
 
--- Global emergency quit: holding Start + Select for 5 seconds forcefully terminates LOVE.
+-- PortMaster / handheld emergency quit: hold Start + Select briefly to exit.
+-- Route through LOVE's normal quit event so love.quit and session cleanup run.
 local emergencyQuitTimer = 0
+local emergencyQuitRequested = false
+local EMERGENCY_QUIT_HOLD = tonumber(os.getenv("POKEPORT_EXIT_HOLD")) or 1.0
 -- getJoysticks() allocates a fresh table every call; this runs once per
 -- frame (from love.run, before love.update), so cache the list and refresh
 -- it once a second instead.  The 5s hold requirement makes a 1s hotplug
@@ -63,14 +66,15 @@ local function checkEmergencyQuit(dt)
 
   if held then
     emergencyQuitTimer = emergencyQuitTimer + (dt or 0.016)
-    if emergencyQuitTimer >= 5.0 then
-      print("[FORCE QUIT] Start + Select held for 5 seconds. Exiting forcefully.")
-      pcall(function()
-        if love.audio and love.audio.stop then love.audio.stop() end
-        if love.window and love.window.close then love.window.close() end
-      end)
-      local exitFn = os["exit"]
-      exitFn(0)
+    if emergencyQuitTimer >= EMERGENCY_QUIT_HOLD and not emergencyQuitRequested then
+      emergencyQuitRequested = true
+      print("[QUIT] Start + Select held; requesting clean application exit.")
+      if love.event and love.event.quit then
+        love.event.quit(0)
+      else
+        -- Last-resort fallback for an incomplete LOVE runtime.
+        os.exit(0)
+      end
     end
   else
     emergencyQuitTimer = 0
@@ -1749,7 +1753,8 @@ function love.quit()
   -- claims the hook) is exactly the condition below.
   local mobile = (osName == "Android" or osName == "iOS")
   local wouldReturnToLauncher = PlatformHooks.quitToLauncher(function()
-    return Game and not Importer and not quitToLauncher and not scripted
+    return not emergencyQuitRequested
+      and Game and not Importer and not quitToLauncher and not scripted
       and (mobile or not launchedIntoGame)
   end)
   if wouldReturnToLauncher then
